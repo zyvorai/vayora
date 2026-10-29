@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{width:1200px;height:1200px;overflow:hidden}
+body{position:relative;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.blobs{position:absolute;inset:0;filter:blur(50px);background:radial-gradient(60% 40% at 0% 20%,#7bbcff 0,transparent 72%),radial-gradient(50% 36% at 100% 40%,#bfe6fb 0,transparent 72%),radial-gradient(60% 40% at 50% 100%,#e6d3f6 0,transparent 74%)}
+.c{position:absolute;inset:0;padding:96px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:22px;font-size:48px;font-weight:650;letter-spacing:-.02em}
+.brand img{width:80px;height:80px;border-radius:20px}
+h1{margin-top:auto;font-size:150px;line-height:1.02;letter-spacing:-.048em;font-weight:700}
+h1 span{display:block}
+.g{background:linear-gradient(90deg,#0088ff 10%,#62b6ff 80%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.chips{display:flex;gap:16px;margin-top:48px}
+.chips b{font-weight:600;font-size:36px;color:#3a3a3c;padding:14px 30px;border-radius:999px;border:2px solid rgba(0,0,0,.14);background:rgba(255,255,255,.6)}
+</style>
+<div class="blobs"></div>
+<div class="c">
+  <div class="brand"><img src="logo.svg" alt="">Vayora</div>
+  <h1><span>Payments</span><span>for India.</span><span class="g">Open to</span><span class="g">everyone.</span></h1>
+  <div class="chips"><b>Rust</b><b>UPI</b><b>Ledger</b></div>
+</div>

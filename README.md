@@ -1,8 +1,59 @@
+<div align="center">
+
+<img src="docs/logo.svg" width="72" height="72" alt="Vayora logo">
+
 # Vayora
 
-Open-source payments infrastructure for India: a Rust core, TypeScript SDKs, and an Apple-grade checkout and merchant dashboard.
+**Payments for India. Open to everyone.**
 
-> **Status: early scaffold.** Everything runs against a built-in bank simulator. No real money moves.
+An open-source payments platform with an exactly-once API, a double-entry ledger and signed webhooks.<br>
+Rust core · TypeScript SDK · simulated UPI
+
+[![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
+![Rust](https://img.shields.io/badge/Rust-2024-orange)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
+![Status](https://img.shields.io/badge/status-early%20%C2%B7%20simulated%20rails-ff9f0a)
+
+[**Live demo**](https://zyvorai.github.io/vayora/) · [Quickstart](#quickstart) · [API](#api) · [Compliance](docs/compliance/README.md)
+
+<a href="https://zyvorai.github.io/vayora/"><img src="site/assets/og.png" width="720" alt="Vayora: payments for India, open to everyone"></a>
+
+</div>
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[POST /v1/orders] --> B[POST /v1/payments]
+  B --> C{UpiGateway}
+  C -- success --> D[Capture]
+  C -- declined --> E[Failed payment]
+  D --> F[Double-entry ledger]
+  D --> G[Signed webhook]
+  F --> H[POST …/refunds]
+  H --> F
+```
+
+Everything for one request (idempotency key, payment, ledger entries, webhook event) commits in a single Postgres transaction, so the records can never disagree.
+
+## What you get
+
+| | |
+|---|---|
+| **Exactly once** | `Idempotency-Key` on every write; concurrent duplicates charge once, key reuse with different params is rejected |
+| **Ledger** | Double-entry, append-only (enforced by DB triggers), balanced by construction |
+| **Webhooks** | Transactional outbox, retries with backoff, HMAC-SHA256 signatures with replay protection |
+| **SDK** | `@vayora/node`: typed client, typed errors, `verifyWebhook` |
+| **Rails** | UPI behind a `UpiGateway` trait; deterministic simulator today |
+
+## Status
+
+- [x] Orders, payments, refunds on Postgres
+- [x] Ledger, webhooks, Node SDK
+- [ ] Merchant dashboard and hosted checkout
+- [ ] Cards, routing, settlement, risk
+- [ ] Real rails, which require licences (see below)
 
 ## Regulatory notice
 

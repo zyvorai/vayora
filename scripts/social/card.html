@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{width:1200px;height:630px;overflow:hidden}
+body{position:relative;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.blobs{position:absolute;inset:0;filter:blur(40px);background:radial-gradient(34% 70% at 0% 40%,#7bbcff 0,transparent 72%),radial-gradient(30% 62% at 100% 28%,#bfe6fb 0,transparent 72%),radial-gradient(40% 50% at 55% 90%,#e6d3f6 0,transparent 74%)}
+.c{position:absolute;inset:0;padding:64px 80px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:16px;font-size:34px;font-weight:650;letter-spacing:-.02em}
+.brand img{width:56px;height:56px;border-radius:14px}
+h1{margin-top:auto;font-size:118px;line-height:1;letter-spacing:-.048em;font-weight:700}
+h1 span{display:block}
+.g{background:linear-gradient(90deg,#0088ff 10%,#62b6ff 80%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.row{display:flex;justify-content:space-between;align-items:center;margin-top:34px}
+.chips{display:flex;gap:12px}
+.chips b{font-weight:600;font-size:26px;color:#3a3a3c;padding:10px 22px;border-radius:999px;border:1.5px solid rgba(0,0,0,.14);background:rgba(255,255,255,.6)}
+.url{font-size:26px;color:#6e6e73}
+</style>
+<div class="blobs"></div>
+<div class="c">
+  <div class="brand"><img src="logo.svg" alt="">Vayora</div>
+  <h1><span>Payments for India.</span><span class="g">Open to everyone.</span></h1>
+  <div class="row"><div class="chips"><b>Rust</b><b>UPI</b><b>Ledger</b><b>Apache-2.0</b></div><div class="url">github.com/zyvorai/vayora</div></div>
+</div>
