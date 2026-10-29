@@ -1,0 +1,6 @@
+{
+  "name": "vayora-monorepo",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "license": "Apache-2.0"
+}

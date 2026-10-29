@@ -1,0 +1,9 @@
+[package]
+name = "vayora-ledger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vayora-core = { path = "../vayora-core" }
+thiserror.workspace = true

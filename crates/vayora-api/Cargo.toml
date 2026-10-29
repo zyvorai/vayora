@@ -1,0 +1,17 @@
+[package]
+name = "vayora-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vayora-core = { path = "../vayora-core" }
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
