@@ -48,6 +48,11 @@ impl std::fmt::Display for Money {
     }
 }
 
+/// Prefixed, time-ordered identifier, e.g. `pay_01928f...`.
+pub fn new_id(prefix: &str) -> String {
+    format!("{prefix}_{}", uuid::Uuid::now_v7().simple())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

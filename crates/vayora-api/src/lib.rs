@@ -1,74 +1,81 @@
-//! HTTP API. Orders are held in memory for now (Postgres comes with the vertical slice).
+//! Vayora HTTP API: orders, simulated-UPI payments, refunds, ledger balance.
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+mod error;
+mod idempotency;
+mod routes;
+
+use std::sync::Arc;
 
 use axum::{
-    Json, Router,
-    extract::State,
-    http::{HeaderMap, StatusCode},
+    Router,
+    extract::{Request, State},
+    http::{StatusCode, header::AUTHORIZATION},
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
-use vayora_core::Money;
+use sqlx::PgPool;
+use subtle::ConstantTimeEq;
+use vayora_upi::UpiGateway;
 
-#[derive(Clone, Serialize)]
-pub struct Order {
-    pub id: String,
-    pub amount_paise: i64,
-    pub currency: &'static str,
-    pub status: &'static str,
+pub use error::ApiError;
+
+pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: PgPool,
+    pub upi: Arc<dyn UpiGateway>,
+    api_key: Arc<str>,
 }
 
-#[derive(Deserialize)]
-struct CreateOrder {
-    amount_paise: i64,
+impl AppState {
+    pub fn new(pool: PgPool, upi: Arc<dyn UpiGateway>, api_key: impl Into<Arc<str>>) -> Self {
+        Self {
+            pool,
+            upi,
+            api_key: api_key.into(),
+        }
+    }
 }
 
-#[derive(Default, Clone)]
-struct AppState {
-    // Idempotency-Key -> order. Replaced by Redis/Postgres later.
-    orders: Arc<Mutex<HashMap<String, Order>>>,
-}
+pub fn app(state: AppState) -> Router {
+    let v1 = Router::new()
+        .route("/orders", post(routes::create_order))
+        .route("/orders/{id}", get(routes::get_order))
+        .route("/payments", post(routes::create_payment))
+        .route("/payments/{id}", get(routes::get_payment))
+        .route("/payments/{id}/refunds", post(routes::create_refund))
+        .route("/balance", get(routes::balance))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
 
-pub fn app() -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .route("/v1/orders", post(create_order))
-        .with_state(AppState::default())
+        .nest("/v1", v1)
+        .with_state(state)
 }
 
-async fn create_order(
+async fn require_api_key(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(body): Json<CreateOrder>,
-) -> Result<(StatusCode, Json<Order>), (StatusCode, &'static str)> {
-    let key = headers
-        .get("idempotency-key")
+    req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let supplied = req
+        .headers()
+        .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .filter(|k| !k.is_empty())
-        .ok_or((StatusCode::BAD_REQUEST, "Idempotency-Key header required"))?
-        .to_owned();
-    let amount = Money::from_paise(body.amount_paise)
-        .ok()
-        .filter(|m| m.paise() > 0)
-        .ok_or((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "amount_paise must be positive",
-        ))?;
-
-    let mut orders = state.orders.lock().unwrap();
-    if let Some(existing) = orders.get(&key) {
-        return Ok((StatusCode::OK, Json(existing.clone())));
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if supplied.as_bytes().ct_eq(state.api_key.as_bytes()).into() {
+        Ok(next.run(req).await)
+    } else {
+        Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "missing or invalid API key",
+        ))
     }
-    let order = Order {
-        id: format!("order_{}", uuid::Uuid::now_v7().simple()),
-        amount_paise: amount.paise(),
-        currency: "INR",
-        status: "created",
-    };
-    orders.insert(key, order.clone());
-    Ok((StatusCode::CREATED, Json(order)))
 }

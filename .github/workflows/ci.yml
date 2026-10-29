@@ -5,6 +5,15 @@ on:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_USER: vayora, POSTGRES_PASSWORD: vayora, POSTGRES_DB: vayora }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vayora" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://vayora:vayora@localhost:5432/vayora
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

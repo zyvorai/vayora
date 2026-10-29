@@ -5,13 +5,16 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }
