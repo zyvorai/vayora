@@ -185,6 +185,16 @@ impl T {
         assert!(s.is_success(), "{method} {path} -> {s}: {b}");
         b
     }
+    /// A request with no API key, as a browser would send.
+    pub async fn public(
+        &self,
+        method: &str,
+        path: &str,
+        idem: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        raw(&self.app, "", None, method, path, idem, body).await
+    }
     pub async fn mock_post(&self, path: &str, body: Value) -> Value {
         self.http
             .post(format!("{}/_sim/{path}", self.mock))

@@ -1,0 +1,620 @@
+openapi: 3.1.0
+info:
+  title: Zyvor Payments API
+  version: 0.1.0
+  description: Multi-tenant payment orchestration, ledger and reconciliation. Amounts are integer minor units (paise). Provider
+    integrations are SANDBOX/SIMULATED until verified against live provider sandboxes. Every state-changing payment endpoint
+    requires an Idempotency-Key.
+servers:
+- url: http://localhost:8080
+  description: local
+security:
+- bearer: []
+paths:
+  /v1/payment_intents/{id}:
+    get:
+      summary: Get a payment intent with its attempts
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_attempts/{id}:
+    get:
+      summary: Get an attempt
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/refunds:
+    get:
+      summary: List refunds (filter status=failed for the failed-refund queue)
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/refunds/{id}:
+    get:
+      summary: Get a refund
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/refunds/{id}/approve:
+    post:
+      summary: Approve a refund above the threshold (different person than requester)
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/refunds/{id}/reject:
+    post:
+      summary: Reject a refund awaiting approval
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/refunds/{id}/retry:
+    post:
+      summary: Retry a failed refund
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/refunds/{id}/refresh:
+    post:
+      summary: Resolve a refund with an unknown outcome
+      tags:
+      - refunds
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/settlements:
+    get:
+      summary: List settlements
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/settlements/import:
+    post:
+      summary: Import a provider settlement
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/settlements/sync:
+    post:
+      summary: Pull settlements from the provider
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/settlements/{id}/explain:
+    get:
+      summary: Explain every rupee of a settlement
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/bank_statements/import:
+    post:
+      summary: Import bank statement lines and match them
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/recon/cases:
+    get:
+      summary: List reconciliation cases
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/recon/cases/{id}/assign:
+    post:
+      summary: Assign a case
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/recon/cases/{id}/resolve:
+    post:
+      summary: Resolve a case
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/recon/scan:
+    post:
+      summary: Find captured payments missing from settlements
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/analytics/cost:
+    get:
+      summary: Effective processing cost and routing suggestions
+      tags:
+      - analytics
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/api_keys:
+    get:
+      summary: Create or list scoped API keys
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list scoped API keys
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/api_keys/{id}/revoke:
+    post:
+      summary: Revoke an API key
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/customers:
+    post:
+      summary: Create a customer
+      tags:
+      - customers
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/customers/{id}:
+    get:
+      summary: Get a customer
+      tags:
+      - customers
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/branches:
+    get:
+      summary: Create or list branches
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list branches
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/users:
+    post:
+      summary: Create a user
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invoices:
+    get:
+      summary: Create or list invoices
+      tags:
+      - invoices
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list invoices
+      tags:
+      - invoices
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invoices/{id}:
+    get:
+      summary: Get an invoice with allocations
+      tags:
+      - invoices
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/settings:
+    get:
+      summary: Get or update settings (approval threshold, routing, outbound webhook)
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Get or update settings (approval threshold, routing, outbound webhook)
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/audit_events:
+    get:
+      summary: Audit trail
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/export:
+    get:
+      summary: Export every record this tenant owns
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/outbox:
+    get:
+      summary: Inspect outbound webhook events
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/outbox/{id}/replay:
+    post:
+      summary: Replay an outbound webhook event
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/inbox:
+    get:
+      summary: Inspect provider webhooks received
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/checkout/{tenant_id}/{intent_id}:
+    get:
+      summary: Public checkout session (client-secret authorised)
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: "zk_test_\u2026 / zk_live_\u2026 scoped API key"
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        maxLength: 255
+      description: Repeating a request with the same key returns the original result and never repeats the operation.
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required:
+          - code
+          - message
+    PaymentIntent:
+      type: object
+      properties:
+        id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          enum:
+          - INR
+          - USD
+        status:
+          type: string
+          enum:
+          - requires_payment_method
+          - processing
+          - succeeded
+          - failed
+          - canceled
+        capture_method:
+          type: string
+          enum:
+          - automatic
+          - manual
+        customer_id:
+          type:
+          - string
+          - 'null'
+        invoice_id:
+          type:
+          - string
+          - 'null'
+        external_ref:
+          type:
+          - string
+          - 'null'
+          description: The business object being paid for (student fee, patient deposit, sales order)
+        client_secret:
+          type: string
+          description: Returned once at creation; authorises the public checkout for this intent
+    PaymentAttempt:
+      type: object
+      properties:
+        id:
+          type: string
+        intent_id:
+          type: string
+        provider:
+          type: string
+          enum:
+          - razorpay
+          - cashfree
+          - sim
+        method:
+          type: string
+          enum:
+          - upi
+          - card
+          - netbanking
+          - wallet
+        status:
+          type: string
+          enum:
+          - created
+          - pending
+          - authorized
+          - captured
+          - failed
+          - unknown
+          description: '`unknown` means the provider''s outcome is not known yet; no other attempt can start until it resolves.'
+        route:
+          type: object
+          description: 'Why this provider was chosen: every provider considered and the reason'
+        client_action:
+          type:
+          - object
+          - 'null'
+        refunded_minor:
+          type: integer
+        reserved_refund_minor:
+          type: integer
+    Refund:
+      type: object
+      properties:
+        id:
+          type: string
+        amount_minor:
+          type: integer
+        status:
+          type: string
+          enum:
+          - pending_approval
+          - processing
+          - processed
+          - failed
+          - rejected
+          - unknown
+        requested_by:
+          type: string
+        approved_by:
+          type:
+          - string
+          - 'null'
+        external_ref:
+          type:
+          - string
+          - 'null'

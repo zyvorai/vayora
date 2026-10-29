@@ -14,15 +14,32 @@ async fn main() {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
+    // Migrations need the schema owner; the running service should connect as a restricted, non-superuser
+    // role so row-level security binds it. Set ZYVOR_MIGRATE_DATABASE_URL to migrate with a different login.
+    let args: Vec<String> = env::args().collect();
+    let migrate_url = env::var("ZYVOR_MIGRATE_DATABASE_URL").ok();
+    if let Some(url) = &migrate_url {
+        let owner = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(url)
+            .await
+            .expect("connect (migrate)");
+        MIGRATOR.run(&owner).await.expect("run migrations");
+        if args.get(1).map(String::as_str) == Some("migrate") {
+            println!("migrations applied");
+            return;
+        }
+    }
     let pool = PgPoolOptions::new()
         .max_connections(20)
         .connect(&required("DATABASE_URL"))
         .await
         .expect("connect to postgres");
-    MIGRATOR.run(&pool).await.expect("run migrations");
+    if migrate_url.is_none() {
+        MIGRATOR.run(&pool).await.expect("run migrations");
+    }
 
     // `zyvor-api bootstrap "Acme Pharmacy"` creates an organisation with test + live tenants and prints each admin key once.
-    let args: Vec<String> = env::args().collect();
     if args.get(1).map(String::as_str) == Some("bootstrap") {
         let name = args.get(2).map(String::as_str).unwrap_or("My Organisation");
         let b = bootstrap_org(&pool, name).await.expect("bootstrap");

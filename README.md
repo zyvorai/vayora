@@ -1,25 +1,55 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="72" height="72" alt="Vayora logo">
+<img src="docs/logo.svg" width="72" height="72" alt="Zyvor logo">
 
-# Vayora
+# Zyvor Payments
 
-**Payments for India. Open to everyone.**
+**Payment orchestration, ledger and reconciliation for Indian businesses.**
 
-An open-source payments platform with an exactly-once API, a double-entry ledger and signed webhooks.<br>
-Rust core · TypeScript SDK · simulated UPI
+Connect your own Razorpay and Cashfree accounts. Zyvor routes, records and reconciles. Your provider settles.<br>
+Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 
 [![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
-![Rust](https://img.shields.io/badge/Rust-2024-orange)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
-![Status](https://img.shields.io/badge/status-early%20%C2%B7%20simulated%20rails-ff9f0a)
+![Status](https://img.shields.io/badge/status-release%201%20%C2%B7%20sandbox-ff9f0a)
 
-[**Live demo**](https://zyvorai.github.io/vayora/) · [Quickstart](#quickstart) · [API](#api) · [Compliance](docs/compliance/README.md)
-
-<a href="https://zyvorai.github.io/vayora/"><img src="site/assets/og.png" width="720" alt="Vayora: payments for India, open to everyone"></a>
+[Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
 
 </div>
+
+> **Honest status.** Release 1 (payments, ledger, reconciliation) is built and tested, including every acceptance test in the brief. Providers are verified **only against a local simulator**, never against live Razorpay or Cashfree sandboxes. Releases 2 and 3 (billing, collections, vertical integrations, AI assistance) are not started. See [STATUS.md](docs/zyvor/STATUS.md).
+
+## What it does
+- **Never double-charges.** Idempotent writes; an uncertain provider outcome becomes `unknown` and blocks any new attempt, through any provider, until it is resolved. The system asks the provider; it never re-sends.
+- **Explains every rupee.** `GET /v1/settlements/{id}/explain` lists payments, refunds, fees, adjustments, the bank match and why the net is what it is. Anything unexplained becomes an assignable case.
+- **Keeps books you can audit.** Append-only double-entry ledger, balanced per currency by code and by a database constraint; corrections are reversals.
+- **Routes with receipts.** Capability matrix, rules and configured fees choose a provider, and the decision records every provider considered and why.
+- **Measures real cost.** Effective cost by provider and method from observed settlement deductions, with suggestions that cite their evidence and never change anything on their own.
+- **Isolates tenants.** Row-level security enforced in tests as a non-superuser role; test and live are separate tenants.
+
+## Try the sandbox (simulated providers, no real money)
+```sh
+# needs a local Postgres and an EMPTY database
+OWNER_URL=postgres://you@localhost:5432/zyvor_sandbox ./scripts/zyvor-sandbox.sh
+ZYVOR_API_URL=http://localhost:8080 pnpm --filter @zyvor/checkout dev    # then open the printed checkout URL
+```
+```sh
+cargo test --workspace      # 25+ API tests run against real Postgres (set DATABASE_URL to a superuser connection)
+pnpm -r build && pnpm -r test
+```
+Deploy: `deploy/zyvor/docker-compose.yml` (Postgres, API, worker, mock provider, checkout, Envoy TLS, Prometheus) and `deploy/zyvor/helm/zyvor`. Both validate; neither has been run here.
+
+```ts
+import { Zyvor } from "@zyvor/node";
+const z = new Zyvor({ apiKey: process.env.ZYVOR_API_KEY! });
+const intent = await z.intents.create({ amountMinor: 249900, externalRef: "FEE-STU-2231-T2" });
+// give intent.client_secret to the browser; it can pay this one intent and nothing else
+```
+
+---
+
+# Legacy: Vayora prototype
+The original single-merchant simulator (`vayora-*` crates, `apps/dashboard`, `@vayora/node`, the GitHub Pages site) is kept while the dashboard and site are ported to the Zyvor API. It is unrelated to the multi-tenant platform above.
 
 ## How it works
 

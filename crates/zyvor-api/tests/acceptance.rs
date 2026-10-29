@@ -825,3 +825,54 @@ async fn worker_crashes_and_restarts_do_not_lose_acknowledged_events(pool: PgPoo
         "every delivery is signed"
     );
 }
+
+// robustness ──────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_reused_provider_reference_opens_a_case_instead_of_wedging_the_payment(pool: PgPool) {
+    let t = setup(pool).await;
+    let (_, first_attempt, first_ref) = t.paid_razorpay(&t.a, 50_000, json!({})).await;
+
+    // a second payment whose provider claims the SAME payment id as the first
+    let intent = t.intent(&t.a, 30_000, json!({})).await;
+    let iid = intent["id"].as_str().unwrap();
+    let att = t
+        .ok(
+            &t.a,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/attempts"),
+            Some("dup"),
+            json!({ "method": "upi" }),
+        )
+        .await;
+    let order = att["provider_order_ref"].as_str().unwrap();
+    let clash = t
+        .mock_post(
+            "razorpay/pay",
+            json!({ "order_id": order, "outcome": "captured", "payment_id": first_ref }),
+        )
+        .await;
+    let (status, body) = t.deliver("razorpay", &t.a.id, &clash["webhook"]).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "must not 500 or loop forever: {body}"
+    );
+    assert_eq!(body["outcome"], "Ignored");
+    assert_eq!(t.count("SELECT COUNT(*) FROM recon_cases WHERE kind = 'provider_reference_conflict' AND status = 'open'").await, 1);
+    // neither payment's money state changed, and the first payment is intact
+    assert_eq!(t.count("SELECT COUNT(*) FROM ledger_transactions").await, 1);
+    let cur = t
+        .ok(
+            &t.a,
+            "GET",
+            &format!("/v1/payment_attempts/{first_attempt}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(cur["status"], "captured");
+    // the worker does not crash or loop on it either
+    worker::run_cycle(&t.state, &outbox::http_client())
+        .await
+        .unwrap();
+}

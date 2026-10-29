@@ -1,0 +1,58 @@
+# Full local stack: Postgres, API, worker, SIMULATED providers, checkout, Envoy (TLS) and Prometheus.
+#   1. deploy/zyvor/envoy/gen-certs.sh
+#   2. docker compose -f deploy/zyvor/docker-compose.yml up --build
+#   3. docker compose -f deploy/zyvor/docker-compose.yml run --rm api zyvor-api bootstrap "My Org"
+# Everything here is a SANDBOX: the mock provider simulates Razorpay and Cashfree; no real money moves.
+x-common: &common
+  build: { context: ../.., dockerfile: deploy/zyvor/Dockerfile }
+  environment: &env
+    DATABASE_URL: postgres://zyvor_app:app-secret@postgres:5432/zyvor
+    ZYVOR_MIGRATE_DATABASE_URL: postgres://zyvor:owner-secret@postgres:5432/zyvor
+    ZYVOR_MASTER_KEY: ${ZYVOR_MASTER_KEY:?set a 64-hex-char key, e.g. openssl rand -hex 32}
+    RUST_LOG: info
+  depends_on:
+    postgres: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:17
+    environment: { POSTGRES_USER: zyvor, POSTGRES_PASSWORD: owner-secret, POSTGRES_DB: zyvor }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U zyvor"], interval: 3s, retries: 20 }
+    volumes: [pgdata:/var/lib/postgresql/data]
+  migrate:
+    <<: *common
+    command: ["zyvor-api", "migrate"]
+    restart: "no"
+  grants:
+    image: postgres:17
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    restart: "no"
+    environment: { PGPASSWORD: owner-secret }
+    entrypoint: ["psql", "-h", "postgres", "-U", "zyvor", "-d", "zyvor", "-v", "ON_ERROR_STOP=1", "-c", "DO $$ BEGIN CREATE ROLE zyvor_app LOGIN PASSWORD 'app-secret'; EXCEPTION WHEN duplicate_object THEN NULL; END $$; GRANT USAGE ON SCHEMA public TO zyvor_app; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO zyvor_app; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO zyvor_app;"]
+  api:
+    <<: *common
+    command: ["zyvor-api"]
+    depends_on: { grants: { condition: service_completed_successfully } }
+    healthcheck: { test: ["CMD", "curl", "-fs", "http://localhost:8080/readyz"], interval: 5s, retries: 20 }
+  worker:
+    <<: *common
+    command: ["zyvor-worker"]
+    depends_on: { grants: { condition: service_completed_successfully } }
+  mock-provider:
+    <<: *common
+    command: ["zyvor-provider-mock"]
+    environment: { PORT: "9090" }
+    depends_on: {}
+  checkout:
+    build: { context: ../.., dockerfile: deploy/zyvor/Dockerfile.checkout }
+    environment: { ZYVOR_API_URL: http://api:8080 }
+  envoy:
+    image: envoyproxy/envoy:v1.32-latest
+    volumes: ["./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro", "./envoy/certs:/certs:ro"]
+    ports: ["8443:8443"]
+    depends_on: [api, checkout]
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9091:9090"]
+volumes: { pgdata: {} }

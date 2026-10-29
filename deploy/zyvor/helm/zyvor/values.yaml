@@ -1,0 +1,34 @@
+image:
+  repository: ghcr.io/zyvorai/zyvor-payments
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# All secrets come from an existing Secret you manage (sealed-secrets, external-secrets, ...). Required keys:
+#   database-url          connection string for the restricted, NON-superuser `zyvor_app` role
+#   migrate-database-url  connection string for the schema owner (used only by the migration Job)
+#   master-key            64 hex chars; encrypts provider credentials at rest
+existingSecret: zyvor-secrets
+
+api:
+  replicas: 2
+  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+  providerTimeoutSeconds: 10
+worker:
+  replicas: 2   # safe to scale: events and jobs use SKIP LOCKED
+  resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
+
+# SANDBOX ONLY. Simulates Razorpay and Cashfree. Never enable in a live environment.
+sandbox:
+  providerMock: { enabled: false }
+
+edge:
+  envoy:
+    enabled: true
+    image: envoyproxy/envoy:v1.32-latest
+    tlsSecretName: zyvor-tls   # kubernetes.io/tls secret with the edge certificate
+
+metrics:
+  serviceMonitor: { enabled: false }   # set true if the Prometheus Operator is installed
+
+networkPolicy: { enabled: true }
+podDisruptionBudget: { minAvailable: 1 }

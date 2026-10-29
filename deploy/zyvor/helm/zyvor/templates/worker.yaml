@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels: {{- include "zyvor.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: worker } }
+  template:
+    metadata: { labels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: worker } }
+    spec:
+      {{- include "zyvor.podSecurity" . | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: {{ include "zyvor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["zyvor-worker"]
+          env:
+            {{- include "zyvor.secEnv" . | nindent 12 }}
+            - { name: RUST_LOG, value: info }
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- include "zyvor.containerSecurity" . | nindent 10 }}

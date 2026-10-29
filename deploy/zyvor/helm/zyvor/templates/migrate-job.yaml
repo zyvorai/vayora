@@ -1,0 +1,31 @@
+# Runs before install/upgrade with the schema-owner login; the API itself never needs it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate
+  labels: {{- include "zyvor.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: {{- include "zyvor.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "zyvor.podSecurity" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ include "zyvor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["zyvor-api", "migrate"]
+          env:
+            - name: ZYVOR_MIGRATE_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: migrate-database-url } }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: database-url } }
+            - name: ZYVOR_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: master-key } }
+          {{- include "zyvor.containerSecurity" . | nindent 10 }}

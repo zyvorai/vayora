@@ -626,3 +626,63 @@ pub async fn export(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
 }
 
 pub fn _unused(_: &Crypto) {}
+
+// ---------- outbound webhook inspector and replay ----------
+
+pub async fn list_outbox(
+    State(s): State<AppState>,
+    auth: Auth,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String, String, i32, Option<String>, Value, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, type, status, attempts, last_error, payload, created_at FROM outbox_events WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC, id DESC LIMIT $2",
+    )
+    .bind(&q.status)
+    .bind(q.limit.unwrap_or(50).clamp(1, 200))
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(id, ty, status, attempts, err, payload, at)| json!({ "id": id, "type": ty, "status": status, "attempts": attempts, "last_error": err, "payload": payload, "created_at": at })).collect::<Vec<_>>() }),
+    ))
+}
+
+/// Re-send an event (even a delivered one). Consumers de-duplicate on the event id, so replay is safe.
+pub async fn replay_outbox(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let n = sqlx::query("UPDATE outbox_events SET status = 'pending', attempts = 0, next_attempt_at = now(), last_error = NULL WHERE id = $1").bind(&id).execute(&mut *tx).await?.rows_affected();
+    if n == 0 {
+        return Err(ApiError::not_found("event"));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "outbox.replayed",
+        Some(&id),
+        json!({}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "id": id, "status": "pending" })))
+}
+
+/// What the platform has received from providers (the inbound inspector).
+pub async fn list_inbox(
+    State(s): State<AppState>,
+    auth: Auth,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(i64, String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as("SELECT id, provider, event_id, kind, outcome, received_at FROM webhook_inbox ORDER BY id DESC LIMIT $1").bind(q.limit.unwrap_or(50).clamp(1, 200)).fetch_all(&mut *tx).await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(id, provider, event_id, kind, outcome, at)| json!({ "id": id, "provider": provider, "event_id": event_id, "kind": kind, "outcome": outcome, "received_at": at })).collect::<Vec<_>>() }),
+    ))
+}

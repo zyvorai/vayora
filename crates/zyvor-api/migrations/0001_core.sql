@@ -75,6 +75,7 @@ CREATE TABLE payment_intents (
     status TEXT NOT NULL CHECK (status IN ('requires_payment_method', 'processing', 'succeeded', 'failed', 'canceled')),
     capture_method TEXT NOT NULL DEFAULT 'automatic' CHECK (capture_method IN ('automatic', 'manual')),
     allowed_providers TEXT[],
+    client_secret_hash TEXT,           -- lets a browser check out this one intent without an API key
     -- the business object this payment belongs to: student fee, patient deposit, sales order...
     external_ref TEXT, description TEXT, metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

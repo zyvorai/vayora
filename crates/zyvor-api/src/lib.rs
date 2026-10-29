@@ -5,6 +5,7 @@
 pub mod admin;
 pub mod auth;
 pub mod cases;
+pub mod checkout;
 pub mod crypto;
 pub mod error;
 pub mod idempotency;
@@ -124,6 +125,15 @@ pub fn app(state: AppState) -> Router {
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
         .route("/export", get(export))
+        .route("/outbox", get(list_outbox))
+        .route("/outbox/{id}/replay", post(replay_outbox))
+        .route("/inbox", get(list_inbox))
+        // public checkout: authorised by the intent's client secret, not an API key
+        .route("/checkout/{tenant_id}/{intent_id}", get(checkout::session))
+        .route(
+            "/checkout/{tenant_id}/{intent_id}/attempts",
+            post(checkout::pay),
+        )
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

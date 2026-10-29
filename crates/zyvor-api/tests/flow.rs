@@ -1093,3 +1093,276 @@ async fn effective_cost_is_measured_and_routing_suggestions_cite_evidence(pool: 
         0
     );
 }
+
+// 16 ──────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn public_checkout_is_secret_scoped_resumable_and_shows_clear_states(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let intent = t.ok(a, "POST", "/v1/payment_intents", Some("co-1"), json!({ "amount_minor": 49_900, "currency": "INR", "allowed_providers": ["cashfree"], "description": "Term 2 fee" })).await;
+    let (iid, secret) = (
+        intent["id"].as_str().unwrap(),
+        intent["client_secret"].as_str().unwrap(),
+    );
+    assert!(secret.starts_with("pis_"));
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT client_secret_hash FROM payment_intents WHERE id = $1")
+            .bind(iid)
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert_ne!(stored.as_deref(), Some(secret), "only a hash is stored");
+    assert!(
+        t.ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents/{iid}"),
+            None,
+            Value::Null
+        )
+        .await["intent"]
+            .get("client_secret")
+            .is_none(),
+        "the secret is never shown again"
+    );
+
+    let url = format!("/v1/checkout/{}/{iid}", a.id);
+    // wrong secret, other tenant and unknown intent all look the same
+    assert_eq!(
+        t.public("GET", &format!("{url}?secret=pis_wrong"), None, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        raw(
+            &t.app,
+            "",
+            None,
+            "GET",
+            &format!("/v1/checkout/{}/{iid}?secret={secret}", t.b.id),
+            None,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (s, view) = t
+        .public("GET", &format!("{url}?secret={secret}"), None, Value::Null)
+        .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        (view["phase"].as_str(), view["amount_minor"].as_i64()),
+        (Some("choose_method"), Some(49_900))
+    );
+    assert_eq!(
+        view["methods"],
+        json!(["card", "netbanking", "upi", "wallet"])
+    );
+    assert_eq!(view["description"], "Term 2 fee");
+
+    // pay with UPI from the browser, no API key; an Idempotency-Key is still required
+    assert_eq!(
+        pay_attempt(
+            &t,
+            &url,
+            None,
+            json!({ "secret": secret, "method": "upi", "vpa": "asha@okvayora" })
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        pay_attempt(
+            &t,
+            &url,
+            Some("c1"),
+            json!({ "secret": "pis_wrong", "method": "upi", "vpa": "asha@okvayora" })
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (s, bad) = pay_attempt(
+        &t,
+        &url,
+        Some("c1"),
+        json!({ "secret": secret, "method": "upi", "vpa": "not a vpa" }),
+    )
+    .await;
+    assert_eq!(
+        (s, bad["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("invalid_vpa")),
+        "an accessible, specific error"
+    );
+    let (s, att) = pay_attempt(
+        &t,
+        &url,
+        Some("c2"),
+        json!({ "secret": secret, "method": "upi", "vpa": "asha@okvayora" }),
+    )
+    .await;
+    assert_eq!(
+        (s, att["status"].as_str()),
+        (StatusCode::CREATED, Some("pending"))
+    );
+
+    // the page can be reloaded (or reopened on another device) and resumes at the right step
+    let (_, view) = t
+        .public("GET", &format!("{url}?secret={secret}"), None, Value::Null)
+        .await;
+    assert_eq!(view["phase"], "awaiting_payment");
+    assert_eq!(view["attempt"]["action"]["type"], "upi_collect");
+    assert!(
+        !view.to_string().contains("provider_order_ref") && !view.to_string().contains("route"),
+        "no provider internals reach the browser"
+    );
+
+    // payer approves; the provider's webhook completes it
+    let paid = t
+        .mock_post(
+            "cashfree/pay",
+            json!({ "order_id": att["id"], "outcome": "SUCCESS" }),
+        )
+        .await;
+    assert_eq!(
+        t.deliver("cashfree", &a.id, &paid["webhook"]).await.0,
+        StatusCode::OK
+    );
+    let (_, view) = t
+        .public("GET", &format!("{url}?secret={secret}"), None, Value::Null)
+        .await;
+    assert_eq!(
+        (view["phase"].as_str(), view["status"].as_str()),
+        (Some("paid"), Some("succeeded"))
+    );
+    // paying again is refused cleanly
+    let (s, e) = pay_attempt(
+        &t,
+        &url,
+        Some("c3"),
+        json!({ "secret": secret, "method": "upi", "vpa": "asha@okvayora" }),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("attempt_in_progress"))
+    );
+
+    // a lost response shows as "confirming", not as an error
+    let i2 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            Some("co-2"),
+            json!({ "amount_minor": 20_000, "currency": "INR", "allowed_providers": ["cashfree"] }),
+        )
+        .await;
+    let (iid2, secret2) = (
+        i2["id"].as_str().unwrap(),
+        i2["client_secret"].as_str().unwrap(),
+    );
+    t.mock_post(
+        "behaviour",
+        json!({ "op": "cashfree.pay", "behaviour": "hang_after_accept" }),
+    )
+    .await;
+    let (_, att2) = raw(
+        &t.app,
+        "",
+        None,
+        "POST",
+        &format!("/v1/checkout/{}/{iid2}/attempts", a.id),
+        Some("c4"),
+        json!({ "secret": secret2, "method": "upi", "vpa": "ravi@ybl" }),
+    )
+    .await;
+    assert_eq!(att2["status"], "unknown");
+    let (_, v2) = raw(
+        &t.app,
+        "",
+        None,
+        "GET",
+        &format!("/v1/checkout/{}/{iid2}?secret={secret2}", a.id),
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(v2["phase"], "confirming");
+}
+
+// 17 ──────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn webhook_inspector_and_replay_tools(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    t.paid_razorpay(a, 30_000, json!({})).await;
+    let inbox = t.ok(a, "GET", "/v1/inbox", None, Value::Null).await;
+    assert_eq!(inbox["data"][0]["provider"], "razorpay");
+    assert!(
+        inbox["data"][0]["outcome"]
+            .as_str()
+            .unwrap()
+            .contains("Captured")
+    );
+
+    sqlx::query("UPDATE outbox_events SET status = 'delivered', attempts = 1 WHERE type = 'payment.captured'").execute(&t.root).await.unwrap();
+    let outbox = t
+        .ok(a, "GET", "/v1/outbox?status=delivered", None, Value::Null)
+        .await;
+    let id = outbox["data"][0]["id"].as_str().unwrap();
+    assert_eq!(outbox["data"][0]["type"], "payment.captured");
+    let r = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/outbox/{id}/replay"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r["status"], "pending");
+    assert_eq!(t.count("SELECT COUNT(*) FROM outbox_events WHERE status = 'pending' AND type = 'payment.captured'").await, 1);
+    assert_eq!(
+        t.call(
+            &t.b,
+            "POST",
+            &format!("/v1/outbox/{id}/replay"),
+            None,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND,
+        "another tenant cannot replay it"
+    );
+}
+
+async fn pay_attempt(t: &T, url: &str, key: Option<&str>, body: Value) -> (StatusCode, Value) {
+    t.public("POST", &format!("{url}/attempts"), key, body)
+        .await
+}
+
+// docs ────────────────────────────────────────────────────────────────────────
+#[test]
+fn openapi_documents_every_route() {
+    let lib = include_str!("../src/lib.rs");
+    let spec = include_str!("../../../openapi/zyvor.yaml");
+    let mut missing = Vec::new();
+    for line in lib.lines().filter(|l| l.contains(".route(\"/")) {
+        let path = line.split('"').nth(1).unwrap();
+        if matches!(path, "/healthz" | "/readyz" | "/metrics") {
+            continue;
+        }
+        if !spec.contains(&format!("/v1{path}:")) {
+            missing.push(path.to_string());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "routes missing from openapi/zyvor.yaml: {missing:?}"
+    );
+}

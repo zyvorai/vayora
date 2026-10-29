@@ -172,9 +172,14 @@ pub async fn create_intent(
             ));
         }
     }
+    let client_secret = format!(
+        "pis_{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
     let intent: IntentRow = sqlx::query_as(
-        "INSERT INTO payment_intents (id, tenant_id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'requires_payment_method', $8, $9, $10, $11, $12) RETURNING id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, created_at, updated_at",
+        "INSERT INTO payment_intents (id, tenant_id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, client_secret_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'requires_payment_method', $8, $9, $10, $11, $12, $13) RETURNING id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, created_at, updated_at",
     )
     .bind(new_id("pi"))
     .bind(&auth.tenant_id)
@@ -188,6 +193,7 @@ pub async fn create_intent(
     .bind(&b.external_ref)
     .bind(&b.description)
     .bind(b.metadata.unwrap_or_else(|| json!({})))
+    .bind(crate::auth::hash_key(&client_secret))
     .fetch_one(&mut *tx)
     .await?;
     tenant::audit(
@@ -199,7 +205,10 @@ pub async fn create_intent(
         json!({ "amount_minor": intent.amount_minor, "external_ref": intent.external_ref }),
     )
     .await?;
-    let res = key.finish(&mut tx, StatusCode::CREATED, &intent).await?;
+    // The secret is returned here, once, for handing to the browser. Only its hash is stored.
+    let mut body = serde_json::to_value(&intent).expect("serialises");
+    body["client_secret"] = json!(client_secret);
+    let res = key.finish(&mut tx, StatusCode::CREATED, &body).await?;
     tx.commit().await?;
     Ok(res)
 }
@@ -263,9 +272,9 @@ pub async fn list_intents(
 
 #[derive(Deserialize)]
 pub struct CreateAttempt {
-    method: String,
-    vpa: Option<String>,
-    return_url: Option<String>,
+    pub method: String,
+    pub vpa: Option<String>,
+    pub return_url: Option<String>,
 }
 
 fn valid_vpa(v: &str) -> bool {
@@ -286,6 +295,28 @@ pub async fn create_attempt(
     Json(b): Json<CreateAttempt>,
 ) -> Result<Response, ApiError> {
     auth.require("payments:write")?;
+    start_attempt(
+        &s,
+        &auth.tenant_id,
+        &auth.env,
+        &auth.actor,
+        &intent_id,
+        &headers,
+        b,
+    )
+    .await
+}
+
+/// Shared by the authenticated API and the public checkout. Persists the attempt before calling the provider.
+pub async fn start_attempt(
+    s: &AppState,
+    tenant_id: &str,
+    env: &str,
+    actor: &str,
+    intent_id: &str,
+    headers: &HeaderMap,
+    b: CreateAttempt,
+) -> Result<Response, ApiError> {
     let method: Method = b
         .method
         .parse()
@@ -300,40 +331,39 @@ pub async fn create_attempt(
     }
 
     // ---- tx1: claim the key, validate, route, and persist the attempt BEFORE calling the provider ----
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     let hash = fingerprint(&[
-        &intent_id,
+        intent_id,
         method.as_str(),
         b.vpa.as_deref().unwrap_or(""),
         b.return_url.as_deref().unwrap_or(""),
     ]);
-    let key =
-        match idempotency::begin(&mut tx, &auth.tenant_id, "attempts", &headers, &hash).await? {
-            Begin::Replay {
-                status,
-                body,
-                resource_id,
-            } => {
-                // Replays return the attempt as it is *now*, not a stale snapshot.
-                let body = match resource_id {
-                    Some(id) => serde_json::to_value(fetch_attempt(&mut tx, &id).await?).unwrap(),
-                    None => body.unwrap_or(Value::Null),
-                };
-                return Ok(replay_response(status, body));
-            }
-            Begin::Proceed(k) => k,
-        };
+    let key = match idempotency::begin(&mut tx, tenant_id, "attempts", headers, &hash).await? {
+        Begin::Replay {
+            status,
+            body,
+            resource_id,
+        } => {
+            // Replays return the attempt as it is *now*, not a stale snapshot.
+            let body = match resource_id {
+                Some(id) => serde_json::to_value(fetch_attempt(&mut tx, &id).await?).unwrap(),
+                None => body.unwrap_or(Value::Null),
+            };
+            return Ok(replay_response(status, body));
+        }
+        Begin::Proceed(k) => k,
+    };
     let intent: (String, i64, String, String, String, Option<Vec<String>>, Option<String>) = sqlx::query_as(
         "SELECT status, amount_minor, currency, capture_method, id, allowed_providers, customer_id FROM payment_intents WHERE id = $1 FOR UPDATE",
     )
-    .bind(&intent_id)
+    .bind(intent_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("payment intent"))?;
     let (status, amount_minor, ccy, capture, _, allowed, customer_id) = intent;
     let currency: Currency = ccy.parse().map_err(|_| ApiError::internal())?;
     let live: Vec<(String, String)> = sqlx::query_as("SELECT id, status FROM payment_attempts WHERE intent_id = $1 AND status IN ('created', 'pending', 'authorized', 'unknown', 'captured')")
-        .bind(&intent_id)
+        .bind(intent_id)
         .fetch_all(&mut *tx)
         .await?;
     if let Some((id, st)) = live.iter().find(|(_, st)| st == "unknown") {
@@ -358,9 +388,8 @@ pub async fn create_attempt(
         ));
     }
 
-    let routing = registry::routing(&mut tx, &auth.tenant_id).await?;
-    let candidates =
-        registry::candidates(&s, &mut tx, &auth.tenant_id, &auth.env, &routing).await?;
+    let routing = registry::routing(&mut tx, tenant_id).await?;
+    let candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
     let decision = router::choose(
         &router::Request {
             method,
@@ -372,16 +401,15 @@ pub async fn create_attempt(
         &routing.rules,
     )
     .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
-    let provider =
-        registry::load(&s, &mut tx, &auth.tenant_id, &auth.env, &decision.provider).await?;
+    let provider = registry::load(s, &mut tx, tenant_id, env, &decision.provider).await?;
 
     let attempt_id = new_id("att");
     sqlx::query(
         "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)",
     )
     .bind(&attempt_id)
-    .bind(&auth.tenant_id)
-    .bind(&intent_id)
+    .bind(tenant_id)
+    .bind(intent_id)
     .bind(&decision.provider)
     .bind(method.as_str())
     .bind(amount_minor)
@@ -392,14 +420,14 @@ pub async fn create_attempt(
     sqlx::query(
         "UPDATE payment_intents SET status = 'processing', updated_at = now() WHERE id = $1",
     )
-    .bind(&intent_id)
+    .bind(intent_id)
     .execute(&mut *tx)
     .await?;
     key.set_resource(&mut tx, &attempt_id).await?;
     tenant::audit(
         &mut tx,
-        &auth.tenant_id,
-        &auth.actor,
+        tenant_id,
+        actor,
         "payment_attempt.created",
         Some(&attempt_id),
         json!({ "provider": decision.provider, "reasons": decision.reasons }),
@@ -432,7 +460,7 @@ pub async fn create_attempt(
     let result = provider.initiate(&req).await;
 
     // ---- tx2: record whatever happened, including "we don't know" ----
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     match result {
         Ok(init) => {
             if !matches!(init.action, ClientAction::None) {
@@ -452,7 +480,7 @@ pub async fn create_attempt(
             }
             apply_provider_state(
                 &mut tx,
-                &auth.tenant_id,
+                tenant_id,
                 &attempt_id,
                 &incoming(&init.state),
                 "api",
@@ -463,7 +491,7 @@ pub async fn create_attempt(
             tracing::warn!(attempt = %attempt_id, %why, "provider outcome unknown");
             apply_provider_state(
                 &mut tx,
-                &auth.tenant_id,
+                tenant_id,
                 &attempt_id,
                 &Incoming {
                     status: Attempt::Unknown,
@@ -473,12 +501,12 @@ pub async fn create_attempt(
                 "api",
             )
             .await?;
-            open_case(&mut tx, &auth.tenant_id, "unresolved_payment", "payment_attempt", &attempt_id, None, None, &format!("The provider did not confirm the outcome ({why}). No second payment will be started until it is resolved."), json!({ "provider": decision.provider })).await?;
+            open_case(&mut tx, tenant_id, "unresolved_payment", "payment_attempt", &attempt_id, None, None, &format!("The provider did not confirm the outcome ({why}). No second payment will be started until it is resolved."), json!({ "provider": decision.provider })).await?;
         }
         Err(ProviderError::Rejected(why) | ProviderError::Unsupported(why)) => {
             apply_provider_state(
                 &mut tx,
-                &auth.tenant_id,
+                tenant_id,
                 &attempt_id,
                 &Incoming {
                     status: Attempt::Failed,
@@ -717,6 +745,33 @@ pub async fn apply_provider_state(
         && a != b
     {
         open_case(conn, tenant_id, "duplicate_payment", "payment_attempt", attempt_id, Some(amount), Some(amount * 2), &format!("A second payment {b} was captured for an attempt already paid by {a}. The customer was charged twice; refund one."), json!({ "first": a, "second": b, "provider": provider })).await?;
+        return Ok(Applied::Ignored);
+    }
+
+    // A provider payment reference belongs to exactly one attempt. If a provider reports one we already
+    // attached elsewhere, something is wrong on their side or ours: don't guess, open a case.
+    if let Some(r) = &inc.provider_payment_ref
+        && let Some(other) = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM payment_attempts WHERE provider = $1 AND provider_payment_ref = $2 AND id <> $3",
+        )
+        .bind(&provider)
+        .bind(r)
+        .bind(attempt_id)
+        .fetch_optional(&mut *conn)
+        .await?
+    {
+        open_case(
+            conn,
+            tenant_id,
+            "provider_reference_conflict",
+            "payment_attempt",
+            attempt_id,
+            None,
+            inc.amount_minor,
+            &format!("{provider} reported payment {r} for this attempt, but that reference already belongs to attempt {other}. State was not changed."),
+            json!({ "reference": r, "other_attempt": other, "source": source }),
+        )
+        .await?;
         return Ok(Applied::Ignored);
     }
 

@@ -1,0 +1,176 @@
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+
+export type Currency = "INR" | "USD";
+export type Method = "upi" | "card" | "netbanking" | "wallet";
+export type AttemptStatus = "created" | "pending" | "authorized" | "captured" | "failed" | "unknown";
+
+export interface PaymentIntent {
+  id: string;
+  amount_minor: number;
+  currency: Currency;
+  status: "requires_payment_method" | "processing" | "succeeded" | "failed" | "canceled";
+  capture_method: "automatic" | "manual";
+  customer_id: string | null;
+  invoice_id: string | null;
+  external_ref: string | null;
+  /** Only present on the response that created the intent. */
+  client_secret?: string;
+}
+
+export interface PaymentAttempt {
+  id: string;
+  intent_id: string;
+  provider: string;
+  method: Method;
+  /** `unknown` = the provider's outcome is not known; no new attempt can start until it resolves. */
+  status: AttemptStatus;
+  amount_minor: number;
+  failure_reason: string | null;
+  route: { provider: string; reasons: string[]; considered: unknown[] };
+  client_action: { type: string; [k: string]: unknown } | null;
+  refunded_minor: number;
+  reserved_refund_minor: number;
+}
+
+export interface Refund {
+  id: string;
+  attempt_id: string;
+  intent_id: string;
+  amount_minor: number;
+  status: "pending_approval" | "processing" | "processed" | "failed" | "rejected" | "unknown";
+  requested_by: string;
+  approved_by: string | null;
+  external_ref: string | null;
+}
+
+export interface ReconCase {
+  id: string;
+  kind: string;
+  status: "open" | "assigned" | "resolved";
+  explanation: string;
+  expected_minor: number | null;
+  actual_minor: number | null;
+  assignee: string | null;
+}
+
+export interface Page<T> {
+  data: T[];
+  has_more?: boolean;
+}
+
+export class ZyvorError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export interface ZyvorOptions {
+  apiKey: string;
+  baseUrl?: string;
+  /** Acts on behalf of a person (shown in the audit trail; used for approval separation of duties). */
+  actor?: string;
+  fetch?: typeof fetch;
+}
+
+const key = (k?: string) => k ?? randomUUID();
+
+/** Amounts are integer minor units (paise). Every payment write takes an idempotency key: reuse it on retry. */
+export class Zyvor {
+  private readonly base: string;
+  private readonly f: typeof fetch;
+
+  constructor(private readonly o: ZyvorOptions) {
+    this.base = (o.baseUrl ?? "http://localhost:8080").replace(/\/$/, "");
+    this.f = o.fetch ?? fetch;
+  }
+
+  private async req<T>(method: string, path: string, body?: unknown, idem?: string): Promise<T> {
+    const h: Record<string, string> = { authorization: `Bearer ${this.o.apiKey}` };
+    if (body !== undefined) h["content-type"] = "application/json";
+    if (idem) h["idempotency-key"] = idem;
+    if (this.o.actor) h["zyvor-actor"] = this.o.actor;
+    const res = await this.f(`${this.base}${path}`, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new ZyvorError(res.status, json?.error?.code ?? "unknown", json?.error?.message ?? res.statusText);
+    return json as T;
+  }
+
+  private qs(p: Record<string, string | number | undefined>) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) if (v !== undefined) q.set(k, String(v));
+    const s = q.toString();
+    return s ? `?${s}` : "";
+  }
+
+  readonly intents = {
+    create: (p: { amountMinor: number; currency?: Currency; customerId?: string; invoiceId?: string; externalRef?: string; description?: string; allowedProviders?: string[]; captureMethod?: "automatic" | "manual"; idempotencyKey?: string }) => {
+      if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
+      return this.req<PaymentIntent>(
+        "POST",
+        "/v1/payment_intents",
+        { amount_minor: p.amountMinor, currency: p.currency ?? "INR", customer_id: p.customerId, invoice_id: p.invoiceId, external_ref: p.externalRef, description: p.description, allowed_providers: p.allowedProviders, capture_method: p.captureMethod },
+        key(p.idempotencyKey),
+      );
+    },
+    retrieve: (id: string) => this.req<{ intent: PaymentIntent; attempts: PaymentAttempt[] }>("GET", `/v1/payment_intents/${encodeURIComponent(id)}`),
+    list: (p: { limit?: number; startingAfter?: string; status?: string } = {}) =>
+      this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status })}`),
+    attempt: (intentId: string, p: { method: Method; vpa?: string; idempotencyKey?: string }) =>
+      this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa }, key(p.idempotencyKey)),
+    refund: (intentId: string, p: { amountMinor?: number; reason?: string; externalRef?: string; idempotencyKey?: string }) =>
+      this.req<Refund>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/refunds`, { amount_minor: p.amountMinor, reason: p.reason, external_ref: p.externalRef }, key(p.idempotencyKey)),
+  };
+
+  readonly attempts = {
+    retrieve: (id: string) => this.req<PaymentAttempt>("GET", `/v1/payment_attempts/${encodeURIComponent(id)}`),
+    /** Ask the provider where this payment stands. Safe to call any number of times. */
+    refresh: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/refresh`),
+    cancel: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/cancel`),
+    capture: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/capture`),
+  };
+
+  readonly refunds = {
+    list: (p: { status?: string; limit?: number } = {}) => this.req<Page<Refund>>("GET", `/v1/refunds${this.qs({ status: p.status, limit: p.limit })}`),
+    approve: (id: string) => this.req<Refund>("POST", `/v1/refunds/${encodeURIComponent(id)}/approve`),
+    reject: (id: string) => this.req<Refund>("POST", `/v1/refunds/${encodeURIComponent(id)}/reject`),
+    retry: (id: string) => this.req<Refund>("POST", `/v1/refunds/${encodeURIComponent(id)}/retry`),
+    refresh: (id: string) => this.req<Refund>("POST", `/v1/refunds/${encodeURIComponent(id)}/refresh`),
+  };
+
+  readonly settlements = {
+    list: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/settlements"),
+    /** "Explain every rupee": payments, refunds, fees, adjustments, bank match and a plain-language narrative. */
+    explain: (id: string) => this.req<{ narrative: string; difference_minor: number; difference_breakdown: { reason: string; amount_minor: number }[]; [k: string]: unknown }>("GET", `/v1/settlements/${encodeURIComponent(id)}/explain`),
+    sync: (provider: string, date: string) => this.req<{ imported: string[] }>("POST", "/v1/settlements/sync", { provider, date }),
+  };
+
+  readonly cases = {
+    list: (p: { status?: string; kind?: string } = {}) => this.req<Page<ReconCase>>("GET", `/v1/recon/cases${this.qs({ status: p.status, kind: p.kind })}`),
+    assign: (id: string, assignee: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/assign`, { assignee }),
+    resolve: (id: string, resolution: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/resolve`, { resolution }),
+  };
+
+  readonly webhooks = {
+    outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
+    replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
+  };
+}
+
+/**
+ * Verify a `Zyvor-Signature` header (`t=<unix>,v1=<hex hmac-sha256("{t}.{body}")>`) against the RAW body.
+ * Webhooks are delivered at least once: also de-duplicate on `event.id`.
+ */
+export function verifyWebhook(opts: { secret: string; header: string; rawBody: string | Buffer; toleranceSeconds?: number; nowSeconds?: number }): boolean {
+  const parts = Object.fromEntries(opts.header.split(",").map((kv) => kv.split("=", 2) as [string, string]));
+  const t = Number(parts.t);
+  if (!Number.isInteger(t) || !parts.v1) return false;
+  const now = opts.nowSeconds ?? Math.floor(Date.now() / 1000);
+  if (Math.abs(now - t) > (opts.toleranceSeconds ?? 300)) return false;
+  const expected = createHmac("sha256", opts.secret).update(`${t}.`).update(opts.rawBody).digest();
+  const given = Buffer.from(parts.v1, "hex");
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}

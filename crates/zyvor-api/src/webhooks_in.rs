@@ -70,14 +70,22 @@ pub async fn receive(
 
     let outcome = match ev.kind {
         EventKind::PaymentAuthorized | EventKind::PaymentCaptured | EventKind::PaymentFailed => {
-            let attempt: Option<String> = sqlx::query_scalar(
-                "SELECT id FROM payment_attempts WHERE provider = $1 AND (provider_order_ref = $2 OR id = $2 OR (provider_payment_ref IS NOT NULL AND provider_payment_ref = $3))",
-            )
-            .bind(&provider)
-            .bind(ev.order_ref.as_deref().unwrap_or(""))
-            .bind(ev.provider_payment_ref.as_deref().unwrap_or(""))
-            .fetch_optional(&mut *tx)
-            .await?;
+            // The order reference identifies our attempt. The provider's payment id is only a fallback,
+            // so a recycled or wrong payment id can never pull an event onto someone else's attempt.
+            let mut attempt: Option<String> = sqlx::query_scalar("SELECT id FROM payment_attempts WHERE provider = $1 AND (provider_order_ref = $2 OR id = $2)")
+                .bind(&provider)
+                .bind(ev.order_ref.as_deref().unwrap_or(""))
+                .fetch_optional(&mut *tx)
+                .await?;
+            if attempt.is_none()
+                && let Some(pref) = &ev.provider_payment_ref
+            {
+                attempt = sqlx::query_scalar("SELECT id FROM payment_attempts WHERE provider = $1 AND provider_payment_ref = $2")
+                    .bind(&provider)
+                    .bind(pref)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            }
             match attempt {
                 None => {
                     open_case(&mut tx, &tenant_id, "unmatched_webhook", "webhook", &ev.event_id, None, ev.amount_minor, &format!("Provider {provider} reported a payment for order {:?} that matches none of our attempts.", ev.order_ref), json!({ "provider": provider })).await?;

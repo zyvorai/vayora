@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{- include "zyvor.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: api } }
+  template:
+    metadata: { labels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: api } }
+    spec:
+      {{- include "zyvor.podSecurity" . | nindent 6 }}
+      containers:
+        - name: api
+          image: {{ include "zyvor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["zyvor-api"]
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            {{- include "zyvor.secEnv" . | nindent 12 }}
+            - { name: ZYVOR_PROVIDER_TIMEOUT_SECS, value: {{ .Values.api.providerTimeoutSeconds | quote }} }
+            - { name: RUST_LOG, value: info }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- include "zyvor.containerSecurity" . | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{- include "zyvor.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, component: api }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: {{ .Release.Name }}-api }
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: api } }

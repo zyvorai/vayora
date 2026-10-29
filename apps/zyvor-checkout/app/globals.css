@@ -1,0 +1,40 @@
+:root { --bg:#f5f5f7; --card:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:rgba(0,0,0,.1); --accent:#0071e3; --ok:#1a9f4b; --bad:#d92d20; --warn:#b36b00; --soft:rgba(0,0,0,.05); --spring:cubic-bezier(.34,1.56,.64,1); color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#000; --card:#1c1c1e; --fg:#f5f5f7; --muted:#a1a1a6; --line:rgba(255,255,255,.16); --accent:#2997ff; --ok:#30d158; --bad:#ff6961; --warn:#ffb340; --soft:rgba(255,255,255,.08); color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--fg); font: 17px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; display: grid; place-items: start center; padding: max(16px, env(safe-area-inset-top)) 16px 32px; }
+main { width: min(100%, 440px); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 28px 22px; box-shadow: 0 8px 40px rgba(0,0,0,.08); }
+.merchant { color: var(--muted); margin: 0; text-align: center; }
+.amount { font-size: clamp(2.6rem, 14vw, 3.4rem); font-weight: 700; letter-spacing: -.035em; text-align: center; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.desc { text-align: center; color: var(--muted); margin: 0 0 22px; }
+.methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin: 0 0 18px; padding: 0; border: 0; }
+.methods legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.methods label { display: block; }
+.methods input { position: absolute; opacity: 0; }
+.methods span { display: grid; place-items: center; min-height: 52px; border-radius: 14px; border: 1.5px solid var(--line); font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s; }
+.methods input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.methods input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+label.f { display: block; font-size: .8125rem; color: var(--muted); margin: 0 0 6px 2px; font-weight: 500; }
+input[type=text] { width: 100%; min-height: 52px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 14px; }
+input[type=text][aria-invalid="true"] { border-color: var(--bad); }
+input[type=text]:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.err { color: var(--bad); font-size: .875rem; margin: 6px 2px 0; min-height: 1.3em; }
+.pay { width: 100%; min-height: 56px; margin-top: 12px; border: 0; border-radius: 16px; background: var(--accent); color: #fff; font: inherit; font-size: 1.0625rem; font-weight: 600; cursor: pointer; transition: transform .25s var(--spring), opacity .15s; }
+.pay:active { transform: scale(.98); } .pay[disabled] { opacity: .55; cursor: progress; }
+.pay:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.link { all: unset; cursor: pointer; color: var(--accent); font-weight: 500; padding: 8px 4px; }
+.link:focus-visible { outline: 3px solid var(--accent); border-radius: 6px; }
+.state { text-align: center; padding: 8px 0; }
+.state h2 { margin: 14px 0 6px; font-size: 1.375rem; letter-spacing: -.02em; }
+.state p { margin: 0 0 8px; color: var(--muted); }
+.badge { width: 72px; height: 72px; margin: 0 auto; }
+.badge circle { fill: none; stroke-width: 4; stroke-dasharray: 252; stroke-dashoffset: 252; animation: draw .7s .05s ease-out forwards; }
+.badge path { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw .45s .55s ease-out forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.spin { width: 40px; height: 40px; border-radius: 50%; border: 4px solid var(--soft); border-top-color: var(--accent); margin: 6px auto; animation: rot .8s linear infinite; }
+@keyframes rot { to { rotate: 360deg; } }
+.notice { margin-top: 14px; padding: 12px 14px; border-radius: 14px; font-size: .9375rem; }
+.notice.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+.notice.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.foot { text-align: center; color: var(--muted); font-size: .8125rem; margin-top: 16px; }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } .badge circle, .badge path { animation: none; stroke-dashoffset: 0; } * { transition: none !important; } }
