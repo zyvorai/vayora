@@ -452,3 +452,178 @@ async fn futures_collect<T>(handles: impl Iterator<Item = tokio::task::JoinHandl
     }
     out
 }
+
+// ---------- dashboard read endpoints ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn lists_paginate_newest_first_and_filter(pool: PgPool) {
+    let app = router(&pool);
+    let mut paid = Vec::new();
+    for i in 0..5 {
+        let oid = order(&app, &format!("o{i}"), 1_000 + i).await;
+        let vpa = if i == 2 {
+            "fail@okvayora"
+        } else {
+            "asha@okvayora"
+        };
+        let (_, p) = call(
+            &app,
+            "POST",
+            "/v1/payments",
+            Some(&format!("p{i}")),
+            json!({ "order_id": oid, "vpa": vpa }),
+        )
+        .await;
+        paid.push(p["id"].as_str().unwrap().to_owned());
+    }
+
+    let (s, page1) = call(&app, "GET", "/v1/payments?limit=2", None, Value::Null).await;
+    assert_eq!(s, StatusCode::OK);
+    let ids1: Vec<_> = page1["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids1, vec![paid[4].clone(), paid[3].clone()], "newest first");
+    assert_eq!(page1["has_more"], true);
+
+    let (_, page2) = call(
+        &app,
+        "GET",
+        &format!("/v1/payments?limit=2&starting_after={}", ids1[1]),
+        None,
+        Value::Null,
+    )
+    .await;
+    let ids2: Vec<_> = page2["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids2, vec![paid[2].clone(), paid[1].clone()]);
+
+    let (_, page3) = call(
+        &app,
+        "GET",
+        &format!("/v1/payments?limit=2&starting_after={}", ids2[1]),
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(page3["data"].as_array().unwrap().len(), 1);
+    assert_eq!(page3["has_more"], false);
+
+    let (_, failed) = call(&app, "GET", "/v1/payments?status=failed", None, Value::Null).await;
+    assert_eq!(failed["data"].as_array().unwrap().len(), 1);
+    assert_eq!(failed["data"][0]["id"], paid[2].as_str());
+
+    let (s, e) = call(&app, "GET", "/v1/payments?status=bogus", None, Value::Null).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(e["error"]["code"], "invalid_status");
+
+    let (_, orders) = call(&app, "GET", "/v1/orders?status=paid", None, Value::Null).await;
+    assert_eq!(orders["data"].as_array().unwrap().len(), 4);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn stats_events_and_retry(pool: PgPool) {
+    let app = router(&pool);
+    let o1 = order(&app, "o1", 50_000).await;
+    let o2 = order(&app, "o2", 20_000).await;
+    let (_, p1) = call(
+        &app,
+        "POST",
+        "/v1/payments",
+        Some("p1"),
+        json!({ "order_id": o1, "vpa": "asha@okvayora" }),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        "/v1/payments",
+        Some("p2"),
+        json!({ "order_id": o2, "vpa": "timeout@okvayora" }),
+    )
+    .await;
+    call(
+        &app,
+        "POST",
+        &format!("/v1/payments/{}/refunds", p1["id"].as_str().unwrap()),
+        Some("r1"),
+        json!({ "amount_paise": 15_000 }),
+    )
+    .await;
+
+    let (_, st) = call(&app, "GET", "/v1/stats", None, Value::Null).await;
+    assert_eq!(st["captured_count"], 1);
+    assert_eq!(st["failed_count"], 1);
+    assert_eq!(st["success_rate"], 0.5);
+    assert_eq!(
+        (
+            st["gross_paise"].as_i64(),
+            st["refunded_paise"].as_i64(),
+            st["net_paise"].as_i64()
+        ),
+        (Some(50_000), Some(15_000), Some(35_000))
+    );
+    assert_eq!(st["merchant_payable_paise"], 35_000);
+    assert_eq!(st["webhooks"]["pending"], 3);
+    let daily = st["daily"].as_array().unwrap();
+    assert_eq!(daily.len(), 14);
+    assert_eq!(daily[13]["gross_paise"], 50_000, "today is the last bucket");
+    assert_eq!(daily[0]["gross_paise"], 0, "zero-filled");
+
+    let (_, refunds) = call(&app, "GET", "/v1/refunds", None, Value::Null).await;
+    assert_eq!(refunds["data"].as_array().unwrap().len(), 1);
+
+    let (_, events) = call(&app, "GET", "/v1/events?status=pending", None, Value::Null).await;
+    let eid = events["data"][0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(events["data"].as_array().unwrap().len(), 3);
+
+    // dead -> retry revives it; delivered -> conflict; unknown -> 404
+    sqlx::query("UPDATE webhook_events SET status = 'dead', attempts = 10 WHERE id = $1")
+        .bind(&eid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, ev) = call(
+        &app,
+        "POST",
+        &format!("/v1/events/{eid}/retry"),
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        (ev["status"].as_str(), ev["attempts"].as_i64()),
+        (Some("pending"), Some(0))
+    );
+
+    sqlx::query("UPDATE webhook_events SET status = 'delivered' WHERE id = $1")
+        .bind(&eid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/v1/events/{eid}/retry"),
+            None,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(&app, "POST", "/v1/events/evt_nope/retry", None, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}

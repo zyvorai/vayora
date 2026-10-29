@@ -29,6 +29,44 @@ export interface Refund {
   created_at: string;
 }
 
+export interface Page<T> {
+  data: T[];
+  has_more: boolean;
+}
+
+export interface ListParams {
+  limit?: number;
+  /** id of the last item of the previous page */
+  startingAfter?: string;
+  status?: string;
+}
+
+export interface WebhookEvent {
+  id: string;
+  type: string;
+  status: "pending" | "delivered" | "dead";
+  attempts: number;
+  next_attempt_at: string;
+  delivered_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  payload: { id: string; type: string; created_at: string; data: unknown };
+}
+
+export interface Stats {
+  captured_count: number;
+  failed_count: number;
+  /** null until there is at least one attempt */
+  success_rate: number | null;
+  gross_paise: number;
+  refunded_paise: number;
+  net_paise: number;
+  merchant_payable_paise: number;
+  webhooks: { pending: number; delivered: number; dead: number };
+  /** last 14 IST days, zero-filled, oldest first */
+  daily: { date: string; gross_paise: number; count: number }[];
+}
+
 export class VayoraError extends Error {
   constructor(
     readonly status: number,
@@ -77,7 +115,17 @@ export class Vayora {
     return json as T;
   }
 
+  private list<T>(path: string, p: ListParams = {}) {
+    const q = new URLSearchParams();
+    if (p.limit !== undefined) q.set("limit", String(p.limit));
+    if (p.startingAfter) q.set("starting_after", p.startingAfter);
+    if (p.status) q.set("status", p.status);
+    const qs = q.toString();
+    return this.request<Page<T>>("GET", qs ? `${path}?${qs}` : path);
+  }
+
   readonly orders = {
+    list: (p?: ListParams) => this.list<Order>("/v1/orders", p),
     create: (p: { amountPaise: number; idempotencyKey: string }) => {
       positiveInt(p.amountPaise, "amountPaise");
       return this.request<Order>("POST", "/v1/orders", { amount_paise: p.amountPaise }, p.idempotencyKey);
@@ -86,13 +134,25 @@ export class Vayora {
   };
 
   readonly payments = {
+    list: (p?: ListParams) => this.list<Payment>("/v1/payments", p),
     /** Simulated UPI collect. A declined payment resolves with status "failed" (not an exception). */
     create: (p: { orderId: string; vpa: string; idempotencyKey: string }) =>
       this.request<Payment>("POST", "/v1/payments", { order_id: p.orderId, vpa: p.vpa }, p.idempotencyKey),
     retrieve: (id: string) => this.request<Payment>("GET", `/v1/payments/${encodeURIComponent(id)}`),
   };
 
+  readonly events = {
+    list: (p?: ListParams) => this.list<WebhookEvent>("/v1/events", p),
+    /** Re-queue a pending or dead webhook. Delivered events can't be retried. */
+    retry: (id: string) => this.request<WebhookEvent>("POST", `/v1/events/${encodeURIComponent(id)}/retry`),
+  };
+
+  stats() {
+    return this.request<Stats>("GET", "/v1/stats");
+  }
+
   readonly refunds = {
+    list: (p?: ListParams) => this.list<Refund>("/v1/refunds", p),
     /** Omit amountPaise to refund the remainder. */
     create: (p: { paymentId: string; amountPaise?: number; idempotencyKey: string }) => {
       if (p.amountPaise !== undefined) positiveInt(p.amountPaise, "amountPaise");

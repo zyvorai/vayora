@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install
+      # build first: the dashboard type-checks against @vayora/node's built types
+      - run: pnpm -r build
       - run: pnpm -r lint
       - run: pnpm -r test
-      - run: pnpm -r build

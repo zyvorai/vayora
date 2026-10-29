@@ -2,6 +2,7 @@
 
 mod error;
 mod idempotency;
+mod reads;
 mod routes;
 
 use std::sync::Arc;
@@ -41,11 +42,21 @@ impl AppState {
 
 pub fn app(state: AppState) -> Router {
     let v1 = Router::new()
-        .route("/orders", post(routes::create_order))
+        .route(
+            "/orders",
+            post(routes::create_order).get(reads::list_orders),
+        )
         .route("/orders/{id}", get(routes::get_order))
-        .route("/payments", post(routes::create_payment))
+        .route(
+            "/payments",
+            post(routes::create_payment).get(reads::list_payments),
+        )
         .route("/payments/{id}", get(routes::get_payment))
         .route("/payments/{id}/refunds", post(routes::create_refund))
+        .route("/refunds", get(reads::list_refunds))
+        .route("/events", get(reads::list_events))
+        .route("/events/{id}/retry", post(reads::retry_event))
+        .route("/stats", get(reads::stats))
         .route("/balance", get(routes::balance))
         .layer(middleware::from_fn_with_state(
             state.clone(),

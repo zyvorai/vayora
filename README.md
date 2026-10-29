@@ -51,7 +51,8 @@ Everything for one request (idempotency key, payment, ledger entries, webhook ev
 
 - [x] Orders, payments, refunds on Postgres
 - [x] Ledger, webhooks, Node SDK
-- [ ] Merchant dashboard and hosted checkout
+- [x] Merchant dashboard (overview, payments, refund action, webhook log with retry)
+- [ ] Hosted checkout wired to the API
 - [ ] Cards, routing, settlement, risk
 - [ ] Real rails, which require licences (see below)
 
@@ -70,6 +71,7 @@ Publishing code is free; moving money in India is not. Operating Vayora in produ
 | `crates/vayora-api` | axum API, idempotency, migrations |
 | `packages/node` | `@vayora/node` server SDK |
 | `apps/checkout` | Next.js hosted checkout |
+| `apps/dashboard` | Merchant dashboard: overview, payments, refunds, webhooks |
 | `deploy/` | docker-compose for Postgres and Redis |
 
 Planned: cards, router, settlement, risk, dashboard.
@@ -92,11 +94,22 @@ curl -s localhost:8080/v1/payments/<payment id>/refunds -H "$A" -H "$J" -H "idem
 curl -s localhost:8080/v1/balance -H "$A"
 ```
 
+### Dashboard
+
+```sh
+cp apps/dashboard/.env.example apps/dashboard/.env.local   # set the four values
+pnpm install && pnpm --filter @vayora/node build
+node scripts/seed.mjs 60                                   # optional demo data (dev databases only)
+pnpm --filter @vayora/dashboard dev                        # http://localhost:3001
+```
+
+Sign-in is a single shared password (`DASHBOARD_PASSWORD`) with a signed, HttpOnly session cookie. The API key stays on the server and is shown masked. Per-user accounts, roles and key rotation are not built yet.
+
 ### Simulated UPI
 The VPA handle picks the outcome: `fail…@x` declines (insufficient funds), `timeout…@x` times out, anything else succeeds.
 
 ### API
-`POST /v1/orders` · `GET /v1/orders/{id}` · `POST /v1/payments` · `GET /v1/payments/{id}` · `POST /v1/payments/{id}/refunds` · `GET /v1/balance`.
+`POST /v1/orders` · `GET /v1/orders[/{id}]` · `POST /v1/payments` · `GET /v1/payments[/{id}]` · `POST /v1/payments/{id}/refunds` · `GET /v1/refunds` · `GET /v1/events` · `POST /v1/events/{id}/retry` · `GET /v1/stats` · `GET /v1/balance`. Lists are newest-first with `limit`, `starting_after` and `status`.
 Writes require `Idempotency-Key`. Webhooks (`payment.captured`, `payment.failed`, `refund.processed`) are signed; set `VAYORA_WEBHOOK_URL` and `VAYORA_WEBHOOK_SECRET`, then verify with `verifyWebhook` from `@vayora/node`. Design notes: [ADR 0002](docs/adr/0002-vertical-slice.md).
 
 ## Principles

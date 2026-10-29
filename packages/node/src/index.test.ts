@@ -42,6 +42,27 @@ describe("client", () => {
   });
 });
 
+describe("reads", () => {
+  it("builds list queries", async () => {
+    const f = vi.fn(async () => json(200, { data: [], has_more: false }));
+    const v = new Vayora({ apiKey: "k", fetch: f as unknown as typeof fetch });
+    await v.payments.list({ limit: 10, startingAfter: "pay_1", status: "failed" });
+    await v.refunds.list();
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe("http://localhost:8080/v1/payments?limit=10&starting_after=pay_1&status=failed");
+    expect((f.mock.calls[1] as unknown as [string])[0]).toBe("http://localhost:8080/v1/refunds");
+  });
+
+  it("retries events with POST and no body", async () => {
+    const f = vi.fn(async () => json(200, { id: "evt_1" }));
+    const v = new Vayora({ apiKey: "k", fetch: f as unknown as typeof fetch });
+    await v.events.retry("evt_1");
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/v1/events/evt_1/retry");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+  });
+});
+
 describe("verifyWebhook", () => {
   const secret = "whsec";
   const body = '{"type":"payment.captured"}';
