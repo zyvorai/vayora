@@ -1,0 +1,24 @@
+[package]
+name = "zyvor-providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1.92"
+base64 = "0.23.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+hex = "0.4.3"
+hmac = "0.13.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2 = "0.11.1"
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1.44"
+zyvor-core = { version = "0.1.0", path = "../zyvor-core" }
+
+[dev-dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+zyvor-provider-mock = { path = "../zyvor-provider-mock" }
