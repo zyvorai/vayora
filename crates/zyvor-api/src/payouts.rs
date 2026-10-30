@@ -233,7 +233,8 @@ async fn create_one(
             return Err(ApiError::conflict(
                 "insufficient_balance",
                 format!(
-                    "this vendor is owed {free} minor units that are not already promised to other payouts"
+                    "this vendor has {} free to pay out; the rest of what they are owed is already promised to other payouts",
+                    crate::ai::money(free.max(0), ccy.code())
                 ),
             ));
         }

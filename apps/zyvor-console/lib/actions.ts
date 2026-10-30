@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ZyvorError, type Zyvor } from "@zyvor/node";
 import { currentSession } from "@/lib/auth";
+import { parseBulk } from "@/lib/bulk";
 import { COOKIE, SESSION_TTL_SECONDS, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
 import { api, authConfig } from "@/lib/zyvor";
 
@@ -171,7 +172,21 @@ export const markPayoutPaid = async (_: FormState, f: FormData) => {
 export const requestPayout = async (_: FormState, f: FormData): Promise<FormState> => {
   const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
   if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
-  return run(["/payouts"], (z) => z.payouts.create({ vendorId: String(f.get("vendor") ?? ""), amountMinor: Math.round(rupees * 100), purpose: String(f.get("purpose") ?? "").trim() }), "finance");
+  return run(["/payouts"], (z) => z.payouts.create({ vendorId: String(f.get("vendor") ?? ""), amountMinor: Math.round(rupees * 100), purpose: String(f.get("purpose") ?? "").trim(), fromBalance: f.get("from_balance") === "on" }), "finance");
+};
+
+export const bulkPayouts = async (_: FormState, f: FormData): Promise<FormState> => {
+  const fromBalance = f.get("from_balance") === "on";
+  let made = "";
+  const r = await run(["/payouts"], async (z) => {
+    const vendors = (await z.payouts.vendors()).data;
+    const parsed = parseBulk(String(f.get("csv") ?? ""), vendors);
+    if ("error" in parsed) throw new ZyvorError(422, "invalid_bulk", parsed.error);
+    const out = await z.payouts.createBulk(parsed.items.map((i) => ({ ...i, fromBalance })));
+    const fresh = out.count - out.already_existed;
+    made = fresh === 0 ? `Nothing new: all ${out.count} already existed.` : `${fresh} created${out.already_existed ? `, ${out.already_existed} already existed` : ""}. Each still needs a second person's approval.`;
+  }, "finance");
+  return r?.error ? r : { ok: made };
 };
 export const addVendor = async (_: FormState, f: FormData) =>
   run(["/payouts"], (z) => z.payouts.createVendor({ name: String(f.get("name") ?? ""), accountNumber: String(f.get("account") ?? "").trim() || undefined, ifsc: String(f.get("ifsc") ?? "").trim().toUpperCase() || undefined, vpa: String(f.get("vpa") ?? "").trim() || undefined }), "finance");

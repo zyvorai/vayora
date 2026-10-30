@@ -1,6 +1,6 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { AddVendor, MarkPaid, RequestPayout } from "@/components/PayoutForms";
+import { AddVendor, BulkPayouts, MarkPaid, RequestPayout } from "@/components/PayoutForms";
 import { approvePayout, cancelPayout, rejectPayout } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { inr } from "@/lib/format";
@@ -11,12 +11,32 @@ export default async function Payouts() {
   const z = api();
   const [payouts, vendors] = await Promise.all([z.payouts.list(), z.payouts.vendors()]);
   const name = new Map(vendors.data.map((v) => [v.id, v.name]));
+  // what each vendor is owed from split payments (a few dozen vendors at most on this page)
+  const balances = await Promise.all(vendors.data.slice(0, 50).map(async (v) => [v.id, (await z.payouts.vendorBalance(v.id)).balances] as const));
+  const owed = new Map(balances);
   const waiting = payouts.data.filter((p) => p.status === "pending_approval").length;
   return (
     <>
       <div className="head"><div><h1>Payouts</h1><p className="lede">Money you send to vendors. {waiting ? `${waiting} waiting for a second person.` : "Every payout needs a second person to approve it."} You make the transfer from your own bank, then record its reference here.</p></div></div>
       <RequestPayout vendors={vendors.data.filter((v) => !v.archived)} />
+      <BulkPayouts />
       <AddVendor />
+      {balances.some(([, b]) => b.length > 0) && (
+        <>
+          <h2>Owed to vendors from split payments</h2>
+          <div className="tablewrap" style={{ marginBottom: 24 }}>
+            <table>
+              <thead><tr><th>Vendor</th><th className="num">Owed</th><th className="num">Free to pay out</th></tr></thead>
+              <tbody>
+                {vendors.data.filter((v) => (owed.get(v.id) ?? []).length > 0).map((v) => (owed.get(v.id) ?? []).map((b) => (
+                  <tr key={v.id + b.currency}><td>{v.name}</td><td className="num">{inr(b.owed_minor)}</td><td className="num">{inr(b.available_minor)}</td></tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+          <h2>Payouts</h2>
+        </>
+      )}
       <div className="tablewrap">
         <table>
           <thead><tr><th>Vendor</th><th>Purpose</th><th className="num">Amount</th><th>Requested by</th><th>Status</th><th /></tr></thead>
