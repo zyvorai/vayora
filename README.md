@@ -11,13 +11,13 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 
 [![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
-![Status](https://img.shields.io/badge/status-release%201%20%C2%B7%20sandbox-ff9f0a)
+![Status](https://img.shields.io/badge/status-release%202%20%C2%B7%20sandbox-ff9f0a)
 
 [Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
 
 </div>
 
-> **Honest status.** Release 1 (payments, ledger, reconciliation) is built and tested, including every acceptance test in the brief. Providers are verified **only against a local simulator**, never against live Razorpay or Cashfree sandboxes. Releases 2 and 3 (billing, collections, vertical integrations, AI assistance) are not started. See [STATUS.md](docs/zyvor/STATUS.md).
+> **Honest status.** Payments, ledger, reconciliation, billing, collections, disputes, payouts bookkeeping, GST invoicing and a merchant console are built and tested (every acceptance test in the brief passes). Providers are verified **only against local simulators**, never against live Razorpay or Cashfree. Zyvor does not move money to vendors, does not file GST returns, and is not a licensed payment service. The campus, hospital, factory and pharmacy product integrations are not built. [STATUS.md](docs/zyvor/STATUS.md) lists every gap; [MARKET.md](docs/zyvor/MARKET.md) compares it with Indian gateways.
 
 ## What it does
 - **Never double-charges.** Idempotent writes; an uncertain provider outcome becomes `unknown` and blocks any new attempt, through any provider, until it is resolved. The system asks the provider; it never re-sends.
@@ -26,18 +26,22 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 - **Routes with receipts.** Capability matrix, rules and configured fees choose a provider, and the decision records every provider considered and why.
 - **Measures real cost.** Effective cost by provider and method from observed settlement deductions, with suggestions that cite their evidence and never change anything on their own.
 - **Isolates tenants.** Row-level security enforced in tests as a non-superuser role; test and live are separate tenants.
+- **Bills and collects.** Plans, subscriptions, usage, proration, milestones, instalment plans, credit notes, GST tax invoices (CGST/SGST/IGST, GSTIN-checked, GSTR-1 style summary), ageing, promises to pay, reminders you approve, optional AI-worded drafts a person reviews, disputes that hold the money.
+- **Takes payments your way.** Payment links with QR codes, coupons and a payer-covered fee, marketplace splits to vendors with balances, bulk and maker-checker payouts (bookkeeping: you pay from your bank), risk limits, checkout in six languages (translations awaiting native review).
+- **Is hard to abuse.** Per-key and per-address rate limits, API keys with expiry, address allow-lists and rotation, SSRF-guarded webhooks, rotatable master key, tamper-evident audit chain, named console users with TOTP and roles, default-deny network policy, supply-chain scanning in CI. See the [threat model](docs/zyvor/THREAT_MODEL.md).
 
 ## Try the sandbox (simulated providers, no real money)
 ```sh
 # needs a local Postgres and an EMPTY database
 OWNER_URL=postgres://you@localhost:5432/zyvor_sandbox ./scripts/zyvor-sandbox.sh
 ZYVOR_API_URL=http://localhost:8080 pnpm --filter @zyvor/checkout dev    # then open the printed checkout URL
+# the merchant console: see apps/zyvor-console/.env.example, then `pnpm --filter @zyvor/console dev`
 ```
 ```sh
-cargo test --workspace      # 25+ API tests run against real Postgres (set DATABASE_URL to a superuser connection)
+cargo test --workspace      # 35+ API tests run against real Postgres (set DATABASE_URL to a superuser connection)
 pnpm -r build && pnpm -r test
 ```
-Deploy: `deploy/zyvor/docker-compose.yml` (Postgres, API, worker, mock provider, checkout, Envoy TLS, Prometheus) and `deploy/zyvor/helm/zyvor`. Both validate; neither has been run here.
+Deploy: `deploy/zyvor/k3s/` (verified on a single-node k3s sandbox, with HTTPS in front; see its README), `deploy/zyvor/docker-compose.yml` and `deploy/zyvor/helm/zyvor` (both validate; neither has been run here).
 
 ```ts
 import { Zyvor } from "@zyvor/node";
