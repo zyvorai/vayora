@@ -32,7 +32,26 @@ async fn main() {
         .await
         .expect("connect to postgres");
     if migrate_url.is_none() {
-        MIGRATOR.run(&pool).await.expect("run migrations");
+        if env::var("ZYVOR_AUTO_MIGRATE").as_deref() == Ok("1") {
+            MIGRATOR.run(&pool).await.expect("run migrations");
+        } else {
+            // The restricted app role must not own the schema: check it is current instead of changing it.
+            let applied: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0);
+            let expected = MIGRATOR
+                .migrations
+                .iter()
+                .filter(|m| !m.migration_type.is_down_migration())
+                .count() as i64;
+            assert!(
+                applied >= expected,
+                "database schema is behind this build ({applied} of {expected} migrations applied): \
+                 run `zyvor-api migrate` with ZYVOR_MIGRATE_DATABASE_URL, or set ZYVOR_AUTO_MIGRATE=1 for a throwaway database"
+            );
+        }
     }
 
     // `zyvor-api bootstrap "Acme Pharmacy"` creates an organisation with test + live tenants and prints each admin key once.
