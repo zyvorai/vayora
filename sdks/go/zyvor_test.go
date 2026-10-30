@@ -158,3 +158,22 @@ func TestMerchantOperationsPaths(t *testing.T) {
 		t.Fatalf("got %v", seen)
 	}
 }
+
+func TestCreateIntentAtSendsBranchAndCounter(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"id":"pi_1"}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	if _, err := c.CreateIntentAt(0, "", "br_1", "", ""); err == nil {
+		t.Fatal("a non-positive amount must be rejected before any request")
+	}
+	if _, err := c.CreateIntentAt(500, "", "br_1", "ctr_1", "key-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got["branch_id"] != "br_1" || got["counter_id"] != "ctr_1" || got["currency"] != "INR" {
+		t.Fatalf("got %v", got)
+	}
+}

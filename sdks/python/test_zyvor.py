@@ -93,6 +93,16 @@ class Tests(unittest.TestCase):
         ])
         self.assertEqual(seen[4][2], {"decision": "reject", "note": "blurry PAN"})
 
+    def test_intent_can_carry_branch_and_counter(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append(json.loads(req.data))
+            return FakeRes(b"{}")
+
+        Zyvor("k", opener=opener).create_intent(500, branch_id="br_1", counter_id="ctr_1")
+        self.assertEqual((seen[0]["branch_id"], seen[0]["counter_id"], seen[0]["amount_minor"]), ("br_1", "ctr_1", 500))
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

@@ -126,6 +126,29 @@ func (c *Client) CreateIntent(amountMinor int64, currency, idempotencyKey string
 	return &out, err
 }
 
+// CreateIntentAt is CreateIntent attributed to a branch and/or a counter within it (either may be empty).
+func (c *Client) CreateIntentAt(amountMinor int64, currency, branchID, counterID, idempotencyKey string) (*Intent, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("amountMinor must be a positive integer (paise)")
+	}
+	if currency == "" {
+		currency = "INR"
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	body := map[string]any{"amount_minor": amountMinor, "currency": currency}
+	if branchID != "" {
+		body["branch_id"] = branchID
+	}
+	if counterID != "" {
+		body["counter_id"] = counterID
+	}
+	var out Intent
+	err := c.do("POST", "/v1/payment_intents", body, idempotencyKey, &out)
+	return &out, err
+}
+
 func (c *Client) CreateAttempt(intentID, method, vpa, idempotencyKey string) (*Attempt, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = newKey()
