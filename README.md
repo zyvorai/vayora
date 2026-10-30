@@ -11,7 +11,7 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 
 [![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
-![Status](https://img.shields.io/badge/status-release%202%20%C2%B7%20sandbox-ff9f0a)
+![Status](https://img.shields.io/badge/status-release%203%20%C2%B7%20sandbox-ff9f0a)
 
 [Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
 
@@ -28,6 +28,7 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 - **Isolates tenants.** Row-level security enforced in tests as a non-superuser role; test and live are separate tenants.
 - **Bills and collects.** Plans, subscriptions, usage, proration, milestones, instalment plans, credit notes, GST tax invoices (CGST/SGST/IGST, GSTIN-checked, GSTR-1 style summary), ageing, promises to pay, reminders you approve, optional AI-worded drafts a person reviews, disputes that hold the money.
 - **Takes payments your way.** Payment links with QR codes, coupons and a payer-covered fee, marketplace splits to vendors with balances, bulk and maker-checker payouts (bookkeeping: you pay from your bank), risk limits, checkout in six languages (translations awaiting native review).
+- **Runs a shop floor.** Branches and counters (a counter's QR, optionally with a payer-typed amount, ties payments to it), branch-limited API keys, cash entries and an end-of-day closing a second person signs off, a per-payment timeline in plain words, cash-due-by-week and refund-pattern prompts, reconciliation suggestions with evidence, and merchant onboarding records reviewed by a second person. Records and prompts only: Zyvor does not hold funds, verify identity or move cash.
 - **Is hard to abuse.** Per-key and per-address rate limits, API keys with expiry, address allow-lists and rotation, SSRF-guarded webhooks, rotatable master key, tamper-evident audit chain, named console users with TOTP and roles, default-deny network policy, supply-chain scanning in CI. See the [threat model](docs/zyvor/THREAT_MODEL.md).
 
 ## Try the sandbox (simulated providers, no real money)
