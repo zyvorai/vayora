@@ -10,6 +10,8 @@ const items = [
   { href: "/", label: "Overview", icon: icon("M3 12l9-8 9 8M5 10v10h14V10") },
   { href: "/payments", label: "Payments", icon: icon("M3 7h18v10H3zM3 11h18") },
   { href: "/links", label: "Payment links", icon: icon("M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1") },
+  { href: "/stores", label: "Branches", icon: icon("M3 10l2-6h14l2 6M4 10v10h16V10M9 20v-6h6v6") },
+  { href: "/closing", label: "Daily closing", icon: icon("M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z") },
   { href: "/payouts", label: "Payouts", icon: icon("M12 21V8M7 12l5-5 5 5M4 4h16") },
   { href: "/refunds", label: "Refunds", icon: icon("M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3") },
   { href: "/disputes", label: "Disputes", icon: icon("M12 3l9 16H3zM12 10v4M12 17v.01") },

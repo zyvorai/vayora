@@ -274,3 +274,19 @@ export const verifyBankAccount = async (_: FormState, f: FormData) => run(["/onb
 export const submitOnboarding = async (_: FormState) => run(["/onboarding"], (z) => z.onboarding.submit(), "admin");
 export const reviewOnboarding = async (_: FormState, f: FormData) =>
   run(["/onboarding"], (z) => z.onboarding.review({ decision: text(f, "decision") === "approve" ? "approve" : "reject", note: text(f, "note") || undefined }), "admin");
+
+export const createBranch = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.branches.create(text(f, "name")), "admin");
+export const createCounter = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.counters.create({ branchId: text(f, "branch_id"), name: text(f, "name") }), "admin");
+export const deactivateCounter = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.counters.deactivate(id(f)), "admin");
+export const addCash = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amt = rupees(f, "amount");
+  if (!Number.isFinite(amt) || amt <= 0) return { error: "Enter the amount in rupees." };
+  const kind = text(f, "kind");
+  return run(["/closing"], (z) => z.cash.add({ branchId: text(f, "branch_id"), kind: kind === "refund" ? "refund" : kind === "float" ? "float" : "sale", amountMinor: amt, note: text(f, "note") || undefined }));
+};
+export const createClosing = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amt = rupees(f, "counted");
+  if (!Number.isFinite(amt) || amt < 0) return { error: "Enter the cash you counted, in rupees." };
+  return run(["/closing"], (z) => z.closings.create({ branchId: text(f, "branch_id"), day: text(f, "day"), countedCashMinor: amt, note: text(f, "note") || undefined }));
+};
+export const signOffClosing = async (_: FormState, f: FormData) => run(["/closing"], (z) => z.closings.signOff(id(f)), "admin");

@@ -329,6 +329,27 @@ export class Zyvor {
     remind: (invoiceId: string, p: { channel: "email" | "sms" | "whatsapp" | "call" | "other"; message?: string }) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`, p),
   };
 
+  readonly branches = {
+    list: () => this.req<Page<{ id: string; name: string }>>("GET", "/v1/branches"),
+    create: (name: string) => this.req<{ id: string; name: string }>("POST", "/v1/branches", { name }),
+  };
+
+  readonly cash = {
+    /** Cash taken (`sale`), handed back (`refund`) or put in the till (`float`). Never edited: correct with an opposite entry. */
+    add: (p: { branchId: string; counterId?: string; kind: "sale" | "refund" | "float"; amountMinor: number; note?: string }) =>
+      this.req<{ id: string }>("POST", "/v1/cash_entries", { branch_id: p.branchId, counter_id: p.counterId, kind: p.kind, amount_minor: p.amountMinor, note: p.note }),
+  };
+
+  readonly closings = {
+    /** Close a branch's IST day (`YYYY-MM-DD`): expected cash and digital totals against the counted cash. */
+    create: (p: { branchId: string; day: string; countedCashMinor: number; note?: string }) =>
+      this.req<{ id: string; expected_cash_minor: number; counted_cash_minor: number; difference_minor: number; digital: { method: string; payments: number; net_minor: number }[]; status: string }>("POST", "/v1/closings", { branch_id: p.branchId, day: p.day, counted_cash_minor: p.countedCashMinor, note: p.note }),
+    list: (p: { branchId?: string; status?: "pending_signoff" | "signed_off" } = {}) =>
+      this.req<Page<{ id: string; branch_id: string; day: string; expected_cash_minor: number; counted_cash_minor: number; difference_minor: number; digital: { method: string; payments: number; net_minor: number }[]; note: string | null; counted_by: string; signed_off_by: string | null; status: "pending_signoff" | "signed_off" }>>("GET", `/v1/closings${this.qs({ branch_id: p.branchId, status: p.status })}`),
+    /** A different person from whoever counted. */
+    signOff: (id: string) => this.req("POST", `/v1/closings/${encodeURIComponent(id)}/signoff`),
+  };
+
   readonly insights = {
     /** What is owed by due week, plus overdue, promised and payouts waiting. A schedule, not a prediction. */
     cashflow: (weeks?: number) => this.req<{ as_of: string; currency: string; weeks: { starts: string; due_minor: number }[]; overdue_minor: number; due_later_minor: number; no_due_date_minor: number; promised_minor: number; payouts_waiting_minor: number; daily_receipts_run_rate_minor: number; note: string }>("GET", `/v1/insights/cashflow${this.qs({ weeks })}`),
