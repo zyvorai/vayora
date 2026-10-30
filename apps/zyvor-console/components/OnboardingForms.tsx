@@ -1,11 +1,17 @@
 "use client";
-import { useActionState, type ReactNode } from "react";
+import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
 import { addBankAccount, addOnboardingDoc, reviewOnboarding, saveProfile, type FormState } from "@/lib/actions";
 
 function Card({ action, children, cta }: { action: (s: FormState, f: FormData) => Promise<FormState>; children: ReactNode; cta: string }) {
   const [state, run, pending] = useActionState(action, undefined);
+  // Submitted by hand so a refusal keeps what was typed (a form `action` resets its fields afterwards).
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    startTransition(() => run(data));
+  };
   return (
-    <form action={run} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
+    <form onSubmit={submit} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
       {children}
       <button className="btn primary" disabled={pending}>{pending ? "Saving…" : cta}</button>
       {state?.error && <p className="note bad" role="alert" style={{ flexBasis: "100%" }}>{state.error}</p>}
@@ -50,8 +56,15 @@ export function BankForm() {
 
 export function ReviewForm() {
   const [state, run, pending] = useActionState(reviewOnboarding, undefined);
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const who = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (who?.name) data.set(who.name, who.value);
+    startTransition(() => run(data));
+  };
   return (
-    <form action={run} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+    <form onSubmit={submit} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
       <label className="field" style={{ flex: "1 1 280px" }}>Note (required to reject)<input name="note" /></label>
       <button className="btn primary" name="decision" value="approve" disabled={pending}>Approve</button>
       <button className="btn" name="decision" value="reject" disabled={pending}>Reject</button>
