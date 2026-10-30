@@ -491,6 +491,8 @@ pub async fn statement(
         "SELECT t, kind, ref, currency, amount FROM (
             SELECT created_at t, 'invoice' kind, number ref, currency, amount_minor amount FROM invoices WHERE customer_id = $1 AND status <> 'void'
             UNION ALL SELECT a.created_at, 'payment', a.reference, i.currency, -a.amount_minor FROM invoice_allocations a JOIN invoices i ON i.id = a.invoice_id WHERE i.customer_id = $1
+            UNION ALL SELECT p.updated_at, 'deposit', COALESCE(p.external_ref, p.id), p.currency, -p.amount_minor FROM payment_intents p WHERE p.customer_id = $1 AND p.invoice_id IS NULL AND p.status = 'succeeded'
+            UNION ALL SELECT r.updated_at, 'deposit_refund', COALESCE(r.external_ref, r.id), r.currency, r.amount_minor FROM refunds r JOIN payment_intents p ON p.id = r.intent_id WHERE p.customer_id = $1 AND p.invoice_id IS NULL AND r.status = 'processed'
             UNION ALL SELECT c.created_at, 'credit_note', c.id, i.currency, -c.amount_minor FROM credit_notes c JOIN invoices i ON i.id = c.invoice_id WHERE i.customer_id = $1 AND i.status <> 'void'
          ) x ORDER BY t, kind",
     ).bind(&id).fetch_all(&mut *tx).await?;
@@ -755,4 +757,26 @@ pub async fn cancel_milestone(
     }
     tx.commit().await?;
     Ok(Json(json!({ "id": id, "status": "canceled" })))
+}
+
+#[derive(Deserialize)]
+pub struct CustomerQuery {
+    /// Your own id for the customer: a student number, patient id, dealer code.
+    external_ref: Option<String>,
+    limit: Option<i64>,
+}
+
+/// Find customers, most usefully by the reference your own system uses for them.
+pub async fn list_customers(
+    State(s): State<AppState>,
+    auth: Auth,
+    axum::extract::Query(q): axum::extract::Query<CustomerQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as("SELECT id, name, email, phone, external_ref FROM customers WHERE ($1::text IS NULL OR external_ref = $1) ORDER BY created_at DESC LIMIT $2")
+        .bind(&q.external_ref).bind(q.limit.unwrap_or(50).clamp(1, 200)).fetch_all(&mut *tx).await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(id, name, email, phone, ext)| json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext })).collect::<Vec<_>>() }),
+    ))
 }

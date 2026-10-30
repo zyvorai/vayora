@@ -4,7 +4,7 @@
   document.getElementById("theme").addEventListener("click", () => {
     const next = root.dataset.theme === "dark" ? "light" : "dark";
     root.dataset.theme = next;
-    try { localStorage.setItem("vayora-theme", next); } catch {}
+    try { localStorage.setItem("zyvor-theme", next); } catch {}
   });
 
   // ---- hero cell stream (decorative, simulated) ----
@@ -58,7 +58,7 @@
   async function emit(type, data) {
     const body = JSON.stringify({ id: rid("evt"), type, created_at: new Date().toISOString(), data });
     const t = Math.floor(Date.now() / 1000);
-    $("hook").textContent = `Vayora-Signature: t=${t},v1=${await sign("whsec_demo", t, body)}\n\n` + JSON.stringify(JSON.parse(body), null, 2);
+    $("hook").textContent = `Zyvor-Signature: t=${t},v1=${await sign("whsec_demo", t, body)}\n\n` + JSON.stringify(JSON.parse(body), null, 2);
   }
   function addRows(rows) {
     const tb = $("ledger").tBodies[0];

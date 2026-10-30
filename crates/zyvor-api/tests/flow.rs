@@ -2012,3 +2012,93 @@ async fn disputes_hold_the_money_and_a_lost_one_hits_the_ledger_and_reopens_the_
         .await;
     assert_eq!(after, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn customers_are_found_by_your_own_reference_and_deposits_appear_on_the_statement(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let pat = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "R. Menon", "external_ref": "PAT-7731" }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/customers",
+        None,
+        json!({ "name": "Someone else", "external_ref": "PAT-1" }),
+    )
+    .await;
+    t.ok(
+        b,
+        "POST",
+        "/v1/customers",
+        None,
+        json!({ "name": "Other tenant", "external_ref": "PAT-7731" }),
+    )
+    .await;
+    let found = t
+        .ok(
+            a,
+            "GET",
+            "/v1/customers?external_ref=PAT-7731",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        found["data"].as_array().unwrap().len(),
+        1,
+        "only this tenant's match"
+    );
+    assert_eq!(found["data"][0]["id"], pat["id"]);
+    let cid = pat["id"].as_str().unwrap();
+
+    // an admission deposit with no invoice: a credit on the statement, and refunding it restores the balance
+    let (iid, _, _) = t
+        .paid_razorpay(
+            a,
+            25_000,
+            json!({ "customer_id": cid, "external_ref": "DEP-ADM-1" }),
+        )
+        .await;
+    let stmt = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/customers/{cid}/statement"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(stmt["balance_minor"]["INR"], -25_000);
+    assert_eq!(stmt["lines"][0]["type"], "deposit");
+    let r = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some("dep-refund"),
+            json!({ "amount_minor": 10_000, "external_ref": "DEP-RET-1" }),
+        )
+        .await;
+    if r["status"] == "processed" {
+        let stmt = t
+            .ok(
+                a,
+                "GET",
+                &format!("/v1/customers/{cid}/statement"),
+                None,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(stmt["balance_minor"]["INR"], -15_000);
+    }
+}

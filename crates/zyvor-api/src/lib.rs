@@ -122,7 +122,10 @@ pub fn app(state: AppState) -> Router {
             "/provider_accounts/{provider}/enabled",
             post(set_provider_enabled),
         )
-        .route("/customers", post(create_customer))
+        .route(
+            "/customers",
+            post(create_customer).get(billing::list_customers),
+        )
         .route("/customers/{id}", get(get_customer))
         .route("/branches", post(create_branch).get(list_branches))
         .route("/users", post(create_user))

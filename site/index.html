@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Vayora: open-source payments for India</title>
-<meta name="description" content="Vayora is an open-source payments platform for India: a Rust core with an exactly-once API, a double-entry ledger, signed webhooks and a TypeScript SDK. Early stage, simulated UPI.">
+<title>Zyvor Payments: orchestration, billing and reconciliation for India</title>
+<meta name="description" content="Zyvor Payments is open-source payment orchestration for India: connect your own Razorpay and Cashfree accounts, route safely, keep an append-only ledger, reconcile every settlement, and bill and collect. Verified against simulators; not a licensed payment service.">
 <link rel="canonical" href="https://zyvorai.github.io/vayora/">
 <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -12,30 +12,30 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Vayora">
-<meta property="og:title" content="Vayora: open-source payments for India">
-<meta property="og:description" content="Rust core, exactly-once API, double-entry ledger, signed webhooks, TypeScript SDK. Open source, Apache-2.0.">
+<meta property="og:site_name" content="Zyvor">
+<meta property="og:title" content="Zyvor Payments: orchestration, billing and reconciliation for India">
+<meta property="og:description" content="Connect your own providers, route safely, reconcile every settlement, bill and collect. Open source, Apache-2.0.">
 <meta property="og:url" content="https://zyvorai.github.io/vayora/">
 <meta property="og:image" content="https://zyvorai.github.io/vayora/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Vayora, open-source payments for India. Rust, UPI, Ledger.">
+<meta property="og:image:alt" content="Zyvor Payments. Every rupee, accounted for.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Vayora: open-source payments for India">
-<meta name="twitter:description" content="Rust core, exactly-once API, double-entry ledger, signed webhooks, TypeScript SDK.">
+<meta name="twitter:title" content="Zyvor Payments: orchestration, billing and reconciliation for India">
+<meta name="twitter:description" content="Connect your own providers, route safely, reconcile every settlement.">
 <meta name="twitter:image" content="https://zyvorai.github.io/vayora/assets/og.png">
-<meta name="twitter:image:alt" content="Vayora, open-source payments for India. Rust, UPI, Ledger.">
+<meta name="twitter:image:alt" content="Zyvor Payments. Every rupee, accounted for.">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Vayora","description":"Open-source payments infrastructure for India.","codeRepository":"https://github.com/zyvorai/vayora","programmingLanguage":["Rust","TypeScript"],"license":"https://www.apache.org/licenses/LICENSE-2.0"}
+{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Zyvor Payments","description":"Open-source payment orchestration, billing and reconciliation for India.","codeRepository":"https://github.com/zyvorai/vayora","programmingLanguage":["Rust","TypeScript"],"license":"https://www.apache.org/licenses/LICENSE-2.0"}
 </script>
-<script>try{var t=localStorage.getItem("vayora-theme")}catch(e){}document.documentElement.dataset.theme=t||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")</script>
+<script>try{var t=localStorage.getItem("zyvor-theme")}catch(e){}document.documentElement.dataset.theme=t||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <a class="sr" href="#main">Skip to content</a>
 <nav aria-label="Primary">
   <div class="wrap">
-    <a class="brand" href="#top"><img src="assets/favicon.svg" width="24" height="24" alt="">Vayora</a>
+    <a class="brand" href="#top"><img src="assets/favicon.svg" width="24" height="24" alt="">Zyvor</a>
     <div class="links">
       <a class="hide-s" href="#demo">Try it</a>
       <a class="hide-s" href="#features">Features</a>
@@ -52,15 +52,15 @@
 <header class="hero" id="top">
   <div class="aurora" aria-hidden="true"></div>
   <div class="wrap">
-    <p class="eyebrow">Vayora for India</p>
-    <h1><span>Payments for India.</span><span class="grad">Open to everyone.</span></h1>
-    <p class="lede">An open-source payments platform with an exactly-once API, a double-entry ledger and signed webhooks. A Rust core and a TypeScript SDK, built in the open.</p>
+    <p class="eyebrow">Zyvor Payments</p>
+    <h1><span>Every rupee,</span><span class="grad">accounted for.</span></h1>
+    <p class="lede">Connect your own Razorpay and Cashfree accounts. Route safely, keep an append-only ledger, reconcile every settlement, then bill and collect. Open source, built in Rust.</p>
     <div class="cta">
       <a class="btn primary" href="#demo">Try the live demo</a>
       <a class="btn" href="https://github.com/zyvorai/vayora">View on GitHub</a>
       <a class="btn" href="#code">Get started</a>
     </div>
-    <ul class="badges"><li>Apache-2.0</li><li>Rust core</li><li>Postgres ledger</li><li>Simulated UPI</li><li>Not a licensed payment service</li></ul>
+    <ul class="badges"><li>Apache-2.0</li><li>Rust core</li><li>Postgres ledger</li><li>Razorpay + Cashfree</li><li>Verified on simulators</li><li>Not a licensed payment service</li></ul>
     <div class="cells" id="cells" aria-hidden="true"></div>
     <p class="cap">Simulated payment stream. Each lit cell is one captured payment in a demo run.</p>
   </div>
@@ -69,16 +69,16 @@
 <section id="demo" class="alt" aria-labelledby="demo-h">
   <div class="wrap">
     <h2 id="demo-h">One tap. Every entry accounted for.</h2>
-    <p class="sub">Pay, fail and refund below. The ledger and the signed webhook update the way the real API does.</p>
+    <p class="sub">Pay, fail and refund below. The ledger and the signed webhook update the way the real platform does.</p>
     <div class="demo">
       <div class="phone" role="group" aria-label="Simulated phone checkout">
         <div class="screen">
-          <p class="merchant">Vayora Demo Store</p>
+          <p class="merchant">Zyvor Demo Store</p>
           <p class="amt" id="amt">₹499.00</p>
           <div class="field">
             <label for="vpa">UPI ID</label>
-            <input id="vpa" value="asha@okvayora" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email">
-            <p class="hint">Try <button type="button" data-vpa="fail@okvayora">fail@okvayora</button> or <button type="button" data-vpa="timeout@okvayora">timeout@okvayora</button></p>
+            <input id="vpa" value="asha@okzyvor" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email">
+            <p class="hint">Try <button type="button" data-vpa="fail@okzyvor">fail@okzyvor</button> or <button type="button" data-vpa="timeout@okzyvor">timeout@okzyvor</button></p>
           </div>
           <button class="pay" id="pay" type="button">Pay with UPI</button>
           <div class="result" id="result" role="status" aria-live="polite">
@@ -116,11 +116,11 @@
     <div class="bento">
       <article class="tile wide reveal"><h3>Exactly once, even when networks aren’t.</h3><p>Every write takes an <code>Idempotency-Key</code>, stored in the same Postgres transaction as the work. Eight concurrent duplicates charge once.</p><div class="big grad">1×</div></article>
       <article class="tile wide reveal"><h3>A ledger that can’t be rewritten.</h3><p>Double-entry, append-only. Unbalanced transactions are refused in code and updates are refused by the database.</p><div class="big grad">Dr = Cr</div></article>
-      <article class="tile reveal"><h3>Rust core</h3><p>axum, tokio and sqlx. Money is integer paise, never a float.</p></article>
+      <article class="tile reveal"><h3>Rust core</h3><p>axum, tokio and sqlx. Money is integer minor units, never a float.</p></article>
       <article class="tile reveal"><h3>Signed webhooks</h3><p>Transactional outbox, retries with backoff, HMAC signatures with replay protection.</p></article>
-      <article class="tile reveal"><h3>TypeScript SDK</h3><p><code>@vayora/node</code> with typed errors and <code>verifyWebhook</code>.</p></article>
-      <article class="tile wide reveal"><h3>Rails behind a trait.</h3><p>UPI sits behind a single interface. Develop against the deterministic simulator today, plug in a licensed partner tomorrow.</p></article>
-      <article class="tile wide reveal"><h3>Open all the way down.</h3><p>Apache-2.0. Read the ledger, audit the retries, send a pull request.</p></article>
+      <article class="tile reveal"><h3>SDKs and CLI</h3><p><code>@zyvor/node</code> with a <code>zyvor</code> command, plus Python and Go. OpenAPI covers every route.</p></article>
+      <article class="tile wide reveal"><h3>Your providers, one API.</h3><p>Merchants connect their own Razorpay and Cashfree accounts. A capability matrix stops a payment going to a provider that cannot take it, and every routing decision records why.</p></article>
+      <article class="tile wide reveal"><h3>Explain every rupee.</h3><p>Reconciliation turns each unexplained settlement difference into an assigned case, with a plain-language explanation of why the net is what it is.</p></article>
     </div>
   </div>
 </section>
@@ -128,56 +128,53 @@
 <section id="code" class="alt" aria-labelledby="c-h">
   <div class="wrap">
     <h2 id="c-h">Three calls. That’s the integration.</h2>
-    <p class="sub">Create an order, take a payment, verify the webhook.</p>
+    <p class="sub">Create a payment, start an attempt, verify the webhook.</p>
     <div class="tabs" role="tablist" aria-label="Code examples">
       <button role="tab" aria-selected="true" aria-controls="p-curl" id="t-curl">curl</button>
       <button role="tab" aria-selected="false" aria-controls="p-node" id="t-node" tabindex="-1">Node SDK</button>
       <button role="tab" aria-selected="false" aria-controls="p-hook" id="t-hook" tabindex="-1">Webhook</button>
     </div>
     <div class="codebox">
-      <div class="bar"><i></i><i></i><i></i><span>vayora · simulated</span></div>
+      <div class="bar"><i></i><i></i><i></i><span>zyvor · simulated</span></div>
       <button class="copy" id="copy" type="button">Copy</button>
       <div class="body">
-      <div role="tabpanel" id="p-curl" aria-labelledby="t-curl"><pre><code><span class="c"># amounts are integer paise (₹499.00 = 49900)</span>
-<span class="f">curl</span> localhost:8080/v1/orders \
-  -H <span class="s">"Authorization: Bearer sk_test_123"</span> \
-  -H <span class="s">"Idempotency-Key: order-1001"</span> \
+      <div role="tabpanel" id="p-curl" aria-labelledby="t-curl"><pre><code><span class="c"># amounts are integer minor units (₹499.00 = 49900)</span>
+<span class="f">curl</span> localhost:8080/v1/payment_intents \
+  -H <span class="s">"Authorization: Bearer zk_test_123"</span> \
+  -H <span class="s">"Idempotency-Key: fee-1001"</span> \
   -H <span class="s">"Content-Type: application/json"</span> \
-  -d <span class="s">'{"amount_paise": 49900}'</span>
+  -d <span class="s">'{"amount_minor": 49900, "external_ref": "FEE-STU-2231"}'</span>
 
-<span class="f">curl</span> localhost:8080/v1/payments \
-  -H <span class="s">"Authorization: Bearer sk_test_123"</span> \
-  -H <span class="s">"Idempotency-Key: pay-1001"</span> \
+<span class="f">curl</span> localhost:8080/v1/payment_intents/<span class="s">pi_…</span>/attempts \
+  -H <span class="s">"Authorization: Bearer zk_test_123"</span> \
+  -H <span class="s">"Idempotency-Key: attempt-1001"</span> \
   -H <span class="s">"Content-Type: application/json"</span> \
-  -d <span class="s">'{"order_id": "order_…", "vpa": "asha@okvayora"}'</span></code></pre></div>
-      <div role="tabpanel" id="p-node" aria-labelledby="t-node" hidden><pre><code><span class="k">import</span> { Vayora } <span class="k">from</span> <span class="s">"@vayora/node"</span>;
+  -d <span class="s">'{"method": "upi"}'</span></code></pre></div>
+      <div role="tabpanel" id="p-node" aria-labelledby="t-node" hidden><pre><code><span class="k">import</span> { Zyvor } <span class="k">from</span> <span class="s">"@zyvor/node"</span>;
 
-<span class="k">const</span> vayora = <span class="k">new</span> <span class="f">Vayora</span>({ apiKey: process.env.VAYORA_API_KEY! });
+<span class="k">const</span> zyvor = <span class="k">new</span> <span class="f">Zyvor</span>({ apiKey: process.env.ZYVOR_API_KEY! });
 
-<span class="k">const</span> order = <span class="k">await</span> vayora.orders.<span class="f">create</span>({
-  amountPaise: <span class="s">49900</span>,
-  idempotencyKey: <span class="s">"order-1001"</span>,
+<span class="k">const</span> intent = <span class="k">await</span> zyvor.intents.<span class="f">create</span>({
+  amountMinor: <span class="s">49900</span>,
+  externalRef: <span class="s">"FEE-STU-2231"</span>,
 });
 
-<span class="k">const</span> payment = <span class="k">await</span> vayora.payments.<span class="f">create</span>({
-  orderId: order.id,
-  vpa: <span class="s">"asha@okvayora"</span>,
-  idempotencyKey: <span class="s">"pay-1001"</span>,
-});
-<span class="c">// payment.status === "captured" | "failed"</span></code></pre></div>
-      <div role="tabpanel" id="p-hook" aria-labelledby="t-hook" hidden><pre><code><span class="k">import</span> { verifyWebhook } <span class="k">from</span> <span class="s">"@vayora/node"</span>;
+<span class="k">const</span> attempt = <span class="k">await</span> zyvor.intents.<span class="f">attempt</span>(intent.id, { method: <span class="s">"upi"</span> });
+<span class="c">// attempt.route.reasons explains why this provider was chosen</span></code></pre></div>
+      <div role="tabpanel" id="p-hook" aria-labelledby="t-hook" hidden><pre><code><span class="k">import</span> { verifyWebhook } <span class="k">from</span> <span class="s">"@zyvor/node"</span>;
 
 <span class="c">// use the RAW body, not re-serialised JSON</span>
 app.<span class="f">post</span>(<span class="s">"/webhooks"</span>, express.<span class="f">raw</span>({ type: <span class="s">"*/*"</span> }), (req, res) =&gt; {
   <span class="k">const</span> ok = <span class="f">verifyWebhook</span>({
-    secret: process.env.VAYORA_WEBHOOK_SECRET!,
-    header: req.get(<span class="s">"Vayora-Signature"</span>)!,
+    secret: process.env.ZYVOR_WEBHOOK_SECRET!,
+    header: req.get(<span class="s">"Zyvor-Signature"</span>)!,
     rawBody: req.body,
   });
   <span class="k">if</span> (!ok) <span class="k">return</span> res.<span class="f">sendStatus</span>(<span class="s">400</span>);
   <span class="c">// dedupe on event.id: delivery is at-least-once</span>
   res.<span class="f">sendStatus</span>(<span class="s">200</span>);
 });</code></pre></div>
+      </div>
       </div>
     </div>
   </div>
@@ -186,13 +183,14 @@ app.<span class="f">post</span>(<span class="s">"/webhooks"</span>, express.<spa
 <section id="status" aria-labelledby="s-h">
   <div class="wrap">
     <h2 id="s-h">Where it really stands.</h2>
-    <p class="sub">Moving real rupees needs licences. We’d rather say so plainly.</p>
+    <p class="sub">What is built, what is verified, and what is not. We would rather say so plainly.</p>
     <div class="status">
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Orders, payments, refunds</b><span>Postgres-backed, idempotent, covered by integration tests including concurrency.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Ledger, webhooks, SDK</b><span>Double-entry ledger, signed outbox delivery, @vayora/node.</span></div></div>
-      <div class="row reveal"><span class="chip next">Next</span><div><b>Dashboard and hosted checkout</b><span>Payments list, refunds, webhook log, live payment status.</span></div></div>
-      <div class="row reveal"><span class="chip next">Next</span><div><b>Cards, routing, settlement, risk</b><span>Tokenised cards, smart routing, T+1 settlement and reconciliation.</span></div></div>
-      <div class="row reveal"><span class="chip lic">Needs licences</span><div><b>Real UPI and card rails</b><span>RBI Payment Aggregator authorisation, a sponsor bank with NPCI onboarding, and PCI-DSS. <a href="https://github.com/zyvorai/vayora/blob/main/docs/compliance/README.md">Compliance map</a></span></div></div>
+      <div class="row reveal"><span class="chip done">Working</span><div><b>Payments, routing, refunds</b><span>Razorpay and Cashfree adapters behind a capability matrix; unknown outcomes are resolved, never re-sent. Verified against local provider simulators.</span></div></div>
+      <div class="row reveal"><span class="chip done">Working</span><div><b>Ledger and reconciliation</b><span>Append-only double-entry ledger; settlements, bank lines and cases that explain every difference.</span></div></div>
+      <div class="row reveal"><span class="chip done">Working</span><div><b>Billing, collections and disputes</b><span>Subscriptions, usage, proration, milestones, credit notes, ageing, promises to pay and chargebacks.</span></div></div>
+      <div class="row reveal"><span class="chip done">Working</span><div><b>Console, SDKs and CLI</b><span>Merchant console, <code>@zyvor/node</code>, Python, Go and an OpenAPI spec.</span></div></div>
+      <div class="row reveal"><span class="chip next">Next</span><div><b>Live provider testing</b><span>The adapters follow each provider's public docs but have not yet run against live sandbox accounts.</span></div></div>
+      <div class="row reveal"><span class="chip lic">Your responsibility</span><div><b>Regulatory status</b><span>Zyvor does not hold or move funds; your providers do. Whether your deployment needs its own authorisation is a question for counsel. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/REGULATORY.md">Read the note</a>.</span></div></div>
     </div>
   </div>
 </section>
@@ -205,7 +203,7 @@ app.<span class="f">post</span>(<span class="s">"/webhooks"</span>, express.<spa
       <a class="btn primary" href="https://github.com/zyvorai/vayora">Star on GitHub</a>
       <a class="btn ghost" href="https://github.com/zyvorai/vayora/blob/main/CONTRIBUTING.md">Contribute</a>
     </div>
-    <small>Apache-2.0 licensed. Vayora is not affiliated with NPCI, RBI or any bank, and is not a licensed payment service.</small>
+    <small>Apache-2.0 licensed. Zyvor is not affiliated with NPCI, RBI or any bank, and is not a licensed payment service.</small>
   </div>
 </footer>
 <script src="app.js" defer></script>

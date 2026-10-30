@@ -287,6 +287,15 @@ paths:
         schema:
           type: string
   /v1/customers:
+    get:
+      summary: Find customers (external_ref filter)
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
     post:
       summary: Create a customer
       tags:
