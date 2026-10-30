@@ -17,7 +17,7 @@ function safeEqual(a: string, b: string): boolean {
   return d === 0;
 }
 
-export type Role = "admin" | "finance" | "viewer";
+export type Role = "admin" | "finance" | "viewer" | "cashier";
 export type Session = { exp: number; /** user id */ i: string; /** username */ u: string; r: Role; /** second factor enrolled */ m: boolean };
 
 const b64 = (s: string) => btoa(String.fromCharCode(...enc.encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -35,7 +35,7 @@ export async function readSession(secret: string, token: string | undefined, now
   if (!payload || !sig || !safeEqual(sig, await mac(secret, payload))) return null;
   try {
     const s = JSON.parse(unb64(payload)) as Session;
-    const ok = typeof s.exp === "number" && s.exp >= Math.floor(now / 1000) && typeof s.u === "string" && ["admin", "finance", "viewer"].includes(s.r);
+    const ok = typeof s.exp === "number" && s.exp >= Math.floor(now / 1000) && typeof s.u === "string" && ["admin", "finance", "viewer", "cashier"].includes(s.r);
     return ok ? s : null;
   } catch {
     return null;
@@ -44,8 +44,11 @@ export async function readSession(secret: string, token: string | undefined, now
 
 export const verifySession = async (secret: string, token: string | undefined, now = Date.now()) => (await readSession(secret, token, now)) !== null;
 
-/** viewer < finance < admin. */
-export const allows = (have: Role, need: Role) => ["viewer", "finance", "admin"].indexOf(have) >= ["viewer", "finance", "admin"].indexOf(need);
+const ORDER: Role[] = ["cashier", "viewer", "finance", "admin"];
+/** cashier < viewer < finance < admin. A cashier reaches only the till (see `tillOnly`). */
+export const allows = (have: Role, need: Role) => ORDER.indexOf(have) >= ORDER.indexOf(need);
+/** Pages a cashier may open: the till and their own account. */
+export const tillOnly = (path: string) => path === "/closing" || path.startsWith("/closing/") || path === "/account" || path.startsWith("/account/");
 
 export const SESSION_TTL_SECONDS = TTL_SECONDS;
 export const passwordMatches = async (secret: string, a: string, b: string) =>

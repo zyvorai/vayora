@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { COOKIE, readSession } from "@/lib/session";
+import { COOKIE, readSession, tillOnly } from "@/lib/session";
 
 // Everything except the login page and static assets requires a valid signed session. With
 // CONSOLE_REQUIRE_MFA=1, anyone without a second factor can only reach /account to set one up.
@@ -10,6 +10,12 @@ export async function proxy(req: NextRequest) {
     if (process.env.CONSOLE_REQUIRE_MFA === "1" && !s.m && !req.nextUrl.pathname.startsWith("/account")) {
       const url = req.nextUrl.clone();
       url.pathname = "/account";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    if (s.r === "cashier" && !tillOnly(req.nextUrl.pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/closing";
       url.search = "";
       return NextResponse.redirect(url);
     }

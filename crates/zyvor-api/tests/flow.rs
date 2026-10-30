@@ -3156,6 +3156,17 @@ async fn console_users_sign_in_with_roles_lockout_and_a_replay_proof_second_fact
         )
         .await;
     assert_eq!(u["username"], "priya");
+    // a till-only role exists and signs in with the role it was given
+    let till = t
+        .ok(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("till-1", "a-long-enough-pass", "cashier"),
+        )
+        .await;
+    assert_eq!(till["role"], "cashier");
     assert_eq!(
         t.call(
             a,

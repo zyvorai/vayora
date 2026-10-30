@@ -1,4 +1,4 @@
-//! Console users: named accounts with roles (admin, finance, viewer), Argon2id passwords, optional
+//! Console users: named accounts with roles (admin, finance, viewer, cashier), Argon2id passwords, optional
 //! TOTP second factor with single-use recovery codes, and lockout after repeated failures.
 //! The console authenticates a person by calling `POST /v1/console/authenticate` with its own admin
 //! key; the API owns the credentials, the console only keeps the signed session.
@@ -25,7 +25,7 @@ use crate::{ApiError, AppState, auth::Auth, tenant};
 const MIN_PASSWORD: usize = 12;
 const LOCK_AFTER: i32 = 5;
 const LOCK_MINUTES: i32 = 15;
-const ROLES: [&str; 3] = ["admin", "finance", "viewer"];
+const ROLES: [&str; 4] = ["admin", "finance", "viewer", "cashier"];
 
 fn hash_password(pw: &str) -> Result<String, ApiError> {
     Argon2::default()
@@ -152,7 +152,7 @@ pub async fn create_user(
     if !ROLES.contains(&b.role.as_str()) {
         return Err(ApiError::invalid(
             "invalid_role",
-            "role must be admin, finance or viewer",
+            "role must be admin, finance, viewer or cashier",
         ));
     }
     check_password(&b.password)?;

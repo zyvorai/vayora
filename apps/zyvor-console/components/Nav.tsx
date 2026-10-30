@@ -28,11 +28,11 @@ const admin = [
 ];
 const account = { href: "/account", label: "Account", icon: icon("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4") };
 
-export function Nav({ role }: { role: "admin" | "finance" | "viewer" }) {
+export function Nav({ role }: { role: "admin" | "finance" | "viewer" | "cashier" }) {
   const path = usePathname();
   return (
     <nav aria-label="Main">
-      {[...items, ...(role === "admin" ? admin : []), account].map((i) => {
+      {[...(role === "cashier" ? items.filter((i) => i.href === "/closing") : items), ...(role === "admin" ? admin : []), account].map((i) => {
         const on = i.href === "/" ? path === "/" : path.startsWith(i.href);
         return (
           <Link key={i.href} href={i.href} className="nav" aria-current={on ? "page" : undefined}>
