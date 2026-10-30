@@ -42,7 +42,9 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
             st.refunds_checked += 1;
         }
         // 2. merchant webhooks
-        st.events_delivered += outbox::deliver_tenant(&s.pool, &s.crypto, client, &tid).await?;
+        st.events_delivered +=
+            outbox::deliver_tenant(&s.pool, &s.crypto, client, &tid, s.allow_private_targets)
+                .await?;
         // 3. recurring invoices that have come due
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;

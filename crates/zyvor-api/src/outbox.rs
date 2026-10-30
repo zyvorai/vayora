@@ -54,6 +54,7 @@ pub async fn deliver_tenant(
     crypto: &Crypto,
     client: &reqwest::Client,
     tenant_id: &str,
+    allow_private: bool,
 ) -> Result<usize, sqlx::Error> {
     let mut tx = tenant::begin(pool, tenant_id).await?;
     let cfg: Option<(Option<String>, Option<Vec<u8>>)> = sqlx::query_as("SELECT outbound_webhook_url, outbound_webhook_secret_enc FROM tenant_settings WHERE tenant_id = $1").bind(tenant_id).fetch_optional(&mut *tx).await?;
@@ -62,6 +63,33 @@ pub async fn deliver_tenant(
     };
     let Some(secret) = crypto.decrypt(&secret_enc) else {
         return Ok(0);
+    };
+
+    // Connect only to addresses vetted just now, so a name that starts resolving to an internal
+    // address after it was saved cannot be used to reach our network.
+    let pinned;
+    let client = if allow_private {
+        client
+    } else {
+        let checked = match crate::ssrf::check_url(&url, false) {
+            Ok(u) => crate::ssrf::resolve_public(&u).await.map(|a| (u, a)),
+            Err(e) => Err(e),
+        };
+        match checked {
+            Ok((u, addrs)) => {
+                pinned = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(10))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .resolve_to_addrs(u.host_str().unwrap_or_default(), &addrs)
+                    .build()
+                    .expect("http client");
+                &pinned
+            }
+            Err(e) => {
+                tracing::warn!(tenant = tenant_id, error = %e, "outbound webhook target refused");
+                return Ok(0);
+            }
+        }
     };
 
     let due: Vec<(String, serde_json::Value, i32)> = sqlx::query_as(

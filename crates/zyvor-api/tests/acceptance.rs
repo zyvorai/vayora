@@ -799,7 +799,7 @@ async fn worker_crashes_and_restarts_do_not_lose_acknowledged_events(pool: PgPoo
 
     // restart: first delivery fails (stays pending, backoff), the rest succeed
     let client = outbox::http_client();
-    let d1 = outbox::deliver_tenant(&t.state.pool, &t.state.crypto, &client, &t.a.id)
+    let d1 = outbox::deliver_tenant(&t.state.pool, &t.state.crypto, &client, &t.a.id, true)
         .await
         .unwrap() as i64;
     assert_eq!(d1, total - 1);
@@ -807,7 +807,7 @@ async fn worker_crashes_and_restarts_do_not_lose_acknowledged_events(pool: PgPoo
         .execute(&t.root)
         .await
         .unwrap();
-    let d2 = outbox::deliver_tenant(&t.state.pool, &t.state.crypto, &client, &t.a.id)
+    let d2 = outbox::deliver_tenant(&t.state.pool, &t.state.crypto, &client, &t.a.id, true)
         .await
         .unwrap() as i64;
     assert_eq!(d1 + d2, total);

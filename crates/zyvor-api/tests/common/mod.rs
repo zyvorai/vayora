@@ -68,6 +68,7 @@ pub async fn setup(root: PgPool) -> T {
         Crypto::from_hex(&"11".repeat(32)).unwrap(),
     );
     state.provider_timeout = std::time::Duration::from_secs(1);
+    state.allow_private_targets = true; // the simulators listen on localhost
     state.resolve_after = std::time::Duration::from_secs(0);
     let router = app(state.clone());
 

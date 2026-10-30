@@ -633,6 +633,10 @@ pub async fn put_settings(
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
     }
+    if let Some(u) = &b.outbound_webhook_url {
+        crate::ssrf::check_url(u, s.allow_private_targets)
+            .map_err(|e| ApiError::invalid("invalid_webhook_url", e))?;
+    }
     if let Some(d) = &b.dunning {
         let ok = d
             .channel

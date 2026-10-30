@@ -50,10 +50,13 @@ pub struct AppState {
     pub limiter: Arc<ratelimit::RateLimiter>,
     /// How many reverse proxies we run in front; they vouch for `X-Forwarded-For` from the right.
     pub trusted_hops: u8,
+    /// Sandboxes only: let merchant URLs (webhooks) point at private addresses and plain http.
+    pub allow_private_targets: bool,
 }
 
 pub use crypto::Crypto;
 pub mod ratelimit;
+pub mod ssrf;
 
 impl AppState {
     pub fn new(pool: PgPool, crypto: Crypto) -> Self {
@@ -65,6 +68,7 @@ impl AppState {
             resolve_after: Duration::from_secs(30),
             limiter: Arc::new(ratelimit::RateLimiter::new(Default::default())),
             trusted_hops: 0,
+            allow_private_targets: false,
         }
     }
 }

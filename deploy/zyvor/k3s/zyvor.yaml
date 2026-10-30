@@ -99,6 +99,8 @@ spec:
             - { name: ZYVOR_PROVIDER_TIMEOUT_SECS, value: "5" }
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: database-url } } }
             - { name: ZYVOR_MASTER_KEY, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: master-key } } }
+            # SANDBOX: the simulated providers and webhook sinks live on private cluster addresses
+            - { name: ZYVOR_ALLOW_PRIVATE_TARGETS, value: "1" }
             # Caddy on the host, then the checkout app's rewrite: two proxies vouch for X-Forwarded-For
             - { name: ZYVOR_TRUST_PROXY_HOPS, value: "2" }
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
@@ -128,6 +130,8 @@ spec:
           env:
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: database-url } } }
             - { name: ZYVOR_MASTER_KEY, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: master-key } } }
+            # SANDBOX: the simulated providers and webhook sinks live on private cluster addresses
+            - { name: ZYVOR_ALLOW_PRIVATE_TARGETS, value: "1" }
           resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 ---

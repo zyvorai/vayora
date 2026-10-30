@@ -2752,3 +2752,82 @@ async fn payment_links_mint_a_fresh_intent_per_payer_and_respect_caps_expiry_and
         .await;
     assert_eq!(st.as_u16(), 404, "already canceled");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn webhook_urls_cannot_target_private_networks_when_saved_or_delivered(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut st = t.state.clone();
+    st.allow_private_targets = false; // production posture
+    let app = zyvor_api::app(st.clone());
+    let set = |url: &'static str| {
+        let (app, key) = (app.clone(), a.key.clone());
+        async move {
+            raw(
+                &app,
+                &key,
+                None,
+                "POST",
+                "/v1/settings",
+                None,
+                json!({ "outbound_webhook_url": url, "outbound_webhook_secret": "whsec_x" }),
+            )
+            .await
+        }
+    };
+    for bad in [
+        "http://hooks.example.com/z",
+        "https://169.254.169.254/latest",
+        "https://127.0.0.1:9/z",
+        "https://internal-db/z",
+        "https://u:p@hooks.example.com/z",
+    ] {
+        let (s, body) = set(bad).await;
+        assert_eq!(
+            (s.as_u16(), body["error"]["code"].clone()),
+            (422, json!("invalid_webhook_url")),
+            "{bad}"
+        );
+    }
+    assert_eq!(set("https://hooks.example.com/zyvor").await.0.as_u16(), 200);
+
+    // a URL that was fine when saved but points inward at delivery time is not called
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "S-1", "amount_minor": 100 }),
+    )
+    .await; // emits an event
+    sqlx::query("UPDATE tenant_settings SET outbound_webhook_url = $2 WHERE tenant_id = $1")
+        .bind(&a.id)
+        .bind("https://127.0.0.1:9/hook")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let pending = t
+        .count("SELECT count(*) FROM outbox_events WHERE status = 'pending'")
+        .await;
+    let n = zyvor_api::outbox::deliver_tenant(
+        &st.pool,
+        &st.crypto,
+        &zyvor_api::outbox::http_client(),
+        &a.id,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(n, 0);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE status = 'pending'")
+            .await,
+        pending,
+        "refused, not failed: events wait for a valid URL"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE attempts > 0")
+            .await,
+        0
+    );
+}

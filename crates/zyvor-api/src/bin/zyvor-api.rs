@@ -70,6 +70,7 @@ async fn main() {
     if let Ok(s) = env::var("ZYVOR_PROVIDER_TIMEOUT_SECS") {
         state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));
     }
+    state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
     state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
         .ok()
         .and_then(|v| v.parse().ok())
