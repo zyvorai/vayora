@@ -101,7 +101,8 @@ Publishing code is free; moving money in India is not. Operating Vayora in produ
 | `crates/vayora-api` | axum API, idempotency, migrations |
 | `packages/node` | `@vayora/node` server SDK |
 | `apps/checkout` | Next.js hosted checkout |
-| `apps/dashboard` | Merchant dashboard: overview, payments, refunds, webhooks |
+| `apps/zyvor-console` | Merchant console for the Zyvor API: payments, links, refunds, payouts, reconciliation, collections, billing, disputes, webhooks, people |
+| `apps/dashboard` | Legacy single-merchant dashboard (targets the old Vayora API; superseded by the console) |
 | `deploy/` | docker-compose for Postgres and Redis |
 
 Planned: cards, router, settlement, risk, dashboard.
