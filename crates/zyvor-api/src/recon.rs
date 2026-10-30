@@ -653,15 +653,27 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
 #[derive(Deserialize)]
 pub struct BankLine {
     posted_on: NaiveDate,
-    amount_minor: i64,
+    pub(crate) amount_minor: i64,
     currency: Option<String>,
-    narration: Option<String>,
-    utr: Option<String>,
+    pub(crate) narration: Option<String>,
+    pub(crate) utr: Option<String>,
+}
+
+impl BankLine {
+    pub fn new(posted_on: NaiveDate, amount_minor: i64, narration: String, utr: String) -> Self {
+        Self {
+            posted_on,
+            amount_minor,
+            currency: None,
+            narration: Some(narration),
+            utr: Some(utr),
+        }
+    }
 }
 
 #[derive(Deserialize)]
 pub struct ImportBank {
-    lines: Vec<BankLine>,
+    pub(crate) lines: Vec<BankLine>,
 }
 
 pub async fn import_bank(

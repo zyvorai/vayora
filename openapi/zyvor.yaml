@@ -671,6 +671,16 @@ paths:
         required: true
         schema:
           type: string
+  /v1/bank_statements/import_csv:
+    post:
+      summary: Import a bank statement CSV ({csv}); unreadable files are rejected, re-imports add nothing
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)

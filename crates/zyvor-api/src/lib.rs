@@ -4,6 +4,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod bankcsv;
 pub mod billing;
 pub mod cases;
 pub mod checkout;
@@ -102,6 +103,7 @@ pub fn app(state: AppState) -> Router {
         .route("/settlements/sync", post(recon::sync_settlements))
         .route("/settlements/{id}/explain", get(recon::explain))
         .route("/bank_statements/import", post(recon::import_bank))
+        .route("/bank_statements/import_csv", post(bankcsv::import_csv))
         .route("/recon/cases", get(recon::list_cases))
         .route("/recon/cases/{id}/assign", post(recon::assign_case))
         .route("/recon/cases/{id}/resolve", post(recon::resolve_case))
