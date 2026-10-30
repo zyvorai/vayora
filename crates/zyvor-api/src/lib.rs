@@ -4,6 +4,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod billing;
 pub mod cases;
 pub mod checkout;
 pub mod collections;
@@ -123,6 +124,35 @@ pub fn app(state: AppState) -> Router {
         .route("/users", post(create_user))
         .route("/invoices", post(create_invoice).get(list_invoices))
         .route("/invoices/{id}", get(get_invoice))
+        // billing
+        .route(
+            "/plans",
+            post(billing::create_plan).get(billing::list_plans),
+        )
+        .route(
+            "/subscriptions",
+            post(billing::create_subscription).get(billing::list_subscriptions),
+        )
+        .route(
+            "/subscriptions/{id}/pause",
+            post(billing::pause_subscription),
+        )
+        .route(
+            "/subscriptions/{id}/resume",
+            post(billing::resume_subscription),
+        )
+        .route(
+            "/subscriptions/{id}/cancel",
+            post(billing::cancel_subscription),
+        )
+        .route("/subscriptions/{id}/usage", post(billing::record_usage))
+        .route("/billing/run", post(billing::billing_run))
+        .route(
+            "/invoices/{id}/credit_notes",
+            post(billing::create_credit_note),
+        )
+        .route("/invoices/{id}/void", post(billing::void_invoice))
+        .route("/customers/{id}/statement", get(billing::statement))
         // collections
         .route("/collections/ageing", get(collections::ageing))
         .route("/collections/promises", get(collections::list_promises))

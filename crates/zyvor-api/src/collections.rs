@@ -14,7 +14,7 @@ use zyvor_core::new_id;
 
 use crate::{ApiError, AppState, auth::Auth, tenant};
 
-const OUTSTANDING: &str = "(i.amount_minor - COALESCE((SELECT SUM(a.amount_minor) FROM invoice_allocations a WHERE a.invoice_id = i.id), 0))::BIGINT";
+const OUTSTANDING: &str = "(i.amount_minor - invoice_settled(i.id))::BIGINT";
 
 #[derive(Deserialize)]
 pub struct AgeingQuery {

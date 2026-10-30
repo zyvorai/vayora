@@ -144,7 +144,7 @@ pub async fn create_intent(
     }
     if let Some(inv) = &b.invoice_id {
         let row: Option<(String, i64, String, i64)> = sqlx::query_as(
-            "SELECT currency, amount_minor, status, COALESCE((SELECT SUM(amount_minor) FROM invoice_allocations a WHERE a.invoice_id = invoices.id), 0)::BIGINT FROM invoices WHERE id = $1",
+            "SELECT currency, amount_minor, status, invoice_settled(id) FROM invoices WHERE id = $1",
         )
         .bind(inv)
         .fetch_optional(&mut *tx)
@@ -897,8 +897,8 @@ pub async fn refresh_invoice_status(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE invoices SET status = CASE
-            WHEN COALESCE((SELECT SUM(amount_minor) FROM invoice_allocations WHERE invoice_id = $1), 0) >= amount_minor THEN 'paid'
-            WHEN COALESCE((SELECT SUM(amount_minor) FROM invoice_allocations WHERE invoice_id = $1), 0) > 0 THEN 'partially_paid'
+            WHEN invoice_settled($1) >= amount_minor THEN 'paid'
+            WHEN invoice_settled($1) > 0 THEN 'partially_paid'
             ELSE 'open' END
          WHERE id = $1 AND status <> 'void'",
     )

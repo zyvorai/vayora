@@ -1524,3 +1524,189 @@ async fn collections_ageing_promises_and_reminders(pool: PgPool) {
         1
     );
 }
+
+// Billing ────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn subscriptions_bill_once_per_period_with_usage_credits_void_and_statements(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now().date_naive();
+    let cust = t
+        .ok(a, "POST", "/v1/customers", None, json!({ "name": "Ravi" }))
+        .await;
+    let cid = cust["id"].as_str().unwrap();
+    let plan = t.ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 99_900, "interval_unit": "month", "usage_unit_minor": 100 })).await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "x", "amount_minor": 1, "interval_unit": "fortnight" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    // started 2 months + a bit ago: 3 periods are due, and re-running must not duplicate any
+    let start = today.checked_sub_months(chrono::Months::new(2)).unwrap();
+    let sub = t.ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cid, "plan_id": plan["id"], "quantity": 2, "start_date": start.to_string() })).await;
+    let sid = sub["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{sid}/usage"),
+        None,
+        json!({ "quantity": 30, "reference": "u1" }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{sid}/usage"),
+        None,
+        json!({ "quantity": 30, "reference": "u1" }),
+    )
+    .await; // retry
+    let run = t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    assert_eq!(run["invoices_created"], 3);
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        0
+    );
+    let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let mut amounts: Vec<i64> = invoices["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["amount_minor"].as_i64().unwrap())
+        .collect();
+    amounts.sort();
+    // the retried usage counted once (30 * 100), landing on the first period's invoice
+    assert_eq!(amounts, vec![199_800, 199_800, 202_800]);
+    assert_eq!(
+        t.ok(b, "GET", "/v1/invoices", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // credit note reduces what is owed and cannot over-credit
+    let inv = invoices["data"][0]["id"].as_str().unwrap().to_string();
+    let amt = invoices["data"][0]["amount_minor"].as_i64().unwrap();
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{inv}/credit_notes"),
+            None,
+            json!({ "amount_minor": amt + 1, "reason": "x" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{inv}/credit_notes"),
+        None,
+        json!({ "amount_minor": 50_000, "reason": "goodwill" }),
+    )
+    .await;
+    let got = t
+        .ok(a, "GET", &format!("/v1/invoices/{inv}"), None, Value::Null)
+        .await;
+    assert_eq!(got["credited_minor"], 50_000);
+    assert_eq!(got["outstanding_minor"].as_i64().unwrap(), amt - 50_000);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{inv}/credit_notes"),
+        None,
+        json!({ "amount_minor": amt - 50_000, "reason": "waived" }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", &format!("/v1/invoices/{inv}"), None, Value::Null)
+            .await["status"],
+        "paid"
+    );
+    // credited invoices cannot be voided; untouched ones can
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{inv}/void"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    let other = invoices["data"][1]["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{other}/void"),
+        None,
+        json!({}),
+    )
+    .await;
+
+    // statement: invoices minus credits, with a running balance; other tenants can't read it
+    let stmt = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/customers/{cid}/statement"),
+            None,
+            Value::Null,
+        )
+        .await;
+    let want =
+        amounts.iter().sum::<i64>() - invoices["data"][1]["amount_minor"].as_i64().unwrap() - amt;
+    assert_eq!(stmt["balance_minor"]["INR"].as_i64().unwrap(), want);
+    let (st, _) = t
+        .call(
+            b,
+            "GET",
+            &format!("/v1/customers/{cid}/statement"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+
+    // lifecycle: paused subscriptions are not billed, canceled ones cannot be resumed
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{sid}/pause"),
+        None,
+        json!({}),
+    )
+    .await;
+    sqlx::query("UPDATE subscriptions SET next_bill_date = CURRENT_DATE")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        0
+    );
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{sid}/cancel"),
+        None,
+        json!({}),
+    )
+    .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/subscriptions/{sid}/resume"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+}

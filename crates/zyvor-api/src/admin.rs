@@ -487,9 +487,15 @@ pub async fn get_invoice(
         r.ok_or_else(|| ApiError::not_found("invoice"))?;
     let allocs: Vec<(String, i64, String)> = sqlx::query_as("SELECT intent_id, amount_minor, reference FROM invoice_allocations WHERE invoice_id = $1 ORDER BY id").bind(&id).fetch_all(&mut *tx).await?;
     let paid: i64 = allocs.iter().map(|a| a.1).sum();
+    let credited: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount_minor), 0)::BIGINT FROM credit_notes WHERE invoice_id = $1",
+    )
+    .bind(&id)
+    .fetch_one(&mut *tx)
+    .await?;
     Ok(Json(json!({
         "id": id, "number": number, "currency": currency, "amount_minor": amount, "tax_minor": tax, "external_ref": ext, "status": status, "due_date": due,
-        "paid_minor": paid, "outstanding_minor": amount - paid,
+        "paid_minor": paid, "credited_minor": credited, "outstanding_minor": amount - paid - credited,
         "allocations": allocs.into_iter().map(|(i, a, r)| json!({ "intent_id": i, "amount_minor": a, "reference": r })).collect::<Vec<_>>(),
     })))
 }
@@ -502,7 +508,7 @@ pub async fn list_invoices(
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(String, String, i64, String, Option<NaiveDate>, i64)> = sqlx::query_as(
-        "SELECT id, number, amount_minor, status, due_date, COALESCE((SELECT SUM(amount_minor) FROM invoice_allocations a WHERE a.invoice_id = invoices.id), 0)::BIGINT
+        "SELECT id, number, amount_minor, status, due_date, invoice_settled(invoices.id)
          FROM invoices WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC LIMIT $2",
     )
     .bind(&q.status)

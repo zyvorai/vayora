@@ -444,6 +444,166 @@ paths:
         required: true
         schema:
           type: string
+  /v1/plans:
+    get:
+      summary: Create or list billing plans
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list billing plans
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/subscriptions:
+    get:
+      summary: Create or list subscriptions
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list subscriptions
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/subscriptions/{id}/pause:
+    post:
+      summary: Pause a subscription
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/subscriptions/{id}/resume:
+    post:
+      summary: Resume a paused subscription
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/subscriptions/{id}/cancel:
+    post:
+      summary: Cancel a subscription
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/subscriptions/{id}/usage:
+    post:
+      summary: Record metered usage (idempotent by reference)
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/billing/run:
+    post:
+      summary: Invoice every subscription that is due (idempotent per period)
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invoices/{id}/credit_notes:
+    post:
+      summary: Issue a credit note against an invoice
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/invoices/{id}/void:
+    post:
+      summary: Void an unpaid, uncredited invoice
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/customers/{id}/statement:
+    get:
+      summary: Customer statement with running balance
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)

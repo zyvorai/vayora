@@ -43,7 +43,17 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         }
         // 2. merchant webhooks
         st.events_delivered += outbox::deliver_tenant(&s.pool, &s.crypto, client, &tid).await?;
-        // 3. payments that never reached a settlement
+        // 3. recurring invoices that have come due
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            if crate::billing::run_billing(&mut tx, &tid, chrono::Utc::now().date_naive())
+                .await
+                .is_ok()
+            {
+                tx.commit().await?;
+            }
+        }
+        // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {
             tx.commit().await?;
