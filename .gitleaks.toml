@@ -1,0 +1,7 @@
+# gitleaks: scan with the default rules, minus placeholder keys used to document and test key masking.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "maskKey docs and tests use obviously fake sk_test_ placeholders"
+paths = ['''apps/(dashboard|zyvor-console)/lib/format(\.test)?\.ts''']
