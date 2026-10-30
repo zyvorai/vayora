@@ -61,6 +61,27 @@ export interface Page<T> {
 /** One line of a GST tax invoice. `rateBp` is the slab in percent × 100 (1800 = 18%). */
 export interface GstLine { description: string; hsnSac: string; quantity: number; unitPriceMinor: number; rateBp: 0 | 25 | 100 | 150 | 300 | 500 | 1200 | 1800 | 2800 }
 
+export interface Settings {
+  refund_approval_threshold_minor: number;
+  payout_approval_threshold_minor: number;
+  outbound_webhook_url: string | null;
+  webhook_events: string[];
+  dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
+  gst: { gstin: string | null; legal_name: string | null };
+  env: string;
+}
+
+/** Only the fields you send change. `outbound_webhook_secret` is write-only. */
+export interface SettingsPatch {
+  refund_approval_threshold_minor?: number;
+  payout_approval_threshold_minor?: number;
+  outbound_webhook_url?: string;
+  outbound_webhook_secret?: string;
+  webhook_events?: string[];
+  dunning?: Partial<Settings["dunning"]>;
+  gst?: { gstin: string; legal_name?: string };
+}
+
 export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }
 
 export class ZyvorError extends Error {
@@ -203,6 +224,11 @@ export class Zyvor {
     /** Record the bank reference (UTR) of the transfer you made; posts to the ledger once. */
     markPaid: (id: string, bankRef: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/mark_paid`, { bank_ref: bankRef }),
     cancel: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/cancel`),
+  };
+
+  readonly settings = {
+    get: () => this.req<Settings>("GET", "/v1/settings"),
+    update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
   };
 
   readonly installments = {

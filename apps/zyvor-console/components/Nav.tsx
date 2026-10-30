@@ -18,7 +18,10 @@ const items = [
   { href: "/billing", label: "Billing", icon: icon("M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6") },
   { href: "/webhooks", label: "Webhooks", icon: icon("M4 12h4l2-6 4 12 2-6h4") },
 ];
-const admin = [{ href: "/users", label: "People", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0") }];
+const admin = [
+  { href: "/users", label: "People", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0") },
+  { href: "/settings", label: "Settings", icon: icon("M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.4-2.7a7 7 0 002-1.2l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z") },
+];
 const account = { href: "/account", label: "Account", icon: icon("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4") };
 
 export function Nav({ role }: { role: "admin" | "finance" | "viewer" }) {

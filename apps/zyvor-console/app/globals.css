@@ -212,3 +212,6 @@ tbody tr { transition: background .15s; }
 /* labelled inputs in inline forms: label above, same look as the login form */
 label.field { display: grid; gap: 6px; font-size: .75rem; font-weight: 600; color: var(--muted); }
 label.field input, label.field select { font-weight: 400; }
+
+label.field.checkbox { display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 400; color: inherit; }
+label.field.checkbox input { width: auto; }

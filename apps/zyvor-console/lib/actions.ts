@@ -174,3 +174,27 @@ export const requestPayout = async (_: FormState, f: FormData): Promise<FormStat
 };
 export const addVendor = async (_: FormState, f: FormData) =>
   run(["/payouts"], (z) => z.payouts.createVendor({ name: String(f.get("name") ?? ""), accountNumber: String(f.get("account") ?? "").trim() || undefined, ifsc: String(f.get("ifsc") ?? "").trim().toUpperCase() || undefined, vpa: String(f.get("vpa") ?? "").trim() || undefined }), "finance");
+
+// ---- settings (admin) ----
+const rupees = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "0").replace(/,/g, "")) * 100);
+const on = (f: FormData, k: string) => f.get(k) === "on";
+
+export const saveCollections = async (_: FormState, f: FormData) =>
+  run(["/settings"], (z) => z.settings.update({ dunning: { enabled: on(f, "enabled"), requires_approval: on(f, "requires_approval"), channel: String(f.get("channel") ?? "email") as "email", min_days_overdue: Number(f.get("min_days") ?? 1), repeat_after_days: Number(f.get("repeat_days") ?? 7) } }), "admin");
+export const saveApprovals = async (_: FormState, f: FormData) => {
+  const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];
+  if (!Number.isFinite(r) || !Number.isFinite(p) || r < 0 || p < 0) return { error: "Amounts must be zero or more." };
+  return run(["/settings"], (z) => z.settings.update({ refund_approval_threshold_minor: r, payout_approval_threshold_minor: p }), "admin");
+};
+export const saveGst = async (_: FormState, f: FormData) => {
+  const gstin = String(f.get("gstin") ?? "").trim().toUpperCase();
+  if (!gstin) return { error: "Enter your GSTIN." };
+  return run(["/settings"], (z) => z.settings.update({ gst: { gstin, legal_name: String(f.get("legal_name") ?? "").trim() || undefined } }), "admin");
+};
+export const saveWebhooks = async (_: FormState, f: FormData) => {
+  const events = on(f, "all") ? ["*"] : f.getAll("event").map(String);
+  if (events.length === 0) return { error: "Choose at least one event, or all of them." };
+  const url = String(f.get("url") ?? "").trim();
+  const secret = String(f.get("secret") ?? "").trim();
+  return run(["/settings"], (z) => z.settings.update({ webhook_events: events, ...(url ? { outbound_webhook_url: url } : {}), ...(secret ? { outbound_webhook_secret: secret } : {}) }), "admin");
+};
