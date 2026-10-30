@@ -7116,3 +7116,122 @@ async fn a_branch_key_only_sees_and_creates_its_own_branch(pool: PgPool) {
         403
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn case_suggestions_point_at_the_nearest_settlement_and_change_nothing(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now().date_naive().to_string();
+    // a settlement the bank has not shown yet, then a credit of the same amount under a different UTR
+    t.ok(
+        a,
+        "POST",
+        "/v1/settlements/import",
+        None,
+        json!({ "provider": "razorpay", "provider_ref": "sg_1", "settled_on": today, "items": [
+        { "kind": "payment", "provider_ref": "pay_SG1", "amount_minor": 45_000 } ] }),
+    )
+    .await;
+    t.ok(a, "POST", "/v1/bank_statements/import", None, json!({ "lines": [{ "posted_on": today, "amount_minor": 47_000, "narration": "NEFT RZP SETTLEMENT", "utr": "UTR-OTHER" }] })).await;
+    let cases = t
+        .ok(
+            a,
+            "GET",
+            "/v1/recon/cases?kind=unmatched_bank_credit",
+            None,
+            Value::Null,
+        )
+        .await;
+    let case = cases["data"][0]["id"].as_str().unwrap().to_string();
+    let before = t
+        .count("SELECT count(*) FROM recon_cases WHERE status = 'open'")
+        .await;
+
+    let s = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/recon/cases/{case}/suggestions"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(s["kind"], "unmatched_bank_credit");
+    assert!(
+        s["summary"].as_str().unwrap().contains("2000")
+            || s["summary"].as_str().unwrap().contains("₹20.00"),
+        "{s}"
+    );
+    assert_eq!(s["evidence"][0]["difference_minor"], 2_000);
+    assert_eq!(s["evidence"][0]["provider"], "razorpay");
+    assert!(!s["next_steps"].as_array().unwrap().is_empty());
+    assert_eq!(
+        t.count("SELECT count(*) FROM recon_cases WHERE status = 'open'")
+            .await,
+        before,
+        "reading a suggestion changes nothing"
+    );
+
+    // a credit with nothing near it says so
+    t.ok(a, "POST", "/v1/bank_statements/import", None, json!({ "lines": [{ "posted_on": "2020-01-01", "amount_minor": 777, "narration": "ODD", "utr": "UTR-ODD" }] })).await;
+    let all = t
+        .ok(
+            a,
+            "GET",
+            "/v1/recon/cases?kind=unmatched_bank_credit",
+            None,
+            Value::Null,
+        )
+        .await;
+    let odd = all["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["actual_minor"] == 777)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let s2 = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/recon/cases/{odd}/suggestions"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert!(
+        s2["summary"]
+            .as_str()
+            .unwrap()
+            .contains("No provider settlement")
+    );
+
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/recon/cases/{case}/suggestions"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "GET",
+            "/v1/recon/cases/nope/suggestions",
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}

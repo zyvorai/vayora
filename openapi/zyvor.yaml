@@ -1497,6 +1497,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/recon/cases/{id}/suggestions:
+    get:
+      summary: Likeliest explanation for a reconciliation case, with the evidence (nothing is changed)
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail

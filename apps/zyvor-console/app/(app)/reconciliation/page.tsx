@@ -8,6 +8,10 @@ export default async function Reconciliation() {
   const z = api();
   const [cases, settlements] = await Promise.all([z.cases.list({}), z.settlements.list()]);
   const open = cases.data.filter((c) => c.status !== "resolved");
+  // a likeliest explanation for the first few open cases; failures just leave the row without a hint
+  const hints = new Map(
+    (await Promise.all(open.slice(0, 15).map(async (c) => [c.id, await z.cases.suggestions(c.id).catch(() => null)] as const))).filter(([, h]) => h !== null),
+  );
   return (
     <>
       <div className="head"><div><h1>Reconciliation</h1><p className="lede">Every difference between what we recorded and what arrived becomes a task with an owner.</p></div></div>
@@ -19,7 +23,11 @@ export default async function Reconciliation() {
             {cases.data.length === 0 && <tr><td colSpan={6} className="empty">Everything reconciles.</td></tr>}
             {cases.data.map((c) => (
               <tr key={c.id}>
-                <td className="mono">{c.kind}</td><td style={{ maxWidth: 420 }}>{c.explanation}</td>
+                <td className="mono">{c.kind}</td>
+                <td style={{ maxWidth: 420 }}>
+                  {c.explanation}
+                  {hints.get(c.id) && <div className="muted" style={{ marginTop: 4 }}>Likely: {hints.get(c.id)!.summary}{hints.get(c.id)!.next_steps[0] ? ` Next: ${hints.get(c.id)!.next_steps[0]}` : ""}</div>}
+                </td>
                 <td className="num">{c.actual_minor !== null && c.expected_minor !== null ? inr(c.actual_minor - c.expected_minor) : "—"}</td>
                 <td><Chip status={c.status} /></td><td>{c.assignee ?? <span className="muted">unassigned</span>}</td>
                 <td>{c.status === "open" && <Act action={assignCase} id={c.id} label="Take it" />}</td>

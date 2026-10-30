@@ -34,6 +34,7 @@ pub mod refunds;
 pub mod registry;
 pub mod reminders;
 pub mod state_machine;
+pub mod suggestions;
 pub mod telemetry;
 pub mod tenant;
 pub mod timeline;
@@ -144,6 +145,10 @@ pub fn app(state: AppState) -> Router {
         .route("/recon/cases/{id}/assign", post(recon::assign_case))
         .route("/recon/cases/{id}/resolve", post(recon::resolve_case))
         .route("/recon/scan", post(recon::scan))
+        .route(
+            "/recon/cases/{id}/suggestions",
+            get(suggestions::case_suggestions),
+        )
         .route("/analytics/cost", get(recon::cost_analytics))
         // administration
         .route("/api_keys", post(create_key).get(list_keys))
