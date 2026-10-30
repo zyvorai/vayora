@@ -172,8 +172,24 @@ export class Zyvor {
     statement: (customerId: string) => this.req<{ lines: Record<string, unknown>[]; balance_minor: Record<string, number> }>("GET", `/v1/customers/${encodeURIComponent(customerId)}/statement`),
   };
 
+  readonly invoices = {
+    list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
+    retrieve: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
+    create: (p: { number: string; amountMinor: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string }) =>
+      this.req<{ id: string }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef }),
+  };
+
+  readonly milestones = {
+    list: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/milestones"),
+    create: (p: { customerId: string; name: string; amountMinor: number; dueDays?: number; externalRef?: string }) =>
+      this.req<{ id: string }>("POST", "/v1/milestones", { customer_id: p.customerId, name: p.name, amount_minor: p.amountMinor, due_days: p.dueDays, external_ref: p.externalRef }),
+    /** Accept the milestone and invoice it. Calling twice returns the same invoice. */
+    complete: (id: string) => this.req<{ invoice_id: string }>("POST", `/v1/milestones/${encodeURIComponent(id)}/complete`),
+    cancel: (id: string) => this.req("POST", `/v1/milestones/${encodeURIComponent(id)}/cancel`),
+  };
+
   readonly collections = {
-    ageing: (asOf?: string) => this.req<{ as_of: string; data: { currency: string; bucket: string; outstanding_minor: number; count: number }[] }>("GET", `/v1/collections/ageing${this.qs({ as_of: asOf })}`),
+    ageing: (asOf?: string) => this.req<{ as_of: string; data: { currency: string; bucket: string; outstanding_minor: number; count: number; invoices: { id: string; number: string; customer_id: string | null; due_date: string | null; outstanding_minor: number; days_past_due: number }[] }[] }>("GET", `/v1/collections/ageing${this.qs({ as_of: asOf })}`),
     promise: (invoiceId: string, p: { promisedMinor: number; promisedDate: string; note?: string }) =>
       this.req<{ id: string }>("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/promises`, { promised_minor: p.promisedMinor, promised_date: p.promisedDate, note: p.note }),
     promises: (status?: "open" | "kept" | "broken" | "canceled") => this.req<Page<Record<string, unknown>>>("GET", `/v1/collections/promises${this.qs({ status })}`),

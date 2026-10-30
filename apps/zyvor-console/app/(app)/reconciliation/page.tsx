@@ -1,0 +1,53 @@
+import { Act } from "@/components/Act";
+import { Chip } from "@/components/Chip";
+import { assignCase } from "@/lib/actions";
+import { inr } from "@/lib/format";
+import { api } from "@/lib/zyvor";
+
+export default async function Reconciliation() {
+  const z = api();
+  const [cases, settlements] = await Promise.all([z.cases.list({}), z.settlements.list()]);
+  const open = cases.data.filter((c) => c.status !== "resolved");
+  return (
+    <>
+      <div className="head"><div><h1>Reconciliation</h1><p className="lede">Every difference between what we recorded and what arrived becomes a task with an owner.</p></div></div>
+      <h2>Cases ({open.length} open)</h2>
+      <div className="tablewrap" style={{ marginBottom: 28 }}>
+        <table>
+          <thead><tr><th>Kind</th><th>What happened</th><th className="num">Difference</th><th>Status</th><th>Owner</th><th /></tr></thead>
+          <tbody>
+            {cases.data.length === 0 && <tr><td colSpan={6} className="empty">Everything reconciles.</td></tr>}
+            {cases.data.map((c) => (
+              <tr key={c.id}>
+                <td className="mono">{c.kind}</td><td style={{ maxWidth: 420 }}>{c.explanation}</td>
+                <td className="num">{c.actual_minor !== null && c.expected_minor !== null ? inr(c.actual_minor - c.expected_minor) : "—"}</td>
+                <td><Chip status={c.status} /></td><td>{c.assignee ?? <span className="muted">unassigned</span>}</td>
+                <td>{c.status === "open" && <Act action={assignCase} id={c.id} label="Take it" />}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2>Settlements</h2>
+      <div className="tablewrap">
+        <table>
+          <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th></tr></thead>
+          <tbody>
+            {settlements.data.length === 0 && <tr><td colSpan={7} className="empty">No settlements imported yet.</td></tr>}
+            {settlements.data.map((s) => {
+              const r = s as Record<string, number | string | null>;
+              return (
+                <tr key={String(r.id)}>
+                  <td>{String(r.provider)}</td><td>{String(r.settled_on)}</td>
+                  <td className="num">{inr(Number(r.gross_minor))}</td><td className="num">{inr(Number(r.refunds_minor))}</td>
+                  <td className="num">{inr(Number(r.fee_minor))}</td><td className="num">{inr(Number(r.net_minor))}</td>
+                  <td><Chip status={String(r.status)} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
