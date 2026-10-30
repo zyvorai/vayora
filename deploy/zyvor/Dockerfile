@@ -1,5 +1,5 @@
 # Builds the API, worker and sandbox provider. Final image runs as a non-root user.
-FROM rust:1 AS build
+FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p zyvor-api -p zyvor-provider-mock
