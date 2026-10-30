@@ -1,0 +1,14 @@
+# The Rust image needs only the Cargo workspace; keeping the UI out stops front-end edits invalidating the build cache.
+target
+node_modules
+**/node_modules
+.git
+apps
+packages
+sdks
+site
+docs
+scripts
+deploy
+openapi
+.github

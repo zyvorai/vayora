@@ -9,11 +9,14 @@ import { api, authConfig } from "@/lib/zyvor";
 export type FormState = { ok?: string; error?: string } | undefined;
 
 export async function login(_: FormState, form: FormData): Promise<FormState> {
-  const { password, secret } = authConfig();
-  const ok = await passwordMatches(secret, String(form.get("password") ?? ""), password);
+  const { username, password, secret } = authConfig();
+  // Check both fields every time so a wrong username costs the same as a wrong password.
+  const userOk = await passwordMatches(secret, String(form.get("username") ?? "").trim().toLowerCase(), username.toLowerCase());
+  const passOk = await passwordMatches(secret, String(form.get("password") ?? ""), password);
+  const ok = userOk && passOk;
   if (!ok) {
     await new Promise((r) => setTimeout(r, 500)); // slow down guessing
-    return { error: "Incorrect password." };
+    return { error: "Incorrect username or password." };
   }
   (await cookies()).set(COOKIE, await createSession(secret), {
     httpOnly: true,

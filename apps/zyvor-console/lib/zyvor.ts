@@ -11,4 +11,4 @@ export function api(): Zyvor {
   return new Zyvor({ apiKey: need("ZYVOR_API_KEY"), baseUrl: process.env.ZYVOR_API_URL ?? "http://localhost:8080", actor: process.env.CONSOLE_USER ?? "console" });
 }
 
-export const authConfig = () => ({ password: need("CONSOLE_PASSWORD"), secret: need("CONSOLE_SESSION_SECRET") });
+export const authConfig = () => ({ username: process.env.CONSOLE_USERNAME ?? "admin", password: need("CONSOLE_PASSWORD"), secret: need("CONSOLE_SESSION_SECRET") });

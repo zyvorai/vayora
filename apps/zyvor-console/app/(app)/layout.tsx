@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { CommandPalette, PaletteButton } from "@/components/CommandPalette";
 import { Nav } from "@/components/Nav";
 import { ThemeToggle } from "@/components/Theme";
 import { logout } from "@/lib/actions";
@@ -10,6 +11,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="side">
         <a className="brand" href="/"><img src="/favicon.svg" alt="" width="26" height="26" />Zyvor</a>
+        <PaletteButton />
         <Nav />
         <div className="spacer" />
         <div className="foot">
@@ -20,6 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main id="main">{children}</main>
+      <CommandPalette />
     </div>
   );
 }
