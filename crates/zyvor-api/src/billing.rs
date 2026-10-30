@@ -139,9 +139,7 @@ pub async fn create_subscription(
             "plan is no longer offered",
         ));
     }
-    let start = b
-        .start_date
-        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let start = b.start_date.unwrap_or_else(crate::ist_today);
     let id = new_id("sub");
     sqlx::query("INSERT INTO subscriptions (id, tenant_id, customer_id, plan_id, quantity, next_bill_date) VALUES ($1,$2,$3,$4,$5,$6)")
         .bind(&id).bind(&auth.tenant_id).bind(&b.customer_id).bind(&b.plan_id).bind(q).bind(start)
@@ -340,7 +338,7 @@ pub async fn run_billing(
 pub async fn billing_run(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let n = run_billing(&mut tx, &auth.tenant_id, chrono::Utc::now().date_naive()).await?;
+    let n = run_billing(&mut tx, &auth.tenant_id, crate::ist_today()).await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -571,7 +569,7 @@ pub async fn change_plan(
         ));
     }
     // the period being paid for runs from (next - interval) to next
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::ist_today();
     let period_start = match old.2.as_str() {
         "day" => next.checked_sub_days(Days::new(old.3 as u64)),
         "week" => next.checked_sub_days(Days::new(7 * old.3 as u64)),
@@ -712,7 +710,7 @@ pub async fn complete_milestone(
         _ => {}
     }
     let inv = new_id("inv");
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::ist_today();
     sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(&inv).bind(&auth.tenant_id).bind(&customer).bind(format!("MS-{}", &id[id.len().saturating_sub(10)..])).bind(&ccy).bind(amount)
         .bind(today.checked_add_days(Days::new(due_days as u64))).bind(ext.unwrap_or_else(|| format!("milestone:{name}")))

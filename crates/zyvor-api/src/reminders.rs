@@ -42,7 +42,7 @@ pub async fn load_facts(
     let row: Option<(String, String, String, i64, Option<NaiveDate>, i64, i64)> =
         sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT i.status, i.number, i.currency, {OUTSTANDING}, i.due_date,
-                COALESCE((CURRENT_DATE - i.due_date), 0)::BIGINT,
+                COALESCE(((now() AT TIME ZONE 'Asia/Kolkata')::date - i.due_date), 0)::BIGINT,
                 (SELECT count(*) FROM invoice_reminders r WHERE r.invoice_id = i.id)
          FROM invoices i WHERE i.id = $1"
         )))

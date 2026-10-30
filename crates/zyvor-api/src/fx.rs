@@ -88,9 +88,7 @@ pub async fn set_rate(
                 "rate must be a positive decimal with at most 6 decimals, such as 83.2150",
             )
         })?;
-    let today = chrono::Utc::now()
-        .with_timezone(&chrono::FixedOffset::east_opt(19_800).expect("IST"))
-        .date_naive();
+    let today = crate::ist_today();
     let as_of = b.as_of.unwrap_or(today);
     if as_of > today {
         return Err(ApiError::invalid(
@@ -165,7 +163,7 @@ pub async fn convert(
         ));
     }
     let foreign = if from == Currency::Inr { to } else { from };
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::ist_today();
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let (micro, on) = rate_on(&mut tx, foreign.code(), q.as_of.unwrap_or(today))
         .await?

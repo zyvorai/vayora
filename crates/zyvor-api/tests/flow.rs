@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 
 fn today() -> String {
-    chrono::Utc::now().date_naive().to_string()
+    zyvor_api::ist_today().to_string()
 }
 
 async fn set_routing(t: &T, tn: &Tenant, routing: Value) {
@@ -1372,7 +1372,7 @@ fn openapi_documents_every_route() {
 async fn collections_ageing_promises_and_reminders(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let today = chrono::Utc::now().date_naive();
+    let today = zyvor_api::ist_today();
     let mk = |n: &str, amt: i64, due: chrono::NaiveDate| json!({ "number": n, "amount_minor": amt, "due_date": due.to_string() });
     let cur = t
         .ok(
@@ -1530,7 +1530,7 @@ async fn collections_ageing_promises_and_reminders(pool: PgPool) {
 async fn subscriptions_bill_once_per_period_with_usage_credits_void_and_statements(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let today = chrono::Utc::now().date_naive();
+    let today = zyvor_api::ist_today();
     let cust = t
         .ok(a, "POST", "/v1/customers", None, json!({ "name": "Ravi" }))
         .await;
@@ -1715,7 +1715,7 @@ async fn subscriptions_bill_once_per_period_with_usage_credits_void_and_statemen
 async fn upgrades_are_prorated_and_milestones_invoice_exactly_once(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let today = chrono::Utc::now().date_naive();
+    let today = zyvor_api::ist_today();
     let cust = t
         .ok(
             a,
@@ -2107,7 +2107,7 @@ async fn customers_are_found_by_your_own_reference_and_deposits_appear_on_the_st
 async fn dunning_reminds_overdue_invoices_once_per_window_and_respects_promises(pool: PgPool) {
     let t = setup(pool).await;
     let a = &t.a;
-    let today = chrono::Utc::now().date_naive();
+    let today = zyvor_api::ist_today();
     let mk = |n: &str, due: chrono::NaiveDate| json!({ "number": n, "amount_minor": 5000, "due_date": due.to_string() });
     let late = t
         .ok(
@@ -2204,7 +2204,7 @@ async fn dunning_reminds_overdue_invoices_once_per_window_and_respects_promises(
 async fn the_worker_dunning_is_opt_in_per_tenant_and_repeat_safe(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let due = (chrono::Utc::now().date_naive() - chrono::Duration::days(12)).to_string();
+    let due = (zyvor_api::ist_today() - chrono::Duration::days(12)).to_string();
     for who in [a, b] {
         t.ok(
             who,
@@ -2499,7 +2499,7 @@ async fn payment_links_mint_a_fresh_intent_per_payer_and_respect_caps_expiry_and
 ) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let today = chrono::Utc::now().date_naive();
+    let today = zyvor_api::ist_today();
 
     // validation: exactly one of amount / invoice
     let (s, _) = t
@@ -3502,7 +3502,7 @@ async fn reminder_drafts_need_a_persons_approval_and_the_ai_assistant_is_boxed_i
     use zyvor_api::ai::AiConfig;
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let overdue = (chrono::Utc::now().date_naive() - chrono::Duration::days(9)).to_string();
+    let overdue = (zyvor_api::ist_today() - chrono::Duration::days(9)).to_string();
     let mk = |n: &str| json!({ "number": n, "amount_minor": 125_050, "due_date": overdue });
     let i1 = t.ok(a, "POST", "/v1/invoices", None, mk("INV-1")).await;
     let id1 = i1["id"].as_str().unwrap();
@@ -6771,7 +6771,7 @@ async fn a_payment_timeline_tells_the_story_in_order_and_stays_inside_the_tenant
 async fn insights_schedule_what_is_owed_and_flag_refund_patterns(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let day = |n: i64| (chrono::Utc::now().date_naive() + chrono::Duration::days(n)).to_string();
+    let day = |n: i64| (zyvor_api::ist_today() + chrono::Duration::days(n)).to_string();
     for (num, amt, due) in [
         ("I-1", 10_000, Some(-1)),
         ("I-2", 20_000, Some(3)),
@@ -7245,7 +7245,7 @@ async fn a_branch_key_only_sees_and_creates_its_own_branch(pool: PgPool) {
 async fn case_suggestions_point_at_the_nearest_settlement_and_change_nothing(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);
-    let today = chrono::Utc::now().date_naive().to_string();
+    let today = zyvor_api::ist_today().to_string();
     // a settlement the bank has not shown yet, then a credit of the same amount under a different UTR
     t.ok(
         a,

@@ -106,7 +106,7 @@ pub async fn case_suggestions(
         }
         "missing_settlement" => {
             let row: Option<(String, i64, i64)> = sqlx::query_as(
-                "SELECT provider, amount_minor, (current_date - created_at::date)::BIGINT FROM payment_attempts WHERE id = $1",
+                "SELECT provider, amount_minor, ((now() AT TIME ZONE 'Asia/Kolkata')::date - (created_at AT TIME ZONE 'Asia/Kolkata')::date)::BIGINT FROM payment_attempts WHERE id = $1",
             ).bind(&subject).fetch_optional(&mut *tx).await?;
             let (prov, amt, waiting) = row.ok_or_else(|| ApiError::not_found("payment attempt"))?;
             let lags: Vec<i64> = sqlx::query_scalar(

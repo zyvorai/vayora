@@ -29,7 +29,7 @@ pub async fn ageing(
     Query(q): Query<AgeingQuery>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
-    let as_of = q.as_of.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let as_of = q.as_of.unwrap_or_else(crate::ist_today);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(
         String,
@@ -185,7 +185,7 @@ pub async fn list_promises(
         "SELECT p.id, p.invoice_id, i.number, p.promised_minor, p.promised_date, p.note,
                 CASE WHEN p.canceled_at IS NOT NULL THEN 'canceled'
                      WHEN {OUTSTANDING} <= 0 THEN 'kept'
-                     WHEN p.promised_date < CURRENT_DATE THEN 'broken'
+                     WHEN p.promised_date < (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'broken'
                      ELSE 'open' END
          FROM payment_promises p JOIN invoices i ON i.id = p.invoice_id ORDER BY p.promised_date, p.id LIMIT $1"
     )))
@@ -380,7 +380,7 @@ pub async fn run_dunning(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
-        chrono::Utc::now().date_naive(),
+        crate::ist_today(),
         &Policy {
             min_days: min,
             repeat_days: rep,

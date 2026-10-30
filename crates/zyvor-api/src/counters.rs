@@ -178,7 +178,7 @@ pub async fn branch_summary(
 ) -> Result<Json<Value>, ApiError> {
     auth.require_branch("payments:read")?;
     auth.pin_branch(Some(id.clone()))?;
-    let to = q.to.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let to = q.to.unwrap_or_else(crate::ist_today);
     let from = q.from.unwrap_or(to - chrono::Duration::days(30));
     if from > to || (to - from).num_days() > 366 {
         return Err(ApiError::invalid(

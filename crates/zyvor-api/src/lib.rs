@@ -101,6 +101,14 @@ impl AppState {
     }
 }
 
+/// Today's date in India. Dates the product defaults to (billing, dunning, reports, FX) are Indian business days,
+/// so the UTC date is wrong from 00:00 to 05:30 IST.
+pub fn ist_today() -> chrono::NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(19_800).expect("IST"))
+        .date_naive()
+}
+
 pub fn app(state: AppState) -> Router {
     use admin::*;
     let v1 = Router::new()
