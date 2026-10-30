@@ -405,6 +405,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/collections/dunning/run:
+    post:
+      summary: Remind every overdue invoice with no live promise (repeat-safe)
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/collections/promises/{id}/cancel:
     post:
       summary: Cancel a promise to pay
@@ -438,6 +448,21 @@ paths:
         schema:
           type: string
   /v1/invoices/{id}/reminders:
+    get:
+      summary: Reminder history for an invoice
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
     post:
       summary: Log a reminder and emit invoice.reminder
       tags:

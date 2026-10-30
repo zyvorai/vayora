@@ -2102,3 +2102,100 @@ async fn customers_are_found_by_your_own_reference_and_deposits_appear_on_the_st
         assert_eq!(stmt["balance_minor"]["INR"], -15_000);
     }
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn dunning_reminds_overdue_invoices_once_per_window_and_respects_promises(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = chrono::Utc::now().date_naive();
+    let mk = |n: &str, due: chrono::NaiveDate| json!({ "number": n, "amount_minor": 5000, "due_date": due.to_string() });
+    let late = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("D-LATE", today - chrono::Duration::days(10)),
+        )
+        .await;
+    let promised = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("D-PROM", today - chrono::Duration::days(10)),
+        )
+        .await;
+    let _current = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("D-CUR", today + chrono::Duration::days(3)),
+        )
+        .await;
+    t.ok(a, "POST", &format!("/v1/invoices/{}/promises", promised["id"].as_str().unwrap()), None, json!({ "promised_minor": 5000, "promised_date": (today + chrono::Duration::days(2)).to_string() })).await;
+
+    let r = t
+        .ok(
+            a,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "channel": "sms" }),
+        )
+        .await;
+    assert_eq!(
+        r["reminded"], 1,
+        "only the overdue invoice with no live promise"
+    );
+    // a second run inside the repeat window adds nothing
+    let r = t
+        .ok(a, "POST", "/v1/collections/dunning/run", None, json!({}))
+        .await;
+    assert_eq!(r["reminded"], 0);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        1
+    );
+
+    let hist = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}/reminders", late["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    let rows = hist["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0]["channel"].as_str(), rows[0]["message"].as_str()),
+        (Some("sms"), Some("10 days overdue"))
+    );
+
+    // once the window has passed the invoice is chased again
+    sqlx::query("UPDATE invoice_reminders SET created_at = created_at - interval '8 days'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(
+        t.ok(a, "POST", "/v1/collections/dunning/run", None, json!({}))
+            .await["reminded"],
+        1
+    );
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "channel": "pigeon" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+}

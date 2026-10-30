@@ -239,3 +239,119 @@ pub async fn create_reminder(
         Json(json!({ "id": id, "invoice_id": invoice_id, "channel": b.channel })),
     ))
 }
+
+/// Reminder history for one invoice, newest first.
+pub async fn list_reminders(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(invoice_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, channel, message, sent_by, created_at FROM invoice_reminders WHERE invoice_id = $1 ORDER BY created_at DESC, id DESC",
+    )
+    .bind(&invoice_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let data: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, channel, message, sent_by, at)| json!({ "id": id, "channel": channel, "message": message, "sent_by": sent_by, "created_at": at }))
+        .collect();
+    Ok(Json(json!({ "data": data })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct DunningBody {
+    /// Only invoices at least this many days past due (default 1).
+    min_days_overdue: Option<i64>,
+    /// Don't nudge the same invoice again within this many days (default 7).
+    repeat_after_days: Option<i64>,
+    channel: Option<String>,
+}
+
+/// Remind every overdue invoice that has no live promise to pay and wasn't reminded recently.
+/// Safe to run on a schedule: the repeat window makes it idempotent, and the invoice rows are
+/// locked while deciding so two concurrent runs can't both remind.
+pub async fn run_dunning_tx(
+    tx: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    actor: &str,
+    today: NaiveDate,
+    min_days: i64,
+    repeat_days: i64,
+    channel: &str,
+) -> Result<Vec<String>, ApiError> {
+    let due: Vec<(String, String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT i.id, i.number, {OUTSTANDING}, ($1::date - i.due_date)::BIGINT
+         FROM invoices i
+         WHERE i.status IN ('open', 'partially_paid') AND i.due_date IS NOT NULL
+           AND ($1::date - i.due_date) >= $2
+           AND NOT EXISTS (SELECT 1 FROM payment_promises p WHERE p.invoice_id = i.id
+                           AND p.canceled_at IS NULL AND p.promised_date >= $1::date)
+           AND NOT EXISTS (SELECT 1 FROM invoice_reminders r WHERE r.invoice_id = i.id
+                           AND r.created_at > now() - make_interval(days => $3::int))
+         ORDER BY i.due_date, i.number FOR UPDATE OF i"
+    )))
+    .bind(today)
+    .bind(min_days)
+    .bind(repeat_days as i32)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut ids = Vec::new();
+    for (invoice_id, number, outstanding, days) in due {
+        if outstanding <= 0 {
+            continue;
+        }
+        let id = new_id("rem");
+        sqlx::query("INSERT INTO invoice_reminders (id, tenant_id, invoice_id, channel, message, sent_by) VALUES ($1, $2, $3, $4, $5, $6)")
+            .bind(&id).bind(tenant_id).bind(&invoice_id).bind(channel).bind(format!("{days} days overdue")).bind(actor)
+            .execute(&mut *tx).await?;
+        tenant::emit(tx, tenant_id, "invoice.reminder", json!({ "reminder_id": id, "invoice_id": invoice_id, "number": number, "channel": channel, "outstanding_minor": outstanding, "days_overdue": days, "automated": true })).await?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
+/// `POST /v1/collections/dunning/run`
+pub async fn run_dunning(
+    State(s): State<AppState>,
+    auth: Auth,
+    body: Option<Json<DunningBody>>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("collections:write")?;
+    let b = body.map(|j| j.0).unwrap_or_default();
+    let channel = b.channel.unwrap_or_else(|| "email".into());
+    if !["email", "sms", "whatsapp", "call", "other"].contains(&channel.as_str()) {
+        return Err(ApiError::invalid(
+            "invalid_channel",
+            "channel must be email, sms, whatsapp, call or other",
+        ));
+    }
+    let (min, rep) = (
+        b.min_days_overdue.unwrap_or(1).max(0),
+        b.repeat_after_days.unwrap_or(7).clamp(0, 365),
+    );
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let ids = run_dunning_tx(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        chrono::Utc::now().date_naive(),
+        min,
+        rep,
+        &channel,
+    )
+    .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "dunning.run",
+        None,
+        json!({ "reminded": ids.len() }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "reminded": ids.len(), "reminder_ids": ids })))
+}

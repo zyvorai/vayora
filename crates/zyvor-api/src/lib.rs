@@ -190,8 +190,9 @@ pub fn app(state: AppState) -> Router {
         .route("/invoices/{id}/promises", post(collections::create_promise))
         .route(
             "/invoices/{id}/reminders",
-            post(collections::create_reminder),
+            post(collections::create_reminder).get(collections::list_reminders),
         )
+        .route("/collections/dunning/run", post(collections::run_dunning))
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
         .route("/export", get(export))
