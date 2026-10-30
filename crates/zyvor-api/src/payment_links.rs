@@ -26,6 +26,11 @@ pub struct NewLink {
     /// Tie the link to a branch, or to a counter within it (print its QR at that counter).
     branch_id: Option<String>,
     counter_id: Option<String>,
+    /// The payer types the amount (a printed counter QR). Give `min_amount_minor` and `max_amount_minor`
+    /// to bound it; no amount, invoice, splits or fee on such a link.
+    open_amount: Option<bool>,
+    min_amount_minor: Option<i64>,
+    max_amount_minor: Option<i64>,
     /// Stop after this many checkouts have been started.
     max_uses: Option<i32>,
     expires_at: Option<DateTime<Utc>>,
@@ -41,10 +46,30 @@ pub async fn create_link(
     Json(b): Json<NewLink>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("payments:write")?;
-    if b.amount_minor.is_some() == b.invoice_id.is_some() {
+    let open = b.open_amount.unwrap_or(false);
+    if open {
+        let limit = 1..=zyvor_core::MAX_AMOUNT_MINOR;
+        let (lo, hi) = (b.min_amount_minor, b.max_amount_minor);
+        if b.amount_minor.is_some()
+            || b.invoice_id.is_some()
+            || b.splits.is_some()
+            || b.convenience_fee_bp.unwrap_or(0) != 0
+            || lo.is_some_and(|v| !limit.contains(&v))
+            || hi.is_some_and(|v| !limit.contains(&v))
+            || lo.zip(hi).is_some_and(|(l, h)| l > h)
+        {
+            return Err(ApiError::invalid(
+                "invalid_link",
+                "an open-amount link takes only optional min and max amounts (min not above max), and no amount, invoice, splits or fee",
+            ));
+        }
+    } else if b.amount_minor.is_some() == b.invoice_id.is_some()
+        || b.min_amount_minor.is_some()
+        || b.max_amount_minor.is_some()
+    {
         return Err(ApiError::invalid(
             "invalid_link",
-            "give exactly one of amount_minor or invoice_id",
+            "give exactly one of amount_minor or invoice_id (or open_amount)",
         ));
     }
     if b.convenience_fee_bp
@@ -116,11 +141,11 @@ pub async fn create_link(
     }
     let (branch, counter) =
         crate::counters::resolve(&mut tx, b.branch_id.clone(), b.counter_id.as_deref()).await?;
-    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id, open_amount, min_amount_minor, max_amount_minor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
         .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
         .bind(b.convenience_fee_bp.unwrap_or(0))
-        .bind(&branch).bind(&counter)
+        .bind(&branch).bind(&counter).bind(open).bind(b.min_amount_minor).bind(b.max_amount_minor)
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_foreign_key_violation() => ApiError::not_found("customer"),
@@ -243,6 +268,12 @@ pub async fn link_info(
             .bind(&link_id)
             .fetch_one(&mut *tx)
             .await?;
+    let (open, lo, hi): (bool, Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT open_amount, min_amount_minor, max_amount_minor FROM payment_links WHERE id = $1",
+    )
+    .bind(&link_id)
+    .fetch_one(&mut *tx)
+    .await?;
     let amount =
         match (amount, &invoice) {
             (Some(a), _) => a,
@@ -256,11 +287,17 @@ pub async fn link_info(
         };
     let merchant: Option<String> = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1").bind(&tenant_id).fetch_optional(&mut *tx).await?;
     let mut st = state(canc, exp, max, uses);
-    if st == "active" && amount <= 0 {
+    if st == "active" && amount <= 0 && !open {
         st = "paid";
     }
     // what the payer will actually be asked for, with any coupon they typed
     let code = q.coupon.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    if open && code.is_some() {
+        return Err(ApiError::invalid(
+            "coupon_not_applicable",
+            "coupons apply to fixed-amount links",
+        ));
+    }
     let applied = match code {
         Some(c) if invoice.is_none() => Some(crate::coupons::find(&mut tx, c, false).await?),
         Some(_) => {
@@ -277,7 +314,7 @@ pub async fn link_info(
         fee_bp as i64,
     );
     Ok(Json(
-        json!({ "merchant": merchant, "description": description, "amount_minor": amount, "discount_minor": p.discount, "fee_minor": p.fee, "total_minor": p.total, "coupon_applied": applied.is_some(), "currency": currency, "status": st }),
+        json!({ "merchant": merchant, "description": description, "amount_minor": amount, "discount_minor": p.discount, "fee_minor": p.fee, "total_minor": p.total, "coupon_applied": applied.is_some(), "currency": currency, "status": st, "open_amount": open, "min_amount_minor": lo, "max_amount_minor": hi }),
     ))
 }
 
@@ -287,6 +324,8 @@ pub async fn link_info(
 pub struct StartBody {
     /// A coupon code the payer typed (fixed-amount links only).
     coupon: Option<String>,
+    /// What the payer chose to pay (open-amount links only), in minor units.
+    amount_minor: Option<i64>,
 }
 
 pub async fn link_start(
@@ -294,8 +333,10 @@ pub async fn link_start(
     Path((tenant_id, token)): Path<(String, String)>,
     body: Option<Json<StartBody>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let body = body.map(|b| b.0).unwrap_or_default();
+    let chosen = body.amount_minor;
     let coupon_code = body
-        .and_then(|b| b.0.coupon)
+        .coupon
         .map(|c| c.trim().to_string())
         .filter(|c| !c.is_empty());
     let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
@@ -310,8 +351,33 @@ pub async fn link_start(
             ));
         }
     }
+    let (open, lo, hi): (bool, Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT open_amount, min_amount_minor, max_amount_minor FROM payment_links WHERE id = $1",
+    )
+    .bind(&link_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !open && chosen.is_some() {
+        return Err(ApiError::invalid(
+            "amount_not_allowed",
+            "this link has a fixed price",
+        ));
+    }
     let amount = match (amount, &invoice) {
         (Some(a), _) => a,
+        (None, None) if open => {
+            let a = chosen.ok_or_else(|| {
+                ApiError::invalid("amount_required", "enter the amount you want to pay")
+            })?;
+            let (min, max) = (lo.unwrap_or(1), hi.unwrap_or(zyvor_core::MAX_AMOUNT_MINOR));
+            if a < min || a > max {
+                return Err(ApiError::invalid(
+                    "amount_out_of_range",
+                    format!("the amount must be between {min} and {max} minor units"),
+                ));
+            }
+            a
+        }
         (None, Some(inv)) => {
             let (status, owed): (String, i64) = sqlx::query_as("SELECT status, (amount_minor - invoice_settled(id))::BIGINT FROM invoices WHERE id = $1 FOR SHARE")
                 .bind(inv)
@@ -333,6 +399,12 @@ pub async fn link_start(
             .bind(&link_id)
             .fetch_one(&mut *tx)
             .await?;
+    if open && coupon_code.is_some() {
+        return Err(ApiError::invalid(
+            "coupon_not_applicable",
+            "coupons apply to fixed-amount links",
+        ));
+    }
     let spent = match &coupon_code {
         Some(c) if invoice.is_none() => Some(crate::coupons::find(&mut tx, c, true).await?),
         Some(_) => {

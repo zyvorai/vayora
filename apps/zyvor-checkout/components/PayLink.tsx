@@ -4,7 +4,7 @@ import { LangPicker, useI18n } from "@/components/useI18n";
 import { money } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
 
-type Info = { merchant: string | null; description: string | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
+type Info = { merchant: string | null; description: string | null; open_amount?: boolean; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
 
 const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid" };
 
@@ -18,6 +18,8 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
+  /** What the payer typed on an open-amount link, in rupees. */
+  const [typed, setTyped] = useState("");
   /** The code the price on screen was worked out with; what "Continue" sends. */
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
 
@@ -45,11 +47,16 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
     }
   }
 
+  const chosenMinor = Math.round(Number(typed.replace(/,/g, "")) * 100);
+  const lo = info?.min_amount_minor ?? 1;
+  const hi = info?.max_amount_minor ?? 1_000_000_000_000;
+  const amountOk = Number.isFinite(chosenMinor) && chosenMinor >= lo && chosenMinor <= hi;
+
   async function start() {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${base}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coupon: appliedCode ?? undefined }) });
+      const r = await fetch(`${base}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coupon: appliedCode ?? undefined, amount_minor: info?.open_amount ? chosenMinor : undefined }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error?.code === "coupon_invalid" ? "coupon" : "start");
       window.location.assign(`/pay/${tenant}/${j.intent_id}?s=${encodeURIComponent(j.client_secret)}`);
@@ -68,7 +75,11 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   return (
     <div className="card">
       <p className="merchant">{info.merchant ?? t("payment")}</p>
-      <h1 className="amount">{money(goneKey ? info.amount_minor : info.total_minor, info.currency)}</h1>
+      {info.open_amount && !goneKey ? (
+        <h1 className="amount">{amountOk ? money(chosenMinor, info.currency) : money(0, info.currency)}</h1>
+      ) : (
+        <h1 className="amount">{money(goneKey ? info.amount_minor : info.total_minor, info.currency)}</h1>
+      )}
       <p className="desc">{info.description ?? " "}</p>
       {goneKey ? <p className="notice warn" role="status">{t(goneKey)}</p> : (
         <>
@@ -79,14 +90,21 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
               {info.fee_minor > 0 && <><dt>{t("rowFee")}</dt><dd>{money(info.fee_minor, info.currency)}</dd></>}
             </dl>
           )}
-          <label className="f" htmlFor="coupon">{t("couponCode")}</label>
-          <div className="couponrow">
+          {info.open_amount && (
+            <>
+              <label className="f" htmlFor="amt">{t("enterAmount")}</label>
+              <input id="amt" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" />
+              {typed && !amountOk && <p className="err" role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) })}</p>}
+            </>
+          )}
+          {!info.open_amount && <label className="f" htmlFor="coupon">{t("couponCode")}</label>}
+          {!info.open_amount && <div className="couponrow">
             <input id="coupon" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" spellCheck={false} autoComplete="off" />
             <button type="button" className="link" onClick={apply} disabled={!code.trim()}>{t("apply")}</button>
-          </div>
+          </div>}
           {couponMsg && <p className={appliedCode ? "desc" : "err"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{couponMsg === "ok" ? t("couponOk") : t("couponBad")}</p>}
           {errText && <div className="notice bad" role="alert">{errText}</div>}
-          <button className="pay" onClick={start} disabled={busy}>{busy ? t("starting") : t("continuePay", { amount: money(info.total_minor, info.currency) })}</button>
+          <button className="pay" onClick={start} disabled={busy || (info.open_amount && !amountOk)}>{busy ? t("starting") : t("continuePay", { amount: money(info.open_amount ? (amountOk ? chosenMinor : 0) : info.total_minor, info.currency) })}</button>
         </>
       )}
       <p className="foot">{t("secured")}</p>

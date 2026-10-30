@@ -6767,3 +6767,99 @@ async fn insights_schedule_what_is_owed_and_flag_refund_patterns(pool: PgPool) {
         "{codes:?}"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn open_amount_links_take_what_the_payer_types_within_limits(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    // shapes that make no sense are refused
+    for bad in [
+        json!({ "open_amount": true, "amount_minor": 100 }),
+        json!({ "open_amount": true, "min_amount_minor": 500, "max_amount_minor": 100 }),
+        json!({ "open_amount": true, "convenience_fee_bp": 100 }),
+        json!({ "min_amount_minor": 100 }),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/payment_links", None, bad)
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    let link = t.ok(a, "POST", "/v1/payment_links", None, json!({ "open_amount": true, "min_amount_minor": 1_000, "max_amount_minor": 50_000, "description": "Pay at the counter" })).await;
+    let base = format!(
+        "/v1/checkout/links/{}/{}",
+        a.id,
+        link["token"].as_str().unwrap()
+    );
+
+    let info = t.ok_public("GET", &base, Value::Null).await;
+    assert_eq!(
+        (
+            info["open_amount"].clone(),
+            info["status"].clone(),
+            info["min_amount_minor"].clone()
+        ),
+        (json!(true), json!("active"), json!(1_000))
+    );
+
+    let start_path = format!("{base}/start");
+    let start = |body: Value| {
+        let p = start_path.clone();
+        let t = &t;
+        async move { t.public("POST", &p, None, body).await }
+    };
+    assert_eq!(
+        start(json!({})).await.0.as_u16(),
+        422,
+        "an amount is required"
+    );
+    assert_eq!(start(json!({ "amount_minor": 999 })).await.0.as_u16(), 422);
+    assert_eq!(
+        start(json!({ "amount_minor": 50_001 })).await.0.as_u16(),
+        422
+    );
+    assert_eq!(
+        start(json!({ "amount_minor": 2_000, "coupon": "ANY" }))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+    let ok = start(json!({ "amount_minor": 12_345 })).await;
+    assert!(ok.0.is_success(), "{ok:?}");
+    assert_eq!(
+        t.count("SELECT count(*) FROM payment_intents WHERE amount_minor = 12345")
+            .await,
+        1
+    );
+    assert_eq!(
+        t.count("SELECT uses::BIGINT FROM payment_links").await,
+        1,
+        "only the successful start counts"
+    );
+
+    // a fixed-price link refuses a chosen amount
+    let fixed = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 5_000 }),
+        )
+        .await;
+    let p = format!(
+        "/v1/checkout/links/{}/{}/start",
+        a.id,
+        fixed["token"].as_str().unwrap()
+    );
+    assert_eq!(
+        t.public("POST", &p, None, json!({ "amount_minor": 1 }))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+}

@@ -30,6 +30,15 @@ fn half_up(n: i64, bp: i64) -> i64 {
 
 /// Discount first (never below one minor unit), then the fee on what is left.
 pub fn price(base: i64, coupon: Option<(&str, i64)>, fee_bp: i64) -> Price {
+    if base <= 0 {
+        // nothing to pay (an open-amount link before the payer chooses, or a settled invoice)
+        return Price {
+            base: 0,
+            discount: 0,
+            fee: 0,
+            total: 0,
+        };
+    }
     let raw = match coupon {
         Some(("percent", bp)) => half_up(base, bp),
         Some((_, flat)) => flat,
@@ -198,6 +207,12 @@ pub async fn deactivate_coupon(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nothing_owed_prices_to_zero_without_panicking() {
+        assert_eq!(price(0, Some(("percent", 5_000)), 200).total, 0);
+        assert_eq!(price(-5, None, 0).total, 0);
+    }
 
     #[test]
     fn discount_then_fee_never_below_one_unit() {
