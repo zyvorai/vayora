@@ -187,6 +187,7 @@ async fn create_one(
     auth: &Auth,
     b: &NewPayout,
 ) -> Result<(StatusCode, Value), ApiError> {
+    crate::onboarding::require_approved(tx).await?;
     let ccy: Currency = b
         .currency
         .as_deref()

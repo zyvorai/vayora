@@ -77,6 +77,15 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("payout.rejected", "A payout was rejected."),
     (
+        "onboarding.submitted",
+        "Onboarding was submitted for review.",
+    ),
+    ("onboarding.approved", "Onboarding was approved."),
+    (
+        "onboarding.rejected",
+        "Onboarding was rejected, with a note.",
+    ),
+    (
         "payout.paid",
         "A payout was recorded as paid, with its bank reference.",
     ),

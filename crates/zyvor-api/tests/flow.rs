@@ -5965,3 +5965,184 @@ async fn a_lost_dispute_takes_the_same_share_back_from_each_vendor(pool: PgPool)
     assert_eq!(owed(ids[0].clone()).await, 30_000);
     assert_eq!(owed(ids[1].clone()).await, 10_000);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_needs_a_second_person_and_gates_payouts_only_once_started(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let payout = json!({ "name": "Courier", "vpa": "courier@okbank" });
+    let vid = t.ok(a, "POST", "/v1/vendors", None, payout).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let req = |r: &str| json!({ "vendor_id": vid, "amount_minor": 1_000, "purpose": "Settlement of sales", "external_ref": r });
+
+    // not started: payouts are not gated
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req("O-0"))
+            .await
+            .0
+            .as_u16(),
+        201
+    );
+    assert_eq!(
+        t.ok(a, "GET", "/v1/onboarding", None, Value::Null).await["status"],
+        "not_started"
+    );
+
+    // validation
+    let profile = |pan: &str, gstin: Value| json!({ "legal_name": "Sri Clinic", "business_type": "proprietorship", "pan": pan, "gstin": gstin, "address": "12 MG Road, Pune" });
+    for bad in [
+        profile("ABCDE12345", Value::Null),
+        profile("ABCDE1234F", json!("27AAPFU0939F1ZX")),
+    ] {
+        assert_eq!(
+            t.call_as(a, "priya", "PUT", "/v1/onboarding", None, bad)
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    t.call_as(
+        a,
+        "priya",
+        "PUT",
+        "/v1/onboarding",
+        None,
+        profile("ABCDE1234F", Value::Null),
+    )
+    .await;
+    let st = t.ok(a, "GET", "/v1/onboarding", None, Value::Null).await;
+    assert_eq!(st["profile"]["pan"], "XXXXXX234F");
+    assert_eq!(st["status"], "draft");
+
+    // started: payouts wait
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req("O-1"))
+            .await
+            .1["error"]["code"],
+        "onboarding_incomplete"
+    );
+
+    // cannot submit without a PAN document and a bank account
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/onboarding/submit", None, json!({}))
+            .await
+            .0
+            .as_u16(),
+        409
+    );
+    t.call_as(
+        a,
+        "priya",
+        "POST",
+        "/v1/onboarding/documents",
+        None,
+        json!({ "kind": "pan", "reference": "s3://kyc/pan.pdf" }),
+    )
+    .await;
+    let bank = t.call_as(a, "priya", "POST", "/v1/onboarding/bank_accounts", None, json!({ "holder_name": "Sri Clinic", "ifsc": "HDFC0001234", "account_number": "123456789012" })).await.1;
+    assert_eq!(bank["account_last4"], "9012");
+    let bid = bank["id"].as_str().unwrap();
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/onboarding/submit", None, json!({}))
+            .await
+            .1["status"],
+        "in_review"
+    );
+
+    // the submitter cannot verify their own account or review their own submission
+    let verify = format!("/v1/onboarding/bank_accounts/{bid}/verify");
+    assert_eq!(
+        t.call_as(a, "priya", "POST", &verify, None, json!({}))
+            .await
+            .0
+            .as_u16(),
+        403
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/onboarding/review",
+            None,
+            json!({ "decision": "approve" })
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+    // approval needs a verified account; a rejection needs a reason
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            "/v1/onboarding/review",
+            None,
+            json!({ "decision": "approve" })
+        )
+        .await
+        .1["error"]["code"],
+        "bank_unverified"
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            "/v1/onboarding/review",
+            None,
+            json!({ "decision": "reject" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    t.call_as(a, "ravi", "POST", &verify, None, json!({})).await;
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            "/v1/onboarding/review",
+            None,
+            json!({ "decision": "approve" })
+        )
+        .await
+        .1["status"],
+        "approved"
+    );
+
+    // approved: payouts flow, the profile is locked, and another tenant is untouched
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req("O-2"))
+            .await
+            .0
+            .as_u16(),
+        201
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "PUT",
+            "/v1/onboarding",
+            None,
+            profile("ABCDE1234F", Value::Null)
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    assert_eq!(
+        t.ok(b, "GET", "/v1/onboarding", None, Value::Null).await["status"],
+        "not_started"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM merchant_profiles").await, 1);
+}

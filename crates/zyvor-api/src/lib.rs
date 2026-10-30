@@ -21,6 +21,7 @@ pub mod fx;
 pub mod gst;
 pub mod idempotency;
 pub mod installments;
+pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
 pub mod payments;
@@ -308,6 +309,22 @@ pub fn app(state: AppState) -> Router {
             post(coupons::create_coupon).get(coupons::list_coupons),
         )
         .route("/coupons/{id}/deactivate", post(coupons::deactivate_coupon))
+        // merchant onboarding
+        .route(
+            "/onboarding",
+            get(onboarding::get_onboarding).put(onboarding::put_profile),
+        )
+        .route("/onboarding/documents", post(onboarding::add_document))
+        .route(
+            "/onboarding/bank_accounts",
+            post(onboarding::add_bank_account),
+        )
+        .route(
+            "/onboarding/bank_accounts/{id}/verify",
+            post(onboarding::verify_bank_account),
+        )
+        .route("/onboarding/submit", post(onboarding::submit))
+        .route("/onboarding/review", post(onboarding::review))
         .route("/payment_links/{id}/qr.svg", get(payment_links::link_qr))
         .route(
             "/payment_links/{id}/cancel",

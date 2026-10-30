@@ -1290,6 +1290,81 @@ paths:
         required: true
         schema:
           type: string
+  /v1/onboarding:
+    get:
+      summary: Onboarding status: profile (PAN masked), documents and bank accounts
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Save the merchant profile (draft or rejected only)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/onboarding/documents:
+    post:
+      summary: Add a document reference (the file itself stays in your store)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/onboarding/bank_accounts:
+    post:
+      summary: Add a bank account (only the last four digits are kept)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/onboarding/bank_accounts/{id}/verify:
+    post:
+      summary: Confirm a bank account (a different person from whoever added it)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/onboarding/submit:
+    post:
+      summary: Submit for review (needs a PAN document and a bank account)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/onboarding/review:
+    post:
+      summary: Approve or reject (a different person from the submitter; approval needs a verified account)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail
