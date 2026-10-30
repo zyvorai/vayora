@@ -43,6 +43,8 @@ pnpm -r build && pnpm -r test
 ```
 Deploy: `deploy/zyvor/k3s/` (verified on a single-node k3s sandbox, with HTTPS in front; see its README), `deploy/zyvor/docker-compose.yml` and `deploy/zyvor/helm/zyvor` (both validate; neither has been run here).
 
+Runnable examples for a school's fee schedule, a clinic's GST billing and deposits, and a marketplace's splits and payouts are in [`examples/`](examples/README.md).
+
 ```ts
 import { Zyvor } from "@zyvor/node";
 const z = new Zyvor({ apiKey: process.env.ZYVOR_API_KEY! });
