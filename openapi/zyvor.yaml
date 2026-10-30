@@ -1164,6 +1164,16 @@ paths:
         required: true
         schema:
           type: string
+  /v1/events/catalogue:
+    get:
+      summary: Every webhook event type, with what it means
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

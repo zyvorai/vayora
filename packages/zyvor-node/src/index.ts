@@ -284,6 +284,8 @@ export class Zyvor {
   };
 
   readonly webhooks = {
+    /** Every event type with its meaning. Choose which to receive with the `webhook_events` setting. */
+    catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),
     outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
   };

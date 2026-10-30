@@ -4450,3 +4450,179 @@ async fn payouts_need_a_second_person_record_the_bank_reference_and_post_to_the_
         404
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn webhook_subscriptions_decide_which_events_are_queued_and_the_catalogue_is_served(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let cat = t
+        .ok(a, "GET", "/v1/events/catalogue", None, Value::Null)
+        .await;
+    let types: Vec<&str> = cat["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["type"].as_str().unwrap())
+        .collect();
+    assert!(
+        types.contains(&"payment.captured")
+            && types.contains(&"payout.paid")
+            && cat["data"][0]["description"].as_str().unwrap().len() > 10
+    );
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["webhook_events"],
+        json!(["*"]),
+        "everything by default"
+    );
+
+    for bad in [
+        json!([]),
+        json!(["payments.*"]),
+        json!(["payment.nope"]),
+        json!([""]),
+    ] {
+        assert_eq!(
+            t.call(
+                a,
+                "POST",
+                "/v1/settings",
+                None,
+                json!({ "webhook_events": bad })
+            )
+            .await
+            .0
+            .as_u16(),
+            422
+        );
+    }
+    let count = |ty: &'static str| {
+        let root = t.root.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM outbox_events WHERE type = $1")
+                .bind(ty)
+                .fetch_one(&root)
+                .await
+                .unwrap()
+        }
+    };
+
+    // only the payment family: a void is not queued
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "webhook_events": ["payment.*", "payout.paid"] }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["webhook_events"],
+        json!(["payment.*", "payout.paid"])
+    );
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "E-1", "amount_minor": 1000 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/void", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        count("invoice.voided").await,
+        0,
+        "not subscribed, never queued"
+    );
+
+    // the invoice family: now it is
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "webhook_events": ["invoice.*"] }),
+    )
+    .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "E-2", "amount_minor": 1000 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/void", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(count("invoice.voided").await, 1);
+
+    // an exact type that does not match is still filtered; back to everything restores delivery
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "webhook_events": ["invoice.reminder"] }),
+    )
+    .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "E-3", "amount_minor": 1000 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/void", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(count("invoice.voided").await, 1);
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "webhook_events": ["*"] }),
+    )
+    .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "E-4", "amount_minor": 1000 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/void", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(count("invoice.voided").await, 2);
+}

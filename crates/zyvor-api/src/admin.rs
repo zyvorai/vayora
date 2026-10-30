@@ -665,6 +665,8 @@ pub struct Settings {
     outbound_webhook_secret: Option<String>,
     /// Payouts up to this amount skip the second person's approval. Default 0: every payout needs one.
     payout_approval_threshold_minor: Option<i64>,
+    /// Event types to deliver: exact types, families like `payment.*`, or `*` (the default). See `GET /v1/events/catalogue`.
+    webhook_events: Option<Vec<String>>,
     dunning: Option<DunningPolicy>,
     gst: Option<GstProfile>,
 }
@@ -703,6 +705,14 @@ pub async fn put_settings(
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
     }
+    if let Some(ev) = &b.webhook_events
+        && (ev.is_empty() || ev.len() > 50 || ev.iter().any(|p| !crate::events::valid_pattern(p)))
+    {
+        return Err(ApiError::invalid(
+            "invalid_webhook_events",
+            "give 1-50 entries from GET /v1/events/catalogue, families like payment.*, or *",
+        ));
+    }
     if b.payout_approval_threshold_minor.is_some_and(|t| t < 0) {
         return Err(ApiError::invalid(
             "invalid_threshold",
@@ -736,6 +746,19 @@ pub async fn put_settings(
         }
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(ev) = &b.webhook_events {
+        // "*" alone means everything again
+        let stored: Option<&Vec<String>> = if ev.iter().any(|p| p == "*") {
+            None
+        } else {
+            Some(ev)
+        };
+        sqlx::query("UPDATE tenant_settings SET webhook_events = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(stored)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(t) = b.payout_approval_threshold_minor {
         sqlx::query(
             "UPDATE tenant_settings SET payout_approval_threshold_minor = $2 WHERE tenant_id = $1",
@@ -773,10 +796,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr, wev): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64, Option<Vec<String>>) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor, webhook_events FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

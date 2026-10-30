@@ -15,6 +15,7 @@ pub mod console_users;
 pub mod crypto;
 pub mod disputes;
 pub mod error;
+pub mod events;
 pub mod gst;
 pub mod idempotency;
 pub mod outbox;
@@ -215,6 +216,7 @@ pub fn app(state: AppState) -> Router {
         .route("/payouts/{id}/reject", post(payouts::reject_payout))
         .route("/payouts/{id}/mark_paid", post(payouts::mark_paid))
         .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
+        .route("/events/catalogue", get(events::catalogue))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
         .route("/gst/gstr1", get(gst::gstr1))
         .route("/customers/{id}/statement", get(billing::statement))

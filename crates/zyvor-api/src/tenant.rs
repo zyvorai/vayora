@@ -42,7 +42,21 @@ pub async fn emit(
     event_type: &str,
     data: Value,
 ) -> Result<String, sqlx::Error> {
+    debug_assert!(
+        crate::events::known(event_type),
+        "event type {event_type} is missing from events::CATALOGUE"
+    );
     let id = zyvor_core::new_id("evt");
+    // events the merchant did not subscribe to are never queued
+    let wanted: Option<Vec<String>> =
+        sqlx::query_scalar("SELECT webhook_events FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .flatten();
+    if !crate::events::subscribed(wanted.as_deref(), event_type) {
+        return Ok(id);
+    }
     let payload = serde_json::json!({ "id": id, "type": event_type, "created_at": chrono::Utc::now(), "data": data });
     sqlx::query("INSERT INTO outbox_events (id, tenant_id, type, payload) VALUES ($1, $2, $3, $4)")
         .bind(&id)
