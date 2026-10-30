@@ -6146,3 +6146,222 @@ async fn onboarding_needs_a_second_person_and_gates_payouts_only_once_started(po
     );
     assert_eq!(t.count("SELECT count(*) FROM merchant_profiles").await, 1);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn counters_tie_payments_to_a_branch_and_roll_up_per_day(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let br = t
+        .ok(
+            a,
+            "POST",
+            "/v1/branches",
+            None,
+            json!({ "name": "Kothrud" }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let other = t
+        .ok(a, "POST", "/v1/branches", None, json!({ "name": "Baner" }))
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let c1 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/counters",
+            None,
+            json!({ "branch_id": br, "name": "Till 1" }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/counters",
+            None,
+            json!({ "branch_id": br, "name": "Till 1" })
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/counters",
+            None,
+            json!({ "branch_id": "br_nope", "name": "X" })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    // a counter's branch cannot be contradicted, and another tenant cannot use it
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            Some("c-1"),
+            json!({ "amount_minor": 100, "currency": "INR", "counter_id": c1, "branch_id": other })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            "/v1/payment_intents",
+            Some("c-2"),
+            json!({ "amount_minor": 100, "currency": "INR", "counter_id": c1 })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+
+    // a direct payment and one through the counter's QR link
+    t.paid_razorpay(a, 30_000, json!({ "counter_id": c1 }))
+        .await;
+    t.paid_razorpay(a, 5_000, json!({})).await; // no branch: not in the summary
+    let link = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 7_000, "counter_id": c1 }),
+        )
+        .await;
+    let started = t
+        .ok_public(
+            "POST",
+            &format!(
+                "/v1/checkout/links/{}/{}/start",
+                a.id,
+                link["token"].as_str().unwrap()
+            ),
+            json!({}),
+        )
+        .await;
+    assert!(started.is_object());
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM payment_intents WHERE counter_id = '{c1}' AND branch_id = '{br}'"
+        ))
+        .await,
+        2
+    );
+
+    let list = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents?branch_id={br}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(list["data"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        t.ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents?branch_id={other}"),
+            None,
+            Value::Null
+        )
+        .await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // only the captured one counts; refunds come off
+    let sum = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/branches/{br}/summary"),
+            None,
+            Value::Null,
+        )
+        .await;
+    let rows = sum["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (
+            rows[0]["gross_minor"].as_i64(),
+            rows[0]["net_minor"].as_i64(),
+            rows[0]["counter_id"].as_str()
+        ),
+        (Some(30_000), Some(30_000), Some(c1.as_str()))
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/branches/{br}/summary"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+
+    // switching a counter off stops its QR and refuses new payments through it
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/counters/{c1}/deactivate"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            Some("c-3"),
+            json!({ "amount_minor": 100, "currency": "INR", "counter_id": c1 })
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    assert!(
+        !t.public(
+            "POST",
+            &format!(
+                "/v1/checkout/links/{}/{}/start",
+                a.id,
+                link["token"].as_str().unwrap()
+            ),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .is_success()
+    );
+}

@@ -23,6 +23,9 @@ pub struct NewLink {
     /// Collect whatever is still outstanding on this invoice.
     invoice_id: Option<String>,
     customer_id: Option<String>,
+    /// Tie the link to a branch, or to a counter within it (print its QR at that counter).
+    branch_id: Option<String>,
+    counter_id: Option<String>,
     /// Stop after this many checkouts have been started.
     max_uses: Option<i32>,
     expires_at: Option<DateTime<Utc>>,
@@ -103,10 +106,13 @@ pub async fn create_link(
             uuid::Uuid::new_v4().simple()
         ),
     );
-    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
+    let (branch, counter) =
+        crate::counters::resolve(&mut tx, b.branch_id.clone(), b.counter_id.as_deref()).await?;
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
         .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
         .bind(b.convenience_fee_bp.unwrap_or(0))
+        .bind(&branch).bind(&counter)
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_foreign_key_violation() => ApiError::not_found("customer"),
@@ -350,6 +356,11 @@ pub async fn link_start(
     .bind(&description).bind(json!({ "payment_link": link_id, "base_minor": base_amount, "discount_minor": p.discount, "fee_minor": p.fee, "coupon_id": spent.as_ref().map(|c| c.id.clone()) }))
     .bind(crate::auth::hash_key(&secret))
     .execute(&mut *tx).await?;
+    sqlx::query("UPDATE payment_intents i SET branch_id = l.branch_id, counter_id = l.counter_id FROM payment_links l WHERE l.id = $1 AND i.id = $2 AND l.branch_id IS NOT NULL")
+        .bind(&link_id)
+        .bind(&intent_id)
+        .execute(&mut *tx)
+        .await?;
     let stored: Option<Value> =
         sqlx::query_scalar("SELECT splits FROM payment_links WHERE id = $1")
             .bind(&link_id)

@@ -12,6 +12,7 @@ pub mod cases;
 pub mod checkout;
 pub mod collections;
 pub mod console_users;
+pub mod counters;
 pub mod coupons;
 pub mod crypto;
 pub mod disputes;
@@ -309,6 +310,16 @@ pub fn app(state: AppState) -> Router {
             post(coupons::create_coupon).get(coupons::list_coupons),
         )
         .route("/coupons/{id}/deactivate", post(coupons::deactivate_coupon))
+        // counters and branch summaries
+        .route(
+            "/counters",
+            post(counters::create_counter).get(counters::list_counters),
+        )
+        .route(
+            "/counters/{id}/deactivate",
+            post(counters::deactivate_counter),
+        )
+        .route("/branches/{id}/summary", get(counters::branch_summary))
         // merchant onboarding
         .route(
             "/onboarding",

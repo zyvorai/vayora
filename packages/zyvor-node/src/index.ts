@@ -327,10 +327,20 @@ export class Zyvor {
     remind: (invoiceId: string, p: { channel: "email" | "sms" | "whatsapp" | "call" | "other"; message?: string }) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`, p),
   };
 
+  readonly counters = {
+    create: (p: { branchId: string; name: string }) => this.req<{ id: string; branch_id: string; name: string }>("POST", "/v1/counters", { branch_id: p.branchId, name: p.name }),
+    list: (branchId?: string) => this.req<Page<{ id: string; branch_id: string; name: string; active: boolean }>>("GET", `/v1/counters${this.qs({ branch_id: branchId })}`),
+    /** Also cancels the counter's QR links. */
+    deactivate: (id: string) => this.req("POST", `/v1/counters/${encodeURIComponent(id)}/deactivate`),
+    /** Captured money per IST day, counter and method, net of refunds. Dates are YYYY-MM-DD. */
+    branchSummary: (branchId: string, p: { from?: string; to?: string } = {}) =>
+      this.req<{ branch: { id: string; name: string }; from: string; to: string; data: { day: string; counter_id: string | null; method: string; currency: string; payments: number; gross_minor: number; refunded_minor: number; net_minor: number }[] }>("GET", `/v1/branches/${encodeURIComponent(branchId)}/summary${this.qs({ from: p.from, to: p.to })}`),
+  };
+
   readonly paymentLinks = {
     /** One URL, many payers: opening it mints a fresh payment intent. Give `amountMinor` or `invoiceId`. */
-    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string; splits?: { vendorId: string; amountMinor: number }[]; /** A fee the payer covers, in basis points (200 = 2%, at most 1000). Fixed-amount links only. */ convenienceFeeBp?: number }) =>
-      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })), convenience_fee_bp: p.convenienceFeeBp }),
+    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string; splits?: { vendorId: string; amountMinor: number }[]; /** A fee the payer covers, in basis points (200 = 2%, at most 1000). Fixed-amount links only. */ convenienceFeeBp?: number; /** Print this link's QR at a counter: payments are attributed to it and its branch. */ counterId?: string; branchId?: string }) =>
+      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { counter_id: p.counterId, branch_id: p.branchId, description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })), convenience_fee_bp: p.convenienceFeeBp }),
     /** SVG QR code of the link's public checkout address (needs `ZYVOR_CHECKOUT_PUBLIC_URL` on the API). */
     qrUrl: (id: string) => `${this.base}/v1/payment_links/${encodeURIComponent(id)}/qr.svg`,
     list: () => this.req<Page<{ id: string; path: string; description: string | null; amount_minor: number | null; currency: string; invoice_id: string | null; max_uses: number | null; uses: number; status: "active" | "expired" | "used_up" | "canceled"; created_at: string }>>("GET", "/v1/payment_links"),

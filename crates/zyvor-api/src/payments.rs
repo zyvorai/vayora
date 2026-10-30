@@ -86,6 +86,8 @@ pub struct CreateIntent {
     customer_id: Option<String>,
     invoice_id: Option<String>,
     branch_id: Option<String>,
+    /// A counter within the branch (implies the branch).
+    counter_id: Option<String>,
     capture_method: Option<String>,
     allowed_providers: Option<Vec<String>>,
     /// The business object being paid for (student fee, patient deposit, sales order...).
@@ -100,7 +102,7 @@ pub async fn create_intent(
     State(s): State<AppState>,
     auth: Auth,
     headers: HeaderMap,
-    Json(b): Json<CreateIntent>,
+    Json(mut b): Json<CreateIntent>,
 ) -> Result<Response, ApiError> {
     auth.require("payments:write")?;
     let currency: Currency = b
@@ -122,6 +124,9 @@ pub async fn create_intent(
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rules = crate::risk::load(&mut tx).await?;
+    let (branch, counter) =
+        crate::counters::resolve(&mut tx, b.branch_id.take(), b.counter_id.as_deref()).await?;
+    b.branch_id = branch;
     if rules
         .max_intent_amount_minor
         .is_some_and(|m| b.amount_minor > m)
@@ -225,6 +230,13 @@ pub async fn create_intent(
     .bind(crate::auth::hash_key(&client_secret))
     .fetch_one(&mut *tx)
     .await?;
+    if let Some(c) = &counter {
+        sqlx::query("UPDATE payment_intents SET counter_id = $2 WHERE id = $1")
+            .bind(&intent.id)
+            .bind(c)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(sp) = &b.splits {
         crate::splits::attach(&mut tx, &auth.tenant_id, &intent.id, sp).await?;
     }
@@ -274,6 +286,8 @@ pub struct ListQuery {
     pub limit: Option<i64>,
     pub starting_after: Option<String>,
     pub status: Option<String>,
+    pub branch_id: Option<String>,
+    pub counter_id: Option<String>,
 }
 
 pub async fn list_intents(
@@ -287,12 +301,15 @@ pub async fn list_intents(
     let mut rows: Vec<IntentRow> = sqlx::query_as(
         "SELECT id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, created_at, updated_at
          FROM payment_intents WHERE ($1::text IS NULL OR status = $1)
+           AND ($4::text IS NULL OR branch_id = $4) AND ($5::text IS NULL OR counter_id = $5)
            AND ($2::text IS NULL OR (created_at, id) < (SELECT created_at, id FROM payment_intents WHERE id = $2))
          ORDER BY created_at DESC, id DESC LIMIT $3",
     )
     .bind(&q.status)
     .bind(&q.starting_after)
     .bind(limit + 1)
+    .bind(&q.branch_id)
+    .bind(&q.counter_id)
     .fetch_all(&mut *tx)
     .await?;
     let has_more = rows.len() as i64 > limit;

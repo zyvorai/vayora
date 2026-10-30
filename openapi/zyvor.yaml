@@ -1365,6 +1365,57 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/counters:
+    post:
+      summary: Create a counter (till, desk, stall) within a branch
+      tags:
+      - counters
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List counters, optionally for one branch
+      tags:
+      - counters
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/counters/{id}/deactivate:
+    post:
+      summary: Switch a counter off and cancel its QR links
+      tags:
+      - counters
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/branches/{id}/summary:
+    get:
+      summary: Captured money per day, counter and method for a branch, net of refunds
+      tags:
+      - counters
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail
