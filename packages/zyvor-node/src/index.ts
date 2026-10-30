@@ -234,6 +234,13 @@ export class Zyvor {
       this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin }),
   };
 
+  readonly fx = {
+    /** Record the INR-per-USD rate you use for a day (e.g. "83.2150"). One per day, never edited. Needs an admin key. */
+    setRate: (p: { currency: "USD"; rate: string; asOf?: string; note?: string }) => this.req<{ id: string }>("POST", "/v1/fx/rates", { currency: p.currency, rate: p.rate, as_of: p.asOf, note: p.note }),
+    rates: () => this.req<Page<{ id: string; currency: string; rate: string; as_of: string; note: string | null; set_by: string }>>("GET", "/v1/fx/rates"),
+    convert: (p: { amountMinor: number; from: "INR" | "USD"; to: "INR" | "USD"; asOf?: string }) => this.req<{ amount_minor: number; currency: string; rate: string | null; rate_date?: string }>("GET", `/v1/fx/convert${this.qs({ amount_minor: p.amountMinor, from: p.from, to: p.to, as_of: p.asOf })}`),
+  };
+
   readonly settings = {
     get: () => this.req<Settings>("GET", "/v1/settings"),
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
@@ -271,7 +278,7 @@ export class Zyvor {
   };
 
   readonly collections = {
-    ageing: (asOf?: string) => this.req<{ as_of: string; data: { currency: string; bucket: string; outstanding_minor: number; count: number; invoices: { id: string; number: string; customer_id: string | null; due_date: string | null; outstanding_minor: number; days_past_due: number }[] }[] }>("GET", `/v1/collections/ageing${this.qs({ as_of: asOf })}`),
+    ageing: (asOf?: string) => this.req<{ as_of: string; total_outstanding_inr_minor?: number | null; data: { currency: string; bucket: string; outstanding_minor: number; count: number; invoices: { id: string; number: string; customer_id: string | null; due_date: string | null; outstanding_minor: number; days_past_due: number }[] }[] }>("GET", `/v1/collections/ageing${this.qs({ as_of: asOf })}`),
     promise: (invoiceId: string, p: { promisedMinor: number; promisedDate: string; note?: string }) =>
       this.req<{ id: string }>("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/promises`, { promised_minor: p.promisedMinor, promised_date: p.promisedDate, note: p.note }),
     promises: (status?: "open" | "kept" | "broken" | "canceled") => this.req<Page<Record<string, unknown>>>("GET", `/v1/collections/promises${this.qs({ status })}`),

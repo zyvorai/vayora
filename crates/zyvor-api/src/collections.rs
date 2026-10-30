@@ -66,11 +66,24 @@ pub async fn ageing(
         e.0 += outstanding;
         e.1.push(json!({ "id": id, "number": number, "customer_id": customer, "due_date": due, "outstanding_minor": outstanding, "days_past_due": days.max(0) }));
     }
+    // foreign amounts also shown in INR at the latest rate you recorded on or before the report date
+    let usd = crate::fx::rate_on(&mut tx, "USD", as_of).await?;
+    let mut total_inr: Option<i64> = Some(0);
     let data: Vec<Value> = buckets
         .into_iter()
-        .map(|((ccy, b), (total, invs))| json!({ "currency": ccy, "bucket": b, "outstanding_minor": total, "count": invs.len(), "invoices": invs }))
+        .map(|((ccy, b), (total, invs))| {
+            let inr = match (ccy.as_str(), usd) {
+                ("INR", _) => Some(total),
+                ("USD", Some((micro, _))) => Some(crate::fx::usd_to_inr(total, micro)),
+                _ => None,
+            };
+            total_inr = total_inr.zip(inr).map(|(a, b)| a + b);
+            json!({ "currency": ccy, "bucket": b, "outstanding_minor": total, "outstanding_inr_minor": inr, "count": invs.len(), "invoices": invs })
+        })
         .collect();
-    Ok(Json(json!({ "as_of": as_of, "data": data })))
+    Ok(Json(
+        json!({ "as_of": as_of, "data": data, "total_outstanding_inr_minor": total_inr, "usd_rate_date": usd.map(|u| u.1) }),
+    ))
 }
 
 #[derive(Deserialize)]

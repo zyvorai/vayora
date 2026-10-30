@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
-import { saveApprovals, saveCollections, saveGst, saveWebhooks } from "@/lib/actions";
+import { saveApprovals, saveCollections, saveFxRate, saveGst, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -10,7 +10,7 @@ export default async function Settings() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
   const z = api();
-  const [s, cat] = await Promise.all([z.settings.get(), z.webhooks.catalogue()]);
+  const [s, cat, fx] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates()]);
   const all = s.webhook_events.includes("*");
   const chosen = (t: string) => s.webhook_events.some((p) => p === t || (p.endsWith(".*") && t.startsWith(p.slice(0, -1))));
   return (
@@ -35,6 +35,10 @@ export default async function Settings() {
       <SettingsForm title="GST" hint="Needed to issue tax invoices. The GSTIN is checked, including its check character." action={saveGst}>
         <label className="field">GSTIN<input name="gstin" defaultValue={s.gst.gstin ?? ""} maxLength={15} autoCapitalize="characters" spellCheck={false} /></label>
         <label className="field">Legal name<input name="legal_name" defaultValue={s.gst.legal_name ?? ""} /></label>
+      </SettingsForm>
+
+      <SettingsForm title="Exchange rate" hint={`Rupees per US dollar, used to show dollar amounts in INR in reports. One rate per day; it is never edited, so enter the next day's to change it.${fx.data[0] ? ` Latest: ${fx.data[0].rate} on ${fx.data[0].as_of}.` : " None recorded yet."}`} action={saveFxRate}>
+        <label className="field">₹ per US$<input name="rate" inputMode="decimal" placeholder="83.2150" defaultValue="" /></label>
       </SettingsForm>
 
       <SettingsForm title="Webhooks" hint="Where events are sent and which ones. The signing secret is write-only: leave it blank to keep the current one." action={saveWebhooks}>

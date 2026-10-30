@@ -4795,3 +4795,239 @@ async fn instalment_plans_split_exactly_atomically_and_only_once(pool: PgPool) {
     let p2 = t.ok(a, "POST", "/v1/installment_plans", None, d).await;
     assert_eq!(p2["invoices"][1]["due_date"], "2026-05-14");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn fx_rates_you_enter_convert_amounts_and_show_foreign_receivables_in_inr(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(19_800).unwrap())
+        .date_naive();
+    let due = (today - chrono::Duration::days(5)).to_string();
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "IN-1", "amount_minor": 100_000, "due_date": due }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "US-1", "currency": "USD", "amount_minor": 10_000, "due_date": due }),
+    )
+    .await;
+
+    // no rate yet: the ageing says so instead of guessing
+    let r = t
+        .ok(a, "GET", "/v1/collections/ageing", None, Value::Null)
+        .await;
+    assert!(r["total_outstanding_inr_minor"].is_null());
+    let usd = r["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["currency"] == "USD")
+        .unwrap();
+    assert!(usd["outstanding_inr_minor"].is_null());
+    assert_eq!(
+        t.call(
+            a,
+            "GET",
+            "/v1/fx/convert?amount_minor=100&from=USD&to=INR",
+            None,
+            Value::Null
+        )
+        .await
+        .1["error"]["code"],
+        "no_rate"
+    );
+
+    // validation
+    for (why, body) in [
+        ("INR", json!({ "currency": "INR", "rate": "1" })),
+        ("unsupported", json!({ "currency": "EUR", "rate": "90" })),
+        (
+            "bad rate",
+            json!({ "currency": "USD", "rate": "83.1234567" }),
+        ),
+        ("zero", json!({ "currency": "USD", "rate": "0" })),
+        (
+            "future",
+            json!({ "currency": "USD", "rate": "83", "as_of": (today + chrono::Duration::days(1)).to_string() }),
+        ),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/fx/rates", None, body)
+                .await
+                .0
+                .as_u16(),
+            422,
+            "{why}"
+        );
+    }
+    let clerk = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "ro", "scopes": ["payments:read"] }),
+        )
+        .await;
+    let ro = Tenant {
+        id: a.id.clone(),
+        key: clerk["key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.call(
+            &ro,
+            "POST",
+            "/v1/fx/rates",
+            None,
+            json!({ "currency": "USD", "rate": "83" })
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+
+    // record a rate: older days use the older rate, rates are never edited
+    let old = (today - chrono::Duration::days(30)).to_string();
+    t.ok(
+        a,
+        "POST",
+        "/v1/fx/rates",
+        None,
+        json!({ "currency": "USD", "rate": "82.5", "as_of": old, "note": "month start" }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/fx/rates",
+        None,
+        json!({ "currency": "USD", "rate": "83.2150" }),
+    )
+    .await;
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/fx/rates",
+            None,
+            json!({ "currency": "USD", "rate": "84" })
+        )
+        .await
+        .0
+        .as_u16(),
+        409,
+        "one rate per day, never edited"
+    );
+    let rates = t.ok(a, "GET", "/v1/fx/rates", None, Value::Null).await;
+    assert_eq!(
+        (
+            rates["data"][0]["rate"].clone(),
+            rates["data"][1]["rate"].clone()
+        ),
+        (json!("83.215000"), json!("82.500000"))
+    );
+
+    let c = t
+        .ok(
+            a,
+            "GET",
+            "/v1/fx/convert?amount_minor=10000&from=USD&to=INR",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (c["amount_minor"].clone(), c["currency"].clone()),
+        (json!(832_150), json!("INR"))
+    );
+    let back = t
+        .ok(
+            a,
+            "GET",
+            "/v1/fx/convert?amount_minor=832150&from=INR&to=USD",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(back["amount_minor"], 10_000);
+    let past = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/fx/convert?amount_minor=10000&from=USD&to=INR&as_of={old}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        past["amount_minor"], 825_000,
+        "the rate that applied on that day"
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "GET",
+            &format!(
+                "/v1/fx/convert?amount_minor=1&from=USD&to=INR&as_of={}",
+                today - chrono::Duration::days(60)
+            ),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    assert_eq!(
+        t.ok(
+            a,
+            "GET",
+            "/v1/fx/convert?amount_minor=5&from=INR&to=INR",
+            None,
+            Value::Null
+        )
+        .await["amount_minor"],
+        5
+    );
+
+    // ageing now totals both currencies in INR
+    let r = t
+        .ok(a, "GET", "/v1/collections/ageing", None, Value::Null)
+        .await;
+    assert_eq!(r["total_outstanding_inr_minor"], 100_000 + 832_150);
+    let usd = r["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["currency"] == "USD")
+        .unwrap();
+    assert_eq!(usd["outstanding_inr_minor"], 832_150);
+
+    // rates are per tenant, and immutable
+    assert!(
+        t.ok(b, "GET", "/v1/fx/rates", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let mut tx = zyvor_api::tenant::begin(&t.state.pool, &a.id)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("UPDATE fx_rates SET rate_micro = 1")
+            .execute(&mut *tx)
+            .await
+            .is_err()
+    );
+}

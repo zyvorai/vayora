@@ -1200,6 +1200,35 @@ paths:
         required: true
         schema:
           type: string
+  /v1/fx/rates:
+    post:
+      summary: Record the exchange rate you use for a day (never edited afterwards)
+      tags:
+      - fx
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: Recorded exchange rates
+      tags:
+      - fx
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/fx/convert:
+    get:
+      summary: Convert between INR and USD at the latest recorded rate
+      tags:
+      - fx
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

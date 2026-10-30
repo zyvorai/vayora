@@ -221,3 +221,9 @@ export const createInstalments = async (_: FormState, f: FormData): Promise<Form
   if (!Number.isFinite(total) || total <= 0) return { error: "Enter the total as an amount greater than zero." };
   return run(["/billing", "/collections"], (z) => z.installments.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), totalMinor: total, instalments: Number(f.get("count") ?? 0), firstDueDate: String(f.get("first_due") ?? ""), numberPrefix: String(f.get("prefix") ?? "").trim() }));
 };
+
+export const saveFxRate = async (_: FormState, f: FormData) => {
+  const rate = String(f.get("rate") ?? "").trim();
+  if (!rate) return { error: "Enter the rate in rupees per US dollar." };
+  return run(["/settings", "/collections"], (z) => z.fx.setRate({ currency: "USD", rate }), "admin");
+};

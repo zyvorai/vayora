@@ -16,6 +16,7 @@ pub mod crypto;
 pub mod disputes;
 pub mod error;
 pub mod events;
+pub mod fx;
 pub mod gst;
 pub mod idempotency;
 pub mod installments;
@@ -219,6 +220,8 @@ pub fn app(state: AppState) -> Router {
         .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
         .route("/installment_plans", post(installments::create_plan))
         .route("/installment_plans/{id}", get(installments::get_plan))
+        .route("/fx/rates", post(fx::set_rate).get(fx::list_rates))
+        .route("/fx/convert", get(fx::convert))
         .route("/events/catalogue", get(events::catalogue))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
         .route("/gst/gstr1", get(gst::gstr1))

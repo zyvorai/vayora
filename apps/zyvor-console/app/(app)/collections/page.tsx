@@ -15,6 +15,7 @@ export default async function Collections() {
   return (
     <>
       <div className="head"><div><h1>Collections</h1><p className="lede">Who owes what, how late, and what they have promised. As of {ageing.as_of}.</p></div></div>
+      {ageing.total_outstanding_inr_minor != null && ageing.data.some((b) => b.currency !== "INR") && <p className="muted">All currencies together: <strong>{inr(ageing.total_outstanding_inr_minor)}</strong> at your recorded dollar rate.</p>}
       <div className="grid stats">
         {ageing.data.map((b) => (
           <div key={b.currency + b.bucket} className="card stat">
