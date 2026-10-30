@@ -58,12 +58,21 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         // 3b. automatic reminders for tenants that opted in
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
-            let pol: Option<(String, i32, i32)> = sqlx::query_as("SELECT dunning_channel, dunning_min_days, dunning_repeat_days FROM tenant_settings WHERE tenant_id = $1 AND auto_dunning")
+            let pol: Option<(String, i32, i32, bool)> = sqlx::query_as("SELECT dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1 AND auto_dunning")
                 .bind(&tid).fetch_optional(&mut *tx).await?;
-            if let Some((ch, min, rep)) = pol {
+            if let Some((ch, min, rep, approval)) = pol {
                 let today = chrono::Utc::now().date_naive();
                 if crate::collections::run_dunning_tx(
-                    &mut tx, &tid, "dunning", today, min as i64, rep as i64, &ch,
+                    &mut tx,
+                    &tid,
+                    "dunning",
+                    today,
+                    &crate::collections::Policy {
+                        min_days: min as i64,
+                        repeat_days: rep as i64,
+                        channel: &ch,
+                        requires_approval: approval,
+                    },
                 )
                 .await
                 .is_ok()

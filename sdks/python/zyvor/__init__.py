@@ -104,6 +104,20 @@ class Zyvor:
         """Remind every overdue invoice with no live promise and no recent reminder. Safe to repeat."""
         return self._req("POST", "/v1/collections/dunning/run", {k: v for k, v in {"channel": channel, "min_days_overdue": min_days_overdue, "repeat_after_days": repeat_after_days}.items() if v is not None})
 
+    def draft_reminder(self, invoice_id: str, channel: Optional[str] = None, tone: Optional[str] = None, ai: bool = False) -> dict:
+        """A reminder for a person to review. `ai=True` asks the optional assistant to word it."""
+        return self._req("POST", f"/v1/invoices/{invoice_id}/reminders/draft", {k: v for k, v in {"channel": channel, "tone": tone, "ai": ai or None}.items() if v is not None})
+
+    def reminder_drafts(self, status: Optional[str] = None) -> dict:
+        return self._req("GET", "/v1/collections/drafts" + (f"?status={status}" if status else ""))
+
+    def approve_draft(self, draft_id: str, message: Optional[str] = None) -> dict:
+        """Approving logs the reminder and emits `invoice.reminder`; pass `message` to edit the text first."""
+        return self._req("POST", f"/v1/collections/drafts/{draft_id}/approve", {"message": message} if message else {})
+
+    def reject_draft(self, draft_id: str) -> dict:
+        return self._req("POST", f"/v1/collections/drafts/{draft_id}/reject")
+
     # ---- payment links and keys ----
     def create_payment_link(self, amount_minor: Optional[int] = None, invoice_id: Optional[str] = None, **extra) -> dict:
         """One URL, many payers. Give `amount_minor` or `invoice_id`; extras: description, max_uses, expires_at, customer_id, currency."""

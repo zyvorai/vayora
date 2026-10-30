@@ -14,7 +14,7 @@ use zyvor_core::new_id;
 
 use crate::{ApiError, AppState, auth::Auth, tenant};
 
-const OUTSTANDING: &str = "(i.amount_minor - invoice_settled(i.id))::BIGINT";
+pub(crate) const OUTSTANDING: &str = "(i.amount_minor - invoice_settled(i.id))::BIGINT";
 
 #[derive(Deserialize)]
 pub struct AgeingQuery {
@@ -273,15 +273,28 @@ pub struct DunningBody {
 /// Remind every overdue invoice that has no live promise to pay and wasn't reminded recently.
 /// Safe to run on a schedule: the repeat window makes it idempotent, and the invoice rows are
 /// locked while deciding so two concurrent runs can't both remind.
+/// How a dunning run behaves.
+#[derive(Clone, Copy)]
+pub struct Policy<'a> {
+    pub min_days: i64,
+    pub repeat_days: i64,
+    pub channel: &'a str,
+    pub requires_approval: bool,
+}
+
 pub async fn run_dunning_tx(
     tx: &mut sqlx::PgConnection,
     tenant_id: &str,
     actor: &str,
     today: NaiveDate,
-    min_days: i64,
-    repeat_days: i64,
-    channel: &str,
+    policy: &Policy<'_>,
 ) -> Result<Vec<String>, ApiError> {
+    let Policy {
+        min_days,
+        repeat_days,
+        channel,
+        requires_approval,
+    } = *policy;
     let due: Vec<(String, String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.id, i.number, {OUTSTANDING}, ($1::date - i.due_date)::BIGINT
          FROM invoices i
@@ -291,6 +304,7 @@ pub async fn run_dunning_tx(
                            AND p.canceled_at IS NULL AND p.promised_date >= $1::date)
            AND NOT EXISTS (SELECT 1 FROM invoice_reminders r WHERE r.invoice_id = i.id
                            AND r.created_at > now() - make_interval(days => $3::int))
+           AND NOT EXISTS (SELECT 1 FROM reminder_drafts d WHERE d.invoice_id = i.id AND d.status = 'pending')
          ORDER BY i.due_date, i.number FOR UPDATE OF i"
     )))
     .bind(today)
@@ -301,6 +315,16 @@ pub async fn run_dunning_tx(
     let mut ids = Vec::new();
     for (invoice_id, number, outstanding, days) in due {
         if outstanding <= 0 {
+            continue;
+        }
+        if requires_approval {
+            // a person reviews the wording first; nothing is sent until they approve
+            let f = crate::reminders::load_facts(&mut *tx, tenant_id, &invoice_id).await?;
+            let id = new_id("rdf");
+            sqlx::query("INSERT INTO reminder_drafts (id, tenant_id, invoice_id, channel, message, source, created_by) VALUES ($1, $2, $3, $4, $5, 'template', $6)")
+                .bind(&id).bind(tenant_id).bind(&invoice_id).bind(channel).bind(crate::ai::template(&f.as_ai(channel))).bind(actor)
+                .execute(&mut *tx).await?;
+            ids.push(id);
             continue;
         }
         let id = new_id("rem");
@@ -333,14 +357,23 @@ pub async fn run_dunning(
         b.repeat_after_days.unwrap_or(7).clamp(0, 365),
     );
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let approval: bool = sqlx::query_scalar(
+        "SELECT dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_one(&mut *tx)
+    .await?;
     let ids = run_dunning_tx(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
         chrono::Utc::now().date_naive(),
-        min,
-        rep,
-        &channel,
+        &Policy {
+            min_days: min,
+            repeat_days: rep,
+            channel: &channel,
+            requires_approval: approval,
+        },
     )
     .await?;
     tenant::audit(
@@ -349,9 +382,14 @@ pub async fn run_dunning(
         &auth.actor,
         "dunning.run",
         None,
-        json!({ "reminded": ids.len() }),
+        json!({ "reminded": ids.len(), "drafts": approval }),
     )
     .await?;
     tx.commit().await?;
+    if approval {
+        return Ok(Json(
+            json!({ "reminded": 0, "drafts_created": ids.len(), "draft_ids": ids }),
+        ));
+    }
     Ok(Json(json!({ "reminded": ids.len(), "reminder_ids": ids })))
 }

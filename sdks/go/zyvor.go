@@ -204,6 +204,37 @@ func (c *Client) PromiseToPay(invoiceID string, promisedMinor int64, promisedDat
 	return out, err
 }
 
+// DraftReminder makes a reminder for a person to review; useAI asks the optional assistant to word it.
+func (c *Client) DraftReminder(invoiceID, channel string, useAI bool) (map[string]any, error) {
+	body := map[string]any{}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if useAI {
+		body["ai"] = true
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/reminders/draft", body, "", &out)
+	return out, err
+}
+
+// ApproveDraft logs the reminder and emits invoice.reminder. A non-empty message replaces the drafted text.
+func (c *Client) ApproveDraft(draftID, message string) (map[string]any, error) {
+	body := map[string]any{}
+	if message != "" {
+		body["message"] = message
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/drafts/"+draftID+"/approve", body, "", &out)
+	return out, err
+}
+
+func (c *Client) RejectDraft(draftID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/drafts/"+draftID+"/reject", map[string]any{}, "", &out)
+	return out, err
+}
+
 // RunDunning reminds every overdue invoice with no live promise and no recent reminder. Safe to repeat.
 // Empty channel and zero days use the server defaults.
 func (c *Client) RunDunning(channel string, minDaysOverdue, repeatAfterDays int) (map[string]any, error) {

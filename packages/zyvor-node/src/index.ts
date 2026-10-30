@@ -204,6 +204,13 @@ export class Zyvor {
       this.req<{ id: string }>("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/promises`, { promised_minor: p.promisedMinor, promised_date: p.promisedDate, note: p.note }),
     promises: (status?: "open" | "kept" | "broken" | "canceled") => this.req<Page<Record<string, unknown>>>("GET", `/v1/collections/promises${this.qs({ status })}`),
     cancelPromise: (id: string) => this.req("POST", `/v1/collections/promises/${encodeURIComponent(id)}/cancel`),
+    /** Draft a reminder for a person to review. `ai: true` asks the optional assistant to word it (needs it enabled server-side). */
+    draft: (invoiceId: string, p: { channel?: "email" | "sms" | "whatsapp" | "call" | "other"; tone?: "friendly" | "firm"; ai?: boolean } = {}) =>
+      this.req<{ id: string; message: string; source: "template" | "ai"; status: string }>("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders/draft`, p),
+    drafts: (status?: "pending" | "approved" | "rejected") => this.req<Page<{ id: string; invoice_id: string; invoice_number: string; channel: string; message: string; source: "template" | "ai"; status: string; created_by: string; created_at: string }>>("GET", `/v1/collections/drafts${this.qs({ status })}`),
+    /** Sends nothing itself: approving logs the reminder and emits `invoice.reminder`. Pass `message` to edit first. */
+    approveDraft: (id: string, message?: string) => this.req<{ id: string; reminder_id: string }>("POST", `/v1/collections/drafts/${encodeURIComponent(id)}/approve`, message ? { message } : {}),
+    rejectDraft: (id: string) => this.req("POST", `/v1/collections/drafts/${encodeURIComponent(id)}/reject`),
     /** Remind every overdue invoice with no live promise to pay and no recent reminder. Safe to repeat. */
     runDunning: (p: { channel?: "email" | "sms" | "whatsapp" | "call" | "other"; minDaysOverdue?: number; repeatAfterDays?: number } = {}) =>
       this.req<{ reminded: number; reminder_ids: string[] }>("POST", "/v1/collections/dunning/run", { channel: p.channel, min_days_overdue: p.minDaysOverdue, repeat_after_days: p.repeatAfterDays }),

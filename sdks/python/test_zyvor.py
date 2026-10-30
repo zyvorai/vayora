@@ -60,6 +60,18 @@ class Tests(unittest.TestCase):
         self.assertEqual(seen[3][2], {"channel": "sms"})
         self.assertEqual(seen[4][2], {"overlap_hours": 2})
 
+    def test_reminder_drafts(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        z.draft_reminder("inv_1", ai=True); z.reminder_drafts("pending"); z.approve_draft("rdf_1", "Edited"); z.reject_draft("rdf_2")
+        self.assertEqual([x[:2] for x in seen], [("POST", "/v1/invoices/inv_1/reminders/draft"), ("GET", "/v1/collections/drafts?status=pending"),
+            ("POST", "/v1/collections/drafts/rdf_1/approve"), ("POST", "/v1/collections/drafts/rdf_2/reject")])
+        self.assertEqual(seen[0][2], {"ai": True})
+        self.assertEqual(seen[2][2], {"message": "Edited"})
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

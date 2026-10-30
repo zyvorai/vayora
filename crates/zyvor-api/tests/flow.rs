@@ -3391,3 +3391,335 @@ async fn console_users_sign_in_with_roles_lockout_and_a_replay_proof_second_fact
         );
     }
 }
+
+/// A stand-in for the model API: records every request and answers from a queue.
+async fn spawn_fake_model(
+    replies: Vec<&'static str>,
+) -> (
+    String,
+    std::sync::Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+) {
+    use std::sync::{Arc, Mutex};
+    let seen: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+    let queue = Arc::new(Mutex::new(std::collections::VecDeque::from(replies)));
+    let (s2, q2) = (seen.clone(), queue);
+    let app = axum::Router::new().route(
+        "/v1/messages",
+        axum::routing::post(
+            move |headers: axum::http::HeaderMap, axum::Json(body): axum::Json<Value>| {
+                let (seen, queue) = (s2.clone(), q2.clone());
+                async move {
+                    let key = headers
+                        .get("x-api-key")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_string();
+                    seen.lock().unwrap().push((key, body));
+                    let text = queue.lock().unwrap().pop_front().unwrap_or("");
+                    axum::Json(json!({ "content": [{ "type": "text", "text": text }] }))
+                }
+            },
+        ),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    (url, seen)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reminder_drafts_need_a_persons_approval_and_the_ai_assistant_is_boxed_in(pool: PgPool) {
+    use zyvor_api::ai::AiConfig;
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let overdue = (chrono::Utc::now().date_naive() - chrono::Duration::days(9)).to_string();
+    let mk = |n: &str| json!({ "number": n, "amount_minor": 125_050, "due_date": overdue });
+    let i1 = t.ok(a, "POST", "/v1/invoices", None, mk("INV-1")).await;
+    let id1 = i1["id"].as_str().unwrap();
+
+    // standard wording, no AI configured
+    let (s, body) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{id1}/reminders/draft"),
+            None,
+            json!({ "ai": true }),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), body["error"]["code"].clone()),
+        (422, json!("ai_not_configured"))
+    );
+    let d = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/invoices/{id1}/reminders/draft"),
+            None,
+            json!({ "channel": "whatsapp" }),
+        )
+        .await;
+    let msg = d["message"].as_str().unwrap();
+    assert!(
+        msg.contains("INV-1") && msg.contains("₹1250.50") && msg.contains("9 days ago"),
+        "{msg}"
+    );
+    assert_eq!(
+        (d["source"].clone(), d["status"].clone()),
+        (json!("template"), json!("pending"))
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{id1}/reminders/draft"),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        409,
+        "one pending draft per invoice"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        0,
+        "nothing is sent by drafting"
+    );
+
+    // tenant isolation
+    assert!(
+        t.ok(b, "GET", "/v1/collections/drafts", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            &format!(
+                "/v1/collections/drafts/{}/approve",
+                d["id"].as_str().unwrap()
+            ),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+
+    // approve with an edit: now it is logged and emitted, once
+    let did = d["id"].as_str().unwrap();
+    let ok = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/collections/drafts/{did}/approve"),
+            None,
+            json!({ "message": "Hi, INV-1 is pending. Thanks!" }),
+        )
+        .await;
+    assert_eq!(ok["status"], "approved");
+    assert_eq!(
+        t.count(
+            "SELECT count(*) FROM invoice_reminders WHERE message = 'Hi, INV-1 is pending. Thanks!'"
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        1
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            &format!("/v1/collections/drafts/{did}/approve"),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        409,
+        "a draft is decided once"
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            &format!("/v1/collections/drafts/{did}/reject"),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+
+    // rejecting sends nothing
+    let d2 = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/invoices/{id1}/reminders/draft"),
+            None,
+            json!({}),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/collections/drafts/{}/reject",
+            d2["id"].as_str().unwrap()
+        ),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        1
+    );
+
+    // the assistant: good wording is used, unsafe wording and quota are handled
+    let (url, seen) = spawn_fake_model(vec![
+        "Hello, a gentle reminder from Org A that invoice INV-2 is still pending. Thank you.",
+        "Pay invoice INV-3 now at http://evil.example/pay or face legal action.",
+        "Hello, invoice INV-4 remains unpaid. Kindly settle it when you can. Thank you.",
+    ])
+    .await;
+    let mut st = t.state.clone();
+    st.ai = Some(std::sync::Arc::new(AiConfig {
+        api_key: "sk-test-fake".into(),
+        base_url: url,
+        model: "claude-sonnet-5-5".into(),
+        monthly_cap: 2,
+    }));
+    let app = zyvor_api::app(st);
+    let call = |inv: String, body: Value| {
+        let (app, key) = (app.clone(), a.key.clone());
+        async move {
+            raw(
+                &app,
+                &key,
+                None,
+                "POST",
+                &format!("/v1/invoices/{inv}/reminders/draft"),
+                None,
+                body,
+            )
+            .await
+        }
+    };
+    // give the customer details that must never reach the model
+    let cust = t.ok(a, "POST", "/v1/customers", None, json!({ "name": "Secret Parent", "email": "parent@example.com", "phone": "+919999900000" })).await;
+    let inv = |n: &str| json!({ "number": n, "amount_minor": 50_000, "due_date": overdue, "customer_id": cust["id"] });
+    let i2 = t.ok(a, "POST", "/v1/invoices", None, inv("INV-2")).await;
+    let i3 = t.ok(a, "POST", "/v1/invoices", None, inv("INV-3")).await;
+    let i4 = t.ok(a, "POST", "/v1/invoices", None, inv("INV-4")).await;
+    let (s, r2) = call(
+        i2["id"].as_str().unwrap().into(),
+        json!({ "ai": true, "tone": "firm" }),
+    )
+    .await;
+    assert_eq!((s.as_u16(), r2["source"].clone()), (201, json!("ai")));
+    assert!(r2["message"].as_str().unwrap().contains("gentle reminder"));
+    let (s, r3) = call(i3["id"].as_str().unwrap().into(), json!({ "ai": true })).await;
+    assert_eq!(
+        (s.as_u16(), r3["source"].clone()),
+        (201, json!("template")),
+        "a link or threat in the model's answer is refused and the standard text is used"
+    );
+    assert!(!r3["message"].as_str().unwrap().contains("evil"));
+    let (s, r4) = call(i4["id"].as_str().unwrap().into(), json!({ "ai": true })).await;
+    assert_eq!(
+        (s.as_u16(), r4["error"]["code"].clone()),
+        (429, json!("ai_quota_exceeded")),
+        "monthly cap counts every request, accepted or not"
+    );
+
+    let calls = seen.lock().unwrap().clone();
+    assert_eq!(calls.len(), 2, "no model call once the cap is reached");
+    let (key, req) = &calls[0];
+    assert_eq!(key, "sk-test-fake");
+    assert_eq!(req["model"], "claude-sonnet-5-5");
+    let sent = req.to_string();
+    for private in [
+        "Secret Parent",
+        "parent@example.com",
+        "9999900000",
+        "rzp_",
+        "client_secret",
+    ] {
+        assert!(
+            !sent.contains(private),
+            "{private} must not be sent to the model"
+        );
+    }
+    assert!(sent.contains("INV-2") && sent.contains("firm but polite"));
+
+    // dunning that requires approval makes drafts, not sends
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "dunning": { "requires_approval": true, "repeat_after_days": 1 } }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["dunning"]["requires_approval"],
+        true
+    );
+    let before = t
+        .count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+        .await;
+    let run = t
+        .ok(
+            a,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "repeat_after_days": 0 }),
+        )
+        .await;
+    assert!(
+        run["reminded"] == 0 && run["drafts_created"].as_i64().unwrap() >= 1,
+        "{run}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        before
+    );
+    let again = t
+        .ok(
+            a,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "repeat_after_days": 0 }),
+        )
+        .await;
+    assert_eq!(
+        again["drafts_created"], 0,
+        "invoices with a draft waiting are skipped"
+    );
+    let pending = t
+        .ok(a, "GET", "/v1/collections/drafts", None, Value::Null)
+        .await;
+    assert!(pending["data"].as_array().unwrap().len() >= 2);
+}

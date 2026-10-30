@@ -1,6 +1,7 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { remind } from "@/lib/actions";
+import { DraftReview } from "@/components/DraftReview";
+import { draftReminder, remind } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -8,7 +9,8 @@ const LABEL: Record<string, string> = { current: "Not yet due", "1_30": "1–30 
 
 export default async function Collections() {
   const z = api();
-  const [ageing, promises] = await Promise.all([z.collections.ageing(), z.collections.promises()]);
+  const [ageing, promises, drafts] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts()]);
+  const ai = process.env.CONSOLE_AI === "1";
   const rows = ageing.data.flatMap((b) => b.invoices.map((i) => ({ ...i, bucket: b.bucket, currency: b.currency })));
   return (
     <>
@@ -22,6 +24,14 @@ export default async function Collections() {
         ))}
         {ageing.data.length === 0 && <div className="card stat"><div className="k">Outstanding</div><div className="v">₹0.00</div><div className="n">Nothing is owed.</div></div>}
       </div>
+      {drafts.data.length > 0 && (
+        <>
+          <h2>Reminders to review</h2>
+          <div style={{ display: "grid", gap: 12, marginBottom: 28 }}>
+            {drafts.data.map((d) => <DraftReview key={d.id} id={d.id} invoice={d.invoice_number} channel={d.channel} message={d.message} source={d.source} />)}
+          </div>
+        </>
+      )}
       <h2>Unpaid invoices</h2>
       <div className="tablewrap" style={{ marginBottom: 28 }}>
         <table>
@@ -32,7 +42,11 @@ export default async function Collections() {
               <tr key={i.id}>
                 <td>{i.number}</td><td>{i.due_date ?? "—"}</td><td className="num">{i.days_past_due}</td>
                 <td className="num">{inr(i.outstanding_minor)}</td>
-                <td><Act action={remind} id={i.id} label="Send reminder" extra={{ channel: "whatsapp" }} /></td>
+                <td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <Act action={draftReminder} id={i.id} label="Draft reminder" />
+                  {ai && <Act action={draftReminder} id={i.id} label="Draft with AI" extra={{ ai: "1" }} />}
+                  <Act action={remind} id={i.id} label="Send now" extra={{ channel: "whatsapp" }} />
+                </td>
               </tr>
             ))}
           </tbody>

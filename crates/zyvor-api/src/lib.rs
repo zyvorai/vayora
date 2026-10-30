@@ -3,6 +3,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod admin;
+pub mod ai;
 pub mod audit;
 pub mod auth;
 pub mod bankcsv;
@@ -21,6 +22,7 @@ pub mod payments;
 pub mod recon;
 pub mod refunds;
 pub mod registry;
+pub mod reminders;
 pub mod state_machine;
 pub mod telemetry;
 pub mod tenant;
@@ -54,6 +56,8 @@ pub struct AppState {
     pub trusted_hops: u8,
     /// Sandboxes only: let merchant URLs (webhooks) point at private addresses and plain http.
     pub allow_private_targets: bool,
+    /// Optional reminder-drafting assistant; `None` means the feature is off.
+    pub ai: Option<Arc<ai::AiConfig>>,
 }
 
 pub use crypto::Crypto;
@@ -71,6 +75,7 @@ impl AppState {
             limiter: Arc::new(ratelimit::RateLimiter::new(Default::default())),
             trusted_hops: 0,
             allow_private_targets: false,
+            ai: None,
         }
     }
 }
@@ -207,6 +212,19 @@ pub fn app(state: AppState) -> Router {
             post(collections::create_reminder).get(collections::list_reminders),
         )
         .route("/collections/dunning/run", post(collections::run_dunning))
+        .route("/collections/drafts", get(reminders::list_drafts))
+        .route(
+            "/collections/drafts/{id}/approve",
+            post(reminders::approve_draft),
+        )
+        .route(
+            "/collections/drafts/{id}/reject",
+            post(reminders::reject_draft),
+        )
+        .route(
+            "/invoices/{id}/reminders/draft",
+            post(reminders::create_draft),
+        )
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
         // console users (the console signs people in through these)

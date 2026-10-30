@@ -120,3 +120,20 @@ func TestPaymentLinksDunningAndRotationPaths(t *testing.T) {
 		t.Fatalf("got %v", seen)
 	}
 }
+
+func TestReminderDraftPaths(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	_, _ = c.DraftReminder("inv_1", "sms", true)
+	_, _ = c.ApproveDraft("rdf_1", "Edited")
+	_, _ = c.RejectDraft("rdf_2")
+	want := []string{"POST /v1/invoices/inv_1/reminders/draft", "POST /v1/collections/drafts/rdf_1/approve", "POST /v1/collections/drafts/rdf_2/reject"}
+	if fmt.Sprint(seen) != fmt.Sprint(want) {
+		t.Fatalf("got %v", seen)
+	}
+}

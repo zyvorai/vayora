@@ -150,3 +150,10 @@ export async function confirmMfa(_: FormState, f: FormData): Promise<FormState> 
     throw e;
   }
 }
+
+// ---- reminder drafts: a person approves wording before anything is sent ----
+export const draftReminder = async (_: FormState, f: FormData) =>
+  run(["/collections"], (z) => z.collections.draft(id(f), { channel: "whatsapp", ai: String(f.get("ai") ?? "") === "1" }));
+export const approveDraft = async (_: FormState, f: FormData) =>
+  run(["/collections"], (z) => z.collections.approveDraft(id(f), String(f.get("message") ?? "").trim() || undefined));
+export const rejectDraft = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.rejectDraft(id(f)));

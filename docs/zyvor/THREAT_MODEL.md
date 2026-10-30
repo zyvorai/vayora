@@ -33,6 +33,9 @@ API keys, customer contact data, the audit trail.
 - **Tampering with money records**: ledger is append-only and balanced per currency; corrections are reversals.
 - **SSRF via merchant webhook URL**: https and public addresses only; credentials in URLs refused; the worker pins the
   connection to addresses vetted at delivery time and does not follow redirects.
+- **AI assistant misuse (prompt injection, data leakage, harmful wording)**: off by default; a person approves every
+  AI draft; the model sees only non-personal invoice facts (no customer names, contacts or free text); output with links,
+  emails, threats or missing invoice number is discarded; per-tenant monthly cap; every request is audited.
 - **Provider credential theft**: encrypted with AES-GCM under `ZYVOR_MASTER_KEY` (never in the database). Rotate by
   setting the new key, moving the old to `ZYVOR_MASTER_KEY_PREVIOUS`, restarting, and running `zyvor-api rekey`
   (`--dry-run` first); secrets no key can open are reported and never overwritten.

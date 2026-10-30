@@ -431,6 +431,64 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/collections/drafts:
+    get:
+      summary: Reminder drafts waiting for a decision
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/collections/drafts/{id}/approve:
+    post:
+      summary: Approve a reminder draft (optionally edited): logs it and emits invoice.reminder
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/collections/drafts/{id}/reject:
+    post:
+      summary: Reject a reminder draft
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/invoices/{id}/reminders/draft:
+    post:
+      summary: Draft a reminder for review, optionally worded by the AI assistant
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/collections/promises/{id}/cancel:
     post:
       summary: Cancel a promise to pay

@@ -615,6 +615,8 @@ pub struct DunningPolicy {
     channel: Option<String>,
     min_days_overdue: Option<i32>,
     repeat_after_days: Option<i32>,
+    /// Draft reminders for a person to approve instead of sending them straight away.
+    requires_approval: Option<bool>,
 }
 
 pub async fn put_settings(
@@ -653,8 +655,8 @@ pub async fn put_settings(
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     if let Some(d) = &b.dunning {
-        sqlx::query("UPDATE tenant_settings SET auto_dunning = COALESCE($2, auto_dunning), dunning_channel = COALESCE($3, dunning_channel), dunning_min_days = COALESCE($4, dunning_min_days), dunning_repeat_days = COALESCE($5, dunning_repeat_days) WHERE tenant_id = $1")
-            .bind(&auth.tenant_id).bind(d.enabled).bind(&d.channel).bind(d.min_days_overdue).bind(d.repeat_after_days)
+        sqlx::query("UPDATE tenant_settings SET auto_dunning = COALESCE($2, auto_dunning), dunning_channel = COALESCE($3, dunning_channel), dunning_min_days = COALESCE($4, dunning_min_days), dunning_repeat_days = COALESCE($5, dunning_repeat_days), dunning_requires_approval = COALESCE($6, dunning_requires_approval) WHERE tenant_id = $1")
+            .bind(&auth.tenant_id).bind(d.enabled).bind(&d.channel).bind(d.min_days_overdue).bind(d.repeat_after_days).bind(d.requires_approval)
             .execute(&mut *tx).await?;
     }
     sqlx::query(
@@ -676,10 +678,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url, on, ch, min, rep): (i64, Value, Option<String>, bool, String, i32, i32) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep, appr): (i64, Value, Option<String>, bool, String, i32, i32, bool) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep } }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr } }),
     ))
 }
 
