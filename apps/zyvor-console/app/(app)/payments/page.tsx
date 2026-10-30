@@ -13,6 +13,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
     <>
       <div className="head">
         <div><h1>Payments</h1><p className="lede">Every payment intent, with the reference of the thing it paid for.</p></div>
+        <a className="btn small" href={`/export/payments${status ? `?status=${status}` : ""}`}>Export CSV</a>
         <div className="seg" role="group" aria-label="Filter by status">
           {FILTERS.map((f) => <Link key={f} href={f ? `/payments?status=${f}` : "/payments"} aria-current={(status ?? "") === f}>{f ? f.replace(/_/g, " ") : "All"}</Link>)}
         </div>

@@ -14,6 +14,7 @@ export default async function Billing() {
     <>
       <div className="head">
         <div><h1>Billing</h1><p className="lede">Plans, subscriptions, milestones and the invoices they produce.</p></div>
+        <a className="btn small" href="/export/invoices">Export invoices CSV</a>
         <Act action={runBilling} label="Run billing now" primary />
       </div>
       <h2>New</h2>
