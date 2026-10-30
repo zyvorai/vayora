@@ -12,7 +12,7 @@ HOST="${1:?usage: CONSOLE_PASSWORD=... deploy.sh user@host}"
 USERNAME="${CONSOLE_USERNAME:-admin}"
 cd "$(dirname "$0")/../../.."
 K="sudo -n k3s kubectl"
-R() { ssh -o BatchMode=yes "$HOST" "$@"; }
+R() { ssh -o BatchMode=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 "$HOST" "$@"; }
 
 echo "==> uploading source"
 R 'rm -rf ~/zyvor-src && mkdir -p ~/zyvor-src'
