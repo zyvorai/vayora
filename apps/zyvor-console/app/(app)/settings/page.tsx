@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
-import { saveApprovals, saveCollections, saveFxRate, saveGst, saveWebhooks } from "@/lib/actions";
+import { saveApprovals, saveCollections, saveFxRate, saveGst, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -30,6 +30,15 @@ export default async function Settings() {
       <SettingsForm title="Approvals" hint="Amounts above these need a second person. Set payouts to 0 to require one for every payout." action={saveApprovals}>
         <label className="field">Refunds above (₹)<input name="refund" inputMode="decimal" defaultValue={major(s.refund_approval_threshold_minor)} /></label>
         <label className="field">Payouts above (₹)<input name="payout" inputMode="decimal" defaultValue={major(s.payout_approval_threshold_minor)} /></label>
+      </SettingsForm>
+
+      <SettingsForm title="Risk limits" hint="Payments that break these are stopped before they reach a provider, and each stop is recorded. Leave a box empty for no limit." action={saveRisk}>
+        <label className="field">Largest single payment (₹)<input name="max_amount" inputMode="decimal" defaultValue={s.risk.max_intent_amount_minor ? major(s.risk.max_intent_amount_minor) : ""} /></label>
+        <label className="field">Tries per payment<input name="max_attempts" type="number" min={1} defaultValue={s.risk.max_attempts_per_intent ?? ""} /></label>
+        <label className="field">Failed tries per customer per hour<input name="max_failed" type="number" min={1} defaultValue={s.risk.max_failed_per_customer_per_hour ?? ""} /></label>
+        <label className="field" style={{ gridColumn: "1 / -1" }}>Refuse these UPI ids or handles (one per line, e.g. name@bank or @bank)
+          <textarea name="blocked" rows={3} defaultValue={(s.risk.blocked_vpas ?? []).join("\n")} spellCheck={false} />
+        </label>
       </SettingsForm>
 
       <SettingsForm title="GST" hint="Needed to issue tax invoices. The GSTIN is checked, including its check character." action={saveGst}>

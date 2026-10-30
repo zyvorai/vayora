@@ -18,6 +18,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("payment.failed", "A payment attempt failed."),
     (
+        "payment.risk_blocked",
+        "Your risk rules stopped a payment or an attempt; the audit trail says which rule.",
+    ),
+    (
         "payment.unresolved",
         "The provider's answer is unknown; no new attempt can start until it resolves.",
     ),

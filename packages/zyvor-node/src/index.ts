@@ -61,7 +61,10 @@ export interface Page<T> {
 /** One line of a GST tax invoice. `rateBp` is the slab in percent × 100 (1800 = 18%). */
 export interface GstLine { description: string; hsnSac: string; quantity: number; unitPriceMinor: number; rateBp: 0 | 25 | 100 | 150 | 300 | 500 | 1200 | 1800 | 2800 }
 
+export interface RiskRules { max_intent_amount_minor?: number | null; max_attempts_per_intent?: number | null; max_failed_per_customer_per_hour?: number | null; blocked_vpas?: string[] }
+
 export interface Settings {
+  risk: RiskRules;
   refund_approval_threshold_minor: number;
   payout_approval_threshold_minor: number;
   outbound_webhook_url: string | null;
@@ -80,6 +83,8 @@ export interface SettingsPatch {
   webhook_events?: string[];
   dunning?: Partial<Settings["dunning"]>;
   gst?: { gstin: string; legal_name?: string };
+  /** Limits that stop a payment. Sending `risk` replaces the whole set, so include what you want to keep. */
+  risk?: RiskRules;
 }
 
 export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }

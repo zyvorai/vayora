@@ -69,6 +69,7 @@ pub struct AppState {
 
 pub use crypto::Crypto;
 pub mod ratelimit;
+pub mod risk;
 pub mod splits;
 pub mod ssrf;
 

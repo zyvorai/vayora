@@ -669,6 +669,8 @@ pub struct Settings {
     webhook_events: Option<Vec<String>>,
     dunning: Option<DunningPolicy>,
     gst: Option<GstProfile>,
+    /// Limits that stop a payment: see `GET /v1/settings`.
+    risk: Option<crate::risk::Rules>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -704,6 +706,9 @@ pub async fn put_settings(
     if let Some(r) = &b.routing {
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
+    }
+    if let Some(r) = &b.risk {
+        crate::risk::validate(r)?;
     }
     if let Some(ev) = &b.webhook_events
         && (ev.is_empty() || ev.len() > 50 || ev.iter().any(|p| !crate::events::valid_pattern(p)))
@@ -746,6 +751,13 @@ pub async fn put_settings(
         }
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(r) = &b.risk {
+        sqlx::query("UPDATE tenant_settings SET risk_rules = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(serde_json::to_value(r).unwrap_or_default())
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(ev) = &b.webhook_events {
         // "*" alone means everything again
         let stored: Option<&Vec<String>> = if ev.iter().any(|p| p == "*") {
@@ -796,10 +808,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr, wev): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64, Option<Vec<String>>) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor, webhook_events FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr, wev, risk): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64, Option<Vec<String>>, Value) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor, webhook_events, risk_rules FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

@@ -20,7 +20,7 @@ features make sense to build and which can only come from the underlying provide
 | Instant refunds, refund APIs | **Built**, with reservation-based over-refund protection and second-person approval above a threshold. |
 | Invoicing, subscriptions, recurring billing (Stripe, Razorpay, Easebuzz EasyCollect) | **Built**: plans, subscriptions, usage, proration, milestones, instalment plans, credit notes, GST tax invoices. Recurring *charging* via UPI AutoPay or e-mandate needs provider mandate support and is not built. |
 | Webhooks, SDKs, APIs (Stripe) | **Built**: signed at-least-once webhooks with an event catalogue and subscriptions, Node/Python/Go SDKs, OpenAPI. |
-| Fraud / risk engine (CCAvenue F.R.I.S.K.) | **Not built.** Per-key and per-address rate limits exist; a rules engine (amount and velocity limits) is the next candidate. Card-network fraud scoring belongs to the acquirer. |
+| Fraud / risk engine (CCAvenue F.R.I.S.K.) | **Partial.** Rate limits per key and address, plus merchant-set risk limits (payment ceiling, tries per payment, failed tries per customer per hour, blocked UPI ids and handles), each stop audited. No scoring or network intelligence: card-network fraud detection belongs to the acquirer. |
 | Multi-currency, 27+ currencies (CCAvenue, Stripe) | **Partial.** INR and USD only, with reporting rates you enter; no revaluation. International acceptance depends on the provider. |
 | Multilingual checkout (CCAvenue, 18 languages) | **Not built** (English only). |
 | BNPL, EMI, wallets, cards, netbanking breadth | Depends on what each connected provider supports; the router already filters by a provider's declared capabilities. Zyvor adds no methods of its own. |
@@ -37,7 +37,7 @@ database, and reconciliation that explains every rupee. Those are what finance t
 marketplaces lack when they stitch two gateways together.
 
 ## What this means for the roadmap
-Next candidates that fit the layer: a rules-based risk screen, coupons and convenience fees on links, checkout
+Next candidates that fit the layer: coupons and convenience fees on links, checkout
 translations, and UPI AutoPay/e-mandate once a real provider sandbox is connected. Anything that moves money
 for real (payout rails, instant settlement, mandates) needs live provider credentials and the regulatory
 standing described in REGULATORY.md; none of that can be verified against simulators alone.

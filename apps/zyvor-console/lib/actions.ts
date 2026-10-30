@@ -227,3 +227,14 @@ export const saveFxRate = async (_: FormState, f: FormData) => {
   if (!rate) return { error: "Enter the rate in rupees per US dollar." };
   return run(["/settings", "/collections"], (z) => z.fx.setRate({ currency: "USD", rate }), "admin");
 };
+
+export const saveRisk = async (_: FormState, f: FormData) => {
+  const num = (k: string) => {
+    const v = String(f.get(k) ?? "").trim();
+    return v ? Number(v.replace(/,/g, "")) : undefined;
+  };
+  const maxRupees = num("max_amount");
+  if (maxRupees !== undefined && !(maxRupees > 0)) return { error: "The payment ceiling must be more than zero, or empty for none." };
+  const blocked = String(f.get("blocked") ?? "").split(/[\s,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked } }), "admin");
+};

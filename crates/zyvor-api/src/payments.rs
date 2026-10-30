@@ -121,6 +121,21 @@ pub async fn create_intent(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rules = crate::risk::load(&mut tx).await?;
+    if rules
+        .max_intent_amount_minor
+        .is_some_and(|m| b.amount_minor > m)
+    {
+        drop(tx);
+        return Err(crate::risk::blocked(
+            &s,
+            &auth.tenant_id,
+            &auth.actor,
+            "max_intent_amount",
+            json!({ "amount_minor": b.amount_minor, "limit_minor": rules.max_intent_amount_minor }),
+        )
+        .await);
+    }
     let hash = fingerprint(&[
         &b.amount_minor.to_string(),
         currency.code(),
@@ -403,6 +418,56 @@ pub async fn start_attempt(
             "intent_not_payable",
             format!("intent is {status}"),
         ));
+    }
+
+    // merchant-chosen risk limits
+    let rules = crate::risk::load(&mut tx).await?;
+    let mut refuse: Option<(&str, Value)> = None;
+    if let Some(v) = b
+        .vpa
+        .as_deref()
+        .filter(|v| crate::risk::vpa_blocked(&rules, v))
+    {
+        refuse = Some((
+            "blocked_vpa",
+            json!({ "intent_id": intent_id, "vpa_handle": v.split_once('@').map(|(_, h)| format!("@{h}")) }),
+        ));
+    }
+    if refuse.is_none()
+        && let Some(max) = rules.max_attempts_per_intent
+    {
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM payment_attempts WHERE intent_id = $1")
+                .bind(intent_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if n >= max {
+            refuse = Some((
+                "max_attempts_per_intent",
+                json!({ "intent_id": intent_id, "attempts": n, "limit": max }),
+            ));
+        }
+    }
+    if refuse.is_none()
+        && let (Some(max), Some(cust)) = (
+            rules.max_failed_per_customer_per_hour,
+            customer_id.as_deref(),
+        )
+    {
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM payment_attempts a JOIN payment_intents i ON i.id = a.intent_id WHERE i.customer_id = $1 AND a.status = 'failed' AND a.created_at > now() - interval '1 hour'")
+            .bind(cust)
+            .fetch_one(&mut *tx)
+            .await?;
+        if n >= max {
+            refuse = Some((
+                "max_failed_per_customer_per_hour",
+                json!({ "intent_id": intent_id, "failed_last_hour": n, "limit": max }),
+            ));
+        }
+    }
+    if let Some((rule, detail)) = refuse {
+        drop(tx);
+        return Err(crate::risk::blocked(s, tenant_id, actor, rule, detail).await);
     }
 
     let routing = registry::routing(&mut tx, tenant_id).await?;

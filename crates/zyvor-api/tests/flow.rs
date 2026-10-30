@@ -5404,3 +5404,174 @@ async fn payment_link_qr_codes_point_at_the_public_checkout_and_only_for_live_li
     .await;
     assert_eq!(get(app, a.key.clone(), id).await.0, 409);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn risk_rules_stop_payments_the_merchant_said_to_stop_and_leave_a_trail(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+
+    // validation, and defaults are off
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["risk"],
+        json!({})
+    );
+    for bad in [
+        json!({ "max_intent_amount_minor": 0 }),
+        json!({ "blocked_vpas": ["nohandle"] }),
+        json!({ "max_attempts_per_intent": -1 }),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/settings", None, json!({ "risk": bad }))
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    t.ok(a, "POST", "/v1/settings", None, json!({ "risk": { "max_intent_amount_minor": 500_000, "max_attempts_per_intent": 2, "max_failed_per_customer_per_hour": 2, "blocked_vpas": ["@scamnet", "thief@oksbi"] } })).await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["risk"]["max_attempts_per_intent"],
+        2
+    );
+
+    // a payment over the ceiling is refused, audited and announced; one under it is fine
+    let key = |n: &str| Some(format!("k-{n}"));
+    let (s1, e) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            key("big").as_deref(),
+            json!({ "amount_minor": 600_000, "currency": "INR" }),
+        )
+        .await;
+    assert_eq!(
+        (s1.as_u16(), e["error"]["code"].clone()),
+        (403, json!("risk_blocked"))
+    );
+    assert_eq!(t.count("SELECT count(*) FROM payment_intents").await, 0);
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'risk.blocked'")
+            .await,
+        1
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'payment.risk_blocked'")
+            .await,
+        1
+    );
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Risky Payer" }),
+        )
+        .await;
+    let mk = || {
+        let (t2, cid) = (&t, cust["id"].clone());
+        async move {
+            t2.intent(a, 100_000, json!({ "customer_id": cid })).await["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        }
+    };
+    let i1 = mk().await;
+    let attempt = |iid: String, vpa: &'static str, k: &'static str| {
+        let t = &t;
+        async move {
+            t.call(
+                a,
+                "POST",
+                &format!("/v1/payment_intents/{iid}/attempts"),
+                Some(k),
+                json!({ "method": "upi", "vpa": vpa }),
+            )
+            .await
+        }
+    };
+
+    // blocked handles and exact addresses
+    for vpa in ["anyone@scamnet", "THIEF@oksbi"] {
+        let (s, e) = attempt(i1.clone(), vpa, "a-block").await;
+        assert_eq!(
+            (s.as_u16(), e["error"]["code"].clone()),
+            (403, json!("risk_blocked")),
+            "{vpa}"
+        );
+    }
+    assert_eq!(
+        t.count("SELECT count(*) FROM payment_attempts").await,
+        0,
+        "nothing reached a provider"
+    );
+
+    // two failed tries on one payment, then no more
+    assert_eq!(attempt(i1.clone(), "fail@upi", "a-1").await.0.as_u16(), 201);
+    zyvor_api::worker::run_cycle(&t.state, &zyvor_api::outbox::http_client())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE payment_attempts SET status = 'failed' WHERE intent_id = $1")
+        .bind(&i1)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE payment_intents SET status = 'requires_payment_method' WHERE id = $1")
+        .bind(&i1)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(
+        attempt(i1.clone(), "fail2@upi", "a-2").await.0.as_u16(),
+        201
+    );
+    sqlx::query("UPDATE payment_attempts SET status = 'failed' WHERE intent_id = $1")
+        .bind(&i1)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE payment_intents SET status = 'requires_payment_method' WHERE id = $1")
+        .bind(&i1)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (s, e) = attempt(i1.clone(), "ok@upi", "a-3").await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (403, json!("risk_blocked"))
+    );
+    assert!(
+        e["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("max_attempts_per_intent")
+    );
+
+    // the same customer's failures across payments also count: two failures in the hour stop a third payment
+    let i2 = mk().await;
+    let (s, e) = attempt(i2, "ok@upi", "a-4").await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (403, json!("risk_blocked"))
+    );
+    assert!(
+        e["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("max_failed_per_customer_per_hour")
+    );
+
+    // other tenants are untouched, and a payment with no customer is not caught by the customer rule
+    assert_eq!(
+        t.intent(b, 900_000, json!({})).await["amount_minor"],
+        900_000,
+        "tenant B has no ceiling"
+    );
+    assert!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'risk.blocked'")
+            .await
+            >= 5
+    );
+}
