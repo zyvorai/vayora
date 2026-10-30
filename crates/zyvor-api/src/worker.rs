@@ -72,6 +72,13 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3c. seal the audit trail so tampering is detectable
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            if crate::audit::seal_tenant(&mut tx, &tid, 120).await.is_ok() {
+                tx.commit().await?;
+            }
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

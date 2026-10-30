@@ -3,6 +3,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod admin;
+pub mod audit;
 pub mod auth;
 pub mod bankcsv;
 pub mod billing;
@@ -207,6 +208,8 @@ pub fn app(state: AppState) -> Router {
         .route("/collections/dunning/run", post(collections::run_dunning))
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
+        .route("/audit_events/seal", post(audit::seal))
+        .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))
         .route("/outbox", get(list_outbox))
         .route("/outbox/{id}/replay", post(replay_outbox))

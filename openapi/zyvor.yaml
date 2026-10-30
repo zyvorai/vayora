@@ -801,6 +801,26 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/audit_events/seal:
+    post:
+      summary: Seal unsealed audit events into the tamper-evident chain
+      tags:
+      - audit
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/audit_events/verify:
+    get:
+      summary: Recompute the audit chain and report where it breaks
+      tags:
+      - audit
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

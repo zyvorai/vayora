@@ -28,6 +28,8 @@ API keys, customer contact data, the audit trail.
   non-superuser; the API never accepts a tenant id from the caller for authenticated routes.
 - **Double charge / double refund / replay**: idempotency keys, unique constraints per attempt/period, state
   machine guards, unknown outcomes block new attempts until resolved.
+- **Tampering with the audit trail**: events are append-only (trigger), and the worker seals them into a hash chain
+  (`/v1/audit_events/verify` recomputes it and names the first broken seal), so even a superuser edit shows up.
 - **Tampering with money records**: ledger is append-only and balanced per currency; corrections are reversals.
 - **SSRF via merchant webhook URL**: https and public addresses only; credentials in URLs refused; the worker pins the
   connection to addresses vetted at delivery time and does not follow redirects.
@@ -42,6 +44,6 @@ API keys, customer contact data, the audit trail.
 - Single shared console admin, no MFA, no per-user audit identity (planned).
 - No master-key rotation tooling; webhook secret rotation without a dual-signature window.
 - Provider `base_url` (sandbox field) is not covered by the SSRF guard; production accounts should not set it.
-- Audit log is append-only by convention, not hash-chained.
+- Audit seals detect tampering after the fact; they do not prevent it, and the chain head is not yet anchored outside the database (publish `head` somewhere the database owner cannot edit to close this). Events newer than the seal delay (120 s) are not yet covered.
 - Rate limiter is per replica, in memory.
 - Rails are simulated; this is not a licensed payment service (see REGULATORY.md).

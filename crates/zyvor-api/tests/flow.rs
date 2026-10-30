@@ -2831,3 +2831,178 @@ async fn webhook_urls_cannot_target_private_networks_when_saved_or_delivered(poo
         0
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_audit_trail_is_sealed_in_a_chain_that_shows_any_edit_or_deletion(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let ev = |n: &str| json!({ "name": n, "scopes": ["payments:read"] });
+    for n in ["one", "two", "three"] {
+        t.ok(a, "POST", "/v1/api_keys", None, ev(n)).await;
+    }
+    t.ok(b, "POST", "/v1/api_keys", None, ev("other-tenant"))
+        .await;
+
+    // nothing sealed yet; very fresh events are left alone by the default delay
+    let v = t
+        .ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+        .await;
+    assert_eq!(
+        (v["ok"].clone(), v["seals_checked"].clone()),
+        (json!(true), json!(0))
+    );
+    assert_eq!(
+        t.ok(a, "POST", "/v1/audit_events/seal", None, json!({}))
+            .await["sealed_events"],
+        0
+    );
+
+    let first = t
+        .ok(
+            a,
+            "POST",
+            "/v1/audit_events/seal?min_age_seconds=0",
+            None,
+            json!({}),
+        )
+        .await["sealed_events"]
+        .as_i64()
+        .unwrap();
+    assert!(first >= 3);
+    t.ok(a, "POST", "/v1/api_keys", None, ev("four")).await;
+    let v = t
+        .ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+        .await;
+    assert_eq!(
+        (
+            v["ok"].clone(),
+            v["sealed_events"].as_i64().unwrap(),
+            v["unsealed_events"].as_i64().unwrap() >= 1
+        ),
+        (json!(true), first, true)
+    );
+    assert!(
+        t.ok(
+            a,
+            "POST",
+            "/v1/audit_events/seal?min_age_seconds=0",
+            None,
+            json!({})
+        )
+        .await["sealed_events"]
+            .as_i64()
+            .unwrap()
+            >= 1
+    );
+    let v = t
+        .ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+        .await;
+    assert_eq!(
+        (
+            v["ok"].clone(),
+            v["seals_checked"].clone(),
+            v["unsealed_events"].clone()
+        ),
+        (json!(true), json!(2), json!(0))
+    );
+
+    // the application role cannot rewrite history or its seals
+    for sql in [
+        "UPDATE audit_events SET actor = 'x'",
+        "DELETE FROM audit_events",
+        "UPDATE audit_seals SET hash = 'x'",
+        "DELETE FROM audit_seals",
+    ] {
+        let mut tx = zyvor_api::tenant::begin(&t.state.pool, &a.id)
+            .await
+            .unwrap();
+        assert!(
+            sqlx::query(sql).execute(&mut *tx).await.is_err(),
+            "{sql} must be refused"
+        );
+    }
+
+    // someone with superuser power bypasses the triggers and edits one event: the chain shows it
+    let victim: i64 = sqlx::query_scalar("SELECT min(id) FROM audit_events WHERE tenant_id = $1")
+        .bind(&a.id)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    let tamper = |sql: String| {
+        let root = t.root.clone();
+        async move {
+            let mut c = root.begin().await.unwrap();
+            sqlx::query("ALTER TABLE audit_events DISABLE TRIGGER audit_events_immutable")
+                .execute(&mut *c)
+                .await
+                .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql))
+                .execute(&mut *c)
+                .await
+                .unwrap();
+            sqlx::query("ALTER TABLE audit_events ENABLE TRIGGER audit_events_immutable")
+                .execute(&mut *c)
+                .await
+                .unwrap();
+            c.commit().await.unwrap();
+        }
+    };
+    tamper(format!(
+        "UPDATE audit_events SET actor = 'someone-else' WHERE id = {victim}"
+    ))
+    .await;
+    let v = t
+        .ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+        .await;
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["reason"], "an event was changed after it was sealed");
+    assert!(
+        v["events_range"][0].as_i64().unwrap() <= victim
+            && victim <= v["events_range"][1].as_i64().unwrap()
+    );
+    // putting it back makes the chain valid again: the check is about content, not a flag
+    let original: String = sqlx::query_scalar(
+        "SELECT 'key:' || id FROM api_keys WHERE tenant_id = $1 AND name = 'bootstrap admin'",
+    )
+    .bind(&a.id)
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    tamper(format!(
+        "UPDATE audit_events SET actor = '{original}' WHERE id = {victim}"
+    ))
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+            .await["ok"],
+        true
+    );
+
+    // deleting an event inside a sealed range is caught too
+    tamper(format!("DELETE FROM audit_events WHERE id = {victim}")).await;
+    let v = t
+        .ok(a, "GET", "/v1/audit_events/verify", None, Value::Null)
+        .await;
+    assert_eq!(
+        (v["ok"].clone(), v["reason"].clone()),
+        (
+            json!(false),
+            json!("events were added or deleted inside a sealed range")
+        )
+    );
+
+    // tenants are independent chains
+    t.ok(
+        b,
+        "POST",
+        "/v1/audit_events/seal?min_age_seconds=0",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.ok(b, "GET", "/v1/audit_events/verify", None, Value::Null)
+            .await["ok"],
+        true
+    );
+}

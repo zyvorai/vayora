@@ -219,7 +219,13 @@ export class Zyvor {
     cancel: (id: string) => this.req("POST", `/v1/payment_links/${encodeURIComponent(id)}/cancel`),
   };
 
-  /** Dunning and key hygiene. */
+  readonly audit = {
+    /** Recompute the tamper-evident chain; `ok: false` names the first broken seal. */
+    verify: () => this.req<{ ok: boolean; seals_checked: number; sealed_events?: number; unsealed_events?: number; reason?: string; broken_seal?: number }>("GET", "/v1/audit_events/verify"),
+    seal: () => this.req<{ sealed_events: number }>("POST", "/v1/audit_events/seal"),
+  };
+
+  /** Key hygiene. */
   readonly keys = {
     /** Mint a replacement with the same scopes; the old key keeps working for `overlapHours` (default 24). */
     rotate: (id: string, overlapHours?: number) => this.req<{ id: string; key: string }>("POST", `/v1/api_keys/${encodeURIComponent(id)}/rotate`, { overlap_hours: overlapHours }),
