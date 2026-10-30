@@ -148,6 +148,8 @@ export class Zyvor {
       );
     },
     retrieve: (id: string) => this.req<{ intent: PaymentIntent; attempts: PaymentAttempt[] }>("GET", `/v1/payment_intents/${encodeURIComponent(id)}`),
+    /** One ordered story of the payment, with a plain sentence on where it stands. */
+    timeline: (id: string) => this.req<{ payment_id: string; status: string; standing: string; events: { at: string; kind: "intent" | "attempt" | "webhook" | "ledger" | "refund" | "dispute" | "settlement"; title: string; detail: Record<string, unknown> }[] }>("GET", `/v1/payment_intents/${encodeURIComponent(id)}/timeline`),
     list: (p: { limit?: number; startingAfter?: string; status?: string } = {}) =>
       this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status })}`),
     attempt: (intentId: string, p: { method: Method; vpa?: string; idempotencyKey?: string }) =>

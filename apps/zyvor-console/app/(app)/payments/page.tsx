@@ -25,7 +25,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
             {page.data.length === 0 && <tr><td colSpan={5} className="empty">No payments match.</td></tr>}
             {page.data.map((i) => (
               <tr key={i.id}>
-                <td className="mono">{i.id.slice(0, 16)}…</td>
+                <td className="mono"><Link href={`/payments/${i.id}`}>{i.id.slice(0, 16)}…</Link></td>
                 <td>{i.external_ref ?? <span className="muted">—</span>}</td>
                 <td className="num">{inr(i.amount_minor)}</td><td><Chip status={i.status} /></td>
                 <td className="muted">{istDateTime((i as unknown as { created_at: string }).created_at)}</td>

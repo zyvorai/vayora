@@ -6627,3 +6627,72 @@ async fn ids_from_another_tenant_are_refused_wherever_they_are_referenced(pool: 
     }
     assert_eq!(t.count("SELECT count(*) FROM payment_intents").await, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_payment_timeline_tells_the_story_in_order_and_stays_inside_the_tenant(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let fresh = t.intent(a, 9_000, json!({})).await;
+    let fid = fresh["id"].as_str().unwrap();
+    let tl = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents/{fid}/timeline"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert!(
+        tl["standing"]
+            .as_str()
+            .unwrap()
+            .contains("nobody has tried")
+    );
+    assert_eq!(tl["events"].as_array().unwrap().len(), 1);
+
+    let (iid, _, _) = t.paid_razorpay(a, 20_000, json!({})).await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/refunds"),
+        Some("tl-1"),
+        json!({ "amount_minor": 5_000 }),
+    )
+    .await;
+    let tl = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents/{iid}/timeline"),
+            None,
+            Value::Null,
+        )
+        .await;
+    let events = tl["events"].as_array().unwrap();
+    let kinds: Vec<&str> = events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    for k in ["intent", "attempt", "webhook", "ledger", "refund"] {
+        assert!(kinds.contains(&k), "missing {k} in {kinds:?}");
+    }
+    assert_eq!(kinds[0], "intent");
+    let ats: Vec<&str> = events.iter().map(|e| e["at"].as_str().unwrap()).collect();
+    assert!(
+        ats.windows(2).all(|w| w[0] <= w[1]),
+        "events must be in time order"
+    );
+    assert!(tl["standing"].as_str().unwrap().starts_with("Paid"));
+
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/payment_intents/{iid}/timeline"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}

@@ -35,6 +35,7 @@ pub mod reminders;
 pub mod state_machine;
 pub mod telemetry;
 pub mod tenant;
+pub mod timeline;
 pub mod webhooks_in;
 pub mod worker;
 
@@ -321,6 +322,10 @@ pub fn app(state: AppState) -> Router {
             post(counters::deactivate_counter),
         )
         .route("/branches/{id}/summary", get(counters::branch_summary))
+        .route(
+            "/payment_intents/{id}/timeline",
+            get(timeline::payment_timeline),
+        )
         // cash and daily closing
         .route("/cash_entries", post(closing::add_cash))
         .route(
