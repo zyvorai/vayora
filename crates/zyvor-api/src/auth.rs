@@ -34,9 +34,23 @@ pub struct Auth {
     pub scopes: Vec<String>,
     /// Who is acting: `Zyvor-Actor` header (a person, set by trusted UIs) or the key itself.
     pub actor: String,
+    /// Set when the key is pinned to one branch.
+    pub branch_id: Option<String>,
 }
 
 impl Auth {
+    /// The branch something should be created in or read from. A branch-pinned key may only use its own
+    /// branch (naming another is refused) and gets it by default; other keys get what they asked for.
+    pub fn pin_branch(&self, requested: Option<String>) -> Result<Option<String>, ApiError> {
+        match (&self.branch_id, requested) {
+            (Some(own), Some(r)) if *own != r => Err(ApiError::forbidden(
+                "this API key is limited to a different branch".to_string(),
+            )),
+            (Some(own), _) => Ok(Some(own.clone())),
+            (None, r) => Ok(r),
+        }
+    }
+
     pub fn require(&self, scope: &str) -> Result<(), ApiError> {
         if self.scopes.iter().any(|s| s == scope || s == "admin") {
             Ok(())
@@ -104,14 +118,14 @@ impl FromRequestParts<AppState> for Auth {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or_else(|| ApiError::unauthorized("missing bearer API key"))?;
-        let row: Option<(String, String, String, Vec<String>, Vec<String>)> = sqlx::query_as(
-            "SELECT k.id, k.tenant_id, t.env, k.scopes, k.allowed_cidrs FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
+        let row: Option<(String, String, String, Vec<String>, Vec<String>, Option<String>)> = sqlx::query_as(
+            "SELECT k.id, k.tenant_id, t.env, k.scopes, k.allowed_cidrs, k.branch_id FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
              WHERE k.key_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > now())",
         )
         .bind(hash_key(key))
         .fetch_optional(&state.pool)
         .await?;
-        let (key_id, tenant_id, env, scopes, cidrs) =
+        let (key_id, tenant_id, env, scopes, cidrs, branch_id) =
             row.ok_or_else(|| ApiError::unauthorized("invalid, expired or revoked API key"))?;
         if !cidrs.is_empty() {
             let ip =
@@ -140,6 +154,7 @@ impl FromRequestParts<AppState> for Auth {
             env,
             scopes,
             actor,
+            branch_id,
         })
     }
 }
@@ -184,6 +199,7 @@ mod tests {
             env: "test".into(),
             scopes: vec!["payments:read".into()],
             actor: "key:k".into(),
+            branch_id: None,
         };
         assert!(a.require("payments:read").is_ok());
         assert!(a.require("refunds:write").is_err());
@@ -192,5 +208,29 @@ mod tests {
             ..a
         };
         assert!(admin.require("refunds:approve").is_ok());
+    }
+
+    #[test]
+    fn a_branch_key_stays_in_its_branch() {
+        let mut a = Auth {
+            tenant_id: "t".into(),
+            key_id: "k".into(),
+            env: "test".into(),
+            scopes: vec![],
+            actor: "key:k".into(),
+            branch_id: Some("br_1".into()),
+        };
+        assert_eq!(a.pin_branch(None).unwrap().as_deref(), Some("br_1"));
+        assert_eq!(
+            a.pin_branch(Some("br_1".into())).unwrap().as_deref(),
+            Some("br_1")
+        );
+        assert!(a.pin_branch(Some("br_2".into())).is_err());
+        a.branch_id = None;
+        assert_eq!(
+            a.pin_branch(Some("br_2".into())).unwrap().as_deref(),
+            Some("br_2")
+        );
+        assert_eq!(a.pin_branch(None).unwrap(), None);
     }
 }

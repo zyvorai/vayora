@@ -124,8 +124,9 @@ pub async fn create_intent(
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rules = crate::risk::load(&mut tx).await?;
+    let pinned = auth.pin_branch(b.branch_id.take())?;
     let (branch, counter) =
-        crate::counters::resolve(&mut tx, b.branch_id.take(), b.counter_id.as_deref()).await?;
+        crate::counters::resolve(&mut tx, pinned, b.counter_id.as_deref()).await?;
     b.branch_id = branch;
     if rules
         .max_intent_amount_minor
@@ -271,6 +272,9 @@ pub async fn get_intent(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("payment intent"))?;
+    if auth.branch_id.is_some() && intent.branch_id != auth.branch_id {
+        return Err(ApiError::not_found("payment intent"));
+    }
     let attempts: Vec<AttemptRow> = sqlx::query_as(
         "SELECT id, intent_id, provider, method, status, amount_minor, currency, provider_order_ref, provider_payment_ref, failure_reason, route, client_action, refunded_minor, reserved_refund_minor, created_at, updated_at
          FROM payment_attempts WHERE intent_id = $1 ORDER BY created_at",
@@ -308,7 +312,7 @@ pub async fn list_intents(
     .bind(&q.status)
     .bind(&q.starting_after)
     .bind(limit + 1)
-    .bind(&q.branch_id)
+    .bind(auth.pin_branch(q.branch_id.clone())?)
     .bind(&q.counter_id)
     .fetch_all(&mut *tx)
     .await?;

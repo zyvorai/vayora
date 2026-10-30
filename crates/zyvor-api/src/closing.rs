@@ -40,9 +40,12 @@ pub async fn add_cash(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (branch, counter) =
-        crate::counters::resolve(&mut tx, Some(b.branch_id.clone()), b.counter_id.as_deref())
-            .await?;
+    let (branch, counter) = crate::counters::resolve(
+        &mut tx,
+        auth.pin_branch(Some(b.branch_id.clone()))?,
+        b.counter_id.as_deref(),
+    )
+    .await?;
     let id = new_id("cash");
     sqlx::query("INSERT INTO cash_entries (id, tenant_id, branch_id, counter_id, kind, amount_minor, note, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(&id).bind(&auth.tenant_id).bind(&branch).bind(&counter).bind(&b.kind).bind(b.amount_minor).bind(&b.note).bind(&auth.actor)
@@ -83,6 +86,7 @@ pub async fn create_closing(
             "a day can be closed once it has started",
         ));
     }
+    auth.pin_branch(Some(b.branch_id.clone()))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let exists: Option<String> = sqlx::query_scalar("SELECT id FROM branches WHERE id = $1")
         .bind(&b.branch_id)
@@ -198,7 +202,7 @@ pub async fn list_closings(
          FROM closings WHERE ($1::text IS NULL OR branch_id = $1)
            AND ($2::text IS NULL OR ($2 = 'signed_off') = (signed_off_by IS NOT NULL))
          ORDER BY day DESC, id LIMIT 200",
-    ).bind(&q.branch_id).bind(&q.status).fetch_all(&mut *tx).await?;
+    ).bind(auth.pin_branch(q.branch_id.clone())?).bind(&q.status).fetch_all(&mut *tx).await?;
     let data: Vec<Value> = rows.into_iter().map(|(id, branch_id, day, exp, cnt, diff, digital, note, by, signed)| {
         json!({ "id": id, "branch_id": branch_id, "day": day, "expected_cash_minor": exp, "counted_cash_minor": cnt, "difference_minor": diff, "digital": digital, "note": note, "counted_by": by, "signed_off_by": signed, "status": if signed.is_some() { "signed_off" } else { "pending_signoff" } })
     }).collect();

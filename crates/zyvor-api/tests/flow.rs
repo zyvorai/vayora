@@ -6863,3 +6863,256 @@ async fn open_amount_links_take_what_the_payer_types_within_limits(pool: PgPool)
         422
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_branch_key_only_sees_and_creates_its_own_branch(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let mk = |name: &'static str| {
+        let t = &t;
+        async move {
+            t.ok(a, "POST", "/v1/branches", None, json!({ "name": name }))
+                .await["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        }
+    };
+    let (kothrud, baner) = (mk("Kothrud").await, mk("Baner").await);
+    let scopes = json!(["payments:read", "payments:write"]);
+
+    // not for admin keys, not for another tenant's branch
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "x", "scopes": ["admin"], "branch_id": kothrud })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "x", "scopes": scopes, "branch_id": kothrud })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    let k = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "Kothrud till", "scopes": scopes, "branch_id": kothrud }),
+        )
+        .await;
+    let till = Tenant {
+        id: a.id.clone(),
+        key: k["key"].as_str().unwrap().to_string(),
+    };
+
+    // payments created by it land in its branch, and it cannot name another
+    let mine = t
+        .ok(
+            &till,
+            "POST",
+            "/v1/payment_intents",
+            Some("bk-1"),
+            json!({ "amount_minor": 500, "currency": "INR" }),
+        )
+        .await;
+    assert_eq!(mine["branch_id"], json!(kothrud));
+    assert_eq!(
+        t.call(
+            &till,
+            "POST",
+            "/v1/payment_intents",
+            Some("bk-2"),
+            json!({ "amount_minor": 500, "currency": "INR", "branch_id": baner })
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+    // someone else's branch payment exists, but the till neither lists nor opens it
+    let other = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            Some("bk-3"),
+            json!({ "amount_minor": 700, "currency": "INR", "branch_id": baner }),
+        )
+        .await;
+    let listed = t
+        .ok(&till, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    assert_eq!(listed["data"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!("/v1/payment_intents?branch_id={baner}"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!("/v1/payment_intents/{}", other["id"].as_str().unwrap()),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!("/v1/payment_intents/{}", mine["id"].as_str().unwrap()),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        200
+    );
+    // links, cash, closings and summaries are the same
+    let link = t
+        .ok(
+            &till,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 100 }),
+        )
+        .await;
+    assert!(link["id"].is_string());
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM payment_links WHERE branch_id = '{kothrud}'"
+        ))
+        .await,
+        1
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "POST",
+            "/v1/cash_entries",
+            None,
+            json!({ "branch_id": baner, "kind": "sale", "amount_minor": 5 })
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "POST",
+            "/v1/cash_entries",
+            None,
+            json!({ "branch_id": kothrud, "kind": "sale", "amount_minor": 5 })
+        )
+        .await
+        .0
+        .as_u16(),
+        201
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!("/v1/branches/{baner}/summary"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!("/v1/branches/{kothrud}/summary"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        200
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "POST",
+            "/v1/closings",
+            None,
+            json!({ "branch_id": baner, "day": "2026-01-01", "counted_cash_minor": 0 })
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+
+    // rotating the key keeps it pinned: the replacement is no wider than the original
+    let kid: String = sqlx::query_scalar("SELECT id FROM api_keys WHERE branch_id = $1")
+        .bind(&kothrud)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    let rotated = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/api_keys/{kid}/rotate"),
+            None,
+            json!({}),
+        )
+        .await;
+    let fresh = Tenant {
+        id: a.id.clone(),
+        key: rotated["key"].as_str().unwrap().to_string(),
+    };
+    assert_eq!(
+        t.call(
+            &fresh,
+            "GET",
+            &format!("/v1/branches/{baner}/summary"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        403
+    );
+}

@@ -122,7 +122,7 @@ pub async fn list_counters(
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(String, String, String, bool)> = sqlx::query_as(
         "SELECT id, branch_id, name, deactivated_at IS NULL FROM counters WHERE ($1::text IS NULL OR branch_id = $1) ORDER BY name",
-    ).bind(&q.branch_id).fetch_all(&mut *tx).await?;
+    ).bind(auth.pin_branch(q.branch_id.clone())?).fetch_all(&mut *tx).await?;
     Ok(Json(
         json!({ "data": rows.into_iter().map(|(id, branch_id, name, active)| json!({ "id": id, "branch_id": branch_id, "name": name, "active": active })).collect::<Vec<_>>() }),
     ))
@@ -177,6 +177,7 @@ pub async fn branch_summary(
     Query(q): Query<SummaryQuery>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
+    auth.pin_branch(Some(id.clone()))?;
     let to = q.to.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let from = q.from.unwrap_or(to - chrono::Duration::days(30));
     if from > to || (to - from).num_days() > 366 {

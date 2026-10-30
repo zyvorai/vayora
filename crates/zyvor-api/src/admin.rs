@@ -79,6 +79,8 @@ pub struct NewKey {
     /// If set, the key only works from these addresses (CIDR or single IP).
     #[serde(default)]
     allowed_cidrs: Vec<String>,
+    /// Pin the key to one branch (it then cannot hold the `admin` scope).
+    branch_id: Option<String>,
 }
 
 pub async fn create_key(
@@ -109,9 +111,24 @@ pub async fn create_key(
             "allowed_cidrs must be at most 50 valid CIDRs or IP addresses",
         ));
     }
+    if let Some(br) = &b.branch_id {
+        if b.scopes.iter().any(|sc| sc == "admin") {
+            return Err(ApiError::invalid(
+                "invalid_scopes",
+                "a branch key cannot hold the admin scope",
+            ));
+        }
+        // checked as this tenant: foreign keys ignore row-level security
+        let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+        let seen: Option<String> = sqlx::query_scalar("SELECT id FROM branches WHERE id = $1")
+            .bind(br)
+            .fetch_optional(&mut *tx)
+            .await?;
+        seen.ok_or_else(|| ApiError::not_found("branch"))?;
+    }
     let (key, prefix, hash) = mint_key(&auth.env);
     let id = new_id("key");
-    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, allowed_cidrs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&prefix).bind(hash).bind(&b.scopes).bind(b.expires_at).bind(&b.allowed_cidrs).execute(&s.pool).await?;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, allowed_cidrs, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&prefix).bind(hash).bind(&b.scopes).bind(b.expires_at).bind(&b.allowed_cidrs).bind(&b.branch_id).execute(&s.pool).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     tenant::audit(
         &mut tx,
@@ -163,18 +180,18 @@ pub async fn rotate_key(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let old: Option<(String, Vec<String>, Vec<String>)> = sqlx::query_as(
-        "SELECT name, scopes, allowed_cidrs FROM api_keys WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE",
+    let old: Option<(String, Vec<String>, Vec<String>, Option<String>)> = sqlx::query_as(
+        "SELECT name, scopes, allowed_cidrs, branch_id FROM api_keys WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE",
     )
     .bind(&id)
     .bind(&auth.tenant_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (name, scopes, cidrs) = old.ok_or_else(|| ApiError::not_found("active key"))?;
+    let (name, scopes, cidrs, branch) = old.ok_or_else(|| ApiError::not_found("active key"))?;
     let (key, prefix, hash) = mint_key(&auth.env);
     let new_id_ = new_id("key");
-    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, allowed_cidrs, rotated_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
-        .bind(&new_id_).bind(&auth.tenant_id).bind(&name).bind(&prefix).bind(hash).bind(&scopes).bind(&cidrs).bind(&id)
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, allowed_cidrs, rotated_from, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)")
+        .bind(&new_id_).bind(&auth.tenant_id).bind(&name).bind(&prefix).bind(hash).bind(&scopes).bind(&cidrs).bind(&id).bind(&branch)
         .execute(&mut *tx).await?;
     sqlx::query("UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, 'infinity'), now() + make_interval(hours => $2::int)) WHERE id = $1")
         .bind(&id).bind(hours as i32).execute(&mut *tx).await?;

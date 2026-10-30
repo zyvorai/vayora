@@ -399,6 +399,9 @@ export class Zyvor {
 
   /** Key hygiene. */
   readonly keys = {
+    /** `branchId` pins the key to one branch (a till or a manager's key); such a key cannot hold `admin`. The secret is shown once. */
+    create: (p: { name: string; scopes: string[]; branchId?: string; expiresAt?: string; allowedCidrs?: string[] }) =>
+      this.req<{ id: string; key: string }>("POST", "/v1/api_keys", { name: p.name, scopes: p.scopes, branch_id: p.branchId, expires_at: p.expiresAt, allowed_cidrs: p.allowedCidrs }),
     /** Mint a replacement with the same scopes; the old key keeps working for `overlapHours` (default 24). */
     rotate: (id: string, overlapHours?: number) => this.req<{ id: string; key: string }>("POST", `/v1/api_keys/${encodeURIComponent(id)}/rotate`, { overlap_hours: overlapHours }),
   };
