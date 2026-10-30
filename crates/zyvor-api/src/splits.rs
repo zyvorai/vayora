@@ -105,16 +105,22 @@ pub async fn accrue(
 }
 
 /// After a refund is processed: bring each share's reversal up to its proportion of the refunded
-/// total (a full refund reverses every share in full). Safe to repeat.
+/// total (a full refund reverses every share in full). `offset_account` receives the credit: collections
+/// for refunds, adjustments for lost disputes, where the vendor bears their share of the loss. Safe to repeat.
 pub async fn reverse_for_refund(
     conn: &mut PgConnection,
     tenant_id: &str,
     refund_id: &str,
     intent_id: &str,
-    refunded_total: i64,
-    payment_amount: i64,
+    attempt_id: &str,
     currency: Currency,
+    offset_account: &str,
 ) -> Result<(), ApiError> {
+    let (refunded_total, payment_amount): (i64, i64) =
+        sqlx::query_as("SELECT refunded_minor, amount_minor FROM payment_attempts WHERE id = $1")
+            .bind(attempt_id)
+            .fetch_one(&mut *conn)
+            .await?;
     if payment_amount <= 0 {
         return Ok(());
     }
@@ -130,7 +136,7 @@ pub async fn reverse_for_refund(
         }
         Transaction::new(vec![
             Entry::debit(accounts::vendor_payable(&vendor), delta, currency),
-            Entry::credit(accounts::COLLECTIONS, delta, currency),
+            Entry::credit(offset_account, delta, currency),
         ])
         .map_err(zyvor_ledger::StoreError::from)?
         .post(conn, tenant_id, &format!("splitrev:{refund_id}:{id}"), None)

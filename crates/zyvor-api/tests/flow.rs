@@ -5904,3 +5904,64 @@ async fn absurdly_large_amounts_are_refused_everywhere_instead_of_overflowing_su
         .await;
     assert_eq!(ok["amount_minor"], zyvor_core::MAX_AMOUNT_MINOR);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_lost_dispute_takes_the_same_share_back_from_each_vendor(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut ids = vec![];
+    for name in ["Artisan", "Courier"] {
+        let v = t
+            .ok(
+                a,
+                "POST",
+                "/v1/vendors",
+                None,
+                json!({ "name": name, "vpa": format!("{}@okbank", name.to_lowercase()) }),
+            )
+            .await;
+        ids.push(v["id"].as_str().unwrap().to_string());
+    }
+    let owed = |v: String| {
+        let (t2, a2) = (&t, a.clone());
+        async move {
+            t2.ok(
+                &a2,
+                "GET",
+                &format!("/v1/vendors/{v}/balance"),
+                None,
+                Value::Null,
+            )
+            .await["balances"][0]["owed_minor"]
+                .as_i64()
+                .unwrap_or(0)
+        }
+    };
+    let splits = json!([{ "vendor_id": ids[0], "amount_minor": 60_000 }, { "vendor_id": ids[1], "amount_minor": 20_000 }]);
+    let (_, att, _) = t
+        .paid_razorpay(a, 100_000, json!({ "splits": splits }))
+        .await;
+    let d = t
+        .ok(
+            a,
+            "POST",
+            "/v1/disputes",
+            None,
+            json!({ "attempt_id": att, "amount_minor": 50_000, "reason": "fraudulent", "respond_by": "2026-12-01" }),
+        )
+        .await;
+    let did = d["id"].as_str().unwrap();
+    // an open dispute changes nothing for the vendors; winning leaves them whole
+    assert_eq!(owed(ids[0].clone()).await, 60_000);
+    // a lost one takes half back from each
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/disputes/{did}/resolve"),
+        None,
+        json!({ "outcome": "lost" }),
+    )
+    .await;
+    assert_eq!(owed(ids[0].clone()).await, 30_000);
+    assert_eq!(owed(ids[1].clone()).await, 10_000);
+}

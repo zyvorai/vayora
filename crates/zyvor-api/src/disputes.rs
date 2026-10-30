@@ -191,6 +191,17 @@ pub async fn resolve_dispute(
         )
         .await?;
         sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor - $2, refunded_minor = refunded_minor + $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *tx).await?;
+        // marketplace vendors bear their share of a lost dispute, like a refund
+        crate::splits::reverse_for_refund(
+            &mut tx,
+            &auth.tenant_id,
+            &format!("dispute_{id}"),
+            &intent_id,
+            &attempt_id,
+            currency,
+            accounts::ADJUSTMENTS,
+        )
+        .await?;
         if let Some(inv) = sqlx::query_scalar::<_, Option<String>>(
             "SELECT invoice_id FROM payment_intents WHERE id = $1",
         )
