@@ -4626,3 +4626,172 @@ async fn webhook_subscriptions_decide_which_events_are_queued_and_the_catalogue_
     .await;
     assert_eq!(count("invoice.voided").await, 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn instalment_plans_split_exactly_atomically_and_only_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Aarav (Class 4)" }),
+        )
+        .await;
+    let body = |prefix: &str, ext: Option<&str>| json!({ "customer_id": cust["id"], "name": "Annual fee 2026-27", "total_minor": 100_001, "instalments": 3, "first_due_date": "2026-04-30", "number_prefix": prefix, "external_ref": ext });
+
+    // validation
+    for bad in [
+        json!({ "instalments": 1 }),
+        json!({ "instalments": 61 }),
+        json!({ "total_minor": 2 }),
+        json!({ "every_unit": "week" }),
+        json!({ "every": 0 }),
+        json!({ "number_prefix": " " }),
+    ] {
+        let mut v = body("FEE", None);
+        v.as_object_mut()
+            .unwrap()
+            .extend(bad.as_object().unwrap().clone());
+        assert_eq!(
+            t.call(a, "POST", "/v1/installment_plans", None, v)
+                .await
+                .0
+                .as_u16(),
+            422,
+            "{bad}"
+        );
+    }
+    let mut unknown = body("FEE", None);
+    unknown["customer_id"] = json!("cus_nope");
+    assert_eq!(
+        t.call(a, "POST", "/v1/installment_plans", None, unknown)
+            .await
+            .0
+            .as_u16(),
+        404
+    );
+
+    // the split is exact and the dates step by month, clamped to month end
+    let plan = t
+        .ok(
+            a,
+            "POST",
+            "/v1/installment_plans",
+            None,
+            body("FEE-2026", Some("FEES-AARAV-26")),
+        )
+        .await;
+    let invs = plan["invoices"].as_array().unwrap();
+    assert_eq!(
+        invs.iter()
+            .map(|i| i["amount_minor"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![33_333, 33_333, 33_335]
+    );
+    assert_eq!(
+        invs.iter()
+            .map(|i| i["due_date"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["2026-04-30", "2026-05-30", "2026-06-30"]
+    );
+    assert_eq!(
+        invs.iter()
+            .map(|i| i["number"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["FEE-2026-1", "FEE-2026-2", "FEE-2026-3"]
+    );
+    assert_eq!(
+        (plan["total_minor"].clone(), plan["remaining_minor"].clone()),
+        (json!(100_001), json!(100_001))
+    );
+
+    // the same reference returns the same plan and creates nothing new
+    let (s, again) = t
+        .call(
+            a,
+            "POST",
+            "/v1/installment_plans",
+            None,
+            body("FEE-2026", Some("FEES-AARAV-26")),
+        )
+        .await;
+    assert_eq!((s.as_u16(), again["id"].clone()), (200, plan["id"].clone()));
+    assert_eq!(t.count("SELECT count(*) FROM installment_plans").await, 1);
+
+    // a clash on an invoice number rolls the whole plan back
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/installment_plans",
+            None,
+            body("FEE-2026", Some("OTHER")),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 409);
+    assert_eq!(
+        (
+            t.count("SELECT count(*) FROM installment_plans").await,
+            t.count("SELECT count(*) FROM invoices").await
+        ),
+        (1, 3),
+        "all or nothing"
+    );
+
+    // paying down an instalment shows on the plan (a waiver here; payments allocate the same way)
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/invoices/{}/credit_notes",
+            invs[0]["invoice_id"].as_str().unwrap()
+        ),
+        None,
+        json!({ "amount_minor": 33_333, "reason": "scholarship" }),
+    )
+    .await;
+    let got = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/installment_plans/{}", plan["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            got["settled_minor"].clone(),
+            got["remaining_minor"].clone(),
+            got["invoices"][0]["status"].clone()
+        ),
+        (json!(33_333), json!(66_668), json!("paid"))
+    );
+
+    // other tenants cannot see it; weekly-style day steps work
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/installment_plans/{}", plan["id"].as_str().unwrap()),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    let mut d = body("DAYS", None);
+    d.as_object_mut().unwrap().extend(
+        json!({ "every_unit": "day", "every": 14, "instalments": 2 })
+            .as_object()
+            .unwrap()
+            .clone(),
+    );
+    let p2 = t.ok(a, "POST", "/v1/installment_plans", None, d).await;
+    assert_eq!(p2["invoices"][1]["due_date"], "2026-05-14");
+}

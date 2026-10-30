@@ -1174,6 +1174,32 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/installment_plans:
+    post:
+      summary: Split an agreed total into dated invoices (exact split, all or nothing, idempotent by external_ref)
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/installment_plans/{id}:
+    get:
+      summary: An instalment plan with each instalment's invoice and how much is paid
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail

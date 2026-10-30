@@ -205,6 +205,13 @@ export class Zyvor {
     cancel: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/cancel`),
   };
 
+  readonly installments = {
+    /** Split an agreed total into dated invoices: exact (remainder on the last), all or nothing, idempotent by `externalRef`. */
+    create: (p: { customerId: string; name: string; totalMinor: number; instalments: number; firstDueDate: string; numberPrefix: string; everyUnit?: "month" | "day"; every?: number; currency?: string; externalRef?: string }) =>
+      this.req<{ id: string; remaining_minor: number; invoices: { invoice_id: string; number: string; amount_minor: number; due_date: string }[] }>("POST", "/v1/installment_plans", { customer_id: p.customerId, name: p.name, total_minor: p.totalMinor, instalments: p.instalments, first_due_date: p.firstDueDate, number_prefix: p.numberPrefix, every_unit: p.everyUnit, every: p.every, currency: p.currency, external_ref: p.externalRef }),
+    retrieve: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/installment_plans/${encodeURIComponent(id)}`),
+  };
+
   readonly gst = {
     /** GSTR-1 style summary for `YYYY-MM`: a preparation aid, Zyvor does not file returns. */
     gstr1: (period: string) => this.req<Record<string, unknown>>("GET", `/v1/gst/gstr1${this.qs({ period })}`),

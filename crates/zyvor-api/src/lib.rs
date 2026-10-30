@@ -18,6 +18,7 @@ pub mod error;
 pub mod events;
 pub mod gst;
 pub mod idempotency;
+pub mod installments;
 pub mod outbox;
 pub mod payment_links;
 pub mod payments;
@@ -216,6 +217,8 @@ pub fn app(state: AppState) -> Router {
         .route("/payouts/{id}/reject", post(payouts::reject_payout))
         .route("/payouts/{id}/mark_paid", post(payouts::mark_paid))
         .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
+        .route("/installment_plans", post(installments::create_plan))
+        .route("/installment_plans/{id}", get(installments::get_plan))
         .route("/events/catalogue", get(events::catalogue))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
         .route("/gst/gstr1", get(gst::gstr1))
