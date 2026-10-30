@@ -6,6 +6,7 @@ pub mod admin;
 pub mod auth;
 pub mod cases;
 pub mod checkout;
+pub mod collections;
 pub mod crypto;
 pub mod error;
 pub mod idempotency;
@@ -122,6 +123,18 @@ pub fn app(state: AppState) -> Router {
         .route("/users", post(create_user))
         .route("/invoices", post(create_invoice).get(list_invoices))
         .route("/invoices/{id}", get(get_invoice))
+        // collections
+        .route("/collections/ageing", get(collections::ageing))
+        .route("/collections/promises", get(collections::list_promises))
+        .route(
+            "/collections/promises/{id}/cancel",
+            post(collections::cancel_promise),
+        )
+        .route("/invoices/{id}/promises", post(collections::create_promise))
+        .route(
+            "/invoices/{id}/reminders",
+            post(collections::create_reminder),
+        )
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
         .route("/export", get(export))

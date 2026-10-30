@@ -376,6 +376,74 @@ paths:
         required: true
         schema:
           type: string
+  /v1/collections/ageing:
+    get:
+      summary: Outstanding invoices by days past due (as_of optional)
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/collections/promises:
+    get:
+      summary: Promises to pay with derived status (open, kept, broken, canceled)
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/collections/promises/{id}/cancel:
+    post:
+      summary: Cancel a promise to pay
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/invoices/{id}/promises:
+    post:
+      summary: Record a promise to pay against an invoice
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/invoices/{id}/reminders:
+    post:
+      summary: Log a reminder and emit invoice.reminder
+      tags:
+      - collections
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)

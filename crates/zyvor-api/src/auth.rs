@@ -15,6 +15,7 @@ pub const ALL_SCOPES: &[&str] = &[
     "recon:write",
     "invoices:write",
     "customers:write",
+    "collections:write",
     "admin",
 ];
 

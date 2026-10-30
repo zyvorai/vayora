@@ -1366,3 +1366,161 @@ fn openapi_documents_every_route() {
         "routes missing from openapi/zyvor.yaml: {missing:?}"
     );
 }
+
+// Collections ────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn collections_ageing_promises_and_reminders(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now().date_naive();
+    let mk = |n: &str, amt: i64, due: chrono::NaiveDate| json!({ "number": n, "amount_minor": amt, "due_date": due.to_string() });
+    let cur = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("C-1", 1000, today + chrono::Duration::days(5)),
+        )
+        .await;
+    let late = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("L-1", 5000, today - chrono::Duration::days(45)),
+        )
+        .await;
+    let old = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            mk("O-1", 7000, today - chrono::Duration::days(120)),
+        )
+        .await;
+    t.ok(
+        b,
+        "POST",
+        "/v1/invoices",
+        None,
+        mk("B-1", 9999, today - chrono::Duration::days(200)),
+    )
+    .await;
+
+    let report = t
+        .ok(a, "GET", "/v1/collections/ageing", None, Value::Null)
+        .await;
+    let by: std::collections::HashMap<_, _> = report["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["bucket"].as_str().unwrap().to_string(),
+                r["outstanding_minor"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(by.get("current"), Some(&1000));
+    assert_eq!(by.get("31_60"), Some(&5000));
+    assert_eq!(by.get("over_90"), Some(&7000));
+    assert_eq!(
+        by.len(),
+        3,
+        "another tenant's invoice must not appear: {by:?}"
+    );
+
+    // a promise cannot exceed what is owed, and is hidden from other tenants
+    let late_id = late["id"].as_str().unwrap();
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{late_id}/promises"),
+            None,
+            json!({ "promised_minor": 5001, "promised_date": today.to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    let p = t.ok(a, "POST", &format!("/v1/invoices/{late_id}/promises"), None, json!({ "promised_minor": 5000, "promised_date": (today + chrono::Duration::days(3)).to_string(), "note": "dad will pay Friday" })).await;
+    let past = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/invoices/{}/promises", old["id"].as_str().unwrap()),
+            None,
+            json!({ "promised_minor": 7000, "promised_date": today.to_string() }),
+        )
+        .await;
+    let _ = past;
+    sqlx::query(
+        "UPDATE payment_promises SET promised_date = promised_date - 5 WHERE invoice_id = $1",
+    )
+    .bind(old["id"].as_str().unwrap())
+    .execute(&t.root)
+    .await
+    .unwrap();
+    let list = t
+        .ok(a, "GET", "/v1/collections/promises", None, Value::Null)
+        .await;
+    let st: std::collections::HashMap<_, _> = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["invoice_number"].as_str().unwrap().to_string(),
+                r["status"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(st["L-1"], "open");
+    assert_eq!(st["O-1"], "broken");
+    assert!(
+        t.ok(b, "GET", "/v1/collections/promises", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/collections/promises/{}/cancel",
+            p["id"].as_str().unwrap()
+        ),
+        None,
+        json!({}),
+    )
+    .await;
+
+    // reminders are logged and emitted for the merchant's own channel to send
+    let cur_id = cur["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{cur_id}/reminders"),
+        None,
+        json!({ "channel": "whatsapp", "message": "Fee due Friday" }),
+    )
+    .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{cur_id}/reminders"),
+            None,
+            json!({ "channel": "pigeon" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'invoice.reminder'")
+            .await,
+        1
+    );
+}
