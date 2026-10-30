@@ -138,12 +138,12 @@ export class Zyvor {
   }
 
   readonly intents = {
-    create: (p: { amountMinor: number; currency?: Currency; customerId?: string; invoiceId?: string; externalRef?: string; description?: string; allowedProviders?: string[]; captureMethod?: "automatic" | "manual"; idempotencyKey?: string; /** Marketplace shares owed to vendors out of this payment (sum at most the amount). */ splits?: { vendorId: string; amountMinor: number }[] }) => {
+    create: (p: { amountMinor: number; currency?: Currency; customerId?: string; invoiceId?: string; externalRef?: string; description?: string; allowedProviders?: string[]; captureMethod?: "automatic" | "manual"; idempotencyKey?: string; /** Marketplace shares owed to vendors out of this payment (sum at most the amount). */ splits?: { vendorId: string; amountMinor: number }[]; /** Attribute the payment to a branch, or to a counter within it (which implies its branch). */ branchId?: string; counterId?: string }) => {
       if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
       return this.req<PaymentIntent>(
         "POST",
         "/v1/payment_intents",
-        { amount_minor: p.amountMinor, currency: p.currency ?? "INR", customer_id: p.customerId, invoice_id: p.invoiceId, external_ref: p.externalRef, description: p.description, allowed_providers: p.allowedProviders, capture_method: p.captureMethod, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })) },
+        { amount_minor: p.amountMinor, currency: p.currency ?? "INR", branch_id: p.branchId, counter_id: p.counterId, customer_id: p.customerId, invoice_id: p.invoiceId, external_ref: p.externalRef, description: p.description, allowed_providers: p.allowedProviders, capture_method: p.captureMethod, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })) },
         key(p.idempotencyKey),
       );
     },
