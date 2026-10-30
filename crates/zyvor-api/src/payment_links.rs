@@ -45,7 +45,7 @@ pub async fn create_link(
     auth: Auth,
     Json(b): Json<NewLink>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("payments:write")?;
+    auth.require_branch("payments:write")?;
     let open = b.open_amount.unwrap_or(false);
     if open {
         let limit = 1..=zyvor_core::MAX_AMOUNT_MINOR;

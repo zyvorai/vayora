@@ -118,7 +118,7 @@ pub async fn list_counters(
     auth: Auth,
     Query(q): Query<CounterQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(String, String, String, bool)> = sqlx::query_as(
         "SELECT id, branch_id, name, deactivated_at IS NULL FROM counters WHERE ($1::text IS NULL OR branch_id = $1) ORDER BY name",
@@ -176,7 +176,7 @@ pub async fn branch_summary(
     Path(id): Path<String>,
     Query(q): Query<SummaryQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     auth.pin_branch(Some(id.clone()))?;
     let to = q.to.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let from = q.from.unwrap_or(to - chrono::Duration::days(30));

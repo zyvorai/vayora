@@ -29,7 +29,7 @@ pub async fn add_cash(
     auth: Auth,
     Json(b): Json<NewCash>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("payments:write")?;
+    auth.require_branch("payments:write")?;
     if !matches!(b.kind.as_str(), "sale" | "refund" | "float")
         || b.amount_minor <= 0
         || b.amount_minor > zyvor_core::MAX_AMOUNT_MINOR
@@ -72,7 +72,7 @@ pub async fn create_closing(
     auth: Auth,
     Json(b): Json<NewClosing>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("payments:write")?;
+    auth.require_branch("payments:write")?;
     if b.counted_cash_minor < 0 || b.counted_cash_minor > zyvor_core::MAX_AMOUNT_MINOR {
         return Err(ApiError::invalid(
             "invalid_amount",
@@ -194,7 +194,7 @@ pub async fn list_closings(
     auth: Auth,
     Query(q): Query<ClosingQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     #[allow(clippy::type_complexity)]
     let rows: Vec<(String, String, NaiveDate, i64, i64, i64, Value, Option<String>, String, Option<String>)> = sqlx::query_as(

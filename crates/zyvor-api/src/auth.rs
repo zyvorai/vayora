@@ -51,7 +51,19 @@ impl Auth {
         }
     }
 
+    /// Check a scope. A branch-limited key is refused here: only handlers that enforce the branch call
+    /// `require_branch`, so everything else is closed to such keys by default.
     pub fn require(&self, scope: &str) -> Result<(), ApiError> {
+        if self.branch_id.is_some() {
+            return Err(ApiError::forbidden(
+                "a branch-limited API key can only use the branch endpoints (payments, payment links, cash, closings, summaries)".to_string(),
+            ));
+        }
+        self.require_branch(scope)
+    }
+
+    /// Like `require`, for handlers that confine a branch-limited key to its own branch (via `pin_branch`).
+    pub fn require_branch(&self, scope: &str) -> Result<(), ApiError> {
         if self.scopes.iter().any(|s| s == scope || s == "admin") {
             Ok(())
         } else {

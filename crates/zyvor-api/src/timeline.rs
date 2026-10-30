@@ -39,13 +39,23 @@ pub async fn payment_timeline(
     auth: Auth,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let intent: Option<(At, String, i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT created_at, status, amount_minor, currency, invoice_id, external_ref FROM payment_intents WHERE id = $1",
     ).bind(&id).fetch_optional(&mut *tx).await?;
     let (created, status, amount, ccy, invoice_id, ext) =
         intent.ok_or_else(|| ApiError::not_found("payment"))?;
+    if let Some(own) = &auth.branch_id {
+        let branch: Option<String> =
+            sqlx::query_scalar("SELECT branch_id FROM payment_intents WHERE id = $1")
+                .bind(&id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if branch.as_deref() != Some(own.as_str()) {
+            return Err(ApiError::not_found("payment"));
+        }
+    }
     let mut out: Vec<(At, Value)> = vec![ev(
         created,
         "intent",

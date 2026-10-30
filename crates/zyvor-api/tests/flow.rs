@@ -7083,6 +7083,60 @@ async fn a_branch_key_only_sees_and_creates_its_own_branch(pool: PgPool) {
         403
     );
 
+    // everything that is not branch-aware is closed to a branch key, even with payments scopes
+    for path in [
+        "/v1/customers",
+        "/v1/invoices",
+        "/v1/payouts",
+        "/v1/payment_links",
+        "/v1/branches",
+        "/v1/insights/cashflow",
+        "/v1/collections/ageing",
+        "/v1/coupons",
+        "/v1/settlements",
+    ] {
+        assert_eq!(
+            t.call(&till, "GET", path, None, Value::Null)
+                .await
+                .0
+                .as_u16(),
+            403,
+            "{path} must be closed to a branch key"
+        );
+    }
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!(
+                "/v1/payment_intents/{}/timeline",
+                other["id"].as_str().unwrap()
+            ),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call(
+            &till,
+            "GET",
+            &format!(
+                "/v1/payment_intents/{}/timeline",
+                mine["id"].as_str().unwrap()
+            ),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        200
+    );
+
     // rotating the key keeps it pinned: the replacement is no wider than the original
     let kid: String = sqlx::query_scalar("SELECT id FROM api_keys WHERE branch_id = $1")
         .bind(&kothrud)

@@ -104,7 +104,7 @@ pub async fn create_intent(
     headers: HeaderMap,
     Json(mut b): Json<CreateIntent>,
 ) -> Result<Response, ApiError> {
-    auth.require("payments:write")?;
+    auth.require_branch("payments:write")?;
     let currency: Currency = b
         .currency
         .parse()
@@ -263,7 +263,7 @@ pub async fn get_intent(
     auth: Auth,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let intent: IntentRow = sqlx::query_as(
         "SELECT id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, created_at, updated_at FROM payment_intents WHERE id = $1",
@@ -299,7 +299,7 @@ pub async fn list_intents(
     auth: Auth,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("payments:read")?;
+    auth.require_branch("payments:read")?;
     let limit = q.limit.unwrap_or(25).clamp(1, 100);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let mut rows: Vec<IntentRow> = sqlx::query_as(
