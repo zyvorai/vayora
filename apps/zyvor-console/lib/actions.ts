@@ -104,16 +104,33 @@ export const completeMilestone = async (_: FormState, f: FormData) => run(["/bil
 export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], (z) => z.disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));
 
 export const createLink = async (_: FormState, f: FormData): Promise<FormState> => {
-  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  const money = (k: string) => {
+    const v = String(f.get(k) ?? "").trim();
+    return v ? Math.round(Number(v.replace(/,/g, "")) * 100) : undefined;
+  };
+  const open = f.get("open") === "on";
   const maxUses = String(f.get("max_uses") ?? "").trim();
-  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  const description = String(f.get("description") ?? "").trim() || undefined;
+  const counterId = String(f.get("counter_id") ?? "") || undefined;
   let path = "";
+  if (open) {
+    const [min, max] = [money("min"), money("max")];
+    if ([min, max].some((v) => v !== undefined && (!Number.isFinite(v) || v <= 0))) return { error: "Enter the smallest and largest amounts in rupees, or leave them empty." };
+    if (min !== undefined && max !== undefined && min > max) return { error: "The smallest amount cannot be more than the largest." };
+    const r = await run(["/links"], async (z) => {
+      path = (await z.paymentLinks.create({ description, openAmount: true, minAmountMinor: min, maxAmountMinor: max, counterId })).path;
+    });
+    return r?.error ? r : { ok: path };
+  }
+  const amount = money("amount");
+  if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
   const r = await run(["/links"], async (z) => {
     path = (await z.paymentLinks.create({
-      description: String(f.get("description") ?? "").trim() || undefined,
-      amountMinor: Math.round(rupees * 100),
+      description,
+      amountMinor: amount,
       maxUses: maxUses ? Number(maxUses) : undefined,
       convenienceFeeBp: String(f.get("fee") ?? "").trim() ? Math.round(Number(String(f.get("fee")).replace(/,/g, "")) * 100) : undefined,
+      counterId,
     })).path;
   });
   return r?.error ? r : { ok: path };
