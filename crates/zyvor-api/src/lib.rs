@@ -10,6 +10,7 @@ pub mod billing;
 pub mod cases;
 pub mod checkout;
 pub mod collections;
+pub mod console_users;
 pub mod crypto;
 pub mod disputes;
 pub mod error;
@@ -208,6 +209,36 @@ pub fn app(state: AppState) -> Router {
         .route("/collections/dunning/run", post(collections::run_dunning))
         .route("/settings", get(get_settings).post(put_settings))
         .route("/audit_events", get(audit_log))
+        // console users (the console signs people in through these)
+        .route(
+            "/console/users",
+            post(console_users::create_user).get(console_users::list_users),
+        )
+        .route(
+            "/console/users/{id}/disable",
+            post(console_users::disable_user),
+        )
+        .route(
+            "/console/users/{id}/enable",
+            post(console_users::enable_user),
+        )
+        .route(
+            "/console/users/{id}/password",
+            post(console_users::set_password),
+        )
+        .route(
+            "/console/users/{id}/mfa/begin",
+            post(console_users::mfa_begin),
+        )
+        .route(
+            "/console/users/{id}/mfa/confirm",
+            post(console_users::mfa_confirm),
+        )
+        .route(
+            "/console/users/{id}/mfa/reset",
+            post(console_users::reset_mfa),
+        )
+        .route("/console/authenticate", post(console_users::authenticate))
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))

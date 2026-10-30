@@ -3078,3 +3078,316 @@ async fn master_key_rotation_reseals_every_secret_and_never_overwrites_what_it_c
         .unwrap();
     assert_eq!((again.0, again.2), (0, 1), "idempotent");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn console_users_sign_in_with_roles_lockout_and_a_replay_proof_second_factor(pool: PgPool) {
+    use zyvor_api::console_users::{base32_decode, totp_at};
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let login = |who: &Tenant, u: &str, p: &str, otp: Option<&str>| {
+        let (who, body) = (
+            who.clone(),
+            json!({ "username": u, "password": p, "otp": otp }),
+        );
+        let app = t.app.clone();
+        async move {
+            let (s, v) = raw(
+                &app,
+                &who.key,
+                None,
+                "POST",
+                "/v1/console/authenticate",
+                None,
+                body,
+            )
+            .await;
+            (s.as_u16(), v["error"]["code"].as_str().map(String::from), v)
+        }
+    };
+
+    // creation rules
+    let mk = |u: &str, p: &str, r: &str| json!({ "username": u, "password": p, "role": r });
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("priya", "short", "finance")
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("priya", "a-long-enough-pass", "root")
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("no spaces", "a-long-enough-pass", "viewer")
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let u = t
+        .ok(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("Priya", "a-long-enough-pass", "finance"),
+        )
+        .await;
+    assert_eq!(u["username"], "priya");
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            mk("priya", "another-long-pass", "viewer")
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    // only an admin key manages users
+    let viewer_key = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "ro", "scopes": ["payments:read"] }),
+        )
+        .await;
+    let ro = Tenant {
+        id: a.id.clone(),
+        key: viewer_key["key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.call(&ro, "GET", "/v1/console/users", None, Value::Null)
+            .await
+            .0
+            .as_u16(),
+        403
+    );
+
+    // sign-in: wrong user and wrong password look the same; the right one returns the role
+    let (s1, c1, v1) = login(a, "nobody", "a-long-enough-pass", None).await;
+    let (s2, c2, v2) = login(a, "priya", "wrong-password-here", None).await;
+    assert_eq!(
+        (s1, c1.clone(), s2, c2),
+        (
+            401,
+            Some("unauthorized".into()),
+            401,
+            Some("unauthorized".into())
+        )
+    );
+    assert_eq!(v1["error"]["message"], v2["error"]["message"]);
+    let (s, _, ok) = login(a, "PRIYA", "a-long-enough-pass", None).await;
+    assert_eq!(
+        (s, ok["user"]["role"].clone(), ok["mfa_enrolled"].clone()),
+        (200, json!("finance"), json!(false))
+    );
+    assert_eq!(
+        login(b, "priya", "a-long-enough-pass", None).await.0,
+        401,
+        "another tenant's users do not exist here"
+    );
+
+    // five failures lock the account, even against the right password, until an admin re-enables it
+    for _ in 0..5 {
+        login(a, "priya", "wrong-password-here", None).await;
+    }
+    let (s, code, _) = login(a, "priya", "a-long-enough-pass", None).await;
+    assert_eq!((s, code), (423, Some("account_locked".into())));
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/console/users/{}/enable", u["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(login(a, "priya", "a-long-enough-pass", None).await.0, 200);
+
+    // second factor
+    let uid = u["id"].as_str().unwrap();
+    let begin = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/console/users/{uid}/mfa/begin"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert!(
+        begin["otpauth_uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("otpauth://totp/Zyvor:priya?secret=")
+    );
+    let secret = base32_decode(begin["secret"].as_str().unwrap()).unwrap();
+    let now_step = chrono::Utc::now().timestamp() as u64 / 30;
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/console/users/{uid}/mfa/confirm"),
+            None,
+            json!({ "otp": "000000" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let conf = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/console/users/{uid}/mfa/confirm"),
+            None,
+            json!({ "otp": totp_at(&secret, now_step) }),
+        )
+        .await;
+    let recovery: Vec<String> = conf["recovery_codes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap().into())
+        .collect();
+    assert_eq!(recovery.len(), 8);
+
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", None).await.1,
+        Some("otp_required".into())
+    );
+    assert_eq!(
+        login(a, "priya", "wrong-password-here", Some("123456"))
+            .await
+            .1,
+        Some("unauthorized".into()),
+        "the code is never requested for a wrong password"
+    );
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", Some("000000"))
+            .await
+            .0,
+        401
+    );
+    let next = totp_at(&secret, now_step + 1);
+    let (s, _, ok) = login(a, "priya", "a-long-enough-pass", Some(&next)).await;
+    assert_eq!((s, ok["mfa_enrolled"].clone()), (200, json!(true)));
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", Some(&next)).await.0,
+        401,
+        "a code cannot be used twice"
+    );
+    assert_eq!(
+        login(
+            a,
+            "priya",
+            "a-long-enough-pass",
+            Some(&totp_at(&secret, now_step))
+        )
+        .await
+        .0,
+        401,
+        "nor can an older one"
+    );
+    // recovery codes work once each
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", Some(&recovery[0]))
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", Some(&recovery[0]))
+            .await
+            .0,
+        401
+    );
+    assert_eq!(
+        login(a, "priya", "a-long-enough-pass", Some(&recovery[1]))
+            .await
+            .0,
+        200
+    );
+    // resetting MFA removes the requirement; disabling blocks sign-in outright
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/console/users/{uid}/mfa/reset"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(login(a, "priya", "a-long-enough-pass", None).await.0, 200);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/console/users/{uid}/password"),
+        None,
+        json!({ "password": "a-brand-new-password" }),
+    )
+    .await;
+    assert_eq!(login(a, "priya", "a-long-enough-pass", None).await.0, 401);
+    assert_eq!(login(a, "priya", "a-brand-new-password", None).await.0, 200);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/console/users/{uid}/disable"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(login(a, "priya", "a-brand-new-password", None).await.0, 401);
+
+    // the password hash and secrets never come back, and the trail records it
+    let listed = t
+        .ok(a, "GET", "/v1/console/users", None, Value::Null)
+        .await
+        .to_string();
+    assert!(
+        !listed.contains("argon2")
+            && !listed.contains("secret")
+            && listed.contains("\"disabled\":true")
+    );
+    for action in [
+        "console_user.created",
+        "console_user.login",
+        "console_user.login_failed",
+        "console_user.locked",
+        "console_user.mfa_enrolled",
+        "console_user.disabled",
+    ] {
+        assert!(
+            t.count(&format!(
+                "SELECT count(*) FROM audit_events WHERE action = '{action}'"
+            ))
+            .await
+                >= 1,
+            "{action}"
+        );
+    }
+}

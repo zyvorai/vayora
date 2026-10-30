@@ -821,6 +821,131 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/console/users:
+    post:
+      summary: Create a console user
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List console users
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/users/{id}/disable:
+    post:
+      summary: Disable a console user
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/users/{id}/enable:
+    post:
+      summary: Re-enable a console user and clear lockout
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/users/{id}/password:
+    post:
+      summary: Set a console user's password
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/users/{id}/mfa/begin:
+    post:
+      summary: Start TOTP enrolment
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/users/{id}/mfa/confirm:
+    post:
+      summary: Confirm TOTP enrolment and receive recovery codes
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/users/{id}/mfa/reset:
+    post:
+      summary: Remove a user's second factor
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/console/authenticate:
+    post:
+      summary: Check a person's username, password and code for the console
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

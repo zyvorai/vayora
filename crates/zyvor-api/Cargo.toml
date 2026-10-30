@@ -29,6 +29,8 @@ opentelemetry = { version = "0.33.1", default-features = false }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["rt-tokio", "trace"] }
 tracing-opentelemetry = { version = "0.34.0", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
+argon2 = "0.6.0"
+sha1 = "0.11.0"
 
 [dev-dependencies]
 http-body-util = "0.1.5"
