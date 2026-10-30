@@ -30,6 +30,9 @@ API keys, customer contact data, the audit trail.
   machine guards, unknown outcomes block new attempts until resolved.
 - **Tampering with the audit trail**: events are append-only (trigger), and the worker seals them into a hash chain
   (`/v1/audit_events/verify` recomputes it and names the first broken seal), so even a superuser edit shows up.
+- **Overflow and absurd amounts**: every endpoint that takes a money amount refuses anything above ₹10 billion
+  (`MAX_AMOUNT_MINOR`), so sums in the database and ledger cannot overflow a 64-bit integer; dynamic SQL interpolates
+  only constants, never request data, and every value is a bound parameter.
 - **Tampering with money records**: ledger is append-only and balanced per currency; corrections are reversals.
 - **SSRF via merchant webhook URL**: https and public addresses only; credentials in URLs refused; the worker pins the
   connection to addresses vetted at delivery time and does not follow redirects.

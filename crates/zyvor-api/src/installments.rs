@@ -84,6 +84,7 @@ pub async fn create_plan(
         .parse()
         .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
     if !(2..=60).contains(&b.instalments)
+        || b.total_minor > zyvor_core::MAX_AMOUNT_MINOR
         || b.total_minor < b.instalments as i64
         || b.name.trim().is_empty()
         || b.number_prefix.trim().is_empty()

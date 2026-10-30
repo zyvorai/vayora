@@ -562,10 +562,10 @@ pub async fn create_invoice(
         Some((c, _, _)) => (c.total, c.tax),
         None => (b.amount_minor.unwrap_or(0), b.tax_minor.unwrap_or(0)),
     };
-    if amount <= 0 {
+    if amount <= 0 || amount > zyvor_core::MAX_AMOUNT_MINOR {
         return Err(ApiError::invalid(
             "invalid_amount",
-            "amount_minor must be positive",
+            "amount_minor must be positive and within the supported limit",
         ));
     }
     sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, tax_minor, external_ref, due_date, place_of_supply, buyer_gstin, reverse_charge) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)")

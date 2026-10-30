@@ -55,9 +55,9 @@ pub async fn create_plan(
             "interval_unit must be day, week, month or year",
         ));
     }
-    if b.amount_minor < 0
+    if !(0..=zyvor_core::MAX_AMOUNT_MINOR).contains(&b.amount_minor)
         || b.interval_count.unwrap_or(1) < 1
-        || b.usage_unit_minor.unwrap_or(0) < 0
+        || !(0..=zyvor_core::MAX_AMOUNT_MINOR).contains(&b.usage_unit_minor.unwrap_or(0))
     {
         return Err(ApiError::invalid(
             "invalid_plan",
@@ -643,10 +643,10 @@ pub async fn create_milestone(
     Json(b): Json<NewMilestone>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("billing:write")?;
-    if b.amount_minor <= 0 {
+    if b.amount_minor <= 0 || b.amount_minor > zyvor_core::MAX_AMOUNT_MINOR {
         return Err(ApiError::invalid(
             "invalid_amount",
-            "amount_minor must be positive",
+            "amount_minor must be positive and within the supported limit",
         ));
     }
     let ccy: zyvor_core::Currency = b

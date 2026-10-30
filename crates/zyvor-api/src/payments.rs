@@ -107,10 +107,10 @@ pub async fn create_intent(
         .currency
         .parse()
         .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
-    if b.amount_minor <= 0 {
+    if b.amount_minor <= 0 || b.amount_minor > zyvor_core::MAX_AMOUNT_MINOR {
         return Err(ApiError::invalid(
             "invalid_amount",
-            "amount_minor must be a positive integer",
+            "amount_minor must be a positive integer within the supported limit",
         ));
     }
     let capture = b.capture_method.as_deref().unwrap_or("automatic");

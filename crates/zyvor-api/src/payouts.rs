@@ -193,7 +193,10 @@ async fn create_one(
         .unwrap_or("INR")
         .parse()
         .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
-    if b.amount_minor <= 0 || b.purpose.trim().is_empty() {
+    if b.amount_minor <= 0
+        || b.amount_minor > zyvor_core::MAX_AMOUNT_MINOR
+        || b.purpose.trim().is_empty()
+    {
         return Err(ApiError::invalid(
             "invalid_payout",
             "amount_minor must be positive and a purpose is required",

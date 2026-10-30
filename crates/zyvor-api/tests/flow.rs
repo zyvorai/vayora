@@ -5832,3 +5832,75 @@ async fn coupons_and_convenience_fees_price_a_payment_link_and_cannot_be_over_us
         .await;
     assert_eq!(s.as_u16(), 409);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn absurdly_large_amounts_are_refused_everywhere_instead_of_overflowing_sums(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let huge = zyvor_core::MAX_AMOUNT_MINOR + 1;
+    let cust = t
+        .ok(a, "POST", "/v1/customers", None, json!({ "name": "C" }))
+        .await;
+    let vendor = t
+        .ok(
+            a,
+            "POST",
+            "/v1/vendors",
+            None,
+            json!({ "name": "V", "vpa": "v@okbank" }),
+        )
+        .await;
+    for (what, path, body) in [
+        (
+            "intent",
+            "/v1/payment_intents",
+            json!({ "amount_minor": huge, "currency": "INR" }),
+        ),
+        (
+            "invoice",
+            "/v1/invoices",
+            json!({ "number": "BIG-1", "amount_minor": huge }),
+        ),
+        (
+            "payout",
+            "/v1/payouts",
+            json!({ "vendor_id": vendor["id"], "amount_minor": huge, "purpose": "x" }),
+        ),
+        ("link", "/v1/payment_links", json!({ "amount_minor": huge })),
+        (
+            "plan",
+            "/v1/plans",
+            json!({ "name": "P", "amount_minor": huge, "interval_unit": "month" }),
+        ),
+        (
+            "milestone",
+            "/v1/milestones",
+            json!({ "customer_id": cust["id"], "name": "M", "amount_minor": huge }),
+        ),
+        (
+            "instalments",
+            "/v1/installment_plans",
+            json!({ "customer_id": cust["id"], "name": "I", "total_minor": huge, "instalments": 3, "first_due_date": "2026-12-01", "number_prefix": "BIG" }),
+        ),
+        (
+            "i64 max",
+            "/v1/invoices",
+            json!({ "number": "BIG-2", "amount_minor": i64::MAX }),
+        ),
+    ] {
+        let key = format!("k-{what}");
+        let (s, e) = t.call(a, "POST", path, Some(&key), body).await;
+        assert_eq!(s.as_u16(), 422, "{what}: {e}");
+    }
+    // the largest allowed amount still works
+    let ok = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "BIG-OK", "amount_minor": zyvor_core::MAX_AMOUNT_MINOR }),
+        )
+        .await;
+    assert_eq!(ok["amount_minor"], zyvor_core::MAX_AMOUNT_MINOR);
+}

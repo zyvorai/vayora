@@ -58,6 +58,10 @@ impl Env {
 }
 
 /// Prefixed, time-ordered identifier, e.g. `pi_01928f...`.
+/// The largest single amount any endpoint accepts: ₹10 billion, in minor units. Far above any real
+/// payment, far below where sums in the database or ledger could overflow a 64-bit integer.
+pub const MAX_AMOUNT_MINOR: i64 = 1_000_000_000_000;
+
 pub fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", uuid::Uuid::now_v7().simple())
 }

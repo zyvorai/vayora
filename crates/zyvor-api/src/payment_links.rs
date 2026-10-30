@@ -53,7 +53,10 @@ pub async fn create_link(
             "convenience_fee_bp is 0-1000 and only for fixed-amount links",
         ));
     }
-    if b.amount_minor.is_some_and(|a| a <= 0) || b.max_uses.is_some_and(|m| m <= 0) {
+    if b.amount_minor
+        .is_some_and(|a| a <= 0 || a > zyvor_core::MAX_AMOUNT_MINOR)
+        || b.max_uses.is_some_and(|m| m <= 0)
+    {
         return Err(ApiError::invalid(
             "invalid_link",
             "amount_minor and max_uses must be positive",
