@@ -681,6 +681,57 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/disputes:
+    get:
+      summary: Open or list disputes (an open dispute holds the amount so it cannot be refunded)
+      tags:
+      - disputes
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Open or list disputes (an open dispute holds the amount so it cannot be refunded)
+      tags:
+      - disputes
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/disputes/{id}/evidence:
+    post:
+      summary: Attach evidence (a note and a link to the document)
+      tags:
+      - disputes
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/disputes/{id}/resolve:
+    post:
+      summary: Record the outcome: won releases the hold, lost books the loss and re-opens the invoice
+      tags:
+      - disputes
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)

@@ -10,6 +10,7 @@ pub mod cases;
 pub mod checkout;
 pub mod collections;
 pub mod crypto;
+pub mod disputes;
 pub mod error;
 pub mod idempotency;
 pub mod outbox;
@@ -127,6 +128,13 @@ pub fn app(state: AppState) -> Router {
         .route("/users", post(create_user))
         .route("/invoices", post(create_invoice).get(list_invoices))
         .route("/invoices/{id}", get(get_invoice))
+        // disputes
+        .route(
+            "/disputes",
+            post(disputes::open_dispute).get(disputes::list_disputes),
+        )
+        .route("/disputes/{id}/evidence", post(disputes::add_evidence))
+        .route("/disputes/{id}/resolve", post(disputes::resolve_dispute))
         // billing
         .route(
             "/plans",

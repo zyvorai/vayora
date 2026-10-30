@@ -10,6 +10,7 @@ const items = [
   { href: "/", label: "Overview", icon: icon("M3 12l9-8 9 8M5 10v10h14V10") },
   { href: "/payments", label: "Payments", icon: icon("M3 7h18v10H3zM3 11h18") },
   { href: "/refunds", label: "Refunds", icon: icon("M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3") },
+  { href: "/disputes", label: "Disputes", icon: icon("M12 3l9 16H3zM12 10v4M12 17v.01") },
   { href: "/reconciliation", label: "Reconciliation", icon: icon("M4 6h16M4 12h10M4 18h6M17 15l2 2 3-4") },
   { href: "/collections", label: "Collections", icon: icon("M12 3v18M17 7H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6") },
   { href: "/billing", label: "Billing", icon: icon("M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6") },

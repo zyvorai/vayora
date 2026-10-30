@@ -1840,3 +1840,175 @@ async fn requests_get_an_id_that_is_echoed_and_hostile_ids_are_replaced(pool: Pg
             .starts_with("req_")
     );
 }
+
+// Disputes ───────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn disputes_hold_the_money_and_a_lost_one_hits_the_ledger_and_reopens_the_invoice(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "D-1", "amount_minor": 10_000 }),
+        )
+        .await;
+    let inv_id = inv["id"].as_str().unwrap();
+    let (iid, att, _) = t
+        .paid_razorpay(a, 10_000, json!({ "invoice_id": inv_id }))
+        .await;
+    assert_eq!(
+        t.ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{inv_id}"),
+            None,
+            Value::Null
+        )
+        .await["status"],
+        "paid"
+    );
+
+    // opening a dispute holds the money: a refund of the disputed part is refused, the rest is allowed
+    let d = t.ok(a, "POST", "/v1/disputes", None, json!({ "attempt_id": att, "amount_minor": 6_000, "reason": "fraudulent", "respond_by": "2026-12-01" })).await;
+    let did = d["id"].as_str().unwrap().to_string();
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some("r-too-much"),
+            json!({ "amount_minor": 5_000 }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422, "only 4000 is still free");
+    // a second dispute on the same payment, or one by another tenant, is refused
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/disputes",
+            None,
+            json!({ "attempt_id": att, "amount_minor": 1_000, "reason": "dup" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    let (st, _) = t
+        .call(
+            b,
+            "POST",
+            "/v1/disputes",
+            None,
+            json!({ "attempt_id": att, "reason": "x" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/disputes/{did}/evidence"),
+            None,
+            json!({ "note": "  " }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/disputes/{did}/evidence"),
+        None,
+        json!({ "note": "Delivery receipt signed", "url": "https://files.example/receipt.pdf" }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(
+            a,
+            "GET",
+            "/v1/disputes?status=under_review",
+            None,
+            Value::Null
+        )
+        .await["data"][0]["evidence_count"],
+        1
+    );
+
+    // lost: 6000 leaves the merchant, the ledger stays balanced, the invoice reopens for what was clawed back
+    let before = t.count("SELECT count(*) FROM ledger_transactions").await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/disputes/{did}/resolve"),
+        None,
+        json!({ "outcome": "lost" }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM ledger_transactions").await,
+        before + 1
+    );
+    let (dr, cr): (i64, i64) = sqlx::query_as("SELECT COALESCE(SUM(amount_minor) FILTER (WHERE side='debit'),0)::BIGINT, COALESCE(SUM(amount_minor) FILTER (WHERE side='credit'),0)::BIGINT FROM ledger_entries").fetch_one(&t.root).await.unwrap();
+    assert_eq!(dr, cr);
+    assert_eq!(t.count("SELECT COALESCE(SUM(amount_minor),0)::BIGINT FROM ledger_entries WHERE account = 'settlement_adjustments' AND side = 'debit'").await, 6_000);
+    let got = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{inv_id}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            got["status"].as_str().unwrap(),
+            got["outstanding_minor"].as_i64().unwrap()
+        ),
+        ("partially_paid", 6_000)
+    );
+    // resolving again changes nothing
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/disputes/{did}/resolve"),
+            None,
+            json!({ "outcome": "won" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    assert_eq!(
+        t.count("SELECT count(*) FROM ledger_transactions").await,
+        before + 1
+    );
+
+    // won: the hold is released and the remaining 4000 can be refunded
+    let (_, att2, _) = t.paid_razorpay(a, 5_000, json!({})).await;
+    let d2 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/disputes",
+            None,
+            json!({ "attempt_id": att2, "reason": "not recognised" }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/disputes/{}/resolve", d2["id"].as_str().unwrap()),
+        None,
+        json!({ "outcome": "won" }),
+    )
+    .await;
+    let after: i64 = t
+        .count(&format!(
+            "SELECT reserved_refund_minor FROM payment_attempts WHERE id = '{att2}'"
+        ))
+        .await;
+    assert_eq!(after, 0);
+}

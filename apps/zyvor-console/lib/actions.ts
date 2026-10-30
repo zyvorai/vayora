@@ -67,3 +67,4 @@ export const runBilling = async (_: FormState): Promise<FormState> => {
 };
 export const remind = async (_: FormState, f: FormData) => run(["/collections"], () => api().collections.remind(id(f), { channel: String(f.get("channel") ?? "whatsapp") as "whatsapp" }));
 export const completeMilestone = async (_: FormState, f: FormData) => run(["/billing"], () => api().milestones.complete(id(f)));
+export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], () => api().disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));
