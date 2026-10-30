@@ -22,6 +22,8 @@ pub mod accounts {
     pub const PROCESSING_FEES: &str = "processing_fees";
     /// Asset: merchant bank account (debit-normal).
     pub const BANK: &str = "bank";
+    /// Money paid out to vendors from the merchant's bank (debit-normal).
+    pub const PAYOUTS: &str = "payouts";
     /// Settlement adjustments, chargebacks, reserves (either side).
     pub const ADJUSTMENTS: &str = "settlement_adjustments";
 }

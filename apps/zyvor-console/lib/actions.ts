@@ -157,3 +157,20 @@ export const draftReminder = async (_: FormState, f: FormData) =>
 export const approveDraft = async (_: FormState, f: FormData) =>
   run(["/collections"], (z) => z.collections.approveDraft(id(f), String(f.get("message") ?? "").trim() || undefined));
 export const rejectDraft = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.rejectDraft(id(f)));
+
+// ---- payouts: a second person approves, then the transfer is recorded with its bank reference ----
+export const approvePayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.approve(id(f)), "finance");
+export const rejectPayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.reject(id(f)), "finance");
+export const cancelPayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.cancel(id(f)), "finance");
+export const markPayoutPaid = async (_: FormState, f: FormData) => {
+  const ref = String(f.get("bank_ref") ?? "").trim();
+  if (ref.length < 6) return { error: "Enter the bank reference (UTR) of the transfer." };
+  return run(["/payouts"], (z) => z.payouts.markPaid(id(f), ref), "finance");
+};
+export const requestPayout = async (_: FormState, f: FormData): Promise<FormState> => {
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  return run(["/payouts"], (z) => z.payouts.create({ vendorId: String(f.get("vendor") ?? ""), amountMinor: Math.round(rupees * 100), purpose: String(f.get("purpose") ?? "").trim() }), "finance");
+};
+export const addVendor = async (_: FormState, f: FormData) =>
+  run(["/payouts"], (z) => z.payouts.createVendor({ name: String(f.get("name") ?? ""), accountNumber: String(f.get("account") ?? "").trim() || undefined, ifsc: String(f.get("ifsc") ?? "").trim().toUpperCase() || undefined, vpa: String(f.get("vpa") ?? "").trim() || undefined }), "finance");

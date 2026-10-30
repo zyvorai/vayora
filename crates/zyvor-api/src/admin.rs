@@ -663,6 +663,8 @@ pub struct Settings {
     routing: Option<Value>,
     outbound_webhook_url: Option<String>,
     outbound_webhook_secret: Option<String>,
+    /// Payouts up to this amount skip the second person's approval. Default 0: every payout needs one.
+    payout_approval_threshold_minor: Option<i64>,
     dunning: Option<DunningPolicy>,
     gst: Option<GstProfile>,
 }
@@ -701,6 +703,12 @@ pub async fn put_settings(
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
     }
+    if b.payout_approval_threshold_minor.is_some_and(|t| t < 0) {
+        return Err(ApiError::invalid(
+            "invalid_threshold",
+            "threshold must not be negative",
+        ));
+    }
     if let Some(g) = &b.gst
         && !crate::gst::valid_gstin(&g.gstin)
     {
@@ -728,6 +736,15 @@ pub async fn put_settings(
         }
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(t) = b.payout_approval_threshold_minor {
+        sqlx::query(
+            "UPDATE tenant_settings SET payout_approval_threshold_minor = $2 WHERE tenant_id = $1",
+        )
+        .bind(&auth.tenant_id)
+        .bind(t)
+        .execute(&mut *tx)
+        .await?;
+    }
     if let Some(g) = &b.gst {
         sqlx::query("UPDATE tenant_settings SET gstin = $2, gst_legal_name = COALESCE($3, gst_legal_name) WHERE tenant_id = $1")
             .bind(&auth.tenant_id).bind(&g.gstin).bind(&g.legal_name).execute(&mut *tx).await?;
@@ -756,10 +773,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal } }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr }),
     ))
 }
 

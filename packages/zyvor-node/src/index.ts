@@ -61,6 +61,8 @@ export interface Page<T> {
 /** One line of a GST tax invoice. `rateBp` is the slab in percent × 100 (1800 = 18%). */
 export interface GstLine { description: string; hsnSac: string; quantity: number; unitPriceMinor: number; rateBp: 0 | 25 | 100 | 150 | 300 | 500 | 1200 | 1800 | 2800 }
 
+export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }
+
 export class ZyvorError extends Error {
   constructor(
     readonly status: number,
@@ -183,6 +185,24 @@ export class Zyvor {
       this.req<{ id: string; amount_minor: number; tax_minor: number }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef, lines: p.lines?.map((l) => ({ description: l.description, hsn_sac: l.hsnSac, quantity: l.quantity, unit_price_minor: l.unitPriceMinor, rate_bp: l.rateBp })), place_of_supply: p.placeOfSupply, buyer_gstin: p.buyerGstin, reverse_charge: p.reverseCharge }),
     /** CGST/SGST/IGST breakdown of a GST invoice. */
     lines: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}/lines`),
+  };
+
+  /** Vendors you pay and the payouts to them. Zyvor controls and records; the transfer is made from your own bank. */
+  readonly payouts = {
+    createVendor: (p: { name: string; accountNumber?: string; ifsc?: string; vpa?: string; externalRef?: string }) =>
+      this.req<{ id: string; name: string }>("POST", "/v1/vendors", { name: p.name, account_number: p.accountNumber, ifsc: p.ifsc, vpa: p.vpa, external_ref: p.externalRef }),
+    vendors: () => this.req<Page<{ id: string; name: string; external_ref: string | null; account_last4: string | null; ifsc: string | null; vpa: string | null; archived: boolean }>>("GET", "/v1/vendors"),
+    /** Full bank details for whoever makes the transfer (needs `payouts:approve`; every reveal is audited). */
+    vendorDetails: (id: string) => this.req<{ id: string; details: { account_number: string | null; ifsc: string | null; vpa: string | null } }>("GET", `/v1/vendors/${encodeURIComponent(id)}/details`),
+    /** Repeating a request with the same `externalRef` returns the original payout. */
+    create: (p: { vendorId: string; amountMinor: number; purpose: string; currency?: string; externalRef?: string }) =>
+      this.req<PayoutRow>("POST", "/v1/payouts", { vendor_id: p.vendorId, amount_minor: p.amountMinor, purpose: p.purpose, currency: p.currency, external_ref: p.externalRef }),
+    list: (status?: PayoutRow["status"]) => this.req<Page<PayoutRow>>("GET", `/v1/payouts${this.qs({ status })}`),
+    approve: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/approve`),
+    reject: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/reject`),
+    /** Record the bank reference (UTR) of the transfer you made; posts to the ledger once. */
+    markPaid: (id: string, bankRef: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/mark_paid`, { bank_ref: bankRef }),
+    cancel: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/cancel`),
   };
 
   readonly gst = {

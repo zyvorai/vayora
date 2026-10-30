@@ -1030,6 +1030,140 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/vendors:
+    post:
+      summary: Add a vendor you pay
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List vendors (bank details masked)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/vendors/{id}/details:
+    get:
+      summary: Reveal a vendor's full bank details to someone who may approve payouts (audited)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts:
+    post:
+      summary: Request a payout to a vendor (a second person approves unless under the threshold)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List payouts
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payouts/{id}:
+    get:
+      summary: Retrieve a payout
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts/{id}/approve:
+    post:
+      summary: Approve a payout (not the requester)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts/{id}/reject:
+    post:
+      summary: Reject a payout (not the requester)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts/{id}/mark_paid:
+    post:
+      summary: Record the bank reference of the transfer you made and post it to the ledger
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts/{id}/cancel:
+    post:
+      summary: Cancel a payout that has not been paid
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail

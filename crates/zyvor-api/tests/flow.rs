@@ -3991,3 +3991,462 @@ async fn gst_invoices_split_tax_by_place_of_supply_reverse_it_on_credit_notes_an
         404
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn payouts_need_a_second_person_record_the_bank_reference_and_post_to_the_ledger(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let balance = |acct: &'static str| {
+        let (root, tid) = (t.root.clone(), a.id.clone());
+        async move {
+            let r: (i64, i64) = sqlx::query_as("SELECT COALESCE(SUM(amount_minor) FILTER (WHERE side='debit'),0)::BIGINT, COALESCE(SUM(amount_minor) FILTER (WHERE side='credit'),0)::BIGINT FROM ledger_entries WHERE tenant_id = $1 AND account = $2")
+                .bind(tid).bind(acct).fetch_one(&root).await.unwrap();
+            r
+        }
+    };
+
+    // vendors: details are encrypted, lists show only masks
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/vendors",
+            None,
+            json!({ "name": "No details" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/vendors",
+            None,
+            json!({ "name": "Bad", "account_number": "12", "ifsc": "X" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let v = t.ok(a, "POST", "/v1/vendors", None, json!({ "name": "Sharma Stationers", "account_number": "1234567890123", "ifsc": "HDFC0001234", "external_ref": "VEND-1" })).await;
+    let vid = v["id"].as_str().unwrap();
+    let listed = t.ok(a, "GET", "/v1/vendors", None, Value::Null).await;
+    assert_eq!(listed["data"][0]["account_last4"], "0123");
+    assert!(!listed.to_string().contains("1234567890123"));
+    let stored: Vec<u8> = sqlx::query_scalar("SELECT details_enc FROM vendors")
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert!(
+        !stored.windows(13).any(|w| w == b"1234567890123"),
+        "encrypted at rest"
+    );
+    let writer = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "clerk", "scopes": ["payouts:write", "payments:read"] }),
+        )
+        .await;
+    let clerk = Tenant {
+        id: a.id.clone(),
+        key: writer["key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.call(
+            &clerk,
+            "GET",
+            &format!("/v1/vendors/{vid}/details"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        403,
+        "a clerk cannot read full details"
+    );
+    let full = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/vendors/{vid}/details"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(full["details"]["account_number"], "1234567890123");
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'vendor.details_revealed'")
+            .await,
+        1
+    );
+
+    // requesting: validation, idempotency by reference
+    let req = |amt: i64, r: &str| json!({ "vendor_id": vid, "amount_minor": amt, "purpose": "Stationery for term 2", "external_ref": r });
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/payouts",
+            None,
+            json!({ "vendor_id": "ven_nope", "amount_minor": 100, "purpose": "x" })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/payouts",
+            None,
+            json!({ "vendor_id": vid, "amount_minor": 0, "purpose": "x" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let (s1, p1) = t
+        .call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/payouts",
+            None,
+            req(500_000, "PO-1"),
+        )
+        .await;
+    assert_eq!(
+        (s1.as_u16(), p1["status"].clone()),
+        (201, json!("pending_approval"))
+    );
+    let (s2, again) = t
+        .call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/payouts",
+            None,
+            req(500_000, "PO-1"),
+        )
+        .await;
+    assert_eq!(
+        (s2.as_u16(), again["id"].clone()),
+        (200, p1["id"].clone()),
+        "same reference, same payout"
+    );
+    let p = p1["id"].as_str().unwrap();
+
+    // separation of duties, and nothing is payable before approval
+    let (s, e) = t
+        .call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p}/approve"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (403, json!("separation_of_duties"))
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p}/mark_paid"),
+            None,
+            json!({ "bank_ref": "UTR123456" })
+        )
+        .await
+        .1["error"]["code"],
+        "not_approved"
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            &format!("/v1/payouts/{p}/approve"),
+            None,
+            json!({})
+        )
+        .await
+        .1["status"],
+        "approved"
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            &format!("/v1/payouts/{p}/approve"),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        409,
+        "decided once"
+    );
+
+    // recording the transfer posts to the ledger exactly once
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p}/mark_paid"),
+            None,
+            json!({ "bank_ref": "x" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let paid = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/payouts/{p}/mark_paid"),
+            None,
+            json!({ "bank_ref": "HDFCN26301234567" }),
+        )
+        .await;
+    assert_eq!(
+        (paid["status"].clone(), paid["bank_ref"].clone()),
+        (json!("paid"), json!("HDFCN26301234567"))
+    );
+    assert_eq!(balance("payouts").await, (500_000, 0));
+    assert_eq!(balance("bank").await, (0, 500_000));
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p}/mark_paid"),
+            None,
+            json!({ "bank_ref": "HDFCN26301234567" })
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+    assert_eq!(balance("bank").await, (0, 500_000), "no double posting");
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p}/cancel"),
+            None,
+            json!({})
+        )
+        .await
+        .0
+        .as_u16(),
+        409,
+        "a paid payout cannot be canceled"
+    );
+
+    // the same bank transfer cannot be recorded against two payouts
+    let p2 = t
+        .call_as(
+            a,
+            "priya",
+            "POST",
+            "/v1/payouts",
+            None,
+            req(100_000, "PO-2"),
+        )
+        .await
+        .1;
+    let p2 = p2["id"].as_str().unwrap();
+    t.ok(
+        &Tenant {
+            id: a.id.clone(),
+            key: a.key.clone(),
+        },
+        "POST",
+        "/v1/settings",
+        None,
+        json!({}),
+    )
+    .await;
+    t.call_as(
+        a,
+        "ravi",
+        "POST",
+        &format!("/v1/payouts/{p2}/approve"),
+        None,
+        json!({}),
+    )
+    .await;
+    let (s, e) = t
+        .call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p2}/mark_paid"),
+            None,
+            json!({ "bank_ref": "HDFCN26301234567" }),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (409, json!("bank_ref_used"))
+    );
+    assert_eq!(
+        t.ok(a, "GET", &format!("/v1/payouts/{p2}"), None, Value::Null)
+            .await["status"],
+        "approved",
+        "the failed attempt changed nothing"
+    );
+
+    // rejecting and canceling
+    let p3 = t
+        .call_as(a, "priya", "POST", "/v1/payouts", None, req(7_000, "PO-3"))
+        .await
+        .1["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        t.call_as(
+            a,
+            "ravi",
+            "POST",
+            &format!("/v1/payouts/{p3}/reject"),
+            None,
+            json!({})
+        )
+        .await
+        .1["status"],
+        "rejected"
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p2}/cancel"),
+            None,
+            json!({})
+        )
+        .await
+        .1["status"],
+        "canceled"
+    );
+    assert_eq!(
+        t.call_as(
+            a,
+            "priya",
+            "POST",
+            &format!("/v1/payouts/{p2}/mark_paid"),
+            None,
+            json!({ "bank_ref": "HDFCN26309999999" })
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+
+    // small payouts can skip approval when the tenant says so
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/settings",
+            None,
+            json!({ "payout_approval_threshold_minor": -1 })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "payout_approval_threshold_minor": 10_000 }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["payout_approval_threshold_minor"],
+        10_000
+    );
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req(9_999, "PO-4"))
+            .await
+            .1["status"],
+        "approved"
+    );
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req(10_001, "PO-5"))
+            .await
+            .1["status"],
+        "pending_approval"
+    );
+
+    // events and isolation
+    assert!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'payout.paid'")
+            .await
+            == 1
+    );
+    assert!(
+        t.ok(b, "GET", "/v1/payouts", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        t.ok(b, "GET", "/v1/vendors", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        t.call(b, "GET", &format!("/v1/payouts/{p}"), None, Value::Null)
+            .await
+            .0
+            .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/vendors/{vid}/details"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}

@@ -20,6 +20,7 @@ pub mod idempotency;
 pub mod outbox;
 pub mod payment_links;
 pub mod payments;
+pub mod payouts;
 pub mod recon;
 pub mod refunds;
 pub mod registry;
@@ -199,6 +200,21 @@ pub fn app(state: AppState) -> Router {
             post(billing::create_credit_note),
         )
         .route("/invoices/{id}/void", post(billing::void_invoice))
+        // payouts to vendors
+        .route(
+            "/vendors",
+            post(payouts::create_vendor).get(payouts::list_vendors),
+        )
+        .route("/vendors/{id}/details", get(payouts::vendor_details))
+        .route(
+            "/payouts",
+            post(payouts::create_payout).get(payouts::list_payouts),
+        )
+        .route("/payouts/{id}", get(payouts::get_payout))
+        .route("/payouts/{id}/approve", post(payouts::approve_payout))
+        .route("/payouts/{id}/reject", post(payouts::reject_payout))
+        .route("/payouts/{id}/mark_paid", post(payouts::mark_paid))
+        .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
         .route("/gst/gstr1", get(gst::gstr1))
         .route("/customers/{id}/statement", get(billing::statement))
