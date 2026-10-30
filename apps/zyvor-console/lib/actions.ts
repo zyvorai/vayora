@@ -198,3 +198,26 @@ export const saveWebhooks = async (_: FormState, f: FormData) => {
   const secret = String(f.get("secret") ?? "").trim();
   return run(["/settings"], (z) => z.settings.update({ webhook_events: events, ...(url ? { outbound_webhook_url: url } : {}), ...(secret ? { outbound_webhook_secret: secret } : {}) }), "admin");
 };
+
+// ---- invoices and instalment plans ----
+const money = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "").replace(/,/g, "")) * 100);
+export const createCustomer = async (_: FormState, f: FormData) =>
+  run(["/billing"], (z) => z.customers.create({ name: String(f.get("name") ?? "").trim(), email: String(f.get("email") ?? "").trim() || undefined, phone: String(f.get("phone") ?? "").trim() || undefined, gstin: String(f.get("gstin") ?? "").trim().toUpperCase() || undefined }));
+export const createInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amount = money(f, "amount");
+  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const hsn = String(f.get("hsn") ?? "").trim();
+  const base = { number: String(f.get("number") ?? "").trim(), customerId: String(f.get("customer") ?? "") || undefined, dueDate: String(f.get("due") ?? "") || undefined };
+  // With an HSN/SAC code the amount is the price before tax and the server adds CGST+SGST or IGST.
+  return run(["/billing", "/collections"], (z) =>
+    hsn
+      ? z.invoices.create({ ...base, placeOfSupply: String(f.get("pos") ?? "").trim() || undefined, lines: [{ description: String(f.get("description") ?? "").trim() || "Services", hsnSac: hsn, quantity: 1, unitPriceMinor: amount, rateBp: Number(f.get("rate") ?? 1800) as 1800 }] })
+      : z.invoices.create({ ...base, amountMinor: amount }),
+  );
+};
+export const voidInvoice = async (_: FormState, f: FormData) => run(["/billing", "/collections"], (z) => z.invoices.void(id(f)));
+export const createInstalments = async (_: FormState, f: FormData): Promise<FormState> => {
+  const total = money(f, "total");
+  if (!Number.isFinite(total) || total <= 0) return { error: "Enter the total as an amount greater than zero." };
+  return run(["/billing", "/collections"], (z) => z.installments.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), totalMinor: total, instalments: Number(f.get("count") ?? 0), firstDueDate: String(f.get("first_due") ?? ""), numberPrefix: String(f.get("prefix") ?? "").trim() }));
+};

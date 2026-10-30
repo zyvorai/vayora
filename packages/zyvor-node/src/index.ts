@@ -204,6 +204,8 @@ export class Zyvor {
     /** Give `amountMinor`, or GST `lines` and the server computes tax and total (needs `gst.gstin` in settings). */
     create: (p: { number: string; amountMinor?: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string; lines?: GstLine[]; placeOfSupply?: string; buyerGstin?: string; reverseCharge?: boolean }) =>
       this.req<{ id: string; amount_minor: number; tax_minor: number }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef, lines: p.lines?.map((l) => ({ description: l.description, hsn_sac: l.hsnSac, quantity: l.quantity, unit_price_minor: l.unitPriceMinor, rate_bp: l.rateBp })), place_of_supply: p.placeOfSupply, buyer_gstin: p.buyerGstin, reverse_charge: p.reverseCharge }),
+    /** Void an invoice nothing has been paid or credited against. */
+    void: (id: string) => this.req("POST", `/v1/invoices/${encodeURIComponent(id)}/void`),
     /** CGST/SGST/IGST breakdown of a GST invoice. */
     lines: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}/lines`),
   };
@@ -224,6 +226,12 @@ export class Zyvor {
     /** Record the bank reference (UTR) of the transfer you made; posts to the ledger once. */
     markPaid: (id: string, bankRef: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/mark_paid`, { bank_ref: bankRef }),
     cancel: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/cancel`),
+  };
+
+  readonly customers = {
+    list: (externalRef?: string) => this.req<Page<{ id: string; name: string; email: string | null; phone: string | null; external_ref: string | null }>>("GET", `/v1/customers${this.qs({ external_ref: externalRef })}`),
+    create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string }) =>
+      this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin }),
   };
 
   readonly settings = {

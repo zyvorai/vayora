@@ -1,6 +1,7 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { completeMilestone, runBilling } from "@/lib/actions";
+import { NewCustomer, NewInstalments, NewInvoice } from "@/components/BillingForms";
+import { completeMilestone, runBilling, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -8,20 +9,24 @@ type Row = Record<string, string | number | null>;
 
 export default async function Billing() {
   const z = api();
-  const [plans, subs, milestones, invoices] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list()]);
+  const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
   return (
     <>
       <div className="head">
         <div><h1>Billing</h1><p className="lede">Plans, subscriptions, milestones and the invoices they produce.</p></div>
         <Act action={runBilling} label="Run billing now" primary />
       </div>
+      <h2>New</h2>
+      <NewCustomer />
+      <NewInvoice customers={customers.data} />
+      <NewInstalments customers={customers.data} />
       <h2>Invoices</h2>
       <div className="tablewrap" style={{ marginBottom: 28 }}>
         <table>
-          <thead><tr><th>Number</th><th>Due</th><th className="num">Amount</th><th className="num">Outstanding</th><th>Status</th></tr></thead>
+          <thead><tr><th>Number</th><th>Due</th><th className="num">Amount</th><th className="num">Outstanding</th><th>Status</th><th /></tr></thead>
           <tbody>
-            {invoices.data.length === 0 && <tr><td colSpan={5} className="empty">No invoices yet.</td></tr>}
-            {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.due_date ?? "—"}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td></tr>)}
+            {invoices.data.length === 0 && <tr><td colSpan={6} className="empty">No invoices yet.</td></tr>}
+            {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.due_date ?? "—"}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td><td>{i.status === "open" && i.outstanding_minor === i.amount_minor && <Act action={voidInvoice} id={i.id} label="Void" />}</td></tr>)}
           </tbody>
         </table>
       </div>
