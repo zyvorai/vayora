@@ -376,13 +376,13 @@ pub async fn create_credit_note(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let row: Option<(String, i64, i64)> = sqlx::query_as(
-        "SELECT status, amount_minor, invoice_settled(id) FROM invoices WHERE id = $1 FOR UPDATE",
+    let row: Option<(String, i64, i64, i64)> = sqlx::query_as(
+        "SELECT status, amount_minor, invoice_settled(id), tax_minor FROM invoices WHERE id = $1 FOR UPDATE",
     )
     .bind(&invoice_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, amount, settled) = row.ok_or_else(|| ApiError::not_found("invoice"))?;
+    let (status, amount, settled, inv_tax) = row.ok_or_else(|| ApiError::not_found("invoice"))?;
     if status == "void" {
         return Err(ApiError::conflict("invoice_void", "invoice is void"));
     }
@@ -396,8 +396,13 @@ pub async fn create_credit_note(
         ));
     }
     let id = new_id("cn");
-    sqlx::query("INSERT INTO credit_notes (id, tenant_id, invoice_id, amount_minor, reason, created_by) VALUES ($1,$2,$3,$4,$5,$6)")
+    // on a GST invoice the credit reverses tax in proportion; the last paisa of rounding goes to the larger component
+    let (cgst, sgst, igst) =
+        crate::gst::credit_note_tax(&mut tx, &invoice_id, b.amount_minor, amount, inv_tax).await?;
+    let taxable = b.amount_minor - cgst - sgst - igst;
+    sqlx::query("INSERT INTO credit_notes (id, tenant_id, invoice_id, amount_minor, reason, created_by, taxable_minor, cgst_minor, sgst_minor, igst_minor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(&id).bind(&auth.tenant_id).bind(&invoice_id).bind(b.amount_minor).bind(&b.reason).bind(&auth.actor)
+        .bind(taxable).bind(cgst).bind(sgst).bind(igst)
         .execute(&mut *tx).await?;
     refresh_invoice_status(&mut tx, &invoice_id).await?;
     tenant::audit(

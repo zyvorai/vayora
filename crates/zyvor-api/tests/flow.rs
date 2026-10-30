@@ -3723,3 +3723,271 @@ async fn reminder_drafts_need_a_persons_approval_and_the_ai_assistant_is_boxed_i
         .await;
     assert!(pending["data"].as_array().unwrap().len() >= 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn gst_invoices_split_tax_by_place_of_supply_reverse_it_on_credit_notes_and_feed_gstr1(
+    pool: PgPool,
+) {
+    use zyvor_api::gst::gstin_check_char;
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let seller = "27AAPFU0939F1ZV"; // Maharashtra
+    let buyer_delhi = {
+        let head = "07AABCT1332L1Z";
+        format!("{head}{}", gstin_check_char(head))
+    };
+    let line = |qty: i64, price: i64, rate: i32| json!({ "description": "Tuition", "hsn_sac": "999293", "quantity": qty, "unit_price_minor": price, "rate_bp": rate });
+
+    // needs the seller's registration first
+    let (s, body) = t
+        .call(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "G-0", "lines": [line(1, 100, 1800)], "place_of_supply": "27" }),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), body["error"]["code"].clone()),
+        (422, json!("gst_not_configured"))
+    );
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/settings",
+            None,
+            json!({ "gst": { "gstin": "27AAPFU0939F1ZW" } }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422, "bad check character");
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "gst": { "gstin": seller, "legal_name": "Acme School Trust" } }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["gst"]["gstin"],
+        seller
+    );
+
+    // validation
+    for (why, body) in [
+        (
+            "rate not a slab",
+            json!({ "number": "G-x", "lines": [line(1, 100, 700)], "place_of_supply": "27" }),
+        ),
+        (
+            "bad hsn",
+            json!({ "number": "G-x", "lines": [{ "description": "x", "hsn_sac": "12", "quantity": 1, "unit_price_minor": 1, "rate_bp": 500 }], "place_of_supply": "27" }),
+        ),
+        (
+            "no place of supply",
+            json!({ "number": "G-x", "lines": [line(1, 100, 500)] }),
+        ),
+        (
+            "bad state",
+            json!({ "number": "G-x", "lines": [line(1, 100, 500)], "place_of_supply": "55" }),
+        ),
+        (
+            "bad buyer gstin",
+            json!({ "number": "G-x", "lines": [line(1, 100, 500)], "buyer_gstin": "07AABCT1332L1ZX" }),
+        ),
+        (
+            "amount mismatch",
+            json!({ "number": "G-x", "amount_minor": 1, "lines": [line(1, 100, 500)], "place_of_supply": "27" }),
+        ),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/invoices", None, body)
+                .await
+                .0
+                .as_u16(),
+            422,
+            "{why}"
+        );
+    }
+
+    // within Maharashtra, to a consumer: CGST + SGST
+    let intra = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "G-1", "lines": [line(2, 50_000, 1800)], "place_of_supply": "27" }),
+        )
+        .await;
+    assert_eq!(
+        (intra["amount_minor"].clone(), intra["tax_minor"].clone()),
+        (json!(118_000), json!(18_000))
+    );
+    let det = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}/lines", intra["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            det["lines"][0]["cgst_minor"].clone(),
+            det["lines"][0]["sgst_minor"].clone(),
+            det["lines"][0]["igst_minor"].clone()
+        ),
+        (json!(9_000), json!(9_000), json!(0))
+    );
+    // to a registered buyer in Delhi (taken from the customer's GSTIN): IGST
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Delhi Co", "gstin": buyer_delhi }),
+        )
+        .await;
+    let inter = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "G-2", "customer_id": cust["id"], "lines": [line(1, 200_000, 500)] }),
+        )
+        .await;
+    assert_eq!(
+        (inter["amount_minor"].clone(), inter["tax_minor"].clone()),
+        (json!(210_000), json!(10_000))
+    );
+    let det = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}/lines", inter["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            det["place_of_supply"].clone(),
+            det["lines"][0]["igst_minor"].clone(),
+            det["lines"][0]["cgst_minor"].clone()
+        ),
+        (json!("07"), json!(10_000), json!(0))
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Bad", "gstin": "nope" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+
+    // a credit note for half of the first invoice reverses half of its tax, split like the invoice
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/invoices/{}/credit_notes",
+            intra["id"].as_str().unwrap()
+        ),
+        None,
+        json!({ "amount_minor": 59_000, "reason": "fee concession" }),
+    )
+    .await;
+    let note: (i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT taxable_minor, cgst_minor, sgst_minor, igst_minor FROM credit_notes",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(note, (50_000, 4_500, 4_500, 0));
+
+    // the month's GSTR-1 style summary
+    let ist = chrono::FixedOffset::east_opt(19_800).unwrap();
+    let period = chrono::Utc::now()
+        .with_timezone(&ist)
+        .format("%Y-%m")
+        .to_string();
+    let r = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/gst/gstr1?period={period}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (r["gstin"].clone(), r["legal_name"].clone()),
+        (json!(seller), json!("Acme School Trust"))
+    );
+    assert_eq!(r["b2b"][0]["buyer_gstin"], json!(buyer_delhi));
+    assert_eq!(r["b2b"][0]["invoices"][0]["number"], "G-2");
+    assert_eq!(r["b2b"][0]["invoices"][0]["rates"][0]["igst_minor"], 10_000);
+    assert_eq!(
+        (
+            r["b2cs"][0]["place_of_supply"].clone(),
+            r["b2cs"][0]["taxable_minor"].clone(),
+            r["b2cs"][0]["cgst_minor"].clone(),
+            r["b2cs"][0]["sgst_minor"].clone()
+        ),
+        (json!("27"), json!(100_000), json!(9_000), json!(9_000))
+    );
+    assert_eq!(r["cdnur"][0]["taxable_minor"], 50_000);
+    assert_eq!(r["cdnur"][0]["invoice_number"], "G-1");
+    let h = r["hsn"].as_array().unwrap();
+    assert_eq!(h.len(), 2, "one row per HSN and rate");
+    assert_eq!(r["totals"]["taxable_minor"], 300_000);
+    assert_eq!(r["totals"]["igst_minor"], 10_000);
+    assert_eq!(
+        t.call(a, "GET", "/v1/gst/gstr1?period=2026-13", None, Value::Null)
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+
+    // another tenant sees none of it
+    let rb = t
+        .ok(
+            b,
+            "GET",
+            &format!("/v1/gst/gstr1?period={period}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert!(
+        rb["b2b"].as_array().unwrap().is_empty()
+            && rb["b2cs"].as_array().unwrap().is_empty()
+            && rb["gstin"].is_null()
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/invoices/{}/lines", intra["id"].as_str().unwrap()),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}

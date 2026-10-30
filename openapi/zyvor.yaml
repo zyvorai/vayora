@@ -1004,6 +1004,32 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/invoices/{id}/lines:
+    get:
+      summary: Tax breakdown (HSN/SAC, rate, CGST/SGST/IGST) of a GST invoice
+      tags:
+      - gst
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/gst/gstr1:
+    get:
+      summary: GSTR-1 style summary for a month (preparation aid, not a filing)
+      tags:
+      - gst
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

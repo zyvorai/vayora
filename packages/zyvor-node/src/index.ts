@@ -58,6 +58,9 @@ export interface Page<T> {
   has_more?: boolean;
 }
 
+/** One line of a GST tax invoice. `rateBp` is the slab in percent × 100 (1800 = 18%). */
+export interface GstLine { description: string; hsnSac: string; quantity: number; unitPriceMinor: number; rateBp: 0 | 25 | 100 | 150 | 300 | 500 | 1200 | 1800 | 2800 }
+
 export class ZyvorError extends Error {
   constructor(
     readonly status: number,
@@ -175,8 +178,16 @@ export class Zyvor {
   readonly invoices = {
     list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
     retrieve: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
-    create: (p: { number: string; amountMinor: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string }) =>
-      this.req<{ id: string }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef }),
+    /** Give `amountMinor`, or GST `lines` and the server computes tax and total (needs `gst.gstin` in settings). */
+    create: (p: { number: string; amountMinor?: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string; lines?: GstLine[]; placeOfSupply?: string; buyerGstin?: string; reverseCharge?: boolean }) =>
+      this.req<{ id: string; amount_minor: number; tax_minor: number }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef, lines: p.lines?.map((l) => ({ description: l.description, hsn_sac: l.hsnSac, quantity: l.quantity, unit_price_minor: l.unitPriceMinor, rate_bp: l.rateBp })), place_of_supply: p.placeOfSupply, buyer_gstin: p.buyerGstin, reverse_charge: p.reverseCharge }),
+    /** CGST/SGST/IGST breakdown of a GST invoice. */
+    lines: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}/lines`),
+  };
+
+  readonly gst = {
+    /** GSTR-1 style summary for `YYYY-MM`: a preparation aid, Zyvor does not file returns. */
+    gstr1: (period: string) => this.req<Record<string, unknown>>("GET", `/v1/gst/gstr1${this.qs({ period })}`),
   };
 
   readonly milestones = {

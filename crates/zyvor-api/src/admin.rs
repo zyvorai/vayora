@@ -361,6 +361,8 @@ pub struct NewCustomer {
     email: Option<String>,
     phone: Option<String>,
     external_ref: Option<String>,
+    /// Buyer's GSTIN, used as the default on tax invoices.
+    gstin: Option<String>,
 }
 
 pub async fn create_customer(
@@ -369,14 +371,20 @@ pub async fn create_customer(
     Json(b): Json<NewCustomer>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("customers:write")?;
+    if b.gstin
+        .as_deref()
+        .is_some_and(|g| !crate::gst::valid_gstin(g))
+    {
+        return Err(ApiError::invalid("invalid_gstin", "GSTIN is not valid"));
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let id = new_id("cus");
-    sqlx::query("INSERT INTO customers (id, tenant_id, name, email, phone, external_ref) VALUES ($1, $2, $3, $4, $5, $6)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&b.email).bind(&b.phone).bind(&b.external_ref).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO customers (id, tenant_id, name, email, phone, external_ref, gstin) VALUES ($1, $2, $3, $4, $5, $6, $7)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&b.email).bind(&b.phone).bind(&b.external_ref).bind(&b.gstin).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(
-            json!({ "id": id, "name": b.name, "email": b.email, "phone": b.phone, "external_ref": b.external_ref }),
+            json!({ "id": id, "name": b.name, "email": b.email, "phone": b.phone, "external_ref": b.external_ref, "gstin": b.gstin }),
         ),
     ))
 }
@@ -494,11 +502,18 @@ pub struct NewInvoice {
     customer_id: Option<String>,
     number: String,
     currency: Option<String>,
-    amount_minor: i64,
-    /// Calculated by the billing/GST product; carried here for display and matching only.
+    /// Required unless `lines` is given, in which case it is computed (and must match if you send it).
+    amount_minor: Option<i64>,
+    /// Tax carried for display and matching when you calculate it yourself. Ignored with `lines`.
     tax_minor: Option<i64>,
     external_ref: Option<String>,
     due_date: Option<NaiveDate>,
+    /// GST tax invoice lines (HSN/SAC, quantity, unit price, rate). Needs your GSTIN set in settings.
+    lines: Option<Vec<crate::gst::LineIn>>,
+    /// 2-digit state code; defaults to the buyer GSTIN's state.
+    place_of_supply: Option<String>,
+    buyer_gstin: Option<String>,
+    reverse_charge: Option<bool>,
 }
 
 pub async fn create_invoice(
@@ -507,12 +522,6 @@ pub async fn create_invoice(
     Json(b): Json<NewInvoice>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("invoices:write")?;
-    if b.amount_minor <= 0 {
-        return Err(ApiError::invalid(
-            "invalid_amount",
-            "amount_minor must be positive",
-        ));
-    }
     let ccy: zyvor_core::Currency = b
         .currency
         .as_deref()
@@ -521,32 +530,81 @@ pub async fn create_invoice(
         .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let id = new_id("inv");
-    sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, tax_minor, external_ref, due_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)")
+    // GST mode: amount and tax come from the lines
+    let gst = match &b.lines {
+        Some(lines) => {
+            if ccy.code() != "INR" {
+                return Err(ApiError::invalid(
+                    "invalid_currency",
+                    "GST invoices are in INR",
+                ));
+            }
+            crate::gst::validate_lines(lines)?;
+            let (seller, pos, buyer) = crate::gst::parties(
+                &mut tx,
+                b.place_of_supply.as_deref(),
+                b.buyer_gstin.as_deref(),
+                b.customer_id.as_deref(),
+            )
+            .await?;
+            let c = crate::gst::compute(lines, &seller, &pos);
+            if b.amount_minor.is_some_and(|a| a != c.total) {
+                return Err(ApiError::invalid(
+                    "amount_mismatch",
+                    format!("the lines add up to {} minor units including tax", c.total),
+                ));
+            }
+            Some((c, pos, buyer))
+        }
+        None => None,
+    };
+    let (amount, tax) = match &gst {
+        Some((c, _, _)) => (c.total, c.tax),
+        None => (b.amount_minor.unwrap_or(0), b.tax_minor.unwrap_or(0)),
+    };
+    if amount <= 0 {
+        return Err(ApiError::invalid(
+            "invalid_amount",
+            "amount_minor must be positive",
+        ));
+    }
+    sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, tax_minor, external_ref, due_date, place_of_supply, buyer_gstin, reverse_charge) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)")
         .bind(&id)
         .bind(&auth.tenant_id)
         .bind(&b.customer_id)
         .bind(&b.number)
         .bind(ccy.code())
-        .bind(b.amount_minor)
-        .bind(b.tax_minor.unwrap_or(0))
+        .bind(amount)
+        .bind(tax)
         .bind(&b.external_ref)
         .bind(b.due_date)
+        .bind(gst.as_ref().map(|g| g.1.clone()))
+        .bind(gst.as_ref().and_then(|g| g.2.clone()))
+        .bind(b.reverse_charge.unwrap_or(false))
         .execute(&mut *tx)
         .await?;
+    if let (Some((c, _, _)), Some(lines)) = (&gst, &b.lines) {
+        for (n, (l, o)) in lines.iter().zip(&c.lines).enumerate() {
+            sqlx::query("INSERT INTO invoice_lines (id, tenant_id, invoice_id, position, description, hsn_sac, quantity, unit_price_minor, taxable_minor, rate_bp, cgst_minor, sgst_minor, igst_minor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
+                .bind(new_id("iln")).bind(&auth.tenant_id).bind(&id).bind(n as i32 + 1).bind(l.description.trim()).bind(&l.hsn_sac)
+                .bind(l.quantity).bind(l.unit_price_minor).bind(o.taxable).bind(o.rate_bp).bind(o.cgst).bind(o.sgst).bind(o.igst)
+                .execute(&mut *tx).await?;
+        }
+    }
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
         "invoice.created",
         Some(&id),
-        json!({ "number": b.number }),
+        json!({ "number": b.number, "gst": gst.is_some() }),
     )
     .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(
-            json!({ "id": id, "number": b.number, "amount_minor": b.amount_minor, "status": "open" }),
+            json!({ "id": id, "number": b.number, "amount_minor": amount, "tax_minor": tax, "status": "open" }),
         ),
     ))
 }
@@ -606,6 +664,14 @@ pub struct Settings {
     outbound_webhook_url: Option<String>,
     outbound_webhook_secret: Option<String>,
     dunning: Option<DunningPolicy>,
+    gst: Option<GstProfile>,
+}
+
+/// Your GST registration, needed to issue tax invoices.
+#[derive(Deserialize)]
+pub struct GstProfile {
+    gstin: String,
+    legal_name: Option<String>,
 }
 
 /// Automatic reminders for overdue invoices; off until a tenant turns it on.
@@ -635,6 +701,14 @@ pub async fn put_settings(
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
     }
+    if let Some(g) = &b.gst
+        && !crate::gst::valid_gstin(&g.gstin)
+    {
+        return Err(ApiError::invalid(
+            "invalid_gstin",
+            "gstin is not valid (15 characters, valid state code and check character)",
+        ));
+    }
     if let Some(u) = &b.outbound_webhook_url {
         crate::ssrf::check_url(u, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("invalid_webhook_url", e))?;
@@ -654,6 +728,10 @@ pub async fn put_settings(
         }
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(g) = &b.gst {
+        sqlx::query("UPDATE tenant_settings SET gstin = $2, gst_legal_name = COALESCE($3, gst_legal_name) WHERE tenant_id = $1")
+            .bind(&auth.tenant_id).bind(&g.gstin).bind(&g.legal_name).execute(&mut *tx).await?;
+    }
     if let Some(d) = &b.dunning {
         sqlx::query("UPDATE tenant_settings SET auto_dunning = COALESCE($2, auto_dunning), dunning_channel = COALESCE($3, dunning_channel), dunning_min_days = COALESCE($4, dunning_min_days), dunning_repeat_days = COALESCE($5, dunning_repeat_days), dunning_requires_approval = COALESCE($6, dunning_requires_approval) WHERE tenant_id = $1")
             .bind(&auth.tenant_id).bind(d.enabled).bind(&d.channel).bind(d.min_days_overdue).bind(d.repeat_after_days).bind(d.requires_approval)
@@ -678,10 +756,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url, on, ch, min, rep, appr): (i64, Value, Option<String>, bool, String, i32, i32, bool) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep, appr, gstin, legal): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr } }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal } }),
     ))
 }
 

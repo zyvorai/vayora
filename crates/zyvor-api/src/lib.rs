@@ -15,6 +15,7 @@ pub mod console_users;
 pub mod crypto;
 pub mod disputes;
 pub mod error;
+pub mod gst;
 pub mod idempotency;
 pub mod outbox;
 pub mod payment_links;
@@ -198,6 +199,8 @@ pub fn app(state: AppState) -> Router {
             post(billing::create_credit_note),
         )
         .route("/invoices/{id}/void", post(billing::void_invoice))
+        .route("/invoices/{id}/lines", get(gst::invoice_lines))
+        .route("/gst/gstr1", get(gst::gstr1))
         .route("/customers/{id}/statement", get(billing::statement))
         // collections
         .route("/collections/ageing", get(collections::ageing))
