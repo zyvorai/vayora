@@ -57,4 +57,4 @@ if ! R "$K -n zyvor get secret zyvor-console >/dev/null 2>&1"; then
     --from-literal=session-secret=\$(openssl rand -hex 32) --from-file=password=/dev/stdin" >/dev/null
 fi
 R "$K -n zyvor rollout restart deploy/zyvor-console >/dev/null; $K -n zyvor rollout status deploy/zyvor-console --timeout=240s; $K -n zyvor rollout status deploy/zyvor-checkout --timeout=240s"
-echo "==> up. Console: http://${HOST#*@}:30303   Checkout: http://${HOST#*@}:30302"
+echo "==> up. Services are cluster-internal (ClusterIP); front them with HTTPS, see deploy/zyvor/k3s/README.md"

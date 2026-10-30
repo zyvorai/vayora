@@ -1,5 +1,5 @@
 # Zyvor on a single-node k3s cluster, SANDBOX configuration: simulated Razorpay/Cashfree, in-cluster Postgres.
-# Everything lives in the `zyvor` namespace; nothing is exposed on 80/443. Secrets are created by deploy.sh.
+# Everything lives in the `zyvor` namespace. Services are cluster-internal: put TLS in front (deploy/zyvor/k3s/README.md). Secrets are created by deploy.sh.
 apiVersion: v1
 kind: Namespace
 metadata: { name: zyvor }
@@ -169,7 +169,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: { name: zyvor-checkout, namespace: zyvor }
-spec: { type: NodePort, selector: { app: zyvor-checkout }, ports: [{ port: 3000, nodePort: 30302 }] }
+spec: { selector: { app: zyvor-checkout }, ports: [{ port: 3000 }] }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -198,4 +198,4 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: { name: zyvor-console, namespace: zyvor }
-spec: { type: NodePort, selector: { app: zyvor-console }, ports: [{ port: 3003, nodePort: 30303 }] }
+spec: { selector: { app: zyvor-console }, ports: [{ port: 3003 }] }
