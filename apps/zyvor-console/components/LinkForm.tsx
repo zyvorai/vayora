@@ -12,7 +12,7 @@ export function LinkForm({ base }: { base: string }) {
       <label className="field" style={{ flex: "1 1 120px" }}>Max uses<input name="max_uses" inputMode="numeric" placeholder="Unlimited" /></label>
       <button className="btn primary" disabled={pending}>{pending ? "Creating…" : "Create link"}</button>
       {state?.error && <p className="note bad" role="alert" style={{ flexBasis: "100%" }}>{state.error}</p>}
-      {state?.ok && <p className="note" role="status" style={{ flexBasis: "100%" }}>Created: <a className="mono" href={base + state.ok} target="_blank" rel="noreferrer">{base + state.ok}</a></p>}
+      {state?.ok && <p className="note" role="status" style={{ flexBasis: "100%" }}>Created: <a className="mono" style={{ overflowWrap: "anywhere" }} href={base + state.ok} target="_blank" rel="noreferrer">{base + state.ok}</a></p>}
     </form>
   );
 }

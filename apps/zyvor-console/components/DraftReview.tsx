@@ -15,12 +15,11 @@ export function DraftReview({ id, invoice, channel, message, source }: { id: str
       <form action={run} style={{ display: "grid", gap: 10 }}>
         <input type="hidden" name="id" value={id} />
         <textarea name="message" defaultValue={message} rows={4} maxLength={1000} aria-label={`Reminder text for ${invoice}`} />
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="btn primary small" disabled={pending}>{pending ? "…" : "Approve and send"}</button>
-          <Act action={rejectDraft} id={id} label="Reject" />
-          {state?.error && <span className="note bad" role="alert">{state.error}</span>}
-        </div>
+        <div><button className="btn primary small" disabled={pending}>{pending ? "…" : "Approve and send"}</button></div>
+        {state?.error && <span className="note bad" role="alert">{state.error}</span>}
       </form>
+      {/* its own form, so it must not sit inside the approve form */}
+      <div><Act action={rejectDraft} id={id} label="Reject" /></div>
     </div>
   );
 }

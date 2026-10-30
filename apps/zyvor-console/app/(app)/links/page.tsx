@@ -20,7 +20,7 @@ export default async function Links() {
             {page.data.length === 0 && <tr><td colSpan={5} className="empty">No payment links yet.</td></tr>}
             {page.data.map((l) => (
               <tr key={l.id}>
-                <td><div>{l.description ?? <span className="muted">Untitled</span>}</div><a className="mono muted" href={base() + l.path} target="_blank" rel="noreferrer">{base() + l.path}</a></td>
+                <td><div>{l.description ?? <span className="muted">Untitled</span>}</div><a className="mono muted" style={{ overflowWrap: "anywhere" }} href={base() + l.path} target="_blank" rel="noreferrer">{base() + l.path}</a></td>
                 <td className="num">{l.amount_minor ? inr(l.amount_minor) : <span className="muted">invoice balance</span>}</td>
                 <td className="num">{l.uses}{l.max_uses ? ` / ${l.max_uses}` : ""}</td>
                 <td><Chip status={l.status} /></td>
