@@ -25,6 +25,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 zyvor-core = { version = "0.1.0", path = "../zyvor-core" }
 zyvor-ledger = { version = "0.1.0", path = "../zyvor-ledger" }
 zyvor-providers = { version = "0.1.0", path = "../zyvor-providers" }
+opentelemetry = { version = "0.33.1", default-features = false }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["rt-tokio", "trace"] }
+tracing-opentelemetry = { version = "0.34.0", default-features = false }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
 
 [dev-dependencies]
 http-body-util = "0.1.5"

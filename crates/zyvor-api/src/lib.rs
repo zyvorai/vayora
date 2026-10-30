@@ -18,6 +18,7 @@ pub mod recon;
 pub mod refunds;
 pub mod registry;
 pub mod state_machine;
+pub mod telemetry;
 pub mod tenant;
 pub mod webhooks_in;
 pub mod worker;
@@ -198,6 +199,7 @@ pub fn app(state: AppState) -> Router {
             post(webhooks_in::receive),
         );
 
+    let v1 = v1.layer(axum::middleware::from_fn(telemetry::request_span));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(readyz))

@@ -1806,3 +1806,37 @@ async fn upgrades_are_prorated_and_milestones_invoice_exactly_once(pool: PgPool)
     let (st, _) = t.call(b, "POST", &path, None, json!({})).await;
     assert_eq!(st.as_u16(), 404);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn requests_get_an_id_that_is_echoed_and_hostile_ids_are_replaced(pool: PgPool) {
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let send = |id: Option<&str>| {
+        let mut r = Request::builder()
+            .uri("/v1/plans")
+            .header("authorization", format!("Bearer {}", t.a.key));
+        if let Some(i) = id {
+            r = r.header("x-request-id", i);
+        }
+        t.app.clone().oneshot(r.body(Body::empty()).unwrap())
+    };
+    let generated = send(None).await.unwrap();
+    assert!(
+        generated.headers()["x-request-id"]
+            .to_str()
+            .unwrap()
+            .starts_with("req_")
+    );
+    assert_eq!(
+        send(Some("ticket-4821")).await.unwrap().headers()["x-request-id"],
+        "ticket-4821"
+    );
+    let hostile = send(Some("a b\"<script>")).await.unwrap();
+    assert!(
+        hostile.headers()["x-request-id"]
+            .to_str()
+            .unwrap()
+            .starts_with("req_")
+    );
+}

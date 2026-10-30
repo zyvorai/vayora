@@ -9,11 +9,7 @@ fn required(name: &str) -> String {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    let _telemetry = zyvor_api::telemetry::init("zyvor-api");
     // Migrations need the schema owner; the running service should connect as a restricted, non-superuser
     // role so row-level security binds it. Set ZYVOR_MIGRATE_DATABASE_URL to migrate with a different login.
     let args: Vec<String> = env::args().collect();
