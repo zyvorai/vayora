@@ -2199,3 +2199,69 @@ async fn dunning_reminds_overdue_invoices_once_per_window_and_respects_promises(
         .await;
     assert_eq!(st.as_u16(), 422);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_worker_dunning_is_opt_in_per_tenant_and_repeat_safe(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let due = (chrono::Utc::now().date_naive() - chrono::Duration::days(12)).to_string();
+    for who in [a, b] {
+        t.ok(
+            who,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "W-1", "amount_minor": 900, "due_date": due }),
+        )
+        .await;
+    }
+    let client = zyvor_api::outbox::http_client();
+    zyvor_api::worker::run_cycle(&t.state, &client)
+        .await
+        .unwrap();
+    assert_eq!(
+        t.count("SELECT count(*) FROM invoice_reminders").await,
+        0,
+        "off by default"
+    );
+
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/settings",
+            None,
+            json!({ "dunning": { "enabled": true, "channel": "pigeon" } }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "dunning": { "enabled": true, "channel": "whatsapp", "repeat_after_days": 3 } }),
+    )
+    .await;
+    let s = t.ok(a, "GET", "/v1/settings", None, Value::Null).await;
+    assert_eq!(
+        (
+            s["dunning"]["enabled"].clone(),
+            s["dunning"]["channel"].clone()
+        ),
+        (json!(true), json!("whatsapp"))
+    );
+
+    zyvor_api::worker::run_cycle(&t.state, &client)
+        .await
+        .unwrap();
+    zyvor_api::worker::run_cycle(&t.state, &client)
+        .await
+        .unwrap();
+    assert_eq!(
+        t.count("SELECT count(*) FROM invoice_reminders").await,
+        1,
+        "only the opted-in tenant, once"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM invoice_reminders WHERE sent_by = 'dunning' AND channel = 'whatsapp'").await, 1);
+}

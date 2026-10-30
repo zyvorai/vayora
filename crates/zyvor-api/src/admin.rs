@@ -528,6 +528,16 @@ pub struct Settings {
     routing: Option<Value>,
     outbound_webhook_url: Option<String>,
     outbound_webhook_secret: Option<String>,
+    dunning: Option<DunningPolicy>,
+}
+
+/// Automatic reminders for overdue invoices; off until a tenant turns it on.
+#[derive(Deserialize)]
+pub struct DunningPolicy {
+    enabled: Option<bool>,
+    channel: Option<String>,
+    min_days_overdue: Option<i32>,
+    repeat_after_days: Option<i32>,
 }
 
 pub async fn put_settings(
@@ -546,7 +556,26 @@ pub async fn put_settings(
         serde_json::from_value::<crate::registry::Routing>(r.clone())
             .map_err(|e| ApiError::invalid("invalid_routing", e.to_string()))?;
     }
+    if let Some(d) = &b.dunning {
+        let ok = d
+            .channel
+            .as_deref()
+            .is_none_or(|c| ["email", "sms", "whatsapp", "call", "other"].contains(&c))
+            && d.min_days_overdue.is_none_or(|n| n >= 0)
+            && d.repeat_after_days.is_none_or(|n| (0..=365).contains(&n));
+        if !ok {
+            return Err(ApiError::invalid(
+                "invalid_dunning",
+                "channel must be email, sms, whatsapp, call or other; min_days_overdue >= 0; repeat_after_days 0..365",
+            ));
+        }
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(d) = &b.dunning {
+        sqlx::query("UPDATE tenant_settings SET auto_dunning = COALESCE($2, auto_dunning), dunning_channel = COALESCE($3, dunning_channel), dunning_min_days = COALESCE($4, dunning_min_days), dunning_repeat_days = COALESCE($5, dunning_repeat_days) WHERE tenant_id = $1")
+            .bind(&auth.tenant_id).bind(d.enabled).bind(&d.channel).bind(d.min_days_overdue).bind(d.repeat_after_days)
+            .execute(&mut *tx).await?;
+    }
     sqlx::query(
         "UPDATE tenant_settings SET refund_approval_threshold_minor = COALESCE($2, refund_approval_threshold_minor), routing = COALESCE($3, routing),
                 outbound_webhook_url = COALESCE($4, outbound_webhook_url), outbound_webhook_secret_enc = COALESCE($5, outbound_webhook_secret_enc) WHERE tenant_id = $1",
@@ -558,7 +587,7 @@ pub async fn put_settings(
     .bind(b.outbound_webhook_secret.as_ref().map(|sec| s.crypto.encrypt(sec.as_bytes())))
     .execute(&mut *tx)
     .await?;
-    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url })).await?;
+    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url, "dunning_changed": b.dunning.is_some() })).await?;
     tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -566,9 +595,10 @@ pub async fn put_settings(
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (thr, routing, url): (i64, Value, Option<String>) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (thr, routing, url, on, ch, min, rep): (i64, Value, Option<String>, bool, String, i32, i32) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     Ok(Json(
-        json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env }),
+        json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep } }),
     ))
 }
 

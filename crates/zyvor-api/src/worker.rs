@@ -53,6 +53,23 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tx.commit().await?;
             }
         }
+        // 3b. automatic reminders for tenants that opted in
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            let pol: Option<(String, i32, i32)> = sqlx::query_as("SELECT dunning_channel, dunning_min_days, dunning_repeat_days FROM tenant_settings WHERE tenant_id = $1 AND auto_dunning")
+                .bind(&tid).fetch_optional(&mut *tx).await?;
+            if let Some((ch, min, rep)) = pol {
+                let today = chrono::Utc::now().date_naive();
+                if crate::collections::run_dunning_tx(
+                    &mut tx, &tid, "dunning", today, min as i64, rep as i64, &ch,
+                )
+                .await
+                .is_ok()
+                {
+                    tx.commit().await?;
+                }
+            }
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {
