@@ -71,3 +71,22 @@ export const runBilling = async (_: FormState): Promise<FormState> => {
 export const remind = async (_: FormState, f: FormData) => run(["/collections"], () => api().collections.remind(id(f), { channel: String(f.get("channel") ?? "whatsapp") as "whatsapp" }));
 export const completeMilestone = async (_: FormState, f: FormData) => run(["/billing"], () => api().milestones.complete(id(f)));
 export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], () => api().disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));
+
+export const createLink = async (_: FormState, f: FormData): Promise<FormState> => {
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  const maxUses = String(f.get("max_uses") ?? "").trim();
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  try {
+    const l = await api().paymentLinks.create({
+      description: String(f.get("description") ?? "").trim() || undefined,
+      amountMinor: Math.round(rupees * 100),
+      maxUses: maxUses ? Number(maxUses) : undefined,
+    });
+    revalidatePath("/links");
+    return { ok: l.path };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+};
+export const cancelLink = async (_: FormState, f: FormData) => run(["/links"], () => api().paymentLinks.cancel(id(f)));

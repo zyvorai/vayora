@@ -857,6 +857,85 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/payment_links:
+    post:
+      summary: Create a payment link (fixed amount or an invoice's outstanding)
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List payment links with usage and status
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payment_links/{id}/cancel:
+    post:
+      summary: Cancel a payment link
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/checkout/links/{tenant_id}/{token}:
+    get:
+      summary: Public payment link details
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/checkout/links/{tenant_id}/{token}/start:
+    post:
+      summary: Open a payment link: mints a payment intent for this payer
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/checkout/{tenant_id}/{intent_id}:
     get:
       summary: Public checkout session (client-secret authorised)

@@ -100,6 +100,26 @@ class Zyvor:
     def remind(self, invoice_id: str, channel: str, message: Optional[str] = None) -> dict:
         return self._req("POST", f"/v1/invoices/{invoice_id}/reminders", {k: v for k, v in {"channel": channel, "message": message}.items() if v is not None})
 
+    def run_dunning(self, channel: Optional[str] = None, min_days_overdue: Optional[int] = None, repeat_after_days: Optional[int] = None) -> dict:
+        """Remind every overdue invoice with no live promise and no recent reminder. Safe to repeat."""
+        return self._req("POST", "/v1/collections/dunning/run", {k: v for k, v in {"channel": channel, "min_days_overdue": min_days_overdue, "repeat_after_days": repeat_after_days}.items() if v is not None})
+
+    # ---- payment links and keys ----
+    def create_payment_link(self, amount_minor: Optional[int] = None, invoice_id: Optional[str] = None, **extra) -> dict:
+        """One URL, many payers. Give `amount_minor` or `invoice_id`; extras: description, max_uses, expires_at, customer_id, currency."""
+        body = {k: v for k, v in {"amount_minor": amount_minor, "invoice_id": invoice_id, **extra}.items() if v is not None}
+        return self._req("POST", "/v1/payment_links", body)
+
+    def list_payment_links(self) -> dict:
+        return self._req("GET", "/v1/payment_links")
+
+    def cancel_payment_link(self, link_id: str) -> dict:
+        return self._req("POST", f"/v1/payment_links/{link_id}/cancel")
+
+    def rotate_key(self, key_id: str, overlap_hours: Optional[int] = None) -> dict:
+        """The old key keeps working for `overlap_hours` (default 24) so deployments can switch over."""
+        return self._req("POST", f"/v1/api_keys/{key_id}/rotate", {"overlap_hours": overlap_hours} if overlap_hours is not None else {})
+
 
 def verify_webhook(secret: str, header: str, raw_body: bytes, tolerance_seconds: int = 300, now: Optional[int] = None) -> bool:
     """Verify `Zyvor-Signature: t=<unix>,v1=<hex>` against the RAW body. De-duplicate on event id too."""

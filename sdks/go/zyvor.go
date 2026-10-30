@@ -204,6 +204,64 @@ func (c *Client) PromiseToPay(invoiceID string, promisedMinor int64, promisedDat
 	return out, err
 }
 
+// RunDunning reminds every overdue invoice with no live promise and no recent reminder. Safe to repeat.
+// Empty channel and zero days use the server defaults.
+func (c *Client) RunDunning(channel string, minDaysOverdue, repeatAfterDays int) (map[string]any, error) {
+	body := map[string]any{}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if minDaysOverdue > 0 {
+		body["min_days_overdue"] = minDaysOverdue
+	}
+	if repeatAfterDays > 0 {
+		body["repeat_after_days"] = repeatAfterDays
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/dunning/run", body, "", &out)
+	return out, err
+}
+
+// CreatePaymentLink makes one URL many payers can open. Pass amountMinor or invoiceID (the other zero/empty).
+func (c *Client) CreatePaymentLink(amountMinor int64, invoiceID, description string, maxUses int) (map[string]any, error) {
+	if (amountMinor > 0) == (invoiceID != "") {
+		return nil, fmt.Errorf("give exactly one of amountMinor or invoiceID")
+	}
+	body := map[string]any{}
+	if amountMinor > 0 {
+		body["amount_minor"] = amountMinor
+	}
+	if invoiceID != "" {
+		body["invoice_id"] = invoiceID
+	}
+	if description != "" {
+		body["description"] = description
+	}
+	if maxUses > 0 {
+		body["max_uses"] = maxUses
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links", body, "", &out)
+	return out, err
+}
+
+func (c *Client) CancelPaymentLink(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links/"+id+"/cancel", map[string]any{}, "", &out)
+	return out, err
+}
+
+// RotateKey mints a replacement; the old key keeps working for overlapHours (0 = server default of 24).
+func (c *Client) RotateKey(keyID string, overlapHours int) (map[string]any, error) {
+	body := map[string]any{}
+	if overlapHours > 0 {
+		body["overlap_hours"] = overlapHours
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/api_keys/"+keyID+"/rotate", body, "", &out)
+	return out, err
+}
+
 // VerifyWebhook checks a `Zyvor-Signature: t=<unix>,v1=<hex>` header against the RAW body.
 // Delivery is at-least-once: also de-duplicate on the event id.
 func VerifyWebhook(secret, header string, rawBody []byte, tolerance time.Duration, now time.Time) bool {

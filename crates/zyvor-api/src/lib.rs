@@ -14,6 +14,7 @@ pub mod disputes;
 pub mod error;
 pub mod idempotency;
 pub mod outbox;
+pub mod payment_links;
 pub mod payments;
 pub mod recon;
 pub mod refunds;
@@ -206,6 +207,23 @@ pub fn app(state: AppState) -> Router {
         .route("/outbox", get(list_outbox))
         .route("/outbox/{id}/replay", post(replay_outbox))
         .route("/inbox", get(list_inbox))
+        // payment links
+        .route(
+            "/payment_links",
+            post(payment_links::create_link).get(payment_links::list_links),
+        )
+        .route(
+            "/payment_links/{id}/cancel",
+            post(payment_links::cancel_link),
+        )
+        .route(
+            "/checkout/links/{tenant_id}/{token}",
+            get(payment_links::link_info),
+        )
+        .route(
+            "/checkout/links/{tenant_id}/{token}/start",
+            post(payment_links::link_start),
+        )
         // public checkout: authorised by the intent's client secret, not an API key
         .route("/checkout/{tenant_id}/{intent_id}", get(checkout::session))
         .route(

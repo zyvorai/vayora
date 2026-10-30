@@ -46,6 +46,20 @@ class Tests(unittest.TestCase):
             ("POST", "/v1/invoices/inv_1/promises"), ("POST", "/v1/invoices/inv_1/reminders")])
         self.assertEqual(seen[2][2], {"quantity": 5, "reference": "u1"})
 
+    def test_links_dunning_and_rotation_paths(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        z.create_payment_link(5000, description="Term fee", max_uses=3); z.list_payment_links(); z.cancel_payment_link("plk_1")
+        z.run_dunning(channel="sms"); z.rotate_key("key_1", 2)
+        self.assertEqual([x[:2] for x in seen], [("POST", "/v1/payment_links"), ("GET", "/v1/payment_links"), ("POST", "/v1/payment_links/plk_1/cancel"),
+            ("POST", "/v1/collections/dunning/run"), ("POST", "/v1/api_keys/key_1/rotate")])
+        self.assertEqual(seen[0][2], {"amount_minor": 5000, "description": "Term fee", "max_uses": 3})
+        self.assertEqual(seen[3][2], {"channel": "sms"})
+        self.assertEqual(seen[4][2], {"overlap_hours": 2})
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

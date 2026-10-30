@@ -47,6 +47,24 @@ describe("client", () => {
   });
 });
 
+describe("payment links, dunning and key rotation", () => {
+  it("maps camelCase options to the API's snake_case and the right routes", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    const c = client(f);
+    await c.paymentLinks.create({ description: "Term fee", amountMinor: 125000, maxUses: 40 });
+    await c.paymentLinks.cancel("plk_1");
+    await c.collections.runDunning({ channel: "sms", repeatAfterDays: 3 });
+    await c.keys.rotate("key_1", 2);
+    const seen = f.mock.calls.map((x) => { const [u, i] = x as unknown as [string, RequestInit]; return [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]; });
+    expect(seen.map((x) => x.slice(0, 2))).toEqual([
+      ["POST", "/v1/payment_links"], ["POST", "/v1/payment_links/plk_1/cancel"], ["POST", "/v1/collections/dunning/run"], ["POST", "/v1/api_keys/key_1/rotate"],
+    ]);
+    expect(seen[0][2]).toMatchObject({ description: "Term fee", amount_minor: 125000, max_uses: 40 });
+    expect(seen[2][2]).toMatchObject({ channel: "sms", repeat_after_days: 3 });
+    expect(seen[3][2]).toEqual({ overlap_hours: 2 });
+  });
+});
+
 describe("verifyWebhook", () => {
   const secret = "whsec";
   const body = '{"type":"payment.captured"}';

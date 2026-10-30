@@ -96,3 +96,27 @@ func TestBillingAndCollectionsPaths(t *testing.T) {
 		t.Fatalf("usage body %v", usage)
 	}
 }
+
+func TestPaymentLinksDunningAndRotationPaths(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	if _, err := c.CreatePaymentLink(0, "", "", 0); err == nil {
+		t.Fatal("a link needs an amount or an invoice")
+	}
+	if _, err := c.CreatePaymentLink(100, "inv_1", "", 0); err == nil {
+		t.Fatal("amount and invoice together must be rejected before any request")
+	}
+	_, _ = c.CreatePaymentLink(5000, "", "Term fee", 3)
+	_, _ = c.CancelPaymentLink("plk_1")
+	_, _ = c.RunDunning("sms", 0, 0)
+	_, _ = c.RotateKey("key_1", 2)
+	want := []string{"POST /v1/payment_links", "POST /v1/payment_links/plk_1/cancel", "POST /v1/collections/dunning/run", "POST /v1/api_keys/key_1/rotate"}
+	if fmt.Sprint(seen) != fmt.Sprint(want) {
+		t.Fatalf("got %v", seen)
+	}
+}

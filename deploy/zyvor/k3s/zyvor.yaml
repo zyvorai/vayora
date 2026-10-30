@@ -198,6 +198,7 @@ spec:
             - { name: CONSOLE_USER, value: console }
             - { name: ZYVOR_API_KEY, valueFrom: { secretKeyRef: { name: zyvor-console, key: api-key } } }
             - { name: CONSOLE_USERNAME, valueFrom: { secretKeyRef: { name: zyvor-console, key: username } } }
+            - { name: CHECKOUT_PUBLIC_URL, value: "https://pay.80-79-5-173.sslip.io" }
             - { name: CONSOLE_PASSWORD, valueFrom: { secretKeyRef: { name: zyvor-console, key: password } } }
             - { name: CONSOLE_SESSION_SECRET, valueFrom: { secretKeyRef: { name: zyvor-console, key: session-secret } } }
           readinessProbe: { httpGet: { path: /login, port: 3003 }, periodSeconds: 5 }

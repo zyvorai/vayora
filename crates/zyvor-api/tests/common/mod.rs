@@ -195,6 +195,12 @@ impl T {
     ) -> (StatusCode, Value) {
         raw(&self.app, "", None, method, path, idem, body).await
     }
+    /// A public (no API key) call that must succeed.
+    pub async fn ok_public(&self, method: &str, path: &str, body: Value) -> Value {
+        let (s, b) = self.public(method, path, None, body).await;
+        assert!(s.is_success(), "{method} {path} -> {s}: {b}");
+        b
+    }
     pub async fn mock_post(&self, path: &str, body: Value) -> Value {
         self.http
             .post(format!("{}/_sim/{path}", self.mock))

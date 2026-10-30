@@ -2492,3 +2492,263 @@ async fn rate_limits_apply_per_key_and_per_address_and_say_when_to_retry(pool: P
     assert_eq!(codes[..4], [401, 401, 401, 401]);
     assert_eq!(codes[4], 429);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn payment_links_mint_a_fresh_intent_per_payer_and_respect_caps_expiry_and_cancel(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now().date_naive();
+
+    // validation: exactly one of amount / invoice
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "description": "x" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 100, "invoice_id": "inv_x" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 100, "expires_at": "2020-01-01T00:00:00Z" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+
+    // a fixed-amount link capped at 2 uses
+    let link = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "description": "Term 2 fee", "amount_minor": 125_000, "max_uses": 2 }),
+        )
+        .await;
+    let (tid, token) = (&a.id, link["token"].as_str().unwrap());
+    assert_eq!(link["path"], json!(format!("/pay/link/{tid}/{token}")));
+    let info = t
+        .ok_public(
+            "GET",
+            &format!("/v1/checkout/links/{tid}/{token}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            info["amount_minor"].clone(),
+            info["status"].clone(),
+            info["description"].clone()
+        ),
+        (json!(125_000), json!("active"), json!("Term 2 fee"))
+    );
+
+    let s1 = t
+        .ok_public(
+            "POST",
+            &format!("/v1/checkout/links/{tid}/{token}/start"),
+            json!({}),
+        )
+        .await;
+    let s2 = t
+        .ok_public(
+            "POST",
+            &format!("/v1/checkout/links/{tid}/{token}/start"),
+            json!({}),
+        )
+        .await;
+    assert_ne!(
+        s1["intent_id"], s2["intent_id"],
+        "each payer gets their own intent"
+    );
+    assert_ne!(s1["client_secret"], s2["client_secret"]);
+    let (st, body) = t
+        .public(
+            "POST",
+            &format!("/v1/checkout/links/{tid}/{token}/start"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        (st.as_u16(), body["error"]["code"].clone()),
+        (409, json!("link_unavailable"))
+    );
+    // the minted intent is a normal checkout session, payable with its secret
+    let sess = t
+        .ok_public(
+            "GET",
+            &format!(
+                "/v1/checkout/{tid}/{}?secret={}",
+                s1["intent_id"].as_str().unwrap(),
+                s1["client_secret"].as_str().unwrap()
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (sess["amount_minor"].clone(), sess["phase"].clone()),
+        (json!(125_000), json!("choose_method"))
+    );
+
+    // another tenant cannot see or use this link
+    let (st, _) = t
+        .public(
+            "GET",
+            &format!("/v1/checkout/links/{}/{token}", b.id),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+    assert!(
+        t.ok(b, "GET", "/v1/payment_links", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let listed = t.ok(a, "GET", "/v1/payment_links", None, Value::Null).await;
+    assert_eq!(
+        (
+            listed["data"][0]["uses"].clone(),
+            listed["data"][0]["status"].clone()
+        ),
+        (json!(2), json!("used_up"))
+    );
+
+    // an invoice link collects what is still owed, and stops once it is paid
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "PL-1", "amount_minor": 9000, "due_date": today.to_string() }),
+        )
+        .await;
+    let il = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "invoice_id": inv["id"] }),
+        )
+        .await;
+    let itoken = il["token"].as_str().unwrap();
+    let start = t
+        .ok_public(
+            "POST",
+            &format!("/v1/checkout/links/{tid}/{itoken}/start"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(start["amount_minor"], 9000);
+    let pi = t
+        .ok(
+            a,
+            "GET",
+            &format!(
+                "/v1/payment_intents/{}",
+                start["intent_id"].as_str().unwrap()
+            ),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(pi["intent"]["invoice_id"], inv["id"]);
+    // fully credited (a waived fee): nothing left to pay, so the link stops
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/credit_notes", inv["id"].as_str().unwrap()),
+        None,
+        json!({ "amount_minor": 9000, "reason": "waived" }),
+    )
+    .await;
+    let (st, _) = t
+        .public(
+            "POST",
+            &format!("/v1/checkout/links/{tid}/{itoken}/start"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+
+    // expiry and cancel
+    let exp = t.ok(a, "POST", "/v1/payment_links", None, json!({ "amount_minor": 500, "expires_at": (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339() })).await;
+    sqlx::query("UPDATE payment_links SET expires_at = now() - interval '1 second' WHERE id = $1")
+        .bind(exp["id"].as_str().unwrap())
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let info = t
+        .ok_public(
+            "GET",
+            &format!(
+                "/v1/checkout/links/{tid}/{}",
+                exp["token"].as_str().unwrap()
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(info["status"], "expired");
+    let c = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 500 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_links/{}/cancel", c["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    let (st, _) = t
+        .public(
+            "POST",
+            &format!(
+                "/v1/checkout/links/{tid}/{}/start",
+                c["token"].as_str().unwrap()
+            ),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/payment_links/{}/cancel", c["id"].as_str().unwrap()),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404, "already canceled");
+}
