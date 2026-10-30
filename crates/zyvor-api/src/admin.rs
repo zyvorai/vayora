@@ -151,10 +151,10 @@ pub async fn create_key(
 pub async fn list_keys(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
     type Ts = Option<chrono::DateTime<chrono::Utc>>;
-    let rows: Vec<(String, String, String, Vec<String>, chrono::DateTime<chrono::Utc>, Ts, Ts, Ts, Vec<String>)> =
-        sqlx::query_as("SELECT id, name, prefix, scopes, created_at, revoked_at, expires_at, last_used_at, allowed_cidrs FROM api_keys WHERE tenant_id = $1 ORDER BY created_at").bind(&auth.tenant_id).fetch_all(&s.pool).await?;
+    let rows: Vec<(String, String, String, Vec<String>, chrono::DateTime<chrono::Utc>, Ts, Ts, Ts, Vec<String>, Option<String>)> =
+        sqlx::query_as("SELECT id, name, prefix, scopes, created_at, revoked_at, expires_at, last_used_at, allowed_cidrs, branch_id FROM api_keys WHERE tenant_id = $1 ORDER BY created_at").bind(&auth.tenant_id).fetch_all(&s.pool).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, prefix, scopes, c, r, e, u, cidrs)| json!({ "id": id, "name": name, "prefix": prefix, "scopes": scopes, "created_at": c, "revoked_at": r, "expires_at": e, "last_used_at": u, "allowed_cidrs": cidrs })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, prefix, scopes, c, r, e, u, cidrs, branch)| json!({ "branch_id": branch, "id": id, "name": name, "prefix": prefix, "scopes": scopes, "created_at": c, "revoked_at": r, "expires_at": e, "last_used_at": u, "allowed_cidrs": cidrs })).collect::<Vec<_>>() }),
     ))
 }
 

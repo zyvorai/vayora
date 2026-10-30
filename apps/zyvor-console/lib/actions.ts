@@ -307,3 +307,18 @@ export const createClosing = async (_: FormState, f: FormData): Promise<FormStat
   return run(["/closing"], (z) => z.closings.create({ branchId: text(f, "branch_id"), day: text(f, "day"), countedCashMinor: amt, note: text(f, "note") || undefined }));
 };
 export const signOffClosing = async (_: FormState, f: FormData) => run(["/closing"], (z) => z.closings.signOff(id(f)), "admin");
+
+/** The secret is returned once, in `ok`, and never stored. */
+export const createKey = async (_: FormState, f: FormData): Promise<FormState> => {
+  const preset = text(f, "preset");
+  const scopes = preset === "read" ? ["payments:read"] : ["payments:read", "payments:write"];
+  const branchId = text(f, "branch_id") || undefined;
+  const name = text(f, "name");
+  if (!name) return { error: "Give the key a name so you can tell it apart later." };
+  let secret = "";
+  const r = await run(["/keys"], async (z) => {
+    secret = (await z.keys.create({ name, scopes, branchId })).key;
+  }, "admin");
+  return r?.error ? r : { ok: secret };
+};
+export const revokeKey = async (_: FormState, f: FormData) => run(["/keys"], (z) => z.keys.revoke(id(f)), "admin");

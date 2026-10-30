@@ -399,6 +399,8 @@ export class Zyvor {
 
   /** Key hygiene. */
   readonly keys = {
+    list: () => this.req<Page<{ id: string; name: string; prefix: string; scopes: string[]; branch_id: string | null; created_at: string; revoked_at: string | null; expires_at: string | null; last_used_at: string | null; allowed_cidrs: string[] }>>("GET", "/v1/api_keys"),
+    revoke: (id: string) => this.req("POST", `/v1/api_keys/${encodeURIComponent(id)}/revoke`),
     /** `branchId` pins the key to one branch (a till or a manager's key); such a key cannot hold `admin`. The secret is shown once. */
     create: (p: { name: string; scopes: string[]; branchId?: string; expiresAt?: string; allowedCidrs?: string[] }) =>
       this.req<{ id: string; key: string }>("POST", "/v1/api_keys", { name: p.name, scopes: p.scopes, branch_id: p.branchId, expires_at: p.expiresAt, allowed_cidrs: p.allowedCidrs }),
