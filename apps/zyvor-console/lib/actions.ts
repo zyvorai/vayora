@@ -263,3 +263,14 @@ export const createCoupon = async (_: FormState, f: FormData): Promise<FormState
   return run(["/links"], (z) => z.coupons.create({ code: String(f.get("code") ?? ""), kind, value: Math.round(kind === "percent" ? n * 100 : n * 100), maxUses: uses ? Number(uses) : undefined }));
 };
 export const deactivateCoupon = async (_: FormState, f: FormData) => run(["/links"], (z) => z.coupons.deactivate(id(f)));
+
+const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
+export const saveProfile = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.saveProfile({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address") }), "admin");
+export const addOnboardingDoc = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.addDocument({ kind: text(f, "kind"), reference: text(f, "reference") }), "admin");
+export const addBankAccount = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.addBankAccount({ holderName: text(f, "holder_name"), ifsc: text(f, "ifsc"), accountNumber: text(f, "account_number").replace(/\s/g, "") }), "admin");
+export const verifyBankAccount = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.verifyBankAccount(id(f)), "admin");
+export const submitOnboarding = async (_: FormState) => run(["/onboarding"], (z) => z.onboarding.submit(), "admin");
+export const reviewOnboarding = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.review({ decision: text(f, "decision") === "approve" ? "approve" : "reject", note: text(f, "note") || undefined }), "admin");

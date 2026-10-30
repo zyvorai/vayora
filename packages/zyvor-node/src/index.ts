@@ -264,6 +264,18 @@ export class Zyvor {
     deactivate: (id: string) => this.req("POST", `/v1/coupons/${encodeURIComponent(id)}/deactivate`),
   };
 
+  readonly onboarding = {
+    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[] }>("GET", "/v1/onboarding"),
+    saveProfile: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string }) =>
+      this.req("PUT", "/v1/onboarding", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address }),
+    addDocument: (p: { kind: string; reference: string }) => this.req<{ id: string }>("POST", "/v1/onboarding/documents", p),
+    addBankAccount: (p: { holderName: string; ifsc: string; accountNumber: string }) =>
+      this.req<{ id: string; account_last4: string }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
+    verifyBankAccount: (id: string) => this.req("POST", `/v1/onboarding/bank_accounts/${encodeURIComponent(id)}/verify`),
+    submit: () => this.req("POST", "/v1/onboarding/submit"),
+    review: (p: { decision: "approve" | "reject"; note?: string }) => this.req("POST", "/v1/onboarding/review", p),
+  };
+
   readonly installments = {
     /** Split an agreed total into dated invoices: exact (remainder on the last), all or nothing, idempotent by `externalRef`. */
     create: (p: { customerId: string; name: string; totalMinor: number; instalments: number; firstDueDate: string; numberPrefix: string; everyUnit?: "month" | "day"; every?: number; currency?: string; externalRef?: string }) =>
