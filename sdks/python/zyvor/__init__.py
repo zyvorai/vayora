@@ -130,6 +130,70 @@ class Zyvor:
     def cancel_payment_link(self, link_id: str) -> dict:
         return self._req("POST", f"/v1/payment_links/{link_id}/cancel")
 
+    # --- merchant operations -------------------------------------------------------------------
+    def payment_timeline(self, intent_id: str) -> dict:
+        """One ordered story of the payment, with a plain sentence on where it stands."""
+        return self._req("GET", f"/v1/payment_intents/{intent_id}/timeline")
+
+    def onboarding(self) -> dict:
+        return self._req("GET", "/v1/onboarding")
+
+    def save_profile(self, legal_name: str, business_type: str, pan: str, address: str, gstin: Optional[str] = None) -> dict:
+        return self._req("PUT", "/v1/onboarding", {"legal_name": legal_name, "business_type": business_type, "pan": pan, "address": address, "gstin": gstin})
+
+    def add_onboarding_document(self, kind: str, reference: str) -> dict:
+        return self._req("POST", "/v1/onboarding/documents", {"kind": kind, "reference": reference})
+
+    def add_bank_account(self, holder_name: str, ifsc: str, account_number: str) -> dict:
+        return self._req("POST", "/v1/onboarding/bank_accounts", {"holder_name": holder_name, "ifsc": ifsc, "account_number": account_number})
+
+    def verify_bank_account(self, account_id: str) -> dict:
+        """A different person from whoever added it."""
+        return self._req("POST", f"/v1/onboarding/bank_accounts/{account_id}/verify")
+
+    def submit_onboarding(self) -> dict:
+        return self._req("POST", "/v1/onboarding/submit")
+
+    def review_onboarding(self, decision: str, note: Optional[str] = None) -> dict:
+        """`approve` or `reject` (a note is required to reject); a different person from the submitter."""
+        return self._req("POST", "/v1/onboarding/review", {"decision": decision, "note": note})
+
+    def create_counter(self, branch_id: str, name: str) -> dict:
+        return self._req("POST", "/v1/counters", {"branch_id": branch_id, "name": name})
+
+    def list_counters(self, branch_id: Optional[str] = None) -> dict:
+        return self._req("GET", "/v1/counters" + (f"?branch_id={branch_id}" if branch_id else ""))
+
+    def deactivate_counter(self, counter_id: str) -> dict:
+        """Also cancels the counter's QR links."""
+        return self._req("POST", f"/v1/counters/{counter_id}/deactivate")
+
+    def branch_summary(self, branch_id: str, from_day: Optional[str] = None, to_day: Optional[str] = None) -> dict:
+        q = "&".join(f"{k}={v}" for k, v in (("from", from_day), ("to", to_day)) if v)
+        return self._req("GET", f"/v1/branches/{branch_id}/summary" + (f"?{q}" if q else ""))
+
+    def add_cash(self, branch_id: str, kind: str, amount_minor: int, counter_id: Optional[str] = None, note: Optional[str] = None) -> dict:
+        """`sale`, `refund` or `float`. Never edited: correct a mistake with an opposite entry."""
+        return self._req("POST", "/v1/cash_entries", {"branch_id": branch_id, "counter_id": counter_id, "kind": kind, "amount_minor": amount_minor, "note": note})
+
+    def close_day(self, branch_id: str, day: str, counted_cash_minor: int, note: Optional[str] = None) -> dict:
+        return self._req("POST", "/v1/closings", {"branch_id": branch_id, "day": day, "counted_cash_minor": counted_cash_minor, "note": note})
+
+    def closings(self, branch_id: Optional[str] = None, status: Optional[str] = None) -> dict:
+        q = "&".join(f"{k}={v}" for k, v in (("branch_id", branch_id), ("status", status)) if v)
+        return self._req("GET", "/v1/closings" + (f"?{q}" if q else ""))
+
+    def sign_off_closing(self, closing_id: str) -> dict:
+        """A different person from whoever counted."""
+        return self._req("POST", f"/v1/closings/{closing_id}/signoff")
+
+    def cashflow(self, weeks: Optional[int] = None) -> dict:
+        """What is owed by due week. A schedule, not a prediction."""
+        return self._req("GET", "/v1/insights/cashflow" + (f"?weeks={weeks}" if weeks else ""))
+
+    def refund_anomalies(self) -> dict:
+        return self._req("GET", "/v1/insights/refund_anomalies")
+
     def rotate_key(self, key_id: str, overlap_hours: Optional[int] = None) -> dict:
         """The old key keeps working for `overlap_hours` (default 24) so deployments can switch over."""
         return self._req("POST", f"/v1/api_keys/{key_id}/rotate", {"overlap_hours": overlap_hours} if overlap_hours is not None else {})

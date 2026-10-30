@@ -72,6 +72,27 @@ class Tests(unittest.TestCase):
         self.assertEqual(seen[0][2], {"ai": True})
         self.assertEqual(seen[2][2], {"message": "Edited"})
 
+    def test_merchant_operations_paths(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+
+        z = Zyvor("k", opener=opener)
+        z.payment_timeline("pi_1"); z.onboarding(); z.save_profile("Sri Clinic", "llp", "ABCDE1234F", "12 MG Road")
+        z.add_bank_account("Sri Clinic", "HDFC0001234", "123456789012"); z.review_onboarding("reject", "blurry PAN")
+        z.create_counter("br_1", "Till 1"); z.branch_summary("br_1", "2026-10-01"); z.add_cash("br_1", "sale", 500)
+        z.close_day("br_1", "2026-10-30", 500); z.sign_off_closing("clo_1"); z.cashflow(2)
+        paths = [(m, p) for m, p, _ in seen]
+        self.assertEqual(paths, [
+            ("GET", "/v1/payment_intents/pi_1/timeline"), ("GET", "/v1/onboarding"), ("PUT", "/v1/onboarding"),
+            ("POST", "/v1/onboarding/bank_accounts"), ("POST", "/v1/onboarding/review"), ("POST", "/v1/counters"),
+            ("GET", "/v1/branches/br_1/summary?from=2026-10-01"), ("POST", "/v1/cash_entries"), ("POST", "/v1/closings"),
+            ("POST", "/v1/closings/clo_1/signoff"), ("GET", "/v1/insights/cashflow?weeks=2"),
+        ])
+        self.assertEqual(seen[4][2], {"decision": "reject", "note": "blurry PAN"})
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

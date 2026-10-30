@@ -28,7 +28,10 @@ export default async function Closing() {
               <td className="num" style={{ color: c.difference_minor === 0 ? undefined : "var(--bad, #c0392b)" }}>{c.difference_minor === 0 ? "None" : (c.difference_minor > 0 ? "+" : "") + inr(c.difference_minor)}</td>
               <td className="num">{inr(c.digital.reduce((n, d) => n + d.net_minor, 0))}</td>
               <td><Chip status={c.status} /></td>
-              <td>{c.status === "pending_signoff" && me?.r === "admin" && c.counted_by !== me.u && <Act action={signOffClosing} id={c.id} label="Sign off" />}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {c.status === "pending_signoff" && me?.r === "admin" && c.counted_by !== `user:${me.u}` && <Act action={signOffClosing} id={c.id} label="Sign off" />}
+                {c.status === "pending_signoff" && c.counted_by === `user:${me?.u}` && <span className="muted">Waiting for someone else</span>}
+              </td>
             </tr>
           ))}
         </tbody>

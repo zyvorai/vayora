@@ -137,3 +137,24 @@ func TestReminderDraftPaths(t *testing.T) {
 		t.Fatalf("got %v", seen)
 	}
 }
+
+func TestMerchantOperationsPaths(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	_, _ = c.PaymentTimeline("pi_1")
+	_, _ = c.SaveProfile("Sri Clinic", "llp", "ABCDE1234F", "12 MG Road", "")
+	_, _ = c.ReviewOnboarding("reject", "blurry PAN")
+	_, _ = c.CreateCounter("br_1", "Till 1")
+	_, _ = c.BranchSummary("br_1", "2026-10-01", "")
+	_, _ = c.CloseDay("br_1", "2026-10-30", 500)
+	_, _ = c.SignOffClosing("clo_1")
+	want := []string{"GET /v1/payment_intents/pi_1/timeline?", "PUT /v1/onboarding?", "POST /v1/onboarding/review?", "POST /v1/counters?", "GET /v1/branches/br_1/summary?from=2026-10-01", "POST /v1/closings?", "POST /v1/closings/clo_1/signoff?"}
+	if fmt.Sprint(seen) != fmt.Sprint(want) {
+		t.Fatalf("got %v", seen)
+	}
+}
