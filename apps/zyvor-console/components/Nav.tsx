@@ -17,12 +17,14 @@ const items = [
   { href: "/billing", label: "Billing", icon: icon("M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6") },
   { href: "/webhooks", label: "Webhooks", icon: icon("M4 12h4l2-6 4 12 2-6h4") },
 ];
+const admin = [{ href: "/users", label: "People", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0") }];
+const account = { href: "/account", label: "Account", icon: icon("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4") };
 
-export function Nav() {
+export function Nav({ role }: { role: "admin" | "finance" | "viewer" }) {
   const path = usePathname();
   return (
     <nav aria-label="Main">
-      {items.map((i) => {
+      {[...items, ...(role === "admin" ? admin : []), account].map((i) => {
         const on = i.href === "/" ? path === "/" : path.startsWith(i.href);
         return (
           <Link key={i.href} href={i.href} className="nav" aria-current={on ? "page" : undefined}>

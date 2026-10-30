@@ -62,7 +62,8 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 - **Cluster**: default-deny ingress NetworkPolicies and Pod Security `baseline` in the `zyvor` namespace. Verified on the k3s sandbox: checkout reaches the API but not Postgres or the provider simulator; HTTPS still works.
 - **Audit chain**: the worker seals each tenant's audit events into a hash chain; `GET /v1/audit_events/verify` recomputes it and reports the first broken seal (editing, deleting or inserting inside a sealed range is detected, tested with a superuser bypass).
 - **Master-key rotation**: ciphertext carries a key id; `ZYVOR_MASTER_KEY_PREVIOUS` keeps old data readable; `zyvor-api rekey [--dry-run]` re-seals every stored secret (idempotent; unreadable secrets are left untouched and reported). Pre-rotation blobs are still readable.
-- Still open from the plan: console users with MFA, AI assist, payouts, multi-currency/FX, GST, vertical templates, webhooks v2.
+- **Console users**: named accounts (admin / finance / viewer) with Argon2id passwords, TOTP second factor with single-use recovery codes and replay protection, lockout after 5 failures (15 min), role-gated actions, and a People page. The deployment admin stays as break-glass only until the first named user exists; `CONSOLE_REQUIRE_MFA=1` forces enrolment. Verified in a browser: break-glass sign-in, create user, break-glass refused afterwards, MFA enrolment (this found and fixed a bug where recovery codes were never shown), code step at sign-in, recovery-code sign-in.
+- Still open from the plan: AI assist, payouts, multi-currency/FX, GST, vertical templates, webhooks v2.
 
 ## Deviations from the brief
 - **Rust instead of Go** for the backend (decision made with the owner: it keeps the tested ledger/idempotency/outbox code).

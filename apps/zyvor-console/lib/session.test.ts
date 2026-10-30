@@ -1,15 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { createSession, passwordMatches, verifySession } from "./session";
+import { allows, createSession, passwordMatches, readSession, verifySession } from "./session";
+
+const who = { i: "usr_1", u: "priya", r: "finance" as const, m: true };
 
 describe("session", () => {
-  it("accepts a fresh token and rejects tampering, wrong secret and expiry", async () => {
-    const t = await createSession("s3cret", 1_000_000);
-    expect(await verifySession("s3cret", t, 1_000_000)).toBe(true);
+  it("round-trips who is signed in and rejects tampering, wrong secret and expiry", async () => {
+    const t = await createSession("s3cret", who, 1_000_000);
+    expect(await readSession("s3cret", t, 1_000_000)).toMatchObject(who);
     expect(await verifySession("other", t, 1_000_000)).toBe(false);
-    const [exp, sig] = t.split(".");
-    expect(await verifySession("s3cret", `${Number(exp) + 99999}.${sig}`, 1_000_000)).toBe(false);
+    // swapping the payload for an admin one keeps the old signature and must fail
+    const [, sig] = t.split(".");
+    const forged = (await createSession("s3cret", { ...who, r: "admin" }, 1_000_000)).split(".")[0];
+    expect(await readSession("s3cret", `${forged}.${sig}`, 1_000_000)).toBeNull();
     expect(await verifySession("s3cret", t, 1_000_000 + 13 * 3600 * 1000)).toBe(false);
-    for (const bad of [undefined, "", "x", "1.", ".abc", "abc.def"]) expect(await verifySession("s3cret", bad, 0)).toBe(false);
+    for (const bad of [undefined, "", "x", "1.", ".abc", "abc.def", "e30.00"]) expect(await verifySession("s3cret", bad, 0)).toBe(false);
+  });
+  it("orders roles", () => {
+    expect(allows("admin", "finance") && allows("finance", "finance") && allows("finance", "viewer")).toBe(true);
+    expect(allows("viewer", "finance") || allows("finance", "admin")).toBe(false);
   });
   it("compares passwords without length shortcuts", async () => {
     expect(await passwordMatches("k", "hunter2", "hunter2")).toBe(true);

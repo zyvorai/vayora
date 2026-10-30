@@ -208,3 +208,7 @@ tbody tr { transition: background .15s; }
 .skel { border-radius: 14px; background: linear-gradient(90deg, var(--soft) 25%, color-mix(in srgb, var(--soft) 40%, transparent) 50%, var(--soft) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { main, .pal, .pal-back, .skel { animation: none; } }
+
+/* labelled inputs in inline forms: label above, same look as the login form */
+label.field { display: grid; gap: 6px; font-size: .75rem; font-weight: 600; color: var(--muted); }
+label.field input, label.field select { font-weight: 400; }

@@ -219,6 +219,20 @@ export class Zyvor {
     cancel: (id: string) => this.req("POST", `/v1/payment_links/${encodeURIComponent(id)}/cancel`),
   };
 
+  /** Named console users with roles, Argon2id passwords and TOTP. Needs an admin key. */
+  readonly consoleUsers = {
+    create: (p: { username: string; password: string; role: "admin" | "finance" | "viewer" }) => this.req<{ id: string; username: string; role: string }>("POST", "/v1/console/users", p),
+    list: () => this.req<Page<{ id: string; username: string; role: "admin" | "finance" | "viewer"; mfa_enrolled: boolean; last_login_at: string | null; locked: boolean; disabled: boolean }>>("GET", "/v1/console/users"),
+    disable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/disable`),
+    enable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/enable`),
+    setPassword: (id: string, password: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/password`, { password }),
+    mfaBegin: (id: string) => this.req<{ secret: string; otpauth_uri: string }>("POST", `/v1/console/users/${encodeURIComponent(id)}/mfa/begin`),
+    mfaConfirm: (id: string, otp: string) => this.req<{ recovery_codes: string[] }>("POST", `/v1/console/users/${encodeURIComponent(id)}/mfa/confirm`, { otp }),
+    mfaReset: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/mfa/reset`),
+    /** Throws ZyvorError: `otp_required` (401) when a code is needed, `account_locked` (423) after repeated failures. */
+    authenticate: (p: { username: string; password: string; otp?: string }) => this.req<{ user: { id: string; username: string; role: "admin" | "finance" | "viewer" }; mfa_enrolled: boolean }>("POST", "/v1/console/authenticate", p),
+  };
+
   readonly audit = {
     /** Recompute the tamper-evident chain; `ok: false` names the first broken seal. */
     verify: () => this.req<{ ok: boolean; seals_checked: number; sealed_events?: number; unsealed_events?: number; reason?: string; broken_seal?: number }>("GET", "/v1/audit_events/verify"),

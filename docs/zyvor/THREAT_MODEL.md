@@ -11,7 +11,7 @@ API keys, customer contact data, the audit trail.
 | Boundary | Authenticated by | Notes |
 |---|---|---|
 | Merchant system -> API | Bearer API key (SHA-256 hashed at rest, per-tenant, scoped) | optional expiry, address allow-list, rotation with overlap |
-| Console user -> console | signed session cookie (Secure, HttpOnly) | single shared admin today; per-user accounts and MFA are planned |
+| Console user -> console | signed session cookie (Secure, HttpOnly) carrying user and role | named users with Argon2id passwords, optional TOTP + recovery codes, lockout; deployment admin is break-glass only until the first user exists |
 | Console -> API | an API key held server-side in a cluster Secret | never sent to the browser |
 | Payer -> checkout | unguessable intent URL plus a signed per-intent secret | rate limited per address |
 | Provider -> API | HMAC signature on the raw body, tenant in the URL | replay window enforced |
@@ -43,7 +43,7 @@ API keys, customer contact data, the audit trail.
   image, weekly Dependabot, GitHub Actions pinned by commit SHA, CycloneDX SBOM per run.
 
 ## Known gaps (do not rely on these yet)
-- Single shared console admin, no MFA, no per-user audit identity (planned).
+- MFA is optional unless `CONSOLE_REQUIRE_MFA=1`; sessions are not individually revocable before their 12 h expiry; no SSO.
 - Webhook secret rotation has no dual-signature window yet. Master-key rotation exists (below) but is operator-run.
 - Provider `base_url` (sandbox field) is not covered by the SSRF guard; production accounts should not set it.
 - Audit seals detect tampering after the fact; they do not prevent it, and the chain head is not yet anchored outside the database (publish `head` somewhere the database owner cannot edit to close this). Events newer than the seal delay (120 s) are not yet covered.
