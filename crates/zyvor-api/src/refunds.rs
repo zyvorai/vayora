@@ -285,6 +285,23 @@ pub async fn apply_refund_result(
         .map_err(zyvor_ledger::StoreError::from)?
         .post(conn, tenant_id, &format!("refund:{refund_id}"), None)
         .await?;
+        // marketplace shares owed to vendors shrink in proportion to what has been refunded
+        let (refunded_total, payment_amount): (i64, i64) = sqlx::query_as(
+            "SELECT refunded_minor, amount_minor FROM payment_attempts WHERE id = $1",
+        )
+        .bind(&attempt_id)
+        .fetch_one(&mut *conn)
+        .await?;
+        crate::splits::reverse_for_refund(
+            conn,
+            tenant_id,
+            refund_id,
+            &intent_id,
+            refunded_total,
+            payment_amount,
+            currency,
+        )
+        .await?;
         // Linked invoice goes back to partially paid / open: a reversal row, never an edit.
         if let Some(inv) = sqlx::query_scalar::<_, Option<String>>(
             "SELECT invoice_id FROM payment_intents WHERE id = $1",

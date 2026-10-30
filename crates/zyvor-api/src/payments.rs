@@ -92,6 +92,8 @@ pub struct CreateIntent {
     external_ref: Option<String>,
     description: Option<String>,
     metadata: Option<Value>,
+    /// Marketplace shares owed to vendors out of this payment (see `splits`).
+    splits: Option<Vec<crate::splits::SplitIn>>,
 }
 
 pub async fn create_intent(
@@ -126,6 +128,15 @@ pub async fn create_intent(
         b.invoice_id.as_deref().unwrap_or(""),
         b.external_ref.as_deref().unwrap_or(""),
         capture,
+        &b.splits
+            .as_ref()
+            .map(|v| {
+                v.iter()
+                    .map(|x| format!("{}={}", x.vendor_id, x.amount_minor))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default(),
     ]);
     let key = match idempotency::begin(&mut tx, &auth.tenant_id, "intents", &headers, &hash).await?
     {
@@ -172,6 +183,9 @@ pub async fn create_intent(
             ));
         }
     }
+    if let Some(sp) = &b.splits {
+        crate::splits::validate(sp, b.amount_minor)?;
+    }
     let client_secret = format!(
         "pis_{}{}",
         uuid::Uuid::new_v4().simple(),
@@ -196,6 +210,9 @@ pub async fn create_intent(
     .bind(crate::auth::hash_key(&client_secret))
     .fetch_one(&mut *tx)
     .await?;
+    if let Some(sp) = &b.splits {
+        crate::splits::attach(&mut tx, &auth.tenant_id, &intent.id, sp).await?;
+    }
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -872,6 +889,7 @@ async fn on_captured(
     .map_err(zyvor_ledger::StoreError::from)?
     .post(conn, tenant_id, &format!("capture:{attempt_id}"), None)
     .await?;
+    crate::splits::accrue(conn, tenant_id, intent_id, currency).await?;
     let (invoice_id, external_ref): (Option<String>, Option<String>) = sqlx::query_as("UPDATE payment_intents SET status = 'succeeded', updated_at = now() WHERE id = $1 RETURNING invoice_id, external_ref")
         .bind(intent_id)
         .fetch_one(&mut *conn)

@@ -24,6 +24,10 @@ pub mod accounts {
     pub const BANK: &str = "bank";
     /// Money paid out to vendors from the merchant's bank (debit-normal).
     pub const PAYOUTS: &str = "payouts";
+    /// Liability: what the merchant owes a vendor from split payments (credit-normal).
+    pub fn vendor_payable(vendor_id: &str) -> String {
+        format!("vendor_payable:{vendor_id}")
+    }
     /// Settlement adjustments, chargebacks, reserves (either side).
     pub const ADJUSTMENTS: &str = "settlement_adjustments";
 }

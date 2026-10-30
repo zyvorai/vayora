@@ -1229,6 +1229,32 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/vendors/{id}/balance:
+    get:
+      summary: What a vendor is owed from split payments, and what is free to pay out
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payouts/bulk:
+    post:
+      summary: Create up to 200 payouts at once, all or none
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail
@@ -1304,6 +1330,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/payment_links/{id}/qr.svg:
+    get:
+      summary: QR code (SVG) of a payment link's checkout address
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/payment_links/{id}/cancel:
     post:
       summary: Cancel a payment link

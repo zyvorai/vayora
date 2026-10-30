@@ -26,6 +26,8 @@ pub struct NewLink {
     /// Stop after this many checkouts have been started.
     max_uses: Option<i32>,
     expires_at: Option<DateTime<Utc>>,
+    /// Shares owed to vendors out of every payment made through this link.
+    splits: Option<Vec<crate::splits::SplitIn>>,
 }
 
 pub async fn create_link(
@@ -52,7 +54,21 @@ pub async fn create_link(
             "expires_at must be in the future",
         ));
     }
+    if let (Some(sp), Some(total)) = (&b.splits, b.amount_minor) {
+        crate::splits::validate(sp, total)?;
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    for sp in b.splits.iter().flatten() {
+        let ok: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM vendors WHERE id = $1 AND archived_at IS NULL)",
+        )
+        .bind(&sp.vendor_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !ok {
+            return Err(ApiError::not_found("vendor"));
+        }
+    }
     let mut currency = b.currency.clone().unwrap_or_else(|| "INR".into());
     if let Some(inv) = &b.invoice_id {
         // an invoice link takes the invoice's currency
@@ -73,9 +89,9 @@ pub async fn create_link(
             uuid::Uuid::new_v4().simple()
         ),
     );
-    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
-        .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor)
+        .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_foreign_key_violation() => ApiError::not_found("customer"),
@@ -257,6 +273,31 @@ pub async fn link_start(
     .bind(&description).bind(json!({ "payment_link": link_id }))
     .bind(crate::auth::hash_key(&secret))
     .execute(&mut *tx).await?;
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT splits FROM payment_links WHERE id = $1")
+            .bind(&link_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if let Some(v) = stored {
+        let sp: Vec<crate::splits::SplitIn> = v
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| {
+                Some(crate::splits::SplitIn {
+                    vendor_id: x["vendor_id"].as_str()?.to_string(),
+                    amount_minor: x["amount_minor"].as_i64()?,
+                })
+            })
+            .collect();
+        crate::splits::validate(&sp, amount).map_err(|_| {
+            ApiError::conflict(
+                "link_unavailable",
+                "this link's splits no longer fit the amount due",
+            )
+        })?;
+        crate::splits::attach(&mut tx, &tenant_id, &intent_id, &sp).await?;
+    }
     sqlx::query("UPDATE payment_links SET uses = uses + 1 WHERE id = $1")
         .bind(&link_id)
         .execute(&mut *tx)
@@ -277,4 +318,60 @@ pub async fn link_start(
             json!({ "intent_id": intent_id, "client_secret": secret, "amount_minor": amount, "currency": currency, "path": format!("/pay/{tenant_id}/{intent_id}") }),
         ),
     ))
+}
+
+/// `GET /v1/payment_links/{id}/qr.svg`: a QR code of the link's checkout URL, for posters, counters and
+/// printed fee notices. Needs `ZYVOR_CHECKOUT_PUBLIC_URL` so the code points at your public checkout.
+pub async fn link_qr(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+    auth.require("payments:read")?;
+    let base = s.checkout_public_url.clone().ok_or_else(|| {
+        ApiError::conflict(
+            "checkout_url_not_configured",
+            "set ZYVOR_CHECKOUT_PUBLIC_URL to your public checkout address",
+        )
+    })?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<i32>,
+        i32,
+    )> = sqlx::query_as(
+        "SELECT token, canceled_at, expires_at, max_uses, uses FROM payment_links WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (token, canc, exp, max, uses) = row.ok_or_else(|| ApiError::not_found("payment link"))?;
+    if state(canc, exp, max, uses) != "active" {
+        return Err(ApiError::conflict(
+            "link_unavailable",
+            "this payment link is no longer active",
+        ));
+    }
+    let url = format!(
+        "{}/pay/link/{}/{token}",
+        base.trim_end_matches('/'),
+        auth.tenant_id
+    );
+    let svg = qrcode::QrCode::new(url.as_bytes())
+        .map_err(|_| ApiError::internal())?
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(320, 320)
+        .quiet_zone(true)
+        .build();
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+            (axum::http::header::CACHE_CONTROL, "private, max-age=300"),
+        ],
+        svg,
+    )
+        .into_response())
 }

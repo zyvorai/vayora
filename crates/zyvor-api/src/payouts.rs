@@ -146,6 +146,8 @@ pub struct NewPayout {
     purpose: String,
     /// Your own reference; repeating a request with the same one returns the original payout.
     external_ref: Option<String>,
+    /// Pay out of what the vendor is owed from split payments, instead of your own funds.
+    from_balance: Option<bool>,
 }
 
 const COLS: &str = "id, vendor_id, amount_minor, currency, status, purpose, external_ref, requested_by, approved_by, paid_by, bank_ref, created_at";
@@ -179,12 +181,12 @@ async fn fetch(tx: &mut sqlx::PgConnection, id: &str, lock: bool) -> Result<Row,
     .ok_or_else(|| ApiError::not_found("payout"))
 }
 
-pub async fn create_payout(
-    State(s): State<AppState>,
-    auth: Auth,
-    Json(b): Json<NewPayout>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("payouts:write")?;
+/// Create one payout inside the caller's transaction. A repeated `external_ref` returns the original.
+async fn create_one(
+    tx: &mut sqlx::PgConnection,
+    auth: &Auth,
+    b: &NewPayout,
+) -> Result<(StatusCode, Value), ApiError> {
     let ccy: Currency = b
         .currency
         .as_deref()
@@ -197,7 +199,6 @@ pub async fn create_payout(
             "amount_minor must be positive and a purpose is required",
         ));
     }
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     if let Some(r) = &b.external_ref {
         // a retried request returns the original, not a second payout
         let existing: Option<String> =
@@ -206,14 +207,12 @@ pub async fn create_payout(
                 .fetch_optional(&mut *tx)
                 .await?;
         if let Some(id) = existing {
-            return Ok((
-                StatusCode::OK,
-                Json(row_json(fetch(&mut tx, &id, false).await?)),
-            ));
+            return Ok((StatusCode::OK, row_json(fetch(tx, &id, false).await?)));
         }
     }
+    // lock the vendor so two payouts cannot both spend the same balance
     let vendor_ok: Option<Option<DateTime<Utc>>> =
-        sqlx::query_scalar("SELECT archived_at FROM vendors WHERE id = $1")
+        sqlx::query_scalar("SELECT archived_at FROM vendors WHERE id = $1 FOR UPDATE")
             .bind(&b.vendor_id)
             .fetch_optional(&mut *tx)
             .await?;
@@ -227,6 +226,18 @@ pub async fn create_payout(
         }
         Some(None) => {}
     }
+    let from_balance = b.from_balance.unwrap_or(false);
+    if from_balance {
+        let (_, free) = crate::splits::available(tx, &b.vendor_id, ccy.code()).await?;
+        if b.amount_minor > free {
+            return Err(ApiError::conflict(
+                "insufficient_balance",
+                format!(
+                    "this vendor is owed {free} minor units that are not already promised to other payouts"
+                ),
+            ));
+        }
+    }
     let threshold: i64 = sqlx::query_scalar(
         "SELECT payout_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1",
     )
@@ -235,22 +246,14 @@ pub async fn create_payout(
     .await?;
     let needs_approval = b.amount_minor > threshold;
     let id = new_id("pay");
-    sqlx::query("INSERT INTO payouts (id, tenant_id, vendor_id, amount_minor, currency, status, purpose, external_ref, requested_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+    sqlx::query("INSERT INTO payouts (id, tenant_id, vendor_id, amount_minor, currency, status, purpose, external_ref, requested_by, source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(&id).bind(&auth.tenant_id).bind(&b.vendor_id).bind(b.amount_minor).bind(ccy.code())
         .bind(if needs_approval { "pending_approval" } else { "approved" })
-        .bind(b.purpose.trim()).bind(&b.external_ref).bind(&auth.actor)
+        .bind(b.purpose.trim()).bind(&b.external_ref).bind(&auth.actor).bind(if from_balance { "balance" } else { "own_funds" })
         .execute(&mut *tx).await?;
-    tenant::audit(
-        &mut tx,
-        &auth.tenant_id,
-        &auth.actor,
-        "payout.requested",
-        Some(&id),
-        json!({ "amount_minor": b.amount_minor, "needs_approval": needs_approval }),
-    )
-    .await?;
+    tenant::audit(tx, &auth.tenant_id, &auth.actor, "payout.requested", Some(&id), json!({ "amount_minor": b.amount_minor, "needs_approval": needs_approval, "from_balance": from_balance })).await?;
     tenant::emit(
-        &mut tx,
+        tx,
         &auth.tenant_id,
         if needs_approval {
             "payout.approval_required"
@@ -260,9 +263,78 @@ pub async fn create_payout(
         json!({ "payout_id": id, "amount_minor": b.amount_minor, "currency": ccy.code() }),
     )
     .await?;
-    let out = row_json(fetch(&mut tx, &id, false).await?);
+    Ok((StatusCode::CREATED, row_json(fetch(tx, &id, false).await?)))
+}
+
+pub async fn create_payout(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<NewPayout>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("payouts:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let (code, out) = create_one(&mut tx, &auth, &b).await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(out)))
+    Ok((code, Json(out)))
+}
+
+#[derive(Deserialize)]
+pub struct BulkPayouts {
+    payouts: Vec<NewPayout>,
+}
+
+/// `POST /v1/payouts/bulk`: up to 200 payouts, all created or none (salaries, vendor runs). Each follows the
+/// same approval rules as a single payout; repeating the run with the same references changes nothing.
+pub async fn create_bulk(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<BulkPayouts>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("payouts:write")?;
+    if b.payouts.is_empty() || b.payouts.len() > 200 {
+        return Err(ApiError::invalid(
+            "invalid_bulk",
+            "give between 1 and 200 payouts",
+        ));
+    }
+    let mut refs: Vec<&str> = b
+        .payouts
+        .iter()
+        .filter_map(|p| p.external_ref.as_deref())
+        .collect();
+    refs.sort_unstable();
+    let n = refs.len();
+    refs.dedup();
+    if refs.len() != n {
+        return Err(ApiError::invalid(
+            "invalid_bulk",
+            "external_ref must be unique within a bulk request",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let (mut created, mut existing, mut total) = (Vec::new(), 0, 0i64);
+    for (i, p) in b.payouts.iter().enumerate() {
+        let (code, row) = create_one(&mut tx, &auth, p).await.map_err(|e| {
+            ApiError::new(
+                e.status,
+                e.code,
+                format!("payout {} of {}: {}", i + 1, b.payouts.len(), e.message),
+            )
+        })?;
+        if code == StatusCode::CREATED {
+            total += p.amount_minor;
+        } else {
+            existing += 1;
+        }
+        created.push(row);
+    }
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            json!({ "count": created.len(), "already_existed": existing, "new_total_minor": total, "data": created }),
+        ),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -402,6 +474,10 @@ pub async fn mark_paid(
         ));
     }
     let ccy: Currency = r.3.parse().map_err(|_| ApiError::internal())?;
+    let source: String = sqlx::query_scalar("SELECT source FROM payouts WHERE id = $1")
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
     sqlx::query("UPDATE payouts SET status = 'paid', paid_by = $2, bank_ref = $3, updated_at = now() WHERE id = $1")
         .bind(&id).bind(&auth.actor).bind(&bank_ref)
         .execute(&mut *tx).await
@@ -409,8 +485,14 @@ pub async fn mark_paid(
             sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::conflict("bank_ref_used", "that bank reference is already recorded against another payout"),
             e => e.into(),
         })?;
+    // paid from a vendor's balance, the liability is cleared; paid from your own funds, it is an expense
+    let debit_account = if source == "balance" {
+        accounts::vendor_payable(&r.1)
+    } else {
+        accounts::PAYOUTS.to_string()
+    };
     Transaction::new(vec![
-        Entry::debit(accounts::PAYOUTS, r.2, ccy),
+        Entry::debit(debit_account, r.2, ccy),
         Entry::credit(accounts::BANK, r.2, ccy),
     ])
     .map_err(zyvor_ledger::StoreError::from)?

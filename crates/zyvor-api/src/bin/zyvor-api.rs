@@ -88,6 +88,9 @@ async fn main() {
         state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));
     }
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
+    state.checkout_public_url = env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
+        .ok()
+        .filter(|u| u.starts_with("http"));
     state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
     state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
         .ok()

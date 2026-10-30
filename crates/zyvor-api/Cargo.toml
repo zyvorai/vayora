@@ -31,6 +31,7 @@ tracing-opentelemetry = { version = "0.34.0", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
 argon2 = "0.6.0"
 sha1 = "0.11.0"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 
 [dev-dependencies]
 http-body-util = "0.1.5"

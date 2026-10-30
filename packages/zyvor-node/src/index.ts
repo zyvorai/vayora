@@ -133,12 +133,12 @@ export class Zyvor {
   }
 
   readonly intents = {
-    create: (p: { amountMinor: number; currency?: Currency; customerId?: string; invoiceId?: string; externalRef?: string; description?: string; allowedProviders?: string[]; captureMethod?: "automatic" | "manual"; idempotencyKey?: string }) => {
+    create: (p: { amountMinor: number; currency?: Currency; customerId?: string; invoiceId?: string; externalRef?: string; description?: string; allowedProviders?: string[]; captureMethod?: "automatic" | "manual"; idempotencyKey?: string; /** Marketplace shares owed to vendors out of this payment (sum at most the amount). */ splits?: { vendorId: string; amountMinor: number }[] }) => {
       if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
       return this.req<PaymentIntent>(
         "POST",
         "/v1/payment_intents",
-        { amount_minor: p.amountMinor, currency: p.currency ?? "INR", customer_id: p.customerId, invoice_id: p.invoiceId, external_ref: p.externalRef, description: p.description, allowed_providers: p.allowedProviders, capture_method: p.captureMethod },
+        { amount_minor: p.amountMinor, currency: p.currency ?? "INR", customer_id: p.customerId, invoice_id: p.invoiceId, external_ref: p.externalRef, description: p.description, allowed_providers: p.allowedProviders, capture_method: p.captureMethod, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })) },
         key(p.idempotencyKey),
       );
     },
@@ -217,9 +217,14 @@ export class Zyvor {
     vendors: () => this.req<Page<{ id: string; name: string; external_ref: string | null; account_last4: string | null; ifsc: string | null; vpa: string | null; archived: boolean }>>("GET", "/v1/vendors"),
     /** Full bank details for whoever makes the transfer (needs `payouts:approve`; every reveal is audited). */
     vendorDetails: (id: string) => this.req<{ id: string; details: { account_number: string | null; ifsc: string | null; vpa: string | null } }>("GET", `/v1/vendors/${encodeURIComponent(id)}/details`),
-    /** Repeating a request with the same `externalRef` returns the original payout. */
-    create: (p: { vendorId: string; amountMinor: number; purpose: string; currency?: string; externalRef?: string }) =>
-      this.req<PayoutRow>("POST", "/v1/payouts", { vendor_id: p.vendorId, amount_minor: p.amountMinor, purpose: p.purpose, currency: p.currency, external_ref: p.externalRef }),
+    /** Repeating a request with the same `externalRef` returns the original payout. `fromBalance` pays out of what the vendor is owed from split payments. */
+    create: (p: { vendorId: string; amountMinor: number; purpose: string; currency?: string; externalRef?: string; fromBalance?: boolean }) =>
+      this.req<PayoutRow>("POST", "/v1/payouts", { vendor_id: p.vendorId, amount_minor: p.amountMinor, purpose: p.purpose, currency: p.currency, external_ref: p.externalRef, from_balance: p.fromBalance }),
+    /** Up to 200 payouts, all created or none. Safe to repeat with the same references. */
+    createBulk: (items: { vendorId: string; amountMinor: number; purpose: string; externalRef?: string; fromBalance?: boolean }[]) =>
+      this.req<{ count: number; already_existed: number; new_total_minor: number; data: PayoutRow[] }>("POST", "/v1/payouts/bulk", { payouts: items.map((p) => ({ vendor_id: p.vendorId, amount_minor: p.amountMinor, purpose: p.purpose, external_ref: p.externalRef, from_balance: p.fromBalance })) }),
+    /** What a vendor is owed from split payments, and how much is free to pay out. */
+    vendorBalance: (id: string) => this.req<{ vendor_id: string; balances: { currency: string; owed_minor: number; available_minor: number }[]; awaiting_capture_minor: number }>("GET", `/v1/vendors/${encodeURIComponent(id)}/balance`),
     list: (status?: PayoutRow["status"]) => this.req<Page<PayoutRow>>("GET", `/v1/payouts${this.qs({ status })}`),
     approve: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/approve`),
     reject: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/reject`),
@@ -299,8 +304,10 @@ export class Zyvor {
 
   readonly paymentLinks = {
     /** One URL, many payers: opening it mints a fresh payment intent. Give `amountMinor` or `invoiceId`. */
-    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string }) =>
-      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt }),
+    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string; splits?: { vendorId: string; amountMinor: number }[] }) =>
+      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })) }),
+    /** SVG QR code of the link's public checkout address (needs `ZYVOR_CHECKOUT_PUBLIC_URL` on the API). */
+    qrUrl: (id: string) => `${this.base}/v1/payment_links/${encodeURIComponent(id)}/qr.svg`,
     list: () => this.req<Page<{ id: string; path: string; description: string | null; amount_minor: number | null; currency: string; invoice_id: string | null; max_uses: number | null; uses: number; status: "active" | "expired" | "used_up" | "canceled"; created_at: string }>>("GET", "/v1/payment_links"),
     cancel: (id: string) => this.req("POST", `/v1/payment_links/${encodeURIComponent(id)}/cancel`),
   };

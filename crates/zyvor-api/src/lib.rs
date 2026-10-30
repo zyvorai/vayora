@@ -63,10 +63,13 @@ pub struct AppState {
     pub allow_private_targets: bool,
     /// Optional reminder-drafting assistant; `None` means the feature is off.
     pub ai: Option<Arc<ai::AiConfig>>,
+    /// Public address of the checkout app, for QR codes (`ZYVOR_CHECKOUT_PUBLIC_URL`).
+    pub checkout_public_url: Option<String>,
 }
 
 pub use crypto::Crypto;
 pub mod ratelimit;
+pub mod splits;
 pub mod ssrf;
 
 impl AppState {
@@ -81,6 +84,7 @@ impl AppState {
             trusted_hops: 0,
             allow_private_targets: false,
             ai: None,
+            checkout_public_url: None,
         }
     }
 }
@@ -208,11 +212,13 @@ pub fn app(state: AppState) -> Router {
             "/vendors",
             post(payouts::create_vendor).get(payouts::list_vendors),
         )
+        .route("/vendors/{id}/balance", get(splits::balance))
         .route("/vendors/{id}/details", get(payouts::vendor_details))
         .route(
             "/payouts",
             post(payouts::create_payout).get(payouts::list_payouts),
         )
+        .route("/payouts/bulk", post(payouts::create_bulk))
         .route("/payouts/{id}", get(payouts::get_payout))
         .route("/payouts/{id}/approve", post(payouts::approve_payout))
         .route("/payouts/{id}/reject", post(payouts::reject_payout))
@@ -295,6 +301,7 @@ pub fn app(state: AppState) -> Router {
             "/payment_links",
             post(payment_links::create_link).get(payment_links::list_links),
         )
+        .route("/payment_links/{id}/qr.svg", get(payment_links::link_qr))
         .route(
             "/payment_links/{id}/cancel",
             post(payment_links::cancel_link),

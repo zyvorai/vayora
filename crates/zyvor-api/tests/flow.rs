@@ -5031,3 +5031,376 @@ async fn fx_rates_you_enter_convert_amounts_and_show_foreign_receivables_in_inr(
             .is_err()
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn split_payments_accrue_to_vendors_reverse_on_refund_and_fund_payouts_from_the_balance(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let vendor = |name: &'static str| {
+        let (t2, a2) = (&t, a);
+        async move {
+            t2.ok(
+                a2,
+                "POST",
+                "/v1/vendors",
+                None,
+                json!({ "name": name, "vpa": format!("{}@okbank", name.to_lowercase()) }),
+            )
+            .await["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        }
+    };
+    let (v1, v2) = (vendor("Artisan").await, vendor("Courier").await);
+    let owed = |v: String| {
+        let (t2, a2) = (&t, a.clone());
+        async move {
+            let r = t2
+                .ok(
+                    &a2,
+                    "GET",
+                    &format!("/v1/vendors/{v}/balance"),
+                    None,
+                    Value::Null,
+                )
+                .await;
+            (
+                r["balances"][0]["owed_minor"].as_i64().unwrap_or(0),
+                r["balances"][0]["available_minor"].as_i64().unwrap_or(0),
+                r["awaiting_capture_minor"].as_i64().unwrap(),
+            )
+        }
+    };
+
+    // validation
+    let bad = |splits: Value| {
+        let key = format!("k-{}", zyvor_core::new_id("x"));
+        let (t2, a2) = (&t, a);
+        async move {
+            t2.call(
+                a2,
+                "POST",
+                "/v1/payment_intents",
+                Some(&key),
+                json!({ "amount_minor": 100_000, "currency": "INR", "splits": splits }),
+            )
+            .await
+        }
+    };
+    assert_eq!(bad(json!([{ "vendor_id": v1, "amount_minor": 70_000 }, { "vendor_id": v2, "amount_minor": 30_001 }])).await.0.as_u16(), 422);
+    assert_eq!(
+        bad(
+            json!([{ "vendor_id": v1, "amount_minor": 1 }, { "vendor_id": v1, "amount_minor": 1 }])
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        bad(json!([{ "vendor_id": "ven_nope", "amount_minor": 1 }]))
+            .await
+            .0
+            .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM payment_splits").await,
+        0,
+        "a refused payment leaves nothing behind"
+    );
+
+    // nothing is owed until the payment is captured
+    let unpaid = t
+        .intent(
+            a,
+            100_000,
+            json!({ "splits": [{ "vendor_id": v1, "amount_minor": 10_000 }] }),
+        )
+        .await;
+    assert_eq!(unpaid["amount_minor"], 100_000);
+    assert_eq!(owed(v1.clone()).await, (0, 0, 10_000));
+
+    // capture: shares accrue
+    let splits = json!([{ "vendor_id": v1, "amount_minor": 60_000 }, { "vendor_id": v2, "amount_minor": 25_000 }]);
+    let (iid, _, _) = t
+        .paid_razorpay(a, 100_000, json!({ "splits": splits }))
+        .await;
+    assert_eq!(owed(v1.clone()).await, (60_000, 60_000, 10_000));
+    assert_eq!(owed(v2.clone()).await.0, 25_000);
+
+    // a 40% refund takes 40% back from each share
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/refunds"),
+        Some("rf-1"),
+        json!({ "amount_minor": 40_000 }),
+    )
+    .await;
+    assert_eq!(
+        (owed(v1.clone()).await.0, owed(v2.clone()).await.0),
+        (36_000, 15_000)
+    );
+    // and the rest takes everything
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/refunds"),
+        Some("rf-2"),
+        json!({}),
+    )
+    .await;
+    assert_eq!((owed(v1.clone()).await.0, owed(v2.clone()).await.0), (0, 0));
+
+    // a fresh payment, then pay a vendor out of what they are owed
+    t.paid_razorpay(
+        a,
+        100_000,
+        json!({ "splits": [{ "vendor_id": v1, "amount_minor": 36_000 }] }),
+    )
+    .await;
+    let req = |amt: i64, r: &str| json!({ "vendor_id": v1, "amount_minor": amt, "purpose": "Settlement of sales", "external_ref": r, "from_balance": true });
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req(40_000, "B-1"))
+            .await
+            .1["error"]["code"],
+        "insufficient_balance"
+    );
+    let p = t
+        .call_as(a, "priya", "POST", "/v1/payouts", None, req(30_000, "B-2"))
+        .await
+        .1;
+    assert_eq!(p["status"], "pending_approval");
+    assert_eq!(
+        owed(v1.clone()).await.1,
+        6_000,
+        "the promised amount is held back"
+    );
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/payouts", None, req(7_000, "B-3"))
+            .await
+            .1["error"]["code"],
+        "insufficient_balance",
+        "cannot promise the same money twice"
+    );
+    let pid = p["id"].as_str().unwrap();
+    t.call_as(
+        a,
+        "ravi",
+        "POST",
+        &format!("/v1/payouts/{pid}/approve"),
+        None,
+        json!({}),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payouts/{pid}/mark_paid"),
+        None,
+        json!({ "bank_ref": "HDFCN26304445556" }),
+    )
+    .await;
+    assert_eq!(
+        owed(v1.clone()).await.0,
+        6_000,
+        "paying clears the liability"
+    );
+    // credits: 60,000 + 36,000 accrued; debits: 60,000 reversed by refunds + 30,000 paid out
+    let payable: (i64, i64) = sqlx::query_as("SELECT COALESCE(SUM(amount_minor) FILTER (WHERE side='debit'),0)::BIGINT, COALESCE(SUM(amount_minor) FILTER (WHERE side='credit'),0)::BIGINT FROM ledger_entries WHERE account = $1").bind(format!("vendor_payable:{v1}")).fetch_one(&t.root).await.unwrap();
+    assert_eq!(payable, (90_000, 96_000));
+    assert_eq!(
+        t.count("SELECT count(*) FROM ledger_entries WHERE account = 'payouts'")
+            .await,
+        0,
+        "balance payouts do not touch the own-funds account"
+    );
+
+    // payment links carry the shares into every intent they mint
+    let link = t.ok(a, "POST", "/v1/payment_links", None, json!({ "amount_minor": 50_000, "splits": [{ "vendor_id": v2, "amount_minor": 20_000 }] })).await;
+    assert_eq!(t.call(a, "POST", "/v1/payment_links", None, json!({ "amount_minor": 10_000, "splits": [{ "vendor_id": v2, "amount_minor": 20_000 }] })).await.0.as_u16(), 422);
+    let before = t.count("SELECT count(*) FROM payment_splits").await;
+    t.ok_public(
+        "POST",
+        &format!(
+            "/v1/checkout/links/{}/{}/start",
+            a.id,
+            link["token"].as_str().unwrap()
+        ),
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM payment_splits").await,
+        before + 1
+    );
+
+    // bulk payouts: all or nothing, safe to repeat
+    let one = |n: i32| json!({ "vendor_id": v2, "amount_minor": 1_000 * n as i64, "purpose": "Monthly run", "external_ref": format!("RUN-{n}") });
+    let run = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payouts/bulk",
+            None,
+            json!({ "payouts": [one(1), one(2), one(3)] }),
+        )
+        .await;
+    assert_eq!(
+        (
+            run["count"].clone(),
+            run["already_existed"].clone(),
+            run["new_total_minor"].clone()
+        ),
+        (json!(3), json!(0), json!(6_000))
+    );
+    let again = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payouts/bulk",
+            None,
+            json!({ "payouts": [one(1), one(2), one(3)] }),
+        )
+        .await;
+    assert_eq!(
+        (
+            again["already_existed"].clone(),
+            again["new_total_minor"].clone()
+        ),
+        (json!(3), json!(0))
+    );
+    let before = t.count("SELECT count(*) FROM payouts").await;
+    let mut broken = one(5);
+    broken["vendor_id"] = json!("ven_nope");
+    let (st, e) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payouts/bulk",
+            None,
+            json!({ "payouts": [one(4), broken] }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+    assert!(
+        e["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("payout 2 of 2")
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM payouts").await,
+        before,
+        "the good one was rolled back with it"
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/payouts/bulk",
+            None,
+            json!({ "payouts": [one(7), one(7)] })
+        )
+        .await
+        .0
+        .as_u16(),
+        422,
+        "duplicate references in one request"
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/payouts/bulk",
+            None,
+            json!({ "payouts": [] })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+
+    // isolation
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/vendors/{v1}/balance"),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn payment_link_qr_codes_point_at_the_public_checkout_and_only_for_live_links(pool: PgPool) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let link = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 5_000 }),
+        )
+        .await;
+    let get = |app: axum::Router, key: String, id: String| async move {
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!("/v1/payment_links/{id}/qr.svg"))
+                    .header("authorization", format!("Bearer {key}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (st, ct) = (
+            res.status().as_u16(),
+            res.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(String::from),
+        );
+        let body = String::from_utf8_lossy(
+            &axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap(),
+        )
+        .to_string();
+        (st, ct, body)
+    };
+    let id = link["id"].as_str().unwrap().to_string();
+    // not configured: say so rather than print a QR code that points nowhere
+    assert_eq!(get(t.app.clone(), a.key.clone(), id.clone()).await.0, 409);
+
+    let mut st = t.state.clone();
+    st.checkout_public_url = Some("https://pay.example.com/".into());
+    let app = zyvor_api::app(st);
+    let (code, ctype, svg) = get(app.clone(), a.key.clone(), id.clone()).await;
+    assert_eq!((code, ctype.as_deref()), (200, Some("image/svg+xml")));
+    assert!(svg.contains("<svg") && svg.len() > 500);
+    // another tenant cannot fetch it; a canceled link has no QR code
+    assert_eq!(get(app.clone(), t.b.key.clone(), id.clone()).await.0, 404);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_links/{id}/cancel"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(get(app, a.key.clone(), id).await.0, 409);
+}
