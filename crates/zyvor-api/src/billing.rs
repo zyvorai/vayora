@@ -507,3 +507,252 @@ pub async fn statement(
         json!({ "customer_id": id, "name": name, "lines": lines, "balance_minor": balances }),
     ))
 }
+
+// ---------- plan changes with proration ----------
+
+#[derive(Deserialize)]
+pub struct ChangePlan {
+    plan_id: String,
+    quantity: Option<i32>,
+}
+
+/// Switch plan mid-period. An upgrade is charged now for the unused part of the period at the price
+/// difference; a downgrade takes effect at no charge and the new price applies from the next invoice.
+/// (Refunding a downgrade is a deliberate human decision: issue a credit note.)
+pub async fn change_plan(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<ChangePlan>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("billing:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let sub: Option<(String, String, i32, String, NaiveDate)> = sqlx::query_as("SELECT customer_id, plan_id, quantity, status, next_bill_date FROM subscriptions WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
+    let (customer, old_plan, old_qty, status, next) =
+        sub.ok_or_else(|| ApiError::not_found("subscription"))?;
+    if status != "active" {
+        return Err(ApiError::conflict(
+            "subscription_not_active",
+            format!("subscription is {status}"),
+        ));
+    }
+    let get = |pid: &str| {
+        sqlx::query_as::<_, (String, i64, String, i32, bool)>("SELECT currency, amount_minor, interval_unit, interval_count, active FROM plans WHERE id = $1").bind(pid.to_string())
+    };
+    let old = get(&old_plan).fetch_one(&mut *tx).await?;
+    let new = get(&b.plan_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("plan"))?;
+    if !new.4 {
+        return Err(ApiError::conflict(
+            "plan_inactive",
+            "plan is no longer offered",
+        ));
+    }
+    if new.0 != old.0 {
+        return Err(ApiError::invalid(
+            "currency_mismatch",
+            "cannot change to a plan in another currency",
+        ));
+    }
+    let new_qty = b.quantity.unwrap_or(old_qty);
+    if new_qty < 1 {
+        return Err(ApiError::invalid(
+            "invalid_quantity",
+            "quantity must be at least 1",
+        ));
+    }
+    // the period being paid for runs from (next - interval) to next
+    let today = chrono::Utc::now().date_naive();
+    let period_start = match old.2.as_str() {
+        "day" => next.checked_sub_days(Days::new(old.3 as u64)),
+        "week" => next.checked_sub_days(Days::new(7 * old.3 as u64)),
+        "month" => next.checked_sub_months(Months::new(old.3 as u32)),
+        _ => next.checked_sub_months(Months::new(12 * old.3 as u32)),
+    }
+    .unwrap_or(next);
+    let total_days = (next - period_start).num_days().max(1);
+    let remaining = (next - today).num_days().clamp(0, total_days);
+    let diff = new.1 * i64::from(new_qty) - old.1 * i64::from(old_qty);
+    let charge = if diff > 0 {
+        diff * remaining / total_days
+    } else {
+        0
+    };
+    let mut invoice_id = None;
+    if charge > 0 {
+        let inv = new_id("inv");
+        sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+            .bind(&inv).bind(&auth.tenant_id).bind(&customer)
+            .bind(format!("PRO-{}-{}", &id[id.len().saturating_sub(8)..], new_id("p")))
+            .bind(&old.0).bind(charge).bind(today).bind(format!("proration:{old_plan}->{}", b.plan_id))
+            .execute(&mut *tx).await?;
+        tenant::emit(
+            &mut tx,
+            &auth.tenant_id,
+            "invoice.created",
+            json!({ "id": inv, "subscription_id": id, "amount_minor": charge, "proration": true }),
+        )
+        .await?;
+        invoice_id = Some(inv);
+    }
+    sqlx::query("UPDATE subscriptions SET plan_id = $2, quantity = $3 WHERE id = $1")
+        .bind(&id)
+        .bind(&b.plan_id)
+        .bind(new_qty)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "subscription.plan_changed",
+        Some(&id),
+        json!({ "from": old_plan, "to": b.plan_id, "proration_minor": charge }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "plan_id": b.plan_id, "quantity": new_qty, "proration_minor": charge, "proration_invoice_id": invoice_id, "remaining_days": remaining, "period_days": total_days }),
+    ))
+}
+
+// ---------- milestones ----------
+
+#[derive(Deserialize)]
+pub struct NewMilestone {
+    customer_id: String,
+    name: String,
+    currency: Option<String>,
+    amount_minor: i64,
+    due_days: Option<i32>,
+    external_ref: Option<String>,
+}
+
+pub async fn create_milestone(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<NewMilestone>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("billing:write")?;
+    if b.amount_minor <= 0 {
+        return Err(ApiError::invalid(
+            "invalid_amount",
+            "amount_minor must be positive",
+        ));
+    }
+    let ccy: zyvor_core::Currency = b
+        .currency
+        .as_deref()
+        .unwrap_or("INR")
+        .parse()
+        .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if !sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM customers WHERE id = $1)")
+        .bind(&b.customer_id)
+        .fetch_one(&mut *tx)
+        .await?
+    {
+        return Err(ApiError::not_found("customer"));
+    }
+    let id = new_id("ms");
+    sqlx::query("INSERT INTO milestones (id, tenant_id, customer_id, name, currency, amount_minor, due_days, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(&id).bind(&auth.tenant_id).bind(&b.customer_id).bind(&b.name).bind(ccy.code()).bind(b.amount_minor).bind(b.due_days.unwrap_or(7)).bind(&b.external_ref)
+        .execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "status": "pending" })),
+    ))
+}
+
+pub async fn list_milestones(
+    State(s): State<AppState>,
+    auth: Auth,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String, String, i64, String, Option<String>)> = sqlx::query_as("SELECT id, customer_id, name, amount_minor, status, invoice_id FROM milestones ORDER BY created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(id, c, n, a, st, inv)| json!({ "id": id, "customer_id": c, "name": n, "amount_minor": a, "status": st, "invoice_id": inv })).collect::<Vec<_>>() }),
+    ))
+}
+
+/// Mark a milestone accepted and invoice it. Completing twice returns the same invoice.
+pub async fn complete_milestone(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("billing:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(String, String, i64, i32, String, Option<String>, Option<String>, String)> = sqlx::query_as("SELECT customer_id, currency, amount_minor, due_days, status, invoice_id, external_ref, name FROM milestones WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
+    let (customer, ccy, amount, due_days, status, existing, ext, name) =
+        row.ok_or_else(|| ApiError::not_found("milestone"))?;
+    match status.as_str() {
+        "invoiced" => {
+            return Ok(Json(
+                json!({ "id": id, "status": "invoiced", "invoice_id": existing }),
+            ));
+        }
+        "canceled" => {
+            return Err(ApiError::conflict(
+                "milestone_canceled",
+                "milestone was canceled",
+            ));
+        }
+        _ => {}
+    }
+    let inv = new_id("inv");
+    let today = chrono::Utc::now().date_naive();
+    sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(&inv).bind(&auth.tenant_id).bind(&customer).bind(format!("MS-{}", &id[id.len().saturating_sub(10)..])).bind(&ccy).bind(amount)
+        .bind(today.checked_add_days(Days::new(due_days as u64))).bind(ext.unwrap_or_else(|| format!("milestone:{name}")))
+        .execute(&mut *tx).await?;
+    sqlx::query("UPDATE milestones SET status = 'invoiced', invoice_id = $2, completed_by = $3 WHERE id = $1").bind(&id).bind(&inv).bind(&auth.actor).execute(&mut *tx).await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "milestone.completed",
+        Some(&id),
+        json!({ "invoice_id": inv }),
+    )
+    .await?;
+    tenant::emit(
+        &mut tx,
+        &auth.tenant_id,
+        "invoice.created",
+        json!({ "id": inv, "milestone_id": id, "amount_minor": amount }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "status": "invoiced", "invoice_id": inv }),
+    ))
+}
+
+pub async fn cancel_milestone(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("billing:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let n = sqlx::query(
+        "UPDATE milestones SET status = 'canceled' WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n == 0 {
+        return Err(ApiError::conflict(
+            "invalid_transition",
+            "only a pending milestone can be canceled",
+        ));
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "id": id, "status": "canceled" })))
+}

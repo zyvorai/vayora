@@ -604,6 +604,73 @@ paths:
         required: true
         schema:
           type: string
+  /v1/subscriptions/{id}/change_plan:
+    post:
+      summary: Change plan mid-period; upgrades are prorated
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/milestones:
+    get:
+      summary: Create or list billing milestones
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create or list billing milestones
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/milestones/{id}/complete:
+    post:
+      summary: Accept a milestone and invoice it (idempotent)
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/milestones/{id}/cancel:
+    post:
+      summary: Cancel a pending milestone
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)

@@ -146,6 +146,19 @@ pub fn app(state: AppState) -> Router {
             post(billing::cancel_subscription),
         )
         .route("/subscriptions/{id}/usage", post(billing::record_usage))
+        .route(
+            "/subscriptions/{id}/change_plan",
+            post(billing::change_plan),
+        )
+        .route(
+            "/milestones",
+            post(billing::create_milestone).get(billing::list_milestones),
+        )
+        .route(
+            "/milestones/{id}/complete",
+            post(billing::complete_milestone),
+        )
+        .route("/milestones/{id}/cancel", post(billing::cancel_milestone))
         .route("/billing/run", post(billing::billing_run))
         .route(
             "/invoices/{id}/credit_notes",

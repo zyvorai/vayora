@@ -1710,3 +1710,99 @@ async fn subscriptions_bill_once_per_period_with_usage_credits_void_and_statemen
         .await;
     assert_eq!(st.as_u16(), 409);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn upgrades_are_prorated_and_milestones_invoice_exactly_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = chrono::Utc::now().date_naive();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Factory Co" }),
+        )
+        .await;
+    let cid = cust["id"].as_str().unwrap();
+    let basic = t.ok(a, "POST", "/v1/plans", None, json!({ "name": "Basic", "amount_minor": 30_000, "interval_unit": "day", "interval_count": 30 })).await;
+    let pro = t.ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 60_000, "interval_unit": "day", "interval_count": 30 })).await;
+    // 30-day period with 10 days left: upgrade owes (60000-30000) * 10/30
+    let sub = t.ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cid, "plan_id": basic["id"], "start_date": (today + chrono::Duration::days(10)).to_string() })).await;
+    let sid = sub["id"].as_str().unwrap();
+    let up = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/subscriptions/{sid}/change_plan"),
+            None,
+            json!({ "plan_id": pro["id"] }),
+        )
+        .await;
+    assert_eq!(up["proration_minor"], 10_000);
+    let inv = up["proration_invoice_id"].as_str().unwrap();
+    assert_eq!(
+        t.ok(a, "GET", &format!("/v1/invoices/{inv}"), None, Value::Null)
+            .await["amount_minor"],
+        10_000
+    );
+    // downgrade is free now; the lower price applies from the next invoice
+    let down = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/subscriptions/{sid}/change_plan"),
+            None,
+            json!({ "plan_id": basic["id"] }),
+        )
+        .await;
+    assert_eq!(down["proration_minor"], 0);
+    assert!(down["proration_invoice_id"].is_null());
+    let (st, _) = t
+        .call(
+            b,
+            "POST",
+            &format!("/v1/subscriptions/{sid}/change_plan"),
+            None,
+            json!({ "plan_id": pro["id"] }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+
+    // milestones: completing twice, even concurrently, yields one invoice
+    let ms = t
+        .ok(
+            a,
+            "POST",
+            "/v1/milestones",
+            None,
+            json!({ "customer_id": cid, "name": "Machine delivered", "amount_minor": 500_000 }),
+        )
+        .await;
+    let mid = ms["id"].as_str().unwrap().to_string();
+    let path = format!("/v1/milestones/{mid}/complete");
+    let (r1, r2) = tokio::join!(
+        t.call(a, "POST", &path, None, json!({})),
+        t.call(a, "POST", &path, None, json!({}))
+    );
+    assert!(r1.0.is_success() && r2.0.is_success());
+    assert_eq!(r1.1["invoice_id"], r2.1["invoice_id"]);
+    assert_eq!(
+        t.count("SELECT count(*) FROM invoices WHERE number LIKE 'MS-%'")
+            .await,
+        1
+    );
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/milestones/{mid}/cancel"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    let (st, _) = t.call(b, "POST", &path, None, json!({})).await;
+    assert_eq!(st.as_u16(), 404);
+}
