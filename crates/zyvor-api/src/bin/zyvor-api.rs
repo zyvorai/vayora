@@ -65,7 +65,24 @@ async fn main() {
         return;
     }
 
-    let crypto = Crypto::from_hex(&required("ZYVOR_MASTER_KEY")).expect("valid ZYVOR_MASTER_KEY");
+    let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
+
+    // `zyvor-api rekey [--dry-run]` re-seals stored secrets under the current key (see crypto.rs).
+    // Runs per tenant through row-level security, so the normal restricted role is enough.
+    if args.get(1).map(String::as_str) == Some("rekey") {
+        let (done, current, bad) =
+            zyvor_api::admin::rekey_all(&pool, &crypto, args.iter().any(|a| a == "--dry-run"))
+                .await
+                .expect("rekey");
+        println!("resealed {done}, already current {current}, unreadable {bad}");
+        if bad > 0 {
+            eprintln!(
+                "{bad} secret(s) cannot be opened by any configured key: add the old key to ZYVOR_MASTER_KEY_PREVIOUS and run again"
+            );
+            std::process::exit(2);
+        }
+        return;
+    }
     let mut state = AppState::new(pool, crypto);
     if let Ok(s) = env::var("ZYVOR_PROVIDER_TIMEOUT_SECS") {
         state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));

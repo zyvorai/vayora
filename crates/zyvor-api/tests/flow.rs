@@ -3006,3 +3006,75 @@ async fn the_audit_trail_is_sealed_in_a_chain_that_shows_any_edit_or_deletion(po
         true
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn master_key_rotation_reseals_every_secret_and_never_overwrites_what_it_cannot_read(
+    pool: PgPool,
+) {
+    use zyvor_api::Crypto;
+    let t = setup(pool).await;
+    let (old_hex, new_hex) = ("11".repeat(32), "22".repeat(32));
+    // tenant A also has an outbound webhook secret
+    t.ok(&t.a, "POST", "/v1/settings", None, json!({ "outbound_webhook_url": "http://hooks.test/z", "outbound_webhook_secret": "whsec_out" })).await;
+    let new_only = Crypto::from_hex(&new_hex).unwrap();
+    let rotating = Crypto::from_hex(&new_hex)
+        .unwrap()
+        .with_previous(&old_hex)
+        .unwrap();
+
+    // one secret nobody can open (e.g. sealed by a key that was already discarded)
+    sqlx::query("UPDATE provider_accounts SET webhook_secret_enc = $2 WHERE tenant_id = $1 AND provider = 'cashfree'")
+        .bind(&t.b.id).bind(vec![7u8; 60]).execute(&t.root).await.unwrap();
+
+    // 2 tenants x 2 provider accounts x 2 secrets = 8, plus tenant A's webhook secret = 9, one of them unreadable
+    let dry = zyvor_api::admin::rekey_all(&t.state.pool, &rotating, true)
+        .await
+        .unwrap();
+    assert_eq!((dry.0, dry.2), (8, 1));
+    let all = || async {
+        let mut v: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT credentials_enc FROM provider_accounts")
+                .fetch_all(&t.root)
+                .await
+                .unwrap();
+        v.extend(
+            sqlx::query_scalar::<_, Vec<u8>>("SELECT webhook_secret_enc FROM provider_accounts")
+                .fetch_all(&t.root)
+                .await
+                .unwrap(),
+        );
+        v.extend(sqlx::query_scalar::<_, Vec<u8>>("SELECT outbound_webhook_secret_enc FROM tenant_settings WHERE outbound_webhook_secret_enc IS NOT NULL").fetch_all(&t.root).await.unwrap());
+        v
+    };
+    assert_eq!(
+        all()
+            .await
+            .iter()
+            .filter(|b| new_only.decrypt(b).is_some())
+            .count(),
+        0,
+        "dry run changed nothing"
+    );
+
+    let done = zyvor_api::admin::rekey_all(&t.state.pool, &rotating, false)
+        .await
+        .unwrap();
+    assert_eq!(done, dry);
+    let readable = all()
+        .await
+        .iter()
+        .filter(|b| new_only.decrypt(b).is_some())
+        .count();
+    assert_eq!(
+        readable, 8,
+        "every readable secret now opens with the new key alone"
+    );
+    assert!(
+        all().await.contains(&vec![7u8; 60]),
+        "the unreadable one is left exactly as it was"
+    );
+    let again = zyvor_api::admin::rekey_all(&t.state.pool, &rotating, false)
+        .await
+        .unwrap();
+    assert_eq!((again.0, again.2), (0, 1), "idempotent");
+}

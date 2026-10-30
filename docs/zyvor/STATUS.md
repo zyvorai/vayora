@@ -61,7 +61,8 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 - **Supply chain**: `.github/workflows/security.yml` (cargo-deny, pnpm audit, gitleaks, CodeQL, Trivy, SBOM), Dependabot, actions pinned by SHA; `docs/zyvor/THREAT_MODEL.md`.
 - **Cluster**: default-deny ingress NetworkPolicies and Pod Security `baseline` in the `zyvor` namespace. Verified on the k3s sandbox: checkout reaches the API but not Postgres or the provider simulator; HTTPS still works.
 - **Audit chain**: the worker seals each tenant's audit events into a hash chain; `GET /v1/audit_events/verify` recomputes it and reports the first broken seal (editing, deleting or inserting inside a sealed range is detected, tested with a superuser bypass).
-- Still open from the plan: console users with MFA, master-key rotation, AI assist, payouts, multi-currency/FX, GST, vertical templates, webhooks v2.
+- **Master-key rotation**: ciphertext carries a key id; `ZYVOR_MASTER_KEY_PREVIOUS` keeps old data readable; `zyvor-api rekey [--dry-run]` re-seals every stored secret (idempotent; unreadable secrets are left untouched and reported). Pre-rotation blobs are still readable.
+- Still open from the plan: console users with MFA, AI assist, payouts, multi-currency/FX, GST, vertical templates, webhooks v2.
 
 ## Deviations from the brief
 - **Rust instead of Go** for the backend (decision made with the owner: it keeps the tested ledger/idempotency/outbox code).

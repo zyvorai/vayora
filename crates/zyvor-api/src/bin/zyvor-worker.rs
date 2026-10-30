@@ -12,8 +12,7 @@ async fn main() {
         .connect(&url)
         .await
         .expect("connect");
-    let crypto = Crypto::from_hex(&env::var("ZYVOR_MASTER_KEY").expect("ZYVOR_MASTER_KEY"))
-        .expect("valid key");
+    let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
     let mut state = AppState::new(pool, crypto);
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
     let client = outbox::http_client();

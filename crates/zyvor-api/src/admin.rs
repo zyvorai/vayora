@@ -803,3 +803,71 @@ pub async fn list_inbox(
         json!({ "data": rows.into_iter().map(|(id, provider, event_id, kind, outcome, at)| json!({ "id": id, "provider": provider, "event_id": event_id, "kind": kind, "outcome": outcome, "received_at": at })).collect::<Vec<_>>() }),
     ))
 }
+
+/// Re-seal every stored secret under the current master key. Returns `(resealed, already_current, unreadable)`.
+/// Unreadable blobs (no configured key opens them) are left untouched and counted, never overwritten.
+pub async fn rekey_all(
+    pool: &sqlx::PgPool,
+    crypto: &crate::Crypto,
+    dry_run: bool,
+) -> Result<(u64, u64, u64), sqlx::Error> {
+    let tenants: Vec<String> = sqlx::query_scalar("SELECT id FROM tenants")
+        .fetch_all(pool)
+        .await?;
+    let (mut done, mut current, mut bad) = (0u64, 0u64, 0u64);
+    for t in tenants {
+        let mut tx = tenant::begin(pool, &t).await?;
+        let accounts: Vec<(String, Vec<u8>, Vec<u8>)> =
+            sqlx::query_as("SELECT id, credentials_enc, webhook_secret_enc FROM provider_accounts")
+                .fetch_all(&mut *tx)
+                .await?;
+        for (id, cred, hook) in accounts {
+            let mut next = [None, None];
+            for (i, blob) in [&cred, &hook].into_iter().enumerate() {
+                if !crypto.needs_rekey(blob) {
+                    current += 1;
+                } else if let Some(n) = crypto.rekey(blob) {
+                    next[i] = Some(n);
+                    done += 1;
+                } else {
+                    bad += 1;
+                }
+            }
+            if !dry_run && (next[0].is_some() || next[1].is_some()) {
+                sqlx::query("UPDATE provider_accounts SET credentials_enc = COALESCE($2, credentials_enc), webhook_secret_enc = COALESCE($3, webhook_secret_enc) WHERE id = $1")
+                    .bind(&id).bind(&next[0]).bind(&next[1]).execute(&mut *tx).await?;
+            }
+        }
+        let hook: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+            "SELECT outbound_webhook_secret_enc FROM tenant_settings WHERE tenant_id = $1",
+        )
+        .bind(&t)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(Some(blob)) = hook {
+            if !crypto.needs_rekey(&blob) {
+                current += 1;
+            } else if let Some(n) = crypto.rekey(&blob) {
+                done += 1;
+                if !dry_run {
+                    sqlx::query("UPDATE tenant_settings SET outbound_webhook_secret_enc = $2 WHERE tenant_id = $1").bind(&t).bind(n).execute(&mut *tx).await?;
+                }
+            } else {
+                bad += 1;
+            }
+        }
+        if !dry_run {
+            tenant::audit(
+                &mut tx,
+                &t,
+                "system:rekey",
+                "master_key.rekeyed",
+                None,
+                json!({ "resealed": done }),
+            )
+            .await?;
+        }
+        tx.commit().await?;
+    }
+    Ok((done, current, bad))
+}

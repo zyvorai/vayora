@@ -33,7 +33,9 @@ API keys, customer contact data, the audit trail.
 - **Tampering with money records**: ledger is append-only and balanced per currency; corrections are reversals.
 - **SSRF via merchant webhook URL**: https and public addresses only; credentials in URLs refused; the worker pins the
   connection to addresses vetted at delivery time and does not follow redirects.
-- **Provider credential theft**: encrypted with AES-GCM under `ZYVOR_MASTER_KEY` (never in the database).
+- **Provider credential theft**: encrypted with AES-GCM under `ZYVOR_MASTER_KEY` (never in the database). Rotate by
+  setting the new key, moving the old to `ZYVOR_MASTER_KEY_PREVIOUS`, restarting, and running `zyvor-api rekey`
+  (`--dry-run` first); secrets no key can open are reported and never overwritten.
 - **Network lateral movement in the cluster**: default-deny ingress NetworkPolicy; Postgres reachable only
   from the API, worker and migrate Job; API only from console and checkout; namespace enforces the
   `baseline` Pod Security level; containers drop all capabilities and use read-only root filesystems.
@@ -42,7 +44,7 @@ API keys, customer contact data, the audit trail.
 
 ## Known gaps (do not rely on these yet)
 - Single shared console admin, no MFA, no per-user audit identity (planned).
-- No master-key rotation tooling; webhook secret rotation without a dual-signature window.
+- Webhook secret rotation has no dual-signature window yet. Master-key rotation exists (below) but is operator-run.
 - Provider `base_url` (sandbox field) is not covered by the SSRF guard; production accounts should not set it.
 - Audit seals detect tampering after the fact; they do not prevent it, and the chain head is not yet anchored outside the database (publish `head` somewhere the database owner cannot edit to close this). Events newer than the seal delay (120 s) are not yet covered.
 - Rate limiter is per replica, in memory.
