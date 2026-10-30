@@ -2,7 +2,12 @@
 # Everything lives in the `zyvor` namespace. Services are cluster-internal: put TLS in front (deploy/zyvor/k3s/README.md). Secrets are created by deploy.sh.
 apiVersion: v1
 kind: Namespace
-metadata: { name: zyvor }
+metadata:
+  name: zyvor
+  labels:
+    # the node is shared with other teams: refuse privileged pods here, and say what would break "restricted"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -57,6 +62,7 @@ metadata: { name: zyvor-migrate, namespace: zyvor }
 spec:
   backoffLimit: 6
   template:
+    metadata: { labels: { app: zyvor-migrate } }
     spec:
       restartPolicy: OnFailure
       initContainers:
@@ -93,6 +99,8 @@ spec:
             - { name: ZYVOR_PROVIDER_TIMEOUT_SECS, value: "5" }
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: database-url } } }
             - { name: ZYVOR_MASTER_KEY, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: master-key } } }
+            # Caddy on the host, then the checkout app's rewrite: two proxies vouch for X-Forwarded-For
+            - { name: ZYVOR_TRUST_PROXY_HOPS, value: "2" }
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10 }
           resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
@@ -199,3 +207,60 @@ apiVersion: v1
 kind: Service
 metadata: { name: zyvor-console, namespace: zyvor }
 spec: { selector: { app: zyvor-console }, ports: [{ port: 3003 }] }
+---
+# Network policy: nothing reaches a pod unless allowed below. The node is shared with other teams'
+# namespaces, so Postgres and the API must not be reachable from them. Egress is left open for DNS
+# and the payment providers; ingress is the part that protects the data.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: zyvor }
+spec: { podSelector: {}, policyTypes: [Ingress] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: postgres-from-zyvor-only, namespace: zyvor }
+spec:
+  podSelector: { matchLabels: { app: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: zyvor-api } }
+        - podSelector: { matchLabels: { app: zyvor-worker } }
+        - podSelector: { matchLabels: { app: zyvor-migrate } }
+      ports: [{ port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api-from-console-and-checkout, namespace: zyvor }
+spec:
+  podSelector: { matchLabels: { app: zyvor-api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: zyvor-console } }
+        - podSelector: { matchLabels: { app: zyvor-checkout } }
+      ports: [{ port: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: provider-mock-from-api-and-worker, namespace: zyvor }
+spec:
+  podSelector: { matchLabels: { app: provider-mock } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: zyvor-api } }
+        - podSelector: { matchLabels: { app: zyvor-worker } }
+      ports: [{ port: 9090 }]
+---
+# The two public faces are reached by the host's Caddy (HTTPS) and nothing else is meant to; the pod
+# network cannot tell Caddy from other callers, so these stay open on their own port only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: public-faces, namespace: zyvor }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [zyvor-console, zyvor-checkout] }]
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 3003 }, { port: 3000 }]

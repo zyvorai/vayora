@@ -46,9 +46,13 @@ pub struct AppState {
     pub provider_timeout: Duration,
     /// Attempts/refunds with an unknown outcome are re-queried by the worker after this long.
     pub resolve_after: Duration,
+    pub limiter: Arc<ratelimit::RateLimiter>,
+    /// How many reverse proxies we run in front; they vouch for `X-Forwarded-For` from the right.
+    pub trusted_hops: u8,
 }
 
 pub use crypto::Crypto;
+pub mod ratelimit;
 
 impl AppState {
     pub fn new(pool: PgPool, crypto: Crypto) -> Self {
@@ -58,6 +62,8 @@ impl AppState {
             sim: Arc::new(SimProvider::new()),
             provider_timeout: Duration::from_secs(10),
             resolve_after: Duration::from_secs(30),
+            limiter: Arc::new(ratelimit::RateLimiter::new(Default::default())),
+            trusted_hops: 0,
         }
     }
 }
@@ -114,6 +120,7 @@ pub fn app(state: AppState) -> Router {
         // administration
         .route("/api_keys", post(create_key).get(list_keys))
         .route("/api_keys/{id}/revoke", post(revoke_key))
+        .route("/api_keys/{id}/rotate", post(rotate_key))
         .route(
             "/provider_accounts",
             post(create_provider_account).get(list_provider_accounts),
@@ -211,7 +218,12 @@ pub fn app(state: AppState) -> Router {
             post(webhooks_in::receive),
         );
 
-    let v1 = v1.layer(axum::middleware::from_fn(telemetry::request_span));
+    let v1 = v1
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            ratelimit::limit,
+        ))
+        .layer(axum::middleware::from_fn(telemetry::request_span));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(readyz))

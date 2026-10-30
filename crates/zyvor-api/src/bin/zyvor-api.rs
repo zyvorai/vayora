@@ -70,14 +70,30 @@ async fn main() {
     if let Ok(s) = env::var("ZYVOR_PROVIDER_TIMEOUT_SECS") {
         state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));
     }
+    state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    {
+        let mut l = state.limiter.limits;
+        let f = |k: &str, d: f64| env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+        l.key.per_sec = f("ZYVOR_RATE_KEY_PER_SEC", l.key.per_sec);
+        l.key.burst = f("ZYVOR_RATE_KEY_BURST", l.key.burst);
+        l.ip_public.per_sec = f("ZYVOR_RATE_PUBLIC_PER_SEC", l.ip_public.per_sec);
+        l.ip_public.burst = f("ZYVOR_RATE_PUBLIC_BURST", l.ip_public.burst);
+        state.limiter = Arc::new(zyvor_api::ratelimit::RateLimiter::new(l));
+    }
     let addr = env::var("ZYVOR_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
     tracing::info!(%addr, "zyvor-api listening");
     let _ = Arc::new(());
-    axum::serve(listener, app(state))
-        .with_graceful_shutdown(async {
-            tokio::signal::ctrl_c().await.ok();
-        })
-        .await
-        .expect("server");
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        tokio::signal::ctrl_c().await.ok();
+    })
+    .await
+    .expect("server");
 }

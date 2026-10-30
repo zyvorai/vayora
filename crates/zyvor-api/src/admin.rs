@@ -74,6 +74,11 @@ pub async fn bootstrap_org(pool: &PgPool, name: &str) -> Result<Bootstrapped, sq
 pub struct NewKey {
     name: String,
     scopes: Vec<String>,
+    /// The key stops working at this time.
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// If set, the key only works from these addresses (CIDR or single IP).
+    #[serde(default)]
+    allowed_cidrs: Vec<String>,
 }
 
 pub async fn create_key(
@@ -88,9 +93,25 @@ pub async fn create_key(
             format!("scopes must be a non-empty subset of {ALL_SCOPES:?}"),
         ));
     }
+    if b.expires_at.is_some_and(|e| e <= chrono::Utc::now()) {
+        return Err(ApiError::invalid(
+            "invalid_expiry",
+            "expires_at must be in the future",
+        ));
+    }
+    if b.allowed_cidrs.len() > 50
+        || b.allowed_cidrs
+            .iter()
+            .any(|c| crate::auth::parse_cidr(c).is_none())
+    {
+        return Err(ApiError::invalid(
+            "invalid_cidr",
+            "allowed_cidrs must be at most 50 valid CIDRs or IP addresses",
+        ));
+    }
     let (key, prefix, hash) = mint_key(&auth.env);
     let id = new_id("key");
-    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes) VALUES ($1, $2, $3, $4, $5, $6)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&prefix).bind(hash).bind(&b.scopes).execute(&s.pool).await?;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, allowed_cidrs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&prefix).bind(hash).bind(&b.scopes).bind(b.expires_at).bind(&b.allowed_cidrs).execute(&s.pool).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     tenant::audit(
         &mut tx,
@@ -98,24 +119,80 @@ pub async fn create_key(
         &auth.actor,
         "api_key.created",
         Some(&id),
-        json!({ "name": b.name, "scopes": b.scopes }),
+        json!({ "name": b.name, "scopes": b.scopes, "expires_at": b.expires_at, "allowed_cidrs": b.allowed_cidrs }),
     )
     .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(
-            json!({ "id": id, "key": key, "prefix": prefix, "scopes": b.scopes, "note": "store this key now; it cannot be shown again" }),
+            json!({ "id": id, "key": key, "prefix": prefix, "scopes": b.scopes, "expires_at": b.expires_at, "allowed_cidrs": b.allowed_cidrs, "note": "store this key now; it cannot be shown again" }),
         ),
     ))
 }
 
 pub async fn list_keys(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
-    let rows: Vec<(String, String, String, Vec<String>, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as("SELECT id, name, prefix, scopes, created_at, revoked_at FROM api_keys WHERE tenant_id = $1 ORDER BY created_at").bind(&auth.tenant_id).fetch_all(&s.pool).await?;
+    type Ts = Option<chrono::DateTime<chrono::Utc>>;
+    let rows: Vec<(String, String, String, Vec<String>, chrono::DateTime<chrono::Utc>, Ts, Ts, Ts, Vec<String>)> =
+        sqlx::query_as("SELECT id, name, prefix, scopes, created_at, revoked_at, expires_at, last_used_at, allowed_cidrs FROM api_keys WHERE tenant_id = $1 ORDER BY created_at").bind(&auth.tenant_id).fetch_all(&s.pool).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, prefix, scopes, c, r)| json!({ "id": id, "name": name, "prefix": prefix, "scopes": scopes, "created_at": c, "revoked_at": r })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, prefix, scopes, c, r, e, u, cidrs)| json!({ "id": id, "name": name, "prefix": prefix, "scopes": scopes, "created_at": c, "revoked_at": r, "expires_at": e, "last_used_at": u, "allowed_cidrs": cidrs })).collect::<Vec<_>>() }),
+    ))
+}
+
+#[derive(Deserialize, Default)]
+pub struct RotateBody {
+    /// How long the old key keeps working so deployments can switch over (default 24, max 720).
+    overlap_hours: Option<i64>,
+}
+
+/// Mint a replacement with the same name, scopes and allow-list; the old key expires after the overlap.
+pub async fn rotate_key(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    body: Option<Json<RotateBody>>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("admin")?;
+    let hours = body.and_then(|b| b.0.overlap_hours).unwrap_or(24);
+    if !(0..=720).contains(&hours) {
+        return Err(ApiError::invalid(
+            "invalid_overlap",
+            "overlap_hours must be between 0 and 720",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let old: Option<(String, Vec<String>, Vec<String>)> = sqlx::query_as(
+        "SELECT name, scopes, allowed_cidrs FROM api_keys WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) FOR UPDATE",
+    )
+    .bind(&id)
+    .bind(&auth.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (name, scopes, cidrs) = old.ok_or_else(|| ApiError::not_found("active key"))?;
+    let (key, prefix, hash) = mint_key(&auth.env);
+    let new_id_ = new_id("key");
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, allowed_cidrs, rotated_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
+        .bind(&new_id_).bind(&auth.tenant_id).bind(&name).bind(&prefix).bind(hash).bind(&scopes).bind(&cidrs).bind(&id)
+        .execute(&mut *tx).await?;
+    sqlx::query("UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, 'infinity'), now() + make_interval(hours => $2::int)) WHERE id = $1")
+        .bind(&id).bind(hours as i32).execute(&mut *tx).await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "api_key.rotated",
+        Some(&id),
+        json!({ "new_key": new_id_, "overlap_hours": hours }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            json!({ "id": new_id_, "key": key, "prefix": prefix, "scopes": scopes, "rotated_from": id, "old_key_expires_in_hours": hours, "note": "store this key now; it cannot be shown again" }),
+        ),
     ))
 }
 

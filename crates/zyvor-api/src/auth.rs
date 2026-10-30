@@ -43,6 +43,35 @@ impl Auth {
     }
 }
 
+/// `10.0.0.0/8`, `203.0.113.7` (a single address) or an IPv6 equivalent.
+pub fn parse_cidr(c: &str) -> Option<(std::net::IpAddr, u8)> {
+    let (a, len) = match c.split_once('/') {
+        Some((a, l)) => (a, Some(l.parse::<u8>().ok()?)),
+        None => (c, None),
+    };
+    let ip: std::net::IpAddr = a.parse().ok()?;
+    let max = if ip.is_ipv4() { 32 } else { 128 };
+    let len = len.unwrap_or(max);
+    (len <= max).then_some((ip, len))
+}
+
+pub fn cidr_contains(c: &str, ip: std::net::IpAddr) -> bool {
+    let Some((net, len)) = parse_cidr(c) else {
+        return false;
+    };
+    let (a, b): (Vec<u8>, Vec<u8>) = match (net, ip) {
+        (std::net::IpAddr::V4(n), std::net::IpAddr::V4(i)) => {
+            (n.octets().to_vec(), i.octets().to_vec())
+        }
+        (std::net::IpAddr::V6(n), std::net::IpAddr::V6(i)) => {
+            (n.octets().to_vec(), i.octets().to_vec())
+        }
+        _ => return false,
+    };
+    let (full, rem) = ((len / 8) as usize, len % 8);
+    a[..full] == b[..full] && (rem == 0 || (a[full] ^ b[full]) >> (8 - rem) == 0)
+}
+
 pub fn hash_key(key: &str) -> String {
     hex::encode(Sha256::digest(key.as_bytes()))
 }
@@ -70,15 +99,29 @@ impl FromRequestParts<AppState> for Auth {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or_else(|| ApiError::unauthorized("missing bearer API key"))?;
-        let row: Option<(String, String, String, Vec<String>)> = sqlx::query_as(
-            "SELECT k.id, k.tenant_id, t.env, k.scopes FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
-             WHERE k.key_hash = $1 AND k.revoked_at IS NULL",
+        let row: Option<(String, String, String, Vec<String>, Vec<String>)> = sqlx::query_as(
+            "SELECT k.id, k.tenant_id, t.env, k.scopes, k.allowed_cidrs FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
+             WHERE k.key_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > now())",
         )
         .bind(hash_key(key))
         .fetch_optional(&state.pool)
         .await?;
-        let (key_id, tenant_id, env, scopes) =
-            row.ok_or_else(|| ApiError::unauthorized("invalid or revoked API key"))?;
+        let (key_id, tenant_id, env, scopes, cidrs) =
+            row.ok_or_else(|| ApiError::unauthorized("invalid, expired or revoked API key"))?;
+        if !cidrs.is_empty() {
+            let ip =
+                crate::ratelimit::client_ip(&parts.headers, &parts.extensions, state.trusted_hops);
+            if !ip.is_some_and(|ip| cidrs.iter().any(|c| cidr_contains(c, ip))) {
+                return Err(ApiError::forbidden(
+                    "this API key is not allowed from this address",
+                ));
+            }
+        }
+        // best effort and at most once a minute per key, so reads stay reads
+        let _ = sqlx::query("UPDATE api_keys SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')")
+            .bind(&key_id)
+            .execute(&state.pool)
+            .await;
         let actor = parts
             .headers
             .get("zyvor-actor")
@@ -109,6 +152,23 @@ mod tests {
         assert_eq!(hash_key(&k1), h1);
         assert_ne!(h1, h2);
         assert!(k1.starts_with(&p1) && p1.len() == 14);
+    }
+
+    #[test]
+    fn cidr_matching() {
+        let ip = |s: &str| s.parse().unwrap();
+        assert!(cidr_contains("10.0.0.0/8", ip("10.200.1.1")));
+        assert!(!cidr_contains("10.0.0.0/8", ip("11.0.0.1")));
+        assert!(cidr_contains("203.0.113.7", ip("203.0.113.7")));
+        assert!(!cidr_contains("203.0.113.7", ip("203.0.113.8")));
+        assert!(cidr_contains("192.168.4.0/22", ip("192.168.7.255")));
+        assert!(!cidr_contains("192.168.4.0/22", ip("192.168.8.0")));
+        assert!(cidr_contains("2001:db8::/32", ip("2001:db8:1::1")));
+        assert!(
+            !cidr_contains("10.0.0.0/8", ip("2001:db8::1")),
+            "families never mix"
+        );
+        assert!(parse_cidr("10.0.0.0/33").is_none() && parse_cidr("nope").is_none());
     }
 
     #[test]

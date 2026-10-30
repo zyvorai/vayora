@@ -2265,3 +2265,230 @@ async fn the_worker_dunning_is_opt_in_per_tenant_and_repeat_safe(pool: PgPool) {
     );
     assert_eq!(t.count("SELECT count(*) FROM invoice_reminders WHERE sent_by = 'dunning' AND channel = 'whatsapp'").await, 1);
 }
+
+/// A GET with an optional `X-Forwarded-For`, returning the status and `Retry-After`.
+async fn probe(app: &axum::Router, key: &str, xff: Option<&str>) -> (u16, Option<String>) {
+    use tower::ServiceExt;
+    let mut r = axum::http::Request::builder()
+        .uri("/v1/settings")
+        .header("authorization", format!("Bearer {key}"));
+    if let Some(x) = xff {
+        r = r.header("x-forwarded-for", x);
+    }
+    let res = app
+        .clone()
+        .oneshot(r.body(axum::body::Body::empty()).unwrap())
+        .await
+        .unwrap();
+    (
+        res.status().as_u16(),
+        res.headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from),
+    )
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn api_keys_can_expire_be_pinned_to_addresses_and_rotate_with_an_overlap(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut st = t.state.clone();
+    st.trusted_hops = 1;
+    let app = zyvor_api::app(st);
+
+    // validation
+    let past = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "x", "scopes": ["payments:read"], "expires_at": past }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "x", "scopes": ["payments:read"], "allowed_cidrs": ["10.0.0.0/40"] }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+
+    // address allow-list: only the trusted proxy's view of the caller counts
+    let pinned = t.ok(a, "POST", "/v1/api_keys", None, json!({ "name": "office", "scopes": ["payments:read"], "allowed_cidrs": ["203.0.113.0/24"] })).await;
+    let k = pinned["key"].as_str().unwrap();
+    assert_eq!(probe(&app, k, Some("203.0.113.5")).await.0, 200);
+    assert_eq!(probe(&app, k, Some("198.51.100.1")).await.0, 403);
+    assert_eq!(
+        probe(&app, k, Some("198.51.100.1, 203.0.113.5")).await.0,
+        200,
+        "the client-supplied first hop is ignored"
+    );
+    assert_eq!(
+        probe(&app, k, Some("203.0.113.5, 198.51.100.1")).await.0,
+        403,
+        "spoofing an allowed address first does not work"
+    );
+    assert_eq!(
+        probe(&app, k, None).await.0,
+        403,
+        "unknown address is not allowed"
+    );
+
+    // expiry is enforced
+    let short = t.ok(a, "POST", "/v1/api_keys", None, json!({ "name": "short", "scopes": ["payments:read"], "expires_at": (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339() })).await;
+    let sk = short["key"].as_str().unwrap();
+    assert_eq!(probe(&app, sk, None).await.0, 200);
+    sqlx::query("UPDATE api_keys SET expires_at = now() - interval '1 second' WHERE id = $1")
+        .bind(short["id"].as_str().unwrap())
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(probe(&app, sk, None).await.0, 401);
+
+    // rotation: both keys work during the overlap, the old one then lapses, the new one inherits scopes and allow-list
+    let rot = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/api_keys/{}/rotate", pinned["id"].as_str().unwrap()),
+            None,
+            json!({ "overlap_hours": 2 }),
+        )
+        .await;
+    let nk = rot["key"].as_str().unwrap();
+    assert_ne!(nk, k);
+    assert_eq!(probe(&app, k, Some("203.0.113.5")).await.0, 200);
+    assert_eq!(probe(&app, nk, Some("203.0.113.5")).await.0, 200);
+    assert_eq!(
+        probe(&app, nk, Some("198.51.100.1")).await.0,
+        403,
+        "allow-list carried over"
+    );
+    sqlx::query("UPDATE api_keys SET expires_at = now() - interval '1 second' WHERE id = $1")
+        .bind(pinned["id"].as_str().unwrap())
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(probe(&app, k, Some("203.0.113.5")).await.0, 401);
+    // an expired key cannot be rotated into a fresh one
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/api_keys/{}/rotate", pinned["id"].as_str().unwrap()),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 404);
+
+    // last use is recorded; listing shows the controls
+    let list = t.ok(a, "GET", "/v1/api_keys", None, Value::Null).await;
+    let row = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == rot["id"])
+        .unwrap();
+    assert!(!row["last_used_at"].is_null());
+    assert_eq!(row["allowed_cidrs"], json!(["203.0.113.0/24"]));
+    assert!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'api_key.rotated'")
+            .await
+            == 1
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn rate_limits_apply_per_key_and_per_address_and_say_when_to_retry(pool: PgPool) {
+    use zyvor_api::ratelimit::{Bucket, Limits, RateLimiter};
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.trusted_hops = 1;
+    st.limiter = std::sync::Arc::new(RateLimiter::new(Limits {
+        key: Bucket {
+            burst: 3.0,
+            per_sec: 0.5,
+        },
+        ip_authed: Bucket {
+            burst: 100.0,
+            per_sec: 100.0,
+        },
+        ip_public: Bucket {
+            burst: 2.0,
+            per_sec: 0.5,
+        },
+    }));
+    let app = zyvor_api::app(st);
+    let (ka, kb) = (t.a.key.as_str(), t.b.key.as_str());
+    for _ in 0..3 {
+        assert_eq!(probe(&app, ka, Some("203.0.113.1")).await.0, 200);
+    }
+    let (s, retry) = probe(&app, ka, Some("203.0.113.1")).await;
+    assert_eq!(s, 429);
+    assert!(retry.unwrap().parse::<u64>().unwrap() >= 1);
+    assert_eq!(
+        probe(&app, kb, Some("203.0.113.1")).await.0,
+        200,
+        "another tenant's key is unaffected"
+    );
+
+    // callers with no key share a small per-address budget; other addresses are separate
+    use tower::ServiceExt;
+    let public = |ip: &'static str| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                axum::http::Request::builder()
+                    .uri("/v1/checkout/x/y")
+                    .header("x-forwarded-for", ip)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+        }
+    };
+    assert_ne!(public("198.51.100.7").await, 429);
+    assert_ne!(public("198.51.100.7").await, 429);
+    assert_eq!(public("198.51.100.7").await, 429);
+    assert_ne!(public("198.51.100.8").await, 429);
+
+    // bogus keys cannot dodge the address bucket by changing the key each time
+    let mut st2 = t.state.clone();
+    st2.trusted_hops = 1;
+    st2.limiter = std::sync::Arc::new(RateLimiter::new(Limits {
+        key: Bucket {
+            burst: 100.0,
+            per_sec: 100.0,
+        },
+        ip_authed: Bucket {
+            burst: 4.0,
+            per_sec: 0.1,
+        },
+        ip_public: Bucket {
+            burst: 2.0,
+            per_sec: 0.5,
+        },
+    }));
+    let app2 = zyvor_api::app(st2);
+    let mut codes = Vec::new();
+    for i in 0..6 {
+        codes.push(
+            probe(&app2, &format!("zk_test_bogus{i}"), Some("192.0.2.9"))
+                .await
+                .0,
+        );
+    }
+    assert_eq!(codes[..4], [401, 401, 401, 401]);
+    assert_eq!(codes[4], 429);
+}

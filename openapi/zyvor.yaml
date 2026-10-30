@@ -270,6 +270,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/api_keys/{id}/rotate:
+    post:
+      summary: Mint a replacement key; the old one expires after an overlap window
+      tags:
+      - keys
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/api_keys/{id}/revoke:
     post:
       summary: Revoke an API key
