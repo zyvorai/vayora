@@ -329,6 +329,13 @@ export class Zyvor {
     remind: (invoiceId: string, p: { channel: "email" | "sms" | "whatsapp" | "call" | "other"; message?: string }) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`, p),
   };
 
+  readonly insights = {
+    /** What is owed by due week, plus overdue, promised and payouts waiting. A schedule, not a prediction. */
+    cashflow: (weeks?: number) => this.req<{ as_of: string; currency: string; weeks: { starts: string; due_minor: number }[]; overdue_minor: number; due_later_minor: number; no_due_date_minor: number; promised_minor: number; payouts_waiting_minor: number; daily_receipts_run_rate_minor: number; note: string }>("GET", `/v1/insights/cashflow${this.qs({ weeks })}`),
+    /** Refund patterns worth a person's look; not findings of wrongdoing. */
+    refundAnomalies: () => this.req<{ refunds_last_7_days: number; weekly_average_before: number; flags: { code: string; message: string }[]; note: string }>("GET", "/v1/insights/refund_anomalies"),
+  };
+
   readonly counters = {
     create: (p: { branchId: string; name: string }) => this.req<{ id: string; branch_id: string; name: string }>("POST", "/v1/counters", { branch_id: p.branchId, name: p.name }),
     list: (branchId?: string) => this.req<Page<{ id: string; branch_id: string; name: string; active: boolean }>>("GET", `/v1/counters${this.qs({ branch_id: branchId })}`),

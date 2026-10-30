@@ -9,13 +9,15 @@ const greeting = () => {
 
 export default async function Overview() {
   const z = api();
-  const [intents, refunds, cases, ageing, promises, disputes] = await Promise.all([
+  const [intents, refunds, cases, ageing, promises, disputes, cash, anomalies] = await Promise.all([
     z.intents.list({ limit: 50 }),
     z.refunds.list({ status: "pending_approval", limit: 50 }),
     z.cases.list({ status: "open" }),
     z.collections.ageing(),
     z.collections.promises("broken"),
     z.disputes.list("open"),
+    z.insights.cashflow(4).catch(() => null),
+    z.insights.refundAnomalies().catch(() => null),
   ]);
   const succeeded = intents.data.filter((i) => i.status === "succeeded");
   const inrBuckets = ageing.data.filter((b) => b.currency === "INR");
@@ -31,6 +33,7 @@ export default async function Overview() {
     { n: cases.data.length, text: "reconciliation differences nobody has explained", href: "/reconciliation", tone: "warn" },
     { n: disputes.data.length, text: "open disputes", href: "/disputes", tone: "bad" },
     { n: promises.data.length, text: "broken promises to pay", href: "/collections", tone: "bad" },
+    ...(anomalies?.flags ?? []).map((f) => ({ n: 1, text: f.message, href: "/refunds", tone: "warn" })),
   ].filter((t) => t.n > 0);
 
   return (
@@ -43,6 +46,18 @@ export default async function Overview() {
           </Link>
         ))}
       </div>
+      {cash && (
+        <>
+          <h2 style={{ marginTop: 28 }}>Due to come in</h2>
+          <div className="grid stats">
+            {cash.weeks.map((w, i) => (
+              <div key={w.starts} className="card stat"><div className="k">{i === 0 ? "Next 7 days" : `Week ${i + 1}`}</div><div className="v">{inr(w.due_minor)}</div></div>
+            ))}
+            <div className="card stat"><div className="k">Already overdue</div><div className="v">{inr(cash.overdue_minor)}</div><div className="n">{cash.promised_minor ? `${inr(cash.promised_minor)} promised` : "None promised yet"}</div></div>
+          </div>
+          <p className="muted" style={{ marginTop: 8 }}>By due date, not a forecast of when people will pay.{cash.payouts_waiting_minor ? ` ${inr(cash.payouts_waiting_minor)} of payouts are waiting.` : ""}</p>
+        </>
+      )}
       <h2 style={{ marginTop: 28 }}>Needs a person</h2>
       <div className="card attn" style={{ padding: 0 }}>
         {todo.length === 0 && <div className="empty">All clear. Nothing needs you right now.</div>}

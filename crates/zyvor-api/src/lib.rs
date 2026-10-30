@@ -22,6 +22,7 @@ pub mod events;
 pub mod fx;
 pub mod gst;
 pub mod idempotency;
+pub mod insights;
 pub mod installments;
 pub mod onboarding;
 pub mod outbox;
@@ -325,6 +326,11 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/payment_intents/{id}/timeline",
             get(timeline::payment_timeline),
+        )
+        .route("/insights/cashflow", get(insights::cashflow))
+        .route(
+            "/insights/refund_anomalies",
+            get(insights::refund_anomalies),
         )
         // cash and daily closing
         .route("/cash_entries", post(closing::add_cash))

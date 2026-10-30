@@ -1477,6 +1477,26 @@ paths:
         required: true
         schema:
           type: string
+  /v1/insights/cashflow:
+    get:
+      summary: What is owed by due week, overdue, promised, payouts waiting and the recent receipts run-rate (a schedule, not a prediction)
+      tags:
+      - insights
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/insights/refund_anomalies:
+    get:
+      summary: Refund patterns worth a look: a spike against the usual rate, or one person behind most refunds
+      tags:
+      - insights
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/audit_events:
     get:
       summary: Audit trail

@@ -6696,3 +6696,74 @@ async fn a_payment_timeline_tells_the_story_in_order_and_stays_inside_the_tenant
         404
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn insights_schedule_what_is_owed_and_flag_refund_patterns(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let day = |n: i64| (chrono::Utc::now().date_naive() + chrono::Duration::days(n)).to_string();
+    for (num, amt, due) in [
+        ("I-1", 10_000, Some(-1)),
+        ("I-2", 20_000, Some(3)),
+        ("I-3", 5_000, Some(10)),
+        ("I-4", 7_000, None),
+        ("I-5", 1_000, Some(200)),
+    ] {
+        let mut body = json!({ "number": num, "amount_minor": amt });
+        if let Some(d) = due {
+            body["due_date"] = json!(day(d));
+        }
+        t.ok(a, "POST", "/v1/invoices", None, body).await;
+    }
+    let c = t
+        .ok(a, "GET", "/v1/insights/cashflow?weeks=2", None, Value::Null)
+        .await;
+    assert_eq!(c["overdue_minor"], 10_000);
+    assert_eq!(c["no_due_date_minor"], 7_000);
+    assert_eq!(
+        c["due_later_minor"], 1_000,
+        "only the invoice due in 200 days is beyond two weeks"
+    );
+    assert_eq!(c["weeks"][0]["due_minor"], 20_000);
+    assert_eq!(c["weeks"][1]["due_minor"], 5_000);
+    assert_eq!(
+        t.ok(b, "GET", "/v1/insights/cashflow", None, Value::Null)
+            .await["overdue_minor"],
+        0
+    );
+
+    // quiet at first; then one person asks for most of a burst of refunds
+    assert_eq!(
+        t.ok(a, "GET", "/v1/insights/refund_anomalies", None, Value::Null)
+            .await["flags"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let (iid, _, _) = t.paid_razorpay(a, 100_000, json!({})).await;
+    for n in 0..6 {
+        t.call_as(
+            a,
+            "meena",
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some(&format!("an-{n}")),
+            json!({ "amount_minor": 100 }),
+        )
+        .await;
+    }
+    let r = t
+        .ok(a, "GET", "/v1/insights/refund_anomalies", None, Value::Null)
+        .await;
+    let codes: Vec<&str> = r["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["code"].as_str().unwrap())
+        .collect();
+    assert!(
+        codes.contains(&"refund_spike") && codes.contains(&"refunds_concentrated"),
+        "{codes:?}"
+    );
+}
