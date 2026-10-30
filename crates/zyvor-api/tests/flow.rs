@@ -7289,3 +7289,110 @@ async fn case_suggestions_point_at_the_nearest_settlement_and_change_nothing(poo
         404
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn with_an_actor_secret_only_signed_requests_can_name_a_person(pool: PgPool) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let secret = b"console-actor-secret-0123456789".to_vec();
+    let mut state = t.state.clone();
+    state.actor_secret = Some(secret.clone());
+    let app = zyvor_api::app(state);
+    let br = t
+        .ok(
+            a,
+            "POST",
+            "/v1/branches",
+            None,
+            json!({ "name": "Kothrud" }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let send = |name: String, actor: Option<(String, Option<String>)>| {
+        let (app, key, br) = (app.clone(), a.key.clone(), br.clone());
+        async move {
+            let mut req = axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/counters")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {key}"));
+            if let Some((who, sig)) = actor {
+                req = req.header("zyvor-actor", who);
+                if let Some(s) = sig {
+                    req = req.header("zyvor-actor-signature", s);
+                }
+            }
+            let res = app
+                .oneshot(
+                    req.body(axum::body::Body::from(
+                        json!({ "branch_id": br, "name": name }).to_string(),
+                    ))
+                    .unwrap(),
+                )
+                .await
+                .unwrap();
+            res.status()
+        }
+    };
+    let now = chrono::Utc::now().timestamp();
+    let sign = |who: &str, at: i64| zyvor_api::outbox::sign(&secret, at, who.as_bytes());
+
+    assert_eq!(
+        send("unsigned".into(), Some(("priya".into(), None)))
+            .await
+            .as_u16(),
+        201
+    );
+    assert_eq!(
+        send(
+            "forged".into(),
+            Some(("priya".into(), Some(sign("ravi", now))))
+        )
+        .await
+        .as_u16(),
+        201
+    );
+    assert_eq!(
+        send(
+            "stale".into(),
+            Some(("priya".into(), Some(sign("priya", now - 3_600))))
+        )
+        .await
+        .as_u16(),
+        201
+    );
+    assert_eq!(
+        send(
+            "signed".into(),
+            Some(("priya".into(), Some(sign("priya", now))))
+        )
+        .await
+        .as_u16(),
+        201
+    );
+    assert_eq!(send("anonymous".into(), None).await.as_u16(), 201);
+
+    let who = |counter: &'static str| {
+        let root = t.root.clone();
+        let sql = format!(
+            "SELECT actor FROM audit_events e WHERE action = 'counter.created' AND subject = (SELECT id FROM counters WHERE name = '{counter}')"
+        );
+        async move {
+            sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql))
+                .fetch_one(&root)
+                .await
+                .unwrap()
+        }
+    };
+    for unproven in ["unsigned", "forged", "stale", "anonymous"] {
+        assert!(
+            who(unproven).await.starts_with("key:"),
+            "{unproven} must not be able to name a person"
+        );
+    }
+    assert_eq!(who("signed").await, "user:priya");
+}

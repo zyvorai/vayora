@@ -8,7 +8,7 @@ function need(name: string): string {
 
 /** Server-side only: the API key never reaches the browser. */
 export function api(actor?: string): Zyvor {
-  return new Zyvor({ apiKey: need("ZYVOR_API_KEY"), baseUrl: process.env.ZYVOR_API_URL ?? "http://localhost:8080", actor: actor ?? process.env.CONSOLE_USER ?? "console" });
+  return new Zyvor({ apiKey: need("ZYVOR_API_KEY"), baseUrl: process.env.ZYVOR_API_URL ?? "http://localhost:8080", actor: actor ?? process.env.CONSOLE_USER ?? "console", actorSecret: process.env.ZYVOR_ACTOR_SECRET || undefined });
 }
 
 export const authConfig = () => ({ username: process.env.CONSOLE_USERNAME ?? "admin", password: need("CONSOLE_PASSWORD"), secret: need("CONSOLE_SESSION_SECRET") });

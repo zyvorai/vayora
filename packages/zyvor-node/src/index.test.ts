@@ -96,3 +96,20 @@ describe("cli", () => {
     expect(await run(["intents", "get", "pi_1"], {}, () => {})).toBe(2);
   });
 });
+
+describe("signed actor", () => {
+  it("signs the actor when given the API's actor secret, and not otherwise", async () => {
+    const seen: Record<string, string>[] = [];
+    const fetcher = (async (_u: string, init: { headers: Record<string, string> }) => {
+      seen.push(init.headers);
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    await new Zyvor({ apiKey: "zk_test_x", actor: "priya", fetch: fetcher }).branches.list();
+    await new Zyvor({ apiKey: "zk_test_x", actor: "priya", actorSecret: "console-actor-secret-0123456789", fetch: fetcher }).branches.list();
+    expect(seen[0]["zyvor-actor-signature"]).toBeUndefined();
+    const m = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(seen[1]["zyvor-actor-signature"]);
+    expect(m).not.toBeNull();
+    const { createHmac } = await import("node:crypto");
+    expect(m![2]).toBe(createHmac("sha256", "console-actor-secret-0123456789").update(`${m![1]}.priya`).digest("hex"));
+  });
+});

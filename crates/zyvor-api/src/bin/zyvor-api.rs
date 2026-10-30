@@ -92,6 +92,10 @@ async fn main() {
         .ok()
         .filter(|u| u.starts_with("http"));
     state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
+    state.actor_secret = env::var("ZYVOR_ACTOR_SECRET")
+        .ok()
+        .filter(|s| s.len() >= 16)
+        .map(String::into_bytes);
     state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
         .ok()
         .and_then(|v| v.parse().ok())

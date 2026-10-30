@@ -72,6 +72,9 @@ pub struct AppState {
     pub ai: Option<Arc<ai::AiConfig>>,
     /// Public address of the checkout app, for QR codes (`ZYVOR_CHECKOUT_PUBLIC_URL`).
     pub checkout_public_url: Option<String>,
+    /// When set, `Zyvor-Actor` is believed only with a valid `Zyvor-Actor-Signature` made with this secret
+    /// (`ZYVOR_ACTOR_SECRET`, shared with the console). Without it the header is taken at its word.
+    pub actor_secret: Option<Vec<u8>>,
 }
 
 pub use crypto::Crypto;
@@ -93,6 +96,7 @@ impl AppState {
             allow_private_targets: false,
             ai: None,
             checkout_public_url: None,
+            actor_secret: None,
         }
     }
 }

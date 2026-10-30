@@ -104,6 +104,8 @@ export interface ZyvorOptions {
   baseUrl?: string;
   /** Acts on behalf of a person (shown in the audit trail; used for approval separation of duties). */
   actor?: string;
+  /** The API's `ZYVOR_ACTOR_SECRET`. When the API has one, it believes `actor` only if the request is signed with it. */
+  actorSecret?: string;
   fetch?: typeof fetch;
 }
 
@@ -123,7 +125,13 @@ export class Zyvor {
     const h: Record<string, string> = { authorization: `Bearer ${this.o.apiKey}` };
     if (body !== undefined) h["content-type"] = "application/json";
     if (idem) h["idempotency-key"] = idem;
-    if (this.o.actor) h["zyvor-actor"] = this.o.actor;
+    if (this.o.actor) {
+      h["zyvor-actor"] = this.o.actor;
+      if (this.o.actorSecret) {
+        const t = Math.floor(Date.now() / 1000);
+        h["zyvor-actor-signature"] = `t=${t},v1=${createHmac("sha256", this.o.actorSecret).update(`${t}.${this.o.actor}`).digest("hex")}`;
+      }
+    }
     const res = await this.f(`${this.base}${path}`, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
     const json = await res.json().catch(() => null);
     if (!res.ok) throw new ZyvorError(res.status, json?.error?.code ?? "unknown", json?.error?.message ?? res.statusText);

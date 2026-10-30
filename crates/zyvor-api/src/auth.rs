@@ -153,11 +153,31 @@ impl FromRequestParts<AppState> for Auth {
             .bind(&key_id)
             .execute(&state.pool)
             .await;
-        let actor = parts
+        let claimed = parts
             .headers
             .get("zyvor-actor")
             .and_then(|v| v.to_str().ok())
-            .filter(|a| !a.is_empty() && a.len() <= 120)
+            .filter(|a| !a.is_empty() && a.len() <= 120);
+        // With an actor secret set, only the console (which holds it) can name a person.
+        let believed = match (&state.actor_secret, claimed) {
+            (None, c) => c,
+            (Some(secret), Some(c)) => parts
+                .headers
+                .get("zyvor-actor-signature")
+                .and_then(|v| v.to_str().ok())
+                .filter(|sig| {
+                    crate::outbox::verify(
+                        secret,
+                        sig,
+                        c.as_bytes(),
+                        chrono::Utc::now().timestamp(),
+                        300,
+                    )
+                })
+                .map(|_| c),
+            (Some(_), None) => None,
+        };
+        let actor = believed
             .map(|a| format!("user:{a}"))
             .unwrap_or_else(|| format!("key:{key_id}"));
         Ok(Auth {

@@ -36,6 +36,8 @@ R "$K -n zyvor get secret zyvor-secrets >/dev/null 2>&1 || { \
     --from-literal=database-url=postgres://zyvor_app:\$APP@postgres:5432/zyvor \
     --from-literal=master-key=\$(openssl rand -hex 32); }"
 
+# Shared by the API and the console: the API believes a person's name only when the console signs it.
+R "$K -n zyvor get secret zyvor-actor >/dev/null 2>&1 || $K -n zyvor create secret generic zyvor-actor --from-literal=secret=\$(openssl rand -hex 32)" >/dev/null
 echo "==> applying manifest"
 R "$K delete job zyvor-migrate -n zyvor --ignore-not-found" >/dev/null
 R "$K apply -f -" < deploy/zyvor/k3s/zyvor.yaml >/dev/null
