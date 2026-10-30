@@ -1,18 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
+import { LangPicker, useI18n } from "@/components/useI18n";
 import { money } from "@/lib/checkout";
+import type { Key } from "@/lib/i18n";
 
 type Info = { merchant: string | null; description: string | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
 
-const GONE: Record<string, string> = {
-  expired: "This payment link has expired.",
-  used_up: "This payment link has reached its limit.",
-  canceled: "This payment link is no longer active.",
-  paid: "Nothing is due. This has already been paid.",
-};
+const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid" };
 
 /** Landing page for a payment link: shows what is being paid, then opens the payer's own checkout. */
 export function PayLink({ tenant, token }: { tenant: string; token: string }) {
+  const { lang, setLang, t } = useI18n();
   const base = `/api/zyvor/links/${tenant}/${token}`;
   const [info, setInfo] = useState<Info | null>(null);
   const [missing, setMissing] = useState(false);
@@ -37,13 +35,13 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
     if (r.ok) {
       setInfo(await r.json());
       setAppliedCode(c || null);
-      setCouponMsg(c ? "Coupon applied." : null);
+      setCouponMsg(c ? "ok" : null);
     } else {
       // a code that does not work must not leave an old discount on screen
       const plain = await fetch(base);
       if (plain.ok) setInfo(await plain.json());
       setAppliedCode(null);
-      setCouponMsg("That coupon is not valid.");
+      setCouponMsg("bad");
     }
   }
 
@@ -53,43 +51,46 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
     try {
       const r = await fetch(`${base}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coupon: appliedCode ?? undefined }) });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.error?.message ?? "Could not start the payment.");
+      if (!r.ok) throw new Error(j?.error?.code === "coupon_invalid" ? "coupon" : "start");
       window.location.assign(`/pay/${tenant}/${j.intent_id}?s=${encodeURIComponent(j.client_secret)}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start the payment.");
+      setError(e instanceof Error && e.message ? e.message : "start");
       setBusy(false);
     }
   }
 
-  if (missing) return <div className="card state" role="alert"><h2>This payment link isn't valid</h2><p>Please ask the merchant for a new link.</p></div>;
-  if (!info) return <div className="card state" role="status"><div className="spin" /><p>Loading…</p></div>;
-  const gone = GONE[info.status];
+  const picker = <LangPicker lang={lang} setLang={setLang} label={t("language")} />;
+  if (missing) return <div className="card state" role="alert"><h2>{t("invalidTitle")}</h2><p>{t("invalidBody")}</p>{picker}</div>;
+  if (!info) return <div className="card state" role="status"><div className="spin" /><p>{t("loadingShort")}</p></div>;
+  const goneKey = GONE[info.status];
   const adjusted = info.discount_minor > 0 || info.fee_minor > 0;
+  const errText = error === "coupon" ? t("couponBad") : error ? t("errStart") : null;
   return (
     <div className="card">
-      <p className="merchant">{info.merchant ?? "Payment"}</p>
-      <h1 className="amount">{money(gone ? info.amount_minor : info.total_minor, info.currency)}</h1>
+      <p className="merchant">{info.merchant ?? t("payment")}</p>
+      <h1 className="amount">{money(goneKey ? info.amount_minor : info.total_minor, info.currency)}</h1>
       <p className="desc">{info.description ?? " "}</p>
-      {gone ? <p className="notice warn" role="status">{gone}</p> : (
+      {goneKey ? <p className="notice warn" role="status">{t(goneKey)}</p> : (
         <>
           {adjusted && (
             <dl className="rows">
-              <dt>Amount</dt><dd>{money(info.amount_minor, info.currency)}</dd>
-              {info.discount_minor > 0 && <><dt>Coupon</dt><dd className="ok">−{money(info.discount_minor, info.currency)}</dd></>}
-              {info.fee_minor > 0 && <><dt>Convenience fee</dt><dd>{money(info.fee_minor, info.currency)}</dd></>}
+              <dt>{t("rowAmount")}</dt><dd>{money(info.amount_minor, info.currency)}</dd>
+              {info.discount_minor > 0 && <><dt>{t("rowCoupon")}</dt><dd className="ok">−{money(info.discount_minor, info.currency)}</dd></>}
+              {info.fee_minor > 0 && <><dt>{t("rowFee")}</dt><dd>{money(info.fee_minor, info.currency)}</dd></>}
             </dl>
           )}
-          <label className="f" htmlFor="coupon">Coupon code</label>
+          <label className="f" htmlFor="coupon">{t("couponCode")}</label>
           <div className="couponrow">
             <input id="coupon" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" spellCheck={false} autoComplete="off" />
-            <button type="button" className="link" onClick={apply} disabled={!code.trim()}>Apply</button>
+            <button type="button" className="link" onClick={apply} disabled={!code.trim()}>{t("apply")}</button>
           </div>
-          {couponMsg && <p className={appliedCode ? "desc" : "err"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{couponMsg}</p>}
-          {error && <div className="notice bad" role="alert">{error}</div>}
-          <button className="pay" onClick={start} disabled={busy}>{busy ? "Starting…" : `Continue to pay ${money(info.total_minor, info.currency)}`}</button>
+          {couponMsg && <p className={appliedCode ? "desc" : "err"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{couponMsg === "ok" ? t("couponOk") : t("couponBad")}</p>}
+          {errText && <div className="notice bad" role="alert">{errText}</div>}
+          <button className="pay" onClick={start} disabled={busy}>{busy ? t("starting") : t("continuePay", { amount: money(info.total_minor, info.currency) })}</button>
         </>
       )}
-      <p className="foot">Secured by Zyvor Payments</p>
+      <p className="foot">{t("secured")}</p>
+      {picker}
     </div>
   );
 }

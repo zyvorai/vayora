@@ -22,7 +22,7 @@ features make sense to build and which can only come from the underlying provide
 | Webhooks, SDKs, APIs (Stripe) | **Built**: signed at-least-once webhooks with an event catalogue and subscriptions, Node/Python/Go SDKs, OpenAPI. |
 | Fraud / risk engine (CCAvenue F.R.I.S.K.) | **Partial.** Rate limits per key and address, plus merchant-set risk limits (payment ceiling, tries per payment, failed tries per customer per hour, blocked UPI ids and handles), each stop audited. No scoring or network intelligence: card-network fraud detection belongs to the acquirer. |
 | Multi-currency, 27+ currencies (CCAvenue, Stripe) | **Partial.** INR and USD only, with reporting rates you enter; no revaluation. International acceptance depends on the provider. |
-| Multilingual checkout (CCAvenue, 18 languages) | **Not built** (English only). |
+| Multilingual checkout (CCAvenue, 18 languages) | **Built for six**: English, Hindi, Marathi, Tamil, Telugu and Bengali, chosen by `?lang=`, the payer's last choice or the browser, with a picker on the page. Machine-assisted wording, **not yet reviewed by native speakers**; have each checked before production. |
 | BNPL, EMI, wallets, cards, netbanking breadth | Depends on what each connected provider supports; the router already filters by a provider's declared capabilities. Zyvor adds no methods of its own. |
 | COD handling, RTO reduction, COD-to-prepaid (GoKwik's own focus) | **Not built**; e-commerce checkout concern, not a payments-orchestration one. |
 | Coupons / convenience-fee pass-through (Easebuzz, Instamojo) | **Built** for fixed-amount payment links (percent or flat coupons with caps and expiry; a payer-covered fee). Not for invoice links, which a credit note handles instead. |

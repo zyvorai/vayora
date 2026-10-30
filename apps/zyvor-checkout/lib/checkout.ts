@@ -20,13 +20,23 @@ export function money(minor: number, currency: string): string {
   return `${minor < 0 ? "-" : ""}${sym}${major.toLocaleString(currency === "INR" ? "en-IN" : "en-US")}.${frac}`;
 }
 
-/** Plain-language reasons. Never show provider internals to a customer. */
-export function failureCopy(reason: string | null): string {
+import type { Key } from "./i18n";
+import { MESSAGES } from "./i18n";
+
+/** Which plain-language reason to show. Never show provider internals to a customer. */
+export function failureKey(reason: string | null): Key {
   const r = (reason ?? "").toLowerCase();
-  if (r.includes("insufficient")) return "Your bank declined the payment for insufficient funds. Try another UPI ID or payment method.";
-  if (r.includes("timeout") || r.includes("payer_timeout") || r.includes("expired")) return "The request wasn't approved in time. Nothing was charged. You can try again.";
-  if (r.includes("cancel")) return "This payment was cancelled. Nothing was charged.";
-  return "The payment didn't go through. Nothing was charged. You can try again or use another method.";
+  if (r.includes("insufficient")) return "failFunds";
+  if (r.includes("timeout") || r.includes("payer_timeout") || r.includes("expired")) return "failTime";
+  if (r.includes("cancel")) return "failCancel";
+  return "failGeneric";
+}
+
+export const METHOD_KEY: Record<string, Key> = { upi: "mUpi", card: "mCard", netbanking: "mNet", wallet: "mWallet" };
+
+/** English wording, kept for callers outside the page. */
+export function failureCopy(reason: string | null): string {
+  return MESSAGES.en[failureKey(reason)];
 }
 
 export const METHOD_LABEL: Record<string, string> = { upi: "UPI", card: "Card", netbanking: "Net banking", wallet: "Wallet" };

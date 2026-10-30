@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { METHOD_LABEL, VPA, failureCopy, money, pollDelay, type Session } from "@/lib/checkout";
+import { LangPicker, useI18n } from "@/components/useI18n";
+import { METHOD_KEY, VPA, failureKey, money, pollDelay, type Session } from "@/lib/checkout";
 
 type Method = Session["methods"][number];
 
@@ -27,6 +28,7 @@ function loadScript(src: string): Promise<void> {
 }
 
 export function Checkout({ tenant, intent }: { tenant: string; intent: string }) {
+  const { lang, setLang, t } = useI18n();
   const secret = useSearchParams().get("s") ?? "";
   const base = `/api/zyvor/${tenant}/${intent}`;
   const [session, setSession] = useState<Session | null>(null);
@@ -52,7 +54,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       setSession(s);
       setMethod((m) => (s.methods.includes(m) ? m : s.methods[0] ?? "upi"));
     } catch {
-      setError("We couldn't reach the payment service. Check your connection; this page will keep trying.");
+      setError("net");
     }
   }, [base, secret]);
 
@@ -66,6 +68,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [session, load]);
 
+  const errText = error === "net" ? t("errNetwork") : error === "vpa" ? t("errVpa") : error ? t("errStart") : null;
   const vpaOk = VPA.test(vpa);
   const showVpaError = touched && method === "upi" && !vpaOk;
 
@@ -83,7 +86,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(body?.error?.code === "invalid_vpa" ? "That UPI ID doesn't look right. It should look like name@bank." : "We couldn't start the payment. Please try again.");
+        setError(body?.error?.code === "invalid_vpa" ? "vpa" : "start");
       } else {
         setRetrying(false);
         setWaited(0);
@@ -91,7 +94,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         await load();
       }
     } catch {
-      setError("We couldn't start the payment. Please try again.");
+      setError("start");
     } finally {
       setBusy(false);
     }
@@ -114,16 +117,16 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   }
 
   if (gone) {
-    return <div className="card state" role="alert"><h2>This payment link isn't valid</h2><p>It may have expired or been mistyped. Please ask the merchant for a new link.</p></div>;
+    return <div className="card state" role="alert"><h2>{t("invalidTitle")}</h2><p>{t("invalidBody")}</p><LangPicker lang={lang} setLang={setLang} label={t("language")} /></div>;
   }
   if (!session) {
-    return <div className="card state" role="status" aria-live="polite">{error ? <p>{error}</p> : <><div className="spin" /><p>Loading your payment…</p></>}</div>;
+    return <div className="card state" role="status" aria-live="polite">{errText ? <p>{errText}</p> : <><div className="spin" /><p>{t("loading")}</p></>}</div>;
   }
 
   const amount = money(session.amount_minor, session.currency);
   const head = (
     <>
-      <p className="merchant">{session.merchant ?? "Payment"}</p>
+      <p className="merchant">{session.merchant ?? t("payment")}</p>
       <h1 className="amount">{amount}</h1>
       <p className="desc">{session.description ?? " "}</p>
     </>
@@ -135,8 +138,8 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status">
           <svg className="badge" viewBox="0 0 84 84" aria-hidden="true" stroke="var(--ok)"><circle cx="42" cy="42" r="40" /><path d="M26 43l11 11 21-23" /></svg>
-          <h2>Payment successful</h2>
-          <p>{amount} paid{session.merchant ? ` to ${session.merchant}` : ""}. You can close this page.</p>
+          <h2>{t("paidTitle")}</h2>
+          <p>{session.merchant ? t("paidTo", { amount, merchant: session.merchant }) : t("paidPlain", { amount })}</p>
         </div>
       </div>
     );
@@ -147,8 +150,8 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
-          <h2>Confirming your payment</h2>
-          <p>Your bank is taking longer than usual to confirm. <b>Please don't pay again.</b> This page will update by itself, and the merchant is notified as soon as it's confirmed.</p>
+          <h2>{t("confirmTitle")}</h2>
+          <p>{t("confirmBody")}</p>
         </div>
       </div>
     );
@@ -160,10 +163,10 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
-          <h2>{upi ? "Approve in your UPI app" : "Complete your payment"}</h2>
-          <p>{upi ? "We've sent a request to your UPI app. Open it and approve to finish." : "Finish the payment in the secure window. This page updates automatically."}</p>
-          {waited >= 60000 && <p className="notice warn">Still waiting. If you've already approved, this can take a minute. If not, check your UPI app notifications.</p>}
-          <button className="link" type="button" onClick={() => void load()}>Check status</button>
+          <h2>{upi ? t("approveTitle") : t("completeTitle")}</h2>
+          <p>{upi ? t("approveBody") : t("completeBody")}</p>
+          {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
+          <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
         </div>
       </div>
     );
@@ -176,36 +179,37 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       {head}
       {failed && (
         <div className="notice bad" role="alert">
-          {failureCopy(session.attempt?.failure_reason ?? null)}
+          {t(failureKey(session.attempt?.failure_reason ?? null))}
         </div>
       )}
       {(!failed) && (
         <>
           <fieldset className="methods">
-            <legend>Payment method</legend>
+            <legend>{t("methodLegend")}</legend>
             {session.methods.map((m) => (
               <label key={m}>
                 <input type="radio" name="method" value={m} checked={method === m} onChange={() => setMethod(m)} />
-                <span>{METHOD_LABEL[m]}</span>
+                <span>{t(METHOD_KEY[m])}</span>
               </label>
             ))}
           </fieldset>
           {method === "upi" ? (
             <div>
-              <label className="f" htmlFor="vpa">UPI ID</label>
+              <label className="f" htmlFor="vpa">{t("upiId")}</label>
               <input id="vpa" type="text" inputMode="email" autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="name@bank" value={vpa}
                 onChange={(e) => setVpa(e.target.value.trim())} onBlur={() => setTouched(true)} aria-invalid={showVpaError} aria-describedby="vpa-err" />
-              <p id="vpa-err" className="err" aria-live="polite">{showVpaError ? "Enter a UPI ID like name@bank." : ""}</p>
+              <p id="vpa-err" className="err" aria-live="polite">{showVpaError ? t("upiHint") : ""}</p>
             </div>
           ) : (
-            <p className="desc">You'll finish on {METHOD_LABEL[method]}'s secure page. We never see or store your details.</p>
+            <p className="desc">{t("hosted", { method: t(METHOD_KEY[method]) })}</p>
           )}
-          {error && <div className="notice bad" role="alert">{error}</div>}
-          <button className="pay" disabled={busy}>{busy ? "Starting…" : `Pay ${amount}`}</button>
+          {errText && <div className="notice bad" role="alert">{errText}</div>}
+          <button className="pay" disabled={busy}>{busy ? t("starting") : t("pay", { amount })}</button>
         </>
       )}
-      {failed && <button className="pay" type="button" onClick={() => { setRetrying(true); setError(null); }}>Try again</button>}
-      <p className="foot">Secured by Zyvor Payments</p>
+      {failed && <button className="pay" type="button" onClick={() => { setRetrying(true); setError(null); }}>{t("tryAgain")}</button>}
+      <p className="foot">{t("secured")}</p>
+      <LangPicker lang={lang} setLang={setLang} label={t("language")} />
     </form>
   );
 }

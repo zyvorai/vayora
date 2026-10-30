@@ -46,3 +46,9 @@ input[type=text]:focus-visible { outline: 3px solid var(--accent); outline-offse
 .couponrow input { flex: 1; min-height: 48px; border-radius: 14px; border: 1.5px solid var(--line); background: transparent; color: var(--fg); font: inherit; padding: 0 14px; text-transform: uppercase; }
 .couponrow input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .couponrow .link[disabled] { opacity: .4; cursor: default; }
+
+/* language picker, tucked under the card */
+.langpick { display: block; text-align: center; margin-top: 14px; }
+.langpick select { appearance: none; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: .8125rem; text-align: center; cursor: pointer; padding: 6px 10px; border-radius: 10px; }
+.langpick select:focus-visible { outline: 3px solid var(--accent); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
