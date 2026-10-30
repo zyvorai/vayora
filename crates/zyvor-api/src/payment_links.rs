@@ -106,6 +106,14 @@ pub async fn create_link(
             uuid::Uuid::new_v4().simple()
         ),
     );
+    if let Some(c) = &b.customer_id {
+        // foreign keys ignore row-level security, so make sure the customer is this tenant's
+        let seen: Option<String> = sqlx::query_scalar("SELECT id FROM customers WHERE id = $1")
+            .bind(c)
+            .fetch_optional(&mut *tx)
+            .await?;
+        seen.ok_or_else(|| ApiError::not_found("customer"))?;
+    }
     let (branch, counter) =
         crate::counters::resolve(&mut tx, b.branch_id.clone(), b.counter_id.as_deref()).await?;
     sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")

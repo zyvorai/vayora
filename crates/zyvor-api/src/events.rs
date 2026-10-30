@@ -77,6 +77,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("payout.rejected", "A payout was rejected."),
     (
+        "closing.signed_off",
+        "A branch's end-of-day closing was signed off.",
+    ),
+    (
         "onboarding.submitted",
         "Onboarding was submitted for review.",
     ),

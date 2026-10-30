@@ -1416,6 +1416,51 @@ paths:
         required: true
         schema:
           type: string
+  /v1/cash_entries:
+    post:
+      summary: Record cash taken, handed back or put in the till (never edited; correct with an opposite entry)
+      tags:
+      - closing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/closings:
+    post:
+      summary: Close a branch day: expected cash and digital totals against the counted cash
+      tags:
+      - closing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List closings
+      tags:
+      - closing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/closings/{id}/signoff:
+    post:
+      summary: Sign off a closing (a different person from whoever counted)
+      tags:
+      - closing
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail

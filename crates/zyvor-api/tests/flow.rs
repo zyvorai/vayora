@@ -6207,6 +6207,33 @@ async fn counters_tie_payments_to_a_branch_and_roll_up_per_day(pool: PgPool) {
         .as_u16(),
         404
     );
+    // another tenant's branch id is just as unknown
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            "/v1/counters",
+            None,
+            json!({ "branch_id": br, "name": "X" })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            "/v1/payment_intents",
+            Some("c-0"),
+            json!({ "amount_minor": 100, "currency": "INR", "branch_id": br })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
     // a counter's branch cannot be contradicted, and another tenant cannot use it
     assert_eq!(
         t.call(
@@ -6364,4 +6391,239 @@ async fn counters_tie_payments_to_a_branch_and_roll_up_per_day(pool: PgPool) {
         .0
         .is_success()
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn daily_closing_compares_expected_with_counted_and_needs_a_second_signature(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let br = t
+        .ok(
+            a,
+            "POST",
+            "/v1/branches",
+            None,
+            json!({ "name": "Kothrud" }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let today = (chrono::Utc::now() + chrono::Duration::minutes(330))
+        .date_naive()
+        .to_string();
+    let cash = |kind: &str, amt: i64| json!({ "branch_id": br, "kind": kind, "amount_minor": amt });
+    for (k, n) in [
+        ("float", 100_000),
+        ("sale", 250_000),
+        ("sale", 50_000),
+        ("refund", 30_000),
+    ] {
+        t.call_as(a, "meena", "POST", "/v1/cash_entries", None, cash(k, n))
+            .await;
+    }
+    assert_eq!(
+        t.call(a, "POST", "/v1/cash_entries", None, cash("tip", 5))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            b,
+            "POST",
+            "/v1/cash_entries",
+            None,
+            json!({ "branch_id": br, "kind": "sale", "amount_minor": 5 })
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+    // one digital payment for the branch
+    t.paid_razorpay(a, 40_000, json!({ "branch_id": br })).await;
+
+    let close = |counted: i64, day: &str| json!({ "branch_id": br, "day": day, "counted_cash_minor": counted });
+    assert_eq!(
+        t.call_as(
+            a,
+            "meena",
+            "POST",
+            "/v1/closings",
+            None,
+            close(1, "2999-01-01")
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let c = t
+        .call_as(
+            a,
+            "meena",
+            "POST",
+            "/v1/closings",
+            None,
+            close(365_000, &today),
+        )
+        .await
+        .1;
+    // expected 100k + 250k + 50k - 30k = 370k; counted 365k, so the till is 5,000 short
+    assert_eq!(
+        (
+            c["expected_cash_minor"].as_i64(),
+            c["difference_minor"].as_i64()
+        ),
+        (Some(370_000), Some(-5_000))
+    );
+    assert_eq!(c["digital"][0]["net_minor"], 40_000);
+    assert_eq!(
+        t.call_as(
+            a,
+            "meena",
+            "POST",
+            "/v1/closings",
+            None,
+            close(370_000, &today)
+        )
+        .await
+        .1["error"]["code"],
+        "already_closed"
+    );
+
+    // the person who counted cannot sign it off; a second person can, once
+    let id = c["id"].as_str().unwrap();
+    let path = format!("/v1/closings/{id}/signoff");
+    assert_eq!(
+        t.call_as(a, "meena", "POST", &path, None, json!({}))
+            .await
+            .0
+            .as_u16(),
+        403
+    );
+    assert_eq!(
+        t.call_as(a, "suresh", "POST", &path, None, json!({}))
+            .await
+            .1["status"],
+        "signed_off"
+    );
+    assert_eq!(
+        t.call_as(a, "suresh", "POST", &path, None, json!({}))
+            .await
+            .0
+            .as_u16(),
+        409
+    );
+    let pending = t
+        .ok(
+            a,
+            "GET",
+            "/v1/closings?status=pending_signoff",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(pending["data"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        t.ok(b, "GET", "/v1/closings", None, Value::Null).await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn ids_from_another_tenant_are_refused_wherever_they_are_referenced(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let cust = t
+        .ok(a, "POST", "/v1/customers", None, json!({ "name": "Asha" }))
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "X-1", "amount_minor": 5_000 }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let ven = t
+        .ok(
+            a,
+            "POST",
+            "/v1/vendors",
+            None,
+            json!({ "name": "V", "vpa": "v@okbank" }),
+        )
+        .await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let cases = [
+        (
+            "POST",
+            "/v1/payment_intents",
+            json!({ "amount_minor": 100, "currency": "INR", "customer_id": cust }),
+        ),
+        (
+            "POST",
+            "/v1/payment_intents",
+            json!({ "amount_minor": 100, "currency": "INR", "invoice_id": inv }),
+        ),
+        (
+            "POST",
+            "/v1/payment_intents",
+            json!({ "amount_minor": 100, "currency": "INR", "splits": [{ "vendor_id": ven, "amount_minor": 50 }] }),
+        ),
+        (
+            "POST",
+            "/v1/payment_links",
+            json!({ "amount_minor": 100, "customer_id": cust }),
+        ),
+        ("POST", "/v1/payment_links", json!({ "invoice_id": inv })),
+        (
+            "POST",
+            "/v1/invoices",
+            json!({ "number": "B-1", "amount_minor": 100, "customer_id": cust }),
+        ),
+        (
+            "POST",
+            "/v1/milestones",
+            json!({ "customer_id": cust, "name": "M", "amount_minor": 100 }),
+        ),
+        (
+            "POST",
+            "/v1/installment_plans",
+            json!({ "customer_id": cust, "name": "P", "total_minor": 1000, "instalments": 2, "first_due_date": "2030-01-01", "number_prefix": "Q" }),
+        ),
+        (
+            "POST",
+            "/v1/subscriptions",
+            json!({ "customer_id": cust, "plan_id": "plan_x" }),
+        ),
+        (
+            "POST",
+            "/v1/payouts",
+            json!({ "vendor_id": ven, "amount_minor": 100, "purpose": "Settlement of sales", "external_ref": "Z" }),
+        ),
+    ];
+    for (i, (m, p, body)) in cases.into_iter().enumerate() {
+        let (s, v) = t.call(b, m, p, Some(&format!("x-{i}")), body).await;
+        assert!(
+            s.as_u16() == 404 || s.as_u16() == 422 || s.as_u16() == 409,
+            "case {i} {p}: {s} {v}"
+        );
+    }
+    assert_eq!(t.count("SELECT count(*) FROM payment_intents").await, 0);
 }

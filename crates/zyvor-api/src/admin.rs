@@ -529,6 +529,14 @@ pub async fn create_invoice(
         .parse()
         .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    if let Some(c) = &b.customer_id {
+        // foreign keys ignore row-level security, so make sure the customer is this tenant's
+        let seen: Option<String> = sqlx::query_scalar("SELECT id FROM customers WHERE id = $1")
+            .bind(c)
+            .fetch_optional(&mut *tx)
+            .await?;
+        seen.ok_or_else(|| ApiError::not_found("customer"))?;
+    }
     let id = new_id("inv");
     // GST mode: amount and tax come from the lines
     let gst = match &b.lines {

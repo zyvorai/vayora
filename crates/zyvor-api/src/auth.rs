@@ -20,6 +20,7 @@ pub const ALL_SCOPES: &[&str] = &[
     "disputes:write",
     "payouts:write",
     "payouts:approve",
+    "closings:approve",
     "onboarding:write",
     "onboarding:review",
     "admin",

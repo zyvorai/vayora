@@ -7,6 +7,8 @@ live Razorpay or Cashfree. See [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for 
 **Merchant operations (Release 3, in progress)**
 - Merchant onboarding: profile (PAN, GSTIN), document references, bank accounts, second-person verification and review; payouts wait for approval once onboarding has started. Console page and Node SDK included.
 - Counters within branches: a counter's payment-link QR ties payments to the counter and branch; branch filter on payments; per-branch daily summary net of refunds. Open-amount QR (payer types the amount) is not built.
+- Daily closing: cash entries (never edited), a per-branch IST-day closing comparing expected cash and captured digital totals with the counted cash, second-person sign-off. Records only: cash is not posted to the ledger.
+- Fix: a payment link, an invoice, a counter or a cash entry could name another tenant's customer or branch id, because foreign keys are checked without row-level security. They now check the id belongs to the caller; a regression test covers every create path that takes a customer, invoice, vendor or branch id.
 **Console**
 - CSV export of payments (with the status filter) and invoices, with spreadsheet-formula defusing for customer-supplied text. Built and unit-tested; not yet clicked through in a browser.
 **Security**

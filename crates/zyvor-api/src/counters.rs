@@ -20,6 +20,14 @@ pub async fn resolve(
     branch_id: Option<String>,
     counter_id: Option<&str>,
 ) -> Result<(Option<String>, Option<String>), ApiError> {
+    // Foreign keys are checked without row-level security, so confirm the branch is this tenant's.
+    if let Some(b) = &branch_id {
+        let seen: Option<String> = sqlx::query_scalar("SELECT id FROM branches WHERE id = $1")
+            .bind(b)
+            .fetch_optional(&mut *conn)
+            .await?;
+        seen.ok_or_else(|| ApiError::not_found("branch"))?;
+    }
     let Some(cid) = counter_id else {
         return Ok((branch_id, None));
     };
@@ -65,6 +73,7 @@ pub async fn create_counter(
     }
     let id = new_id("ctr");
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    resolve(&mut tx, Some(b.branch_id.clone()), None).await?;
     sqlx::query(
         "INSERT INTO counters (id, tenant_id, branch_id, name, created_by) VALUES ($1,$2,$3,$4,$5)",
     )

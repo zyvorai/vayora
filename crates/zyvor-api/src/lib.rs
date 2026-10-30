@@ -10,6 +10,7 @@ pub mod bankcsv;
 pub mod billing;
 pub mod cases;
 pub mod checkout;
+pub mod closing;
 pub mod collections;
 pub mod console_users;
 pub mod counters;
@@ -320,6 +321,13 @@ pub fn app(state: AppState) -> Router {
             post(counters::deactivate_counter),
         )
         .route("/branches/{id}/summary", get(counters::branch_summary))
+        // cash and daily closing
+        .route("/cash_entries", post(closing::add_cash))
+        .route(
+            "/closings",
+            post(closing::create_closing).get(closing::list_closings),
+        )
+        .route("/closings/{id}/signoff", post(closing::sign_off))
         // merchant onboarding
         .route(
             "/onboarding",
