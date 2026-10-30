@@ -60,6 +60,47 @@ class Zyvor:
         return self._req("GET", f"/v1/settlements/{settlement_id}/explain")
 
 
+    # ---- billing ----
+    def create_plan(self, name: str, amount_minor: int, interval_unit: str, **extra) -> dict:
+        return self._req("POST", "/v1/plans", {"name": name, "amount_minor": amount_minor, "interval_unit": interval_unit, **extra})
+
+    def subscribe(self, customer_id: str, plan_id: str, quantity: int = 1, start_date: Optional[str] = None) -> dict:
+        body = {k: v for k, v in {"customer_id": customer_id, "plan_id": plan_id, "quantity": quantity, "start_date": start_date}.items() if v is not None}
+        return self._req("POST", "/v1/subscriptions", body)
+
+    def change_plan(self, subscription_id: str, plan_id: str, quantity: Optional[int] = None) -> dict:
+        """Upgrades are prorated for the rest of the period; downgrades apply from the next invoice."""
+        body = {k: v for k, v in {"plan_id": plan_id, "quantity": quantity}.items() if v is not None}
+        return self._req("POST", f"/v1/subscriptions/{subscription_id}/change_plan", body)
+
+    def record_usage(self, subscription_id: str, quantity: int, reference: Optional[str] = None) -> dict:
+        """Retry-safe when `reference` is set: the same reference is recorded once."""
+        return self._req("POST", f"/v1/subscriptions/{subscription_id}/usage", {k: v for k, v in {"quantity": quantity, "reference": reference}.items() if v is not None})
+
+    def run_billing(self) -> dict:
+        return self._req("POST", "/v1/billing/run")
+
+    def credit_note(self, invoice_id: str, amount_minor: int, reason: str) -> dict:
+        return self._req("POST", f"/v1/invoices/{invoice_id}/credit_notes", {"amount_minor": amount_minor, "reason": reason})
+
+    def statement(self, customer_id: str) -> dict:
+        return self._req("GET", f"/v1/customers/{customer_id}/statement")
+
+    def complete_milestone(self, milestone_id: str) -> dict:
+        """Accept the milestone and invoice it; calling twice returns the same invoice."""
+        return self._req("POST", f"/v1/milestones/{milestone_id}/complete")
+
+    # ---- collections ----
+    def ageing(self, as_of: Optional[str] = None) -> dict:
+        return self._req("GET", "/v1/collections/ageing" + (f"?as_of={as_of}" if as_of else ""))
+
+    def promise_to_pay(self, invoice_id: str, promised_minor: int, promised_date: str, note: Optional[str] = None) -> dict:
+        return self._req("POST", f"/v1/invoices/{invoice_id}/promises", {k: v for k, v in {"promised_minor": promised_minor, "promised_date": promised_date, "note": note}.items() if v is not None})
+
+    def remind(self, invoice_id: str, channel: str, message: Optional[str] = None) -> dict:
+        return self._req("POST", f"/v1/invoices/{invoice_id}/reminders", {k: v for k, v in {"channel": channel, "message": message}.items() if v is not None})
+
+
 def verify_webhook(secret: str, header: str, raw_body: bytes, tolerance_seconds: int = 300, now: Optional[int] = None) -> bool:
     """Verify `Zyvor-Signature: t=<unix>,v1=<hex>` against the RAW body. De-duplicate on event id too."""
     parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)

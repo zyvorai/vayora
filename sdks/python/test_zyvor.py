@@ -31,6 +31,21 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ZyvorError) as c: Zyvor("k", opener=opener).create_attempt("pi_1", "upi")
         self.assertEqual((c.exception.status, c.exception.code), (409, "payment_outcome_unresolved"))
 
+    def test_billing_and_collections_paths(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        z.subscribe("cus_1", "plan_1", start_date="2026-11-01"); z.change_plan("sub_1", "plan_2")
+        z.record_usage("sub_1", 5, reference="u1"); z.credit_note("inv_1", 100, "goodwill")
+        z.ageing("2026-10-31"); z.promise_to_pay("inv_1", 500, "2026-11-05"); z.remind("inv_1", "sms")
+        self.assertEqual([(m, p) for m, p, _ in seen], [
+            ("POST", "/v1/subscriptions"), ("POST", "/v1/subscriptions/sub_1/change_plan"), ("POST", "/v1/subscriptions/sub_1/usage"),
+            ("POST", "/v1/invoices/inv_1/credit_notes"), ("GET", "/v1/collections/ageing?as_of=2026-10-31"),
+            ("POST", "/v1/invoices/inv_1/promises"), ("POST", "/v1/invoices/inv_1/reminders")])
+        self.assertEqual(seen[2][2], {"quantity": 5, "reference": "u1"})
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

@@ -149,6 +149,61 @@ func (c *Client) Refund(intentID string, amountMinor int64, idempotencyKey strin
 	return &out, err
 }
 
+// Subscribe starts a subscription. startDate is YYYY-MM-DD ("" = today).
+func (c *Client) Subscribe(customerID, planID string, quantity int, startDate string) (map[string]any, error) {
+	body := map[string]any{"customer_id": customerID, "plan_id": planID}
+	if quantity > 0 {
+		body["quantity"] = quantity
+	}
+	if startDate != "" {
+		body["start_date"] = startDate
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions", body, "", &out)
+	return out, err
+}
+
+// ChangePlan upgrades are prorated for the rest of the period; downgrades apply from the next invoice.
+func (c *Client) ChangePlan(subscriptionID, planID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/change_plan", map[string]any{"plan_id": planID}, "", &out)
+	return out, err
+}
+
+// RecordUsage is retry-safe when reference is set: the same reference is recorded once.
+func (c *Client) RecordUsage(subscriptionID string, quantity int64, reference string) (map[string]any, error) {
+	body := map[string]any{"quantity": quantity}
+	if reference != "" {
+		body["reference"] = reference
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/usage", body, "", &out)
+	return out, err
+}
+
+func (c *Client) CreditNote(invoiceID string, amountMinor int64, reason string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/credit_notes", map[string]any{"amount_minor": amountMinor, "reason": reason}, "", &out)
+	return out, err
+}
+
+// Ageing reports unpaid invoices by days past due. asOf is YYYY-MM-DD ("" = today).
+func (c *Client) Ageing(asOf string) (map[string]any, error) {
+	path := "/v1/collections/ageing"
+	if asOf != "" {
+		path += "?as_of=" + asOf
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+func (c *Client) PromiseToPay(invoiceID string, promisedMinor int64, promisedDate string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/promises", map[string]any{"promised_minor": promisedMinor, "promised_date": promisedDate}, "", &out)
+	return out, err
+}
+
 // VerifyWebhook checks a `Zyvor-Signature: t=<unix>,v1=<hex>` header against the RAW body.
 // Delivery is at-least-once: also de-duplicate on the event id.
 func VerifyWebhook(secret, header string, rawBody []byte, tolerance time.Duration, now time.Time) bool {

@@ -68,3 +68,31 @@ func TestVerifyWebhook(t *testing.T) {
 		t.Fatal("bad signature accepted")
 	}
 }
+
+func TestBillingAndCollectionsPaths(t *testing.T) {
+	var seen []string
+	var usage map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI())
+		if r.URL.Path == "/v1/subscriptions/sub_1/usage" {
+			_ = json.NewDecoder(r.Body).Decode(&usage)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	_, _ = c.Subscribe("cus_1", "plan_1", 2, "2026-11-01")
+	_, _ = c.ChangePlan("sub_1", "plan_2")
+	_, _ = c.RecordUsage("sub_1", 5, "u1")
+	_, _ = c.CreditNote("inv_1", 100, "goodwill")
+	_, _ = c.Ageing("2026-10-31")
+	_, _ = c.PromiseToPay("inv_1", 500, "2026-11-05")
+	want := []string{"POST /v1/subscriptions", "POST /v1/subscriptions/sub_1/change_plan", "POST /v1/subscriptions/sub_1/usage",
+		"POST /v1/invoices/inv_1/credit_notes", "GET /v1/collections/ageing?as_of=2026-10-31", "POST /v1/invoices/inv_1/promises"}
+	if fmt.Sprint(seen) != fmt.Sprint(want) {
+		t.Fatalf("got %v", seen)
+	}
+	if usage["reference"] != "u1" || usage["quantity"] != float64(5) {
+		t.Fatalf("usage body %v", usage)
+	}
+}
