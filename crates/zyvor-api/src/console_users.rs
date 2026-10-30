@@ -118,6 +118,9 @@ pub struct NewUser {
     username: String,
     password: String,
     role: String,
+    /// Only for a cashier: the one branch they work in.
+    #[serde(default)]
+    branch_id: Option<String>,
 }
 
 fn valid_username(u: &str) -> bool {
@@ -156,10 +159,26 @@ pub async fn create_user(
         ));
     }
     check_password(&b.password)?;
+    if b.branch_id.is_some() && b.role != "cashier" {
+        return Err(ApiError::invalid(
+            "branch_only_for_cashier",
+            "only a cashier can be tied to a branch",
+        ));
+    }
     let (id, hash) = (new_id("usr"), hash_password(&b.password)?);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    sqlx::query("INSERT INTO console_users (id, tenant_id, username, password_hash, role, created_by) VALUES ($1, $2, $3, $4, $5, $6)")
-        .bind(&id).bind(&auth.tenant_id).bind(&username).bind(&hash).bind(&b.role).bind(&auth.actor)
+    // foreign keys skip row-level security, so check the branch is this tenant's
+    if let Some(branch) = &b.branch_id {
+        let known: Option<(String,)> = sqlx::query_as("SELECT id FROM branches WHERE id = $1")
+            .bind(branch)
+            .fetch_optional(&mut *tx)
+            .await?;
+        if known.is_none() {
+            return Err(ApiError::invalid("unknown_branch", "no such branch"));
+        }
+    }
+    sqlx::query("INSERT INTO console_users (id, tenant_id, username, password_hash, role, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+        .bind(&id).bind(&auth.tenant_id).bind(&username).bind(&hash).bind(&b.role).bind(&auth.actor).bind(&b.branch_id)
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::conflict("username_taken", "that username already exists"),
@@ -177,7 +196,7 @@ pub async fn create_user(
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "id": id, "username": username, "role": b.role })),
+        Json(json!({ "id": id, "username": username, "role": b.role, "branch_id": b.branch_id })),
     ))
 }
 
@@ -192,17 +211,18 @@ pub async fn list_users(State(s): State<AppState>, auth: Auth) -> Result<Json<Va
         Option<chrono::DateTime<chrono::Utc>>,
         Option<chrono::DateTime<chrono::Utc>>,
         Option<chrono::DateTime<chrono::Utc>>,
+        Option<String>,
     );
-    let rows: Vec<Row> = sqlx::query_as("SELECT id, username, role, totp_confirmed, last_login_at, locked_until, disabled_at FROM console_users ORDER BY username")
+    let rows: Vec<Row> = sqlx::query_as("SELECT id, username, role, totp_confirmed, last_login_at, locked_until, disabled_at, branch_id FROM console_users ORDER BY username")
         .fetch_all(&mut *tx)
         .await?;
     let now = chrono::Utc::now();
     let data: Vec<Value> = rows
         .into_iter()
-        .map(|(id, u, role, mfa, last, locked, disabled)| {
+        .map(|(id, u, role, mfa, last, locked, disabled, branch)| {
             json!({
                 "id": id, "username": u, "role": role, "mfa_enrolled": mfa, "last_login_at": last,
-                "locked": locked.is_some_and(|l| l > now), "disabled": disabled.is_some(),
+                "locked": locked.is_some_and(|l| l > now), "disabled": disabled.is_some(), "branch_id": branch,
             })
         })
         .collect();
@@ -520,8 +540,14 @@ pub async fn authenticate(
                         json!({ "recovery_code_used": new_recovery.is_some() }),
                     )
                     .await?;
+                    let branch: Option<(Option<String>,)> =
+                        sqlx::query_as("SELECT branch_id FROM console_users WHERE id = $1")
+                            .bind(&id)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                    let branch = branch.and_then(|b| b.0);
                     Outcome::Ok(
-                        json!({ "user": { "id": id, "username": username, "role": role }, "mfa_enrolled": mfa }),
+                        json!({ "user": { "id": id, "username": username, "role": role, "branch_id": branch }, "mfa_enrolled": mfa }),
                     )
                 }
             }

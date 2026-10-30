@@ -28,7 +28,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   let signedIn: Omit<Session, "exp"> | null = null;
   try {
     const r = await api().consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
-    signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled };
+    signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled, ...(r.user.branch_id ? { b: r.user.branch_id } : {}) };
   } catch (e) {
     if (!(e instanceof ZyvorError)) return { error: "Sign-in is unavailable right now. Try again in a moment." };
     if (e.code === "otp_required") return { otp: true };
@@ -139,7 +139,7 @@ export const cancelLink = async (_: FormState, f: FormData) => run(["/links"], (
 
 // ---- people and security (admin) ----
 export const createUser = async (_: FormState, f: FormData) =>
-  run(["/users"], (z) => z.consoleUsers.create({ username: String(f.get("username") ?? ""), password: String(f.get("password") ?? ""), role: String(f.get("role") ?? "viewer") as Role }), "admin");
+  run(["/users"], (z) => z.consoleUsers.create({ username: String(f.get("username") ?? ""), password: String(f.get("password") ?? ""), role: String(f.get("role") ?? "viewer") as Role, branchId: String(f.get("branch_id") ?? "") || undefined }), "admin");
 export const disableUser = async (_: FormState, f: FormData) => run(["/users"], (z, s) => (id(f) === s.i ? Promise.reject(new ZyvorError(422, "self", "You cannot disable yourself.")) : z.consoleUsers.disable(id(f))), "admin");
 export const enableUser = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.enable(id(f)), "admin");
 export const resetUserMfa = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.mfaReset(id(f)), "admin");
@@ -299,12 +299,12 @@ export const addCash = async (_: FormState, f: FormData): Promise<FormState> => 
   const amt = rupees(f, "amount");
   if (!Number.isFinite(amt) || amt <= 0) return { error: "Enter the amount in rupees." };
   const kind = text(f, "kind");
-  return run(["/closing"], (z) => z.cash.add({ branchId: text(f, "branch_id"), kind: kind === "refund" ? "refund" : kind === "float" ? "float" : "sale", amountMinor: amt, note: text(f, "note") || undefined }), "cashier");
+  return run(["/closing"], (z, s) => z.cash.add({ branchId: s.b ?? text(f, "branch_id"), kind: kind === "refund" ? "refund" : kind === "float" ? "float" : "sale", amountMinor: amt, note: text(f, "note") || undefined }), "cashier");
 };
 export const createClosing = async (_: FormState, f: FormData): Promise<FormState> => {
   const amt = rupees(f, "counted");
   if (!Number.isFinite(amt) || amt < 0) return { error: "Enter the cash you counted, in rupees." };
-  return run(["/closing"], (z) => z.closings.create({ branchId: text(f, "branch_id"), day: text(f, "day"), countedCashMinor: amt, note: text(f, "note") || undefined }), "cashier");
+  return run(["/closing"], (z, s) => z.closings.create({ branchId: s.b ?? text(f, "branch_id"), day: text(f, "day"), countedCashMinor: amt, note: text(f, "note") || undefined }), "cashier");
 };
 export const signOffClosing = async (_: FormState, f: FormData) => run(["/closing"], (z) => z.closings.signOff(id(f)), "admin");
 

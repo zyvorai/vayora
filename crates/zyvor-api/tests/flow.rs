@@ -3167,6 +3167,65 @@ async fn console_users_sign_in_with_roles_lockout_and_a_replay_proof_second_fact
         )
         .await;
     assert_eq!(till["role"], "cashier");
+    // a cashier can be tied to one of this tenant's branches, and nobody else's
+    let mine = t
+        .ok(
+            a,
+            "POST",
+            "/v1/branches",
+            None,
+            json!({ "name": "Kothrud" }),
+        )
+        .await;
+    let theirs = t
+        .ok(
+            b,
+            "POST",
+            "/v1/branches",
+            None,
+            json!({ "name": "Elsewhere" }),
+        )
+        .await;
+    let with_branch = |u: &str, r: &str, br: &str| json!({ "username": u, "password": "a-long-enough-pass", "role": r, "branch_id": br });
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            with_branch("till-x", "cashier", theirs["id"].as_str().unwrap())
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            with_branch("fin-x", "finance", mine["id"].as_str().unwrap())
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let tied = t
+        .ok(
+            a,
+            "POST",
+            "/v1/console/users",
+            None,
+            with_branch("till-2", "cashier", mine["id"].as_str().unwrap()),
+        )
+        .await;
+    assert_eq!(tied["branch_id"], mine["id"]);
+    let (st, _, v) = login(a, "till-2", "a-long-enough-pass", None).await;
+    assert_eq!(st, 200);
+    assert_eq!(v["user"]["branch_id"], mine["id"]);
     assert_eq!(
         t.call(
             a,
