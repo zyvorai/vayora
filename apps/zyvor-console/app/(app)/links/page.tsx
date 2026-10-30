@@ -1,14 +1,15 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { LinkForm } from "@/components/LinkForm";
-import { cancelLink } from "@/lib/actions";
+import { CouponForm, LinkForm } from "@/components/LinkForm";
+import { cancelLink, deactivateCoupon } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 const base = () => (process.env.CHECKOUT_PUBLIC_URL ?? "http://localhost:3002").replace(/\/$/, "");
 
 export default async function Links() {
-  const page = await api().paymentLinks.list();
+  const z = api();
+  const [page, coupons] = await Promise.all([z.paymentLinks.list(), z.coupons.list()]);
   return (
     <>
       <div className="head"><div><h1>Payment links</h1><p className="lede">One URL, many payers. Each person who opens it gets their own checkout, so a link can collect a fee from a whole class.</p></div></div>
@@ -25,6 +26,23 @@ export default async function Links() {
                 <td className="num">{l.uses}{l.max_uses ? ` / ${l.max_uses}` : ""}</td>
                 <td><Chip status={l.status} /></td>
                 <td>{l.status === "active" && <Act action={cancelLink} id={l.id} label="Cancel" />}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2 style={{ marginTop: 32 }}>Coupons</h2>
+      <CouponForm />
+      <div className="tablewrap">
+        <table>
+          <thead><tr><th>Code</th><th>Takes off</th><th className="num">Used</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {coupons.data.length === 0 && <tr><td colSpan={5} className="empty">No coupons yet.</td></tr>}
+            {coupons.data.map((c) => (
+              <tr key={c.id}>
+                <td className="mono">{c.code}</td><td>{c.kind === "percent" ? `${c.value / 100}%` : inr(c.value)}</td>
+                <td className="num">{c.uses}{c.max_uses ? ` / ${c.max_uses}` : ""}</td><td><Chip status={c.status} /></td>
+                <td>{c.status === "active" && <Act action={deactivateCoupon} id={c.id} label="Deactivate" />}</td>
               </tr>
             ))}
           </tbody>

@@ -256,6 +256,14 @@ export class Zyvor {
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
   };
 
+  readonly coupons = {
+    /** `percent` takes `value` in basis points (1000 = 10%); `flat` in minor units. Redeemed on fixed-amount payment links. */
+    create: (p: { code: string; kind: "percent" | "flat"; value: number; maxUses?: number; expiresAt?: string }) =>
+      this.req<{ id: string; code: string }>("POST", "/v1/coupons", { code: p.code, kind: p.kind, value: p.value, max_uses: p.maxUses, expires_at: p.expiresAt }),
+    list: () => this.req<Page<{ id: string; code: string; kind: "percent" | "flat"; value: number; max_uses: number | null; uses: number; expires_at: string | null; status: "active" | "expired" | "used_up" | "deactivated" }>>("GET", "/v1/coupons"),
+    deactivate: (id: string) => this.req("POST", `/v1/coupons/${encodeURIComponent(id)}/deactivate`),
+  };
+
   readonly installments = {
     /** Split an agreed total into dated invoices: exact (remainder on the last), all or nothing, idempotent by `externalRef`. */
     create: (p: { customerId: string; name: string; totalMinor: number; instalments: number; firstDueDate: string; numberPrefix: string; everyUnit?: "month" | "day"; every?: number; currency?: string; externalRef?: string }) =>
@@ -309,8 +317,8 @@ export class Zyvor {
 
   readonly paymentLinks = {
     /** One URL, many payers: opening it mints a fresh payment intent. Give `amountMinor` or `invoiceId`. */
-    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string; splits?: { vendorId: string; amountMinor: number }[] }) =>
-      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })) }),
+    create: (p: { description?: string; amountMinor?: number; currency?: string; invoiceId?: string; customerId?: string; maxUses?: number; expiresAt?: string; splits?: { vendorId: string; amountMinor: number }[]; /** A fee the payer covers, in basis points (200 = 2%, at most 1000). Fixed-amount links only. */ convenienceFeeBp?: number }) =>
+      this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })), convenience_fee_bp: p.convenienceFeeBp }),
     /** SVG QR code of the link's public checkout address (needs `ZYVOR_CHECKOUT_PUBLIC_URL` on the API). */
     qrUrl: (id: string) => `${this.base}/v1/payment_links/${encodeURIComponent(id)}/qr.svg`,
     list: () => this.req<Page<{ id: string; path: string; description: string | null; amount_minor: number | null; currency: string; invoice_id: string | null; max_uses: number | null; uses: number; status: "active" | "expired" | "used_up" | "canceled"; created_at: string }>>("GET", "/v1/payment_links"),

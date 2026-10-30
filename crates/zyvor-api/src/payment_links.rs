@@ -4,7 +4,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use chrono::{DateTime, Utc};
@@ -28,6 +28,8 @@ pub struct NewLink {
     expires_at: Option<DateTime<Utc>>,
     /// Shares owed to vendors out of every payment made through this link.
     splits: Option<Vec<crate::splits::SplitIn>>,
+    /// A fee the payer covers on top of the amount, in basis points (200 = 2%, at most 1000). Fixed-amount links only.
+    convenience_fee_bp: Option<i32>,
 }
 
 pub async fn create_link(
@@ -40,6 +42,15 @@ pub async fn create_link(
         return Err(ApiError::invalid(
             "invalid_link",
             "give exactly one of amount_minor or invoice_id",
+        ));
+    }
+    if b.convenience_fee_bp
+        .is_some_and(|f| !(0..=1000).contains(&f))
+        || (b.convenience_fee_bp.unwrap_or(0) > 0 && b.invoice_id.is_some())
+    {
+        return Err(ApiError::invalid(
+            "invalid_fee",
+            "convenience_fee_bp is 0-1000 and only for fixed-amount links",
         ));
     }
     if b.amount_minor.is_some_and(|a| a <= 0) || b.max_uses.is_some_and(|m| m <= 0) {
@@ -89,9 +100,10 @@ pub async fn create_link(
             uuid::Uuid::new_v4().simple()
         ),
     );
-    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
         .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
+        .bind(b.convenience_fee_bp.unwrap_or(0))
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_foreign_key_violation() => ApiError::not_found("customer"),
@@ -196,13 +208,24 @@ async fn load(tx: &mut sqlx::PgConnection, token: &str, lock: bool) -> Result<Li
 }
 
 /// Public: what the page shows before the payer commits to anything.
+#[derive(Deserialize, Default)]
+pub struct CouponQuery {
+    coupon: Option<String>,
+}
+
 pub async fn link_info(
     State(s): State<AppState>,
     Path((tenant_id, token)): Path<(String, String)>,
+    Query(q): Query<CouponQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
-    let (_, description, amount, currency, invoice, _, max, uses, exp, canc) =
+    let (link_id, description, amount, currency, invoice, _, max, uses, exp, canc) =
         load(&mut tx, &token, false).await?;
+    let fee_bp: i32 =
+        sqlx::query_scalar("SELECT convenience_fee_bp FROM payment_links WHERE id = $1")
+            .bind(&link_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let amount =
         match (amount, &invoice) {
             (Some(a), _) => a,
@@ -219,17 +242,45 @@ pub async fn link_info(
     if st == "active" && amount <= 0 {
         st = "paid";
     }
+    // what the payer will actually be asked for, with any coupon they typed
+    let code = q.coupon.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let applied = match code {
+        Some(c) if invoice.is_none() => Some(crate::coupons::find(&mut tx, c, false).await?),
+        Some(_) => {
+            return Err(ApiError::invalid(
+                "coupon_not_applicable",
+                "coupons apply to fixed-amount links",
+            ));
+        }
+        None => None,
+    };
+    let p = crate::coupons::price(
+        amount,
+        applied.as_ref().map(|c| (c.kind.as_str(), c.value)),
+        fee_bp as i64,
+    );
     Ok(Json(
-        json!({ "merchant": merchant, "description": description, "amount_minor": amount, "currency": currency, "status": st }),
+        json!({ "merchant": merchant, "description": description, "amount_minor": amount, "discount_minor": p.discount, "fee_minor": p.fee, "total_minor": p.total, "coupon_applied": applied.is_some(), "currency": currency, "status": st }),
     ))
 }
 
 /// Public: open the link. Mints the payer's own payment intent and returns the pieces the checkout
 /// page needs. Counts toward `max_uses` immediately, so a capped link can never over-sell.
+#[derive(Deserialize, Default)]
+pub struct StartBody {
+    /// A coupon code the payer typed (fixed-amount links only).
+    coupon: Option<String>,
+}
+
 pub async fn link_start(
     State(s): State<AppState>,
     Path((tenant_id, token)): Path<(String, String)>,
+    body: Option<Json<StartBody>>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let coupon_code = body
+        .and_then(|b| b.0.coupon)
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty());
     let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
     let (link_id, description, amount, currency, invoice, customer, max, uses, exp, canc) =
         load(&mut tx, &token, true).await?;
@@ -259,6 +310,29 @@ pub async fn link_start(
         }
         _ => return Err(ApiError::internal()),
     };
+    // price: coupon (spent now, in this transaction) then the link's convenience fee
+    let fee_bp: i32 =
+        sqlx::query_scalar("SELECT convenience_fee_bp FROM payment_links WHERE id = $1")
+            .bind(&link_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let spent = match &coupon_code {
+        Some(c) if invoice.is_none() => Some(crate::coupons::find(&mut tx, c, true).await?),
+        Some(_) => {
+            return Err(ApiError::invalid(
+                "coupon_not_applicable",
+                "coupons apply to fixed-amount links",
+            ));
+        }
+        None => None,
+    };
+    let p = crate::coupons::price(
+        amount,
+        spent.as_ref().map(|c| (c.kind.as_str(), c.value)),
+        fee_bp as i64,
+    );
+    let base_amount = amount;
+    let amount = p.total;
     let secret = format!(
         "pis_{}{}",
         uuid::Uuid::new_v4().simple(),
@@ -270,7 +344,7 @@ pub async fn link_start(
          VALUES ($1, $2, $3, $4, $5, $6, 'requires_payment_method', 'automatic', $7, $8, $9)",
     )
     .bind(&intent_id).bind(&tenant_id).bind(&customer).bind(&invoice).bind(amount).bind(&currency)
-    .bind(&description).bind(json!({ "payment_link": link_id }))
+    .bind(&description).bind(json!({ "payment_link": link_id, "base_minor": base_amount, "discount_minor": p.discount, "fee_minor": p.fee, "coupon_id": spent.as_ref().map(|c| c.id.clone()) }))
     .bind(crate::auth::hash_key(&secret))
     .execute(&mut *tx).await?;
     let stored: Option<Value> =
@@ -290,7 +364,7 @@ pub async fn link_start(
                 })
             })
             .collect();
-        crate::splits::validate(&sp, amount).map_err(|_| {
+        crate::splits::validate(&sp, amount - p.fee).map_err(|_| {
             ApiError::conflict(
                 "link_unavailable",
                 "this link's splits no longer fit the amount due",
@@ -308,7 +382,7 @@ pub async fn link_start(
         &format!("link:{link_id}"),
         "payment_link.opened",
         Some(&intent_id),
-        json!({ "amount_minor": amount }),
+        json!({ "amount_minor": amount, "discount_minor": p.discount, "fee_minor": p.fee }),
     )
     .await?;
     tx.commit().await?;

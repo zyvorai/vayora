@@ -12,6 +12,7 @@ pub mod cases;
 pub mod checkout;
 pub mod collections;
 pub mod console_users;
+pub mod coupons;
 pub mod crypto;
 pub mod disputes;
 pub mod error;
@@ -302,6 +303,11 @@ pub fn app(state: AppState) -> Router {
             "/payment_links",
             post(payment_links::create_link).get(payment_links::list_links),
         )
+        .route(
+            "/coupons",
+            post(coupons::create_coupon).get(coupons::list_coupons),
+        )
+        .route("/coupons/{id}/deactivate", post(coupons::deactivate_coupon))
         .route("/payment_links/{id}/qr.svg", get(payment_links::link_qr))
         .route(
             "/payment_links/{id}/cancel",

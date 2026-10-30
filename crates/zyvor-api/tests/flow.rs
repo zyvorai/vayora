@@ -5575,3 +5575,260 @@ async fn risk_rules_stop_payments_the_merchant_said_to_stop_and_leave_a_trail(po
             >= 5
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn coupons_and_convenience_fees_price_a_payment_link_and_cannot_be_over_used(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+
+    // coupon rules
+    for bad in [
+        json!({ "code": "x", "kind": "percent", "value": 1000 }),
+        json!({ "code": "BAD CODE", "kind": "percent", "value": 1000 }),
+        json!({ "code": "TOOMUCH", "kind": "percent", "value": 10_001 }),
+        json!({ "code": "ZERO", "kind": "flat", "value": 0 }),
+        json!({ "code": "NOKIND", "kind": "bogus", "value": 5 }),
+        json!({ "code": "PAST", "kind": "flat", "value": 5, "expires_at": "2020-01-01T00:00:00Z" }),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/coupons", None, bad.clone())
+                .await
+                .0
+                .as_u16(),
+            422,
+            "{bad}"
+        );
+    }
+    let c = t
+        .ok(
+            a,
+            "POST",
+            "/v1/coupons",
+            None,
+            json!({ "code": "save10", "kind": "percent", "value": 1000, "max_uses": 2 }),
+        )
+        .await;
+    assert_eq!(c["code"], "SAVE10");
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/coupons",
+            None,
+            json!({ "code": "SAVE10", "kind": "flat", "value": 100 })
+        )
+        .await
+        .0
+        .as_u16(),
+        409
+    );
+
+    // a link with a 2% fee the payer covers
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 1000, "convenience_fee_bp": 1001 }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "CP-1", "amount_minor": 50_000 }),
+        )
+        .await;
+    assert_eq!(
+        t.call(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "invoice_id": inv["id"], "convenience_fee_bp": 200 })
+        )
+        .await
+        .0
+        .as_u16(),
+        422,
+        "fees are for fixed-amount links"
+    );
+    let link = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 100_000, "convenience_fee_bp": 200, "max_uses": 10 }),
+        )
+        .await;
+    let (tid, token) = (&a.id, link["token"].as_str().unwrap());
+    let info = |q: &str| {
+        let path = format!("/v1/checkout/links/{tid}/{token}{q}");
+        let t2 = &t;
+        async move { t2.public("GET", &path, None, Value::Null).await }
+    };
+    let start = |body: Value| {
+        let path = format!("/v1/checkout/links/{tid}/{token}/start");
+        let t2 = &t;
+        async move { t2.public("POST", &path, None, body).await }
+    };
+
+    // the preview and the payment agree
+    let plain = info("").await.1;
+    assert_eq!(
+        (
+            plain["amount_minor"].clone(),
+            plain["fee_minor"].clone(),
+            plain["total_minor"].clone()
+        ),
+        (json!(100_000), json!(2_000), json!(102_000))
+    );
+    let pv = info("?coupon=save10").await.1;
+    assert_eq!(
+        (
+            pv["discount_minor"].clone(),
+            pv["fee_minor"].clone(),
+            pv["total_minor"].clone(),
+            pv["coupon_applied"].clone()
+        ),
+        (json!(10_000), json!(1_800), json!(91_800), json!(true))
+    );
+    assert_eq!(info("?coupon=NOPE").await.0.as_u16(), 409);
+    assert_eq!(
+        t.count("SELECT coalesce(sum(uses),0) FROM coupons").await,
+        0,
+        "previewing spends nothing"
+    );
+
+    let none = start(json!({})).await.1;
+    assert_eq!(none["amount_minor"], 102_000);
+    let one = start(json!({ "coupon": "save10" })).await.1;
+    assert_eq!(one["amount_minor"], 91_800);
+    let meta: Value = sqlx::query_scalar("SELECT metadata FROM payment_intents WHERE id = $1")
+        .bind(one["intent_id"].as_str().unwrap())
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            meta["base_minor"].clone(),
+            meta["discount_minor"].clone(),
+            meta["fee_minor"].clone()
+        ),
+        (json!(100_000), json!(10_000), json!(1_800))
+    );
+    assert_eq!(
+        start(json!({ "coupon": "SAVE10" })).await.1["amount_minor"],
+        91_800
+    );
+
+    // used up: refused, and the link's own use counter did not move
+    let uses_before = t.count("SELECT uses::BIGINT FROM payment_links").await;
+    let (s, e) = start(json!({ "coupon": "SAVE10" })).await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (409, json!("coupon_invalid"))
+    );
+    assert_eq!(
+        t.count("SELECT uses::BIGINT FROM payment_links").await,
+        uses_before
+    );
+    assert_eq!(t.count("SELECT uses::BIGINT FROM coupons").await, 2);
+
+    // flat coupons, expiry of nothing but deactivation, and the floor of one unit
+    let flat = t
+        .ok(
+            a,
+            "POST",
+            "/v1/coupons",
+            None,
+            json!({ "code": "FIVEH", "kind": "flat", "value": 500_000 }),
+        )
+        .await;
+    assert_eq!(
+        start(json!({ "coupon": "FIVEH" })).await.1["amount_minor"],
+        1,
+        "a coupon cannot make a payment free"
+    );
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/coupons/{}/deactivate", flat["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(start(json!({ "coupon": "FIVEH" })).await.0.as_u16(), 409);
+    let listed = t.ok(a, "GET", "/v1/coupons", None, Value::Null).await;
+    let status = |code: &str| {
+        listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["code"] == code)
+            .unwrap()["status"]
+            .clone()
+    };
+    assert_eq!(
+        (status("SAVE10"), status("FIVEH")),
+        (json!("used_up"), json!("deactivated"))
+    );
+
+    // coupons do not apply to invoice links, and belong to the tenant that made them
+    let il = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "invoice_id": inv["id"] }),
+        )
+        .await;
+    let (s, _) = t
+        .public(
+            "POST",
+            &format!(
+                "/v1/checkout/links/{tid}/{}/start",
+                il["token"].as_str().unwrap()
+            ),
+            None,
+            json!({ "coupon": "SAVE10" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 422);
+    let bl = t
+        .ok(
+            b,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 1_000 }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/coupons",
+        None,
+        json!({ "code": "ONLYA", "kind": "percent", "value": 500 }),
+    )
+    .await;
+    let (s, _) = t
+        .public(
+            "POST",
+            &format!(
+                "/v1/checkout/links/{}/{}/start",
+                b.id,
+                bl["token"].as_str().unwrap()
+            ),
+            None,
+            json!({ "coupon": "ONLYA" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 409);
+}

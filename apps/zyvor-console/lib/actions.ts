@@ -112,6 +112,7 @@ export const createLink = async (_: FormState, f: FormData): Promise<FormState> 
       description: String(f.get("description") ?? "").trim() || undefined,
       amountMinor: Math.round(rupees * 100),
       maxUses: maxUses ? Number(maxUses) : undefined,
+      convenienceFeeBp: String(f.get("fee") ?? "").trim() ? Math.round(Number(String(f.get("fee")).replace(/,/g, "")) * 100) : undefined,
     })).path;
   });
   return r?.error ? r : { ok: path };
@@ -238,3 +239,12 @@ export const saveRisk = async (_: FormState, f: FormData) => {
   const blocked = String(f.get("blocked") ?? "").split(/[\s,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
   return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked } }), "admin");
 };
+
+export const createCoupon = async (_: FormState, f: FormData): Promise<FormState> => {
+  const kind = String(f.get("kind")) === "flat" ? "flat" : "percent";
+  const n = Number(String(f.get("value") ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return { error: "Enter how much the coupon takes off." };
+  const uses = String(f.get("max_uses") ?? "").trim();
+  return run(["/links"], (z) => z.coupons.create({ code: String(f.get("code") ?? ""), kind, value: Math.round(kind === "percent" ? n * 100 : n * 100), maxUses: uses ? Number(uses) : undefined }));
+};
+export const deactivateCoupon = async (_: FormState, f: FormData) => run(["/links"], (z) => z.coupons.deactivate(id(f)));

@@ -1255,6 +1255,41 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/coupons:
+    post:
+      summary: Create a coupon (percent or flat) redeemable on fixed-amount payment links
+      tags:
+      - coupons
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List coupons with usage and status
+      tags:
+      - coupons
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/coupons/{id}/deactivate:
+    post:
+      summary: Stop a coupon being redeemed
+      tags:
+      - coupons
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/audit_events:
     get:
       summary: Audit trail
