@@ -442,8 +442,17 @@ pub async fn get_customer(
         .fetch_optional(&mut *tx)
         .await?;
     let (id, name, email, phone, ext) = r.ok_or_else(|| ApiError::not_found("customer"))?;
+    let (gstin, address1, location, pincode): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as("SELECT gstin, address1, location, pincode FROM customers WHERE id = $1")
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext }),
+        json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext, "gstin": gstin, "address1": address1, "location": location, "pincode": pincode }),
     ))
 }
 
@@ -663,6 +672,7 @@ pub async fn get_invoice(
     let r: Option<(String, String, String, i64, i64, Option<String>, String, Option<NaiveDate>)> = sqlx::query_as("SELECT id, number, currency, amount_minor, tax_minor, external_ref, status, due_date FROM invoices WHERE id = $1").bind(&id).fetch_optional(&mut *tx).await?;
     let (id, number, currency, amount, tax, ext, status, due) =
         r.ok_or_else(|| ApiError::not_found("invoice"))?;
+    let (customer_id, pos, buyer_gstin, reverse, issued): (Option<String>, Option<String>, Option<String>, bool, NaiveDate) = sqlx::query_as("SELECT customer_id, place_of_supply, buyer_gstin, reverse_charge, (created_at AT TIME ZONE 'Asia/Kolkata')::date FROM invoices WHERE id = $1").bind(&id).fetch_one(&mut *tx).await?;
     let allocs: Vec<(String, i64, String)> = sqlx::query_as("SELECT intent_id, amount_minor, reference FROM invoice_allocations WHERE invoice_id = $1 ORDER BY id").bind(&id).fetch_all(&mut *tx).await?;
     let paid: i64 = allocs.iter().map(|a| a.1).sum();
     let credited: i64 = sqlx::query_scalar(
@@ -673,6 +683,7 @@ pub async fn get_invoice(
     .await?;
     Ok(Json(json!({
         "id": id, "number": number, "currency": currency, "amount_minor": amount, "tax_minor": tax, "external_ref": ext, "status": status, "due_date": due,
+        "customer_id": customer_id, "place_of_supply": pos, "buyer_gstin": buyer_gstin, "reverse_charge": reverse, "issued_on": issued,
         "paid_minor": paid, "credited_minor": credited, "outstanding_minor": amount - paid - credited,
         "allocations": allocs.into_iter().map(|(i, a, r)| json!({ "intent_id": i, "amount_minor": a, "reference": r })).collect::<Vec<_>>(),
     })))

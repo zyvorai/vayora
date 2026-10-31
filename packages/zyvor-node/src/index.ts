@@ -252,6 +252,7 @@ export class Zyvor {
 
   readonly customers = {
     list: (externalRef?: string) => this.req<Page<{ id: string; name: string; email: string | null; phone: string | null; external_ref: string | null }>>("GET", `/v1/customers${this.qs({ external_ref: externalRef })}`),
+    get: (id: string) => this.req<{ id: string; name: string; email: string | null; phone: string | null; gstin: string | null; address1: string | null; location: string | null; pincode: string | null }>("GET", `/v1/customers/${encodeURIComponent(id)}`),
     create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) =>
       this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin, address1: p.address1, location: p.location, pincode: p.pincode }),
   };

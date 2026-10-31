@@ -5177,6 +5177,40 @@ async fn einvoice_draft_lists_what_is_missing_then_matches_the_tax_invoice(pool:
         )
         .await;
     assert_eq!(d["draft"], true);
+    let got = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}", inv2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            got["place_of_supply"].clone(),
+            got["customer_id"].clone(),
+            got["issued_on"].clone()
+        ),
+        (
+            json!("07"),
+            cus2["id"].clone(),
+            json!(zyvor_api::ist_today().to_string())
+        )
+    );
+    let c = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/customers/{}", cus2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (c["pincode"].clone(), c["gstin"].clone()),
+        (json!("110001"), json!(buyer))
+    );
     assert_eq!(d["Version"], "1.1");
     assert_eq!(d["TranDtls"]["SupTyp"], "B2B");
     assert_eq!(d["SellerDtls"]["Stcd"], "27");
