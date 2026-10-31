@@ -34,6 +34,7 @@ pub mod recon;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
+pub mod signup;
 pub mod state_machine;
 pub mod suggestions;
 pub mod telemetry;
@@ -317,6 +318,9 @@ pub fn app(state: AppState) -> Router {
             post(console_users::reset_mfa),
         )
         .route("/console/authenticate", post(console_users::authenticate))
+        // public self-serve signup
+        .route("/signup", post(signup::signup))
+        .route("/signup/verify", post(signup::verify))
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))

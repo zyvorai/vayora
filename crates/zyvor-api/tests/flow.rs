@@ -7853,3 +7853,54 @@ async fn upi_checkout_issues_a_qr_or_intent_instead_of_asking_for_a_upi_id(pool:
         "a finished payment has no QR to show"
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_creates_org_with_working_test_key_and_admin_user(pool: PgPool) {
+    let t = setup(pool).await;
+    let body = json!({ "organisation_name": "Acme Pharmacy", "email": "Owner@Acme.in", "password": "correct horse battery" });
+    let r = t.ok_public("POST", "/v1/signup", body.clone()).await;
+    let key = r["test_key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("zk_test") || key.contains("test"), "{key}");
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key,
+    };
+    // the returned key works and the console user can authenticate
+    t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
+    let who = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/console/authenticate",
+            None,
+            json!({ "username": "owner@acme.in", "password": "correct horse battery" }),
+        )
+        .await;
+    assert_eq!(who["user"]["role"], "admin");
+    // same email again is refused
+    let (s, _) = t.public("POST", "/v1/signup", None, body).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    // weak password and bad email are refused
+    let (s, _) = t
+        .public(
+            "POST",
+            "/v1/signup",
+            None,
+            json!({ "organisation_name": "X Co", "email": "b@c.io", "password": "short" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, _) = t.public("POST", "/v1/signup", None, json!({ "organisation_name": "X Co", "email": "nope", "password": "correct horse battery" })).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    // a wrong verification token is refused
+    let (s, _) = t
+        .public(
+            "POST",
+            "/v1/signup/verify",
+            None,
+            json!({ "token": "nope" }),
+        )
+        .await;
+    assert_ne!(s, StatusCode::OK);
+}

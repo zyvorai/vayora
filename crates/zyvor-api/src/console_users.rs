@@ -27,7 +27,7 @@ const LOCK_AFTER: i32 = 5;
 const LOCK_MINUTES: i32 = 15;
 const ROLES: [&str; 4] = ["admin", "finance", "viewer", "cashier"];
 
-fn hash_password(pw: &str) -> Result<String, ApiError> {
+pub(crate) fn hash_password(pw: &str) -> Result<String, ApiError> {
     Argon2::default()
         .hash_password(pw.as_bytes())
         .map(|h| h.to_string())
@@ -123,13 +123,13 @@ pub struct NewUser {
     branch_id: Option<String>,
 }
 
-fn valid_username(u: &str) -> bool {
+pub(crate) fn valid_username(u: &str) -> bool {
     (3..=64).contains(&u.len())
         && u.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@'))
 }
 
-fn check_password(p: &str) -> Result<(), ApiError> {
+pub(crate) fn check_password(p: &str) -> Result<(), ApiError> {
     if p.chars().count() < MIN_PASSWORD {
         return Err(ApiError::invalid(
             "weak_password",
