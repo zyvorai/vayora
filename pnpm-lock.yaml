@@ -8,56 +8,6 @@ importers:
 
   .: {}
 
-  apps/checkout:
-    dependencies:
-      next:
-        specifier: ^16.0.0
-        version: 16.4.3(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      react:
-        specifier: ^19.0.0
-        version: 19.3.1
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.3.1(react@19.3.1)
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.19.2
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
-  apps/dashboard:
-    dependencies:
-      '@vayora/node':
-        specifier: workspace:*
-        version: link:../../packages/node
-      next:
-        specifier: ^16.0.0
-        version: 16.4.3(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      react:
-        specifier: ^19.0.0
-        version: 19.3.1
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.3.1(react@19.3.1)
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.19.2
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@24.19.2)(vite@7.3.7(@types/node@24.19.2))
-
   apps/zyvor-checkout:
     dependencies:
       next:
@@ -104,18 +54,6 @@ importers:
       '@types/react':
         specifier: ^19.0.0
         version: 19.3.0
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@24.19.2)(vite@7.3.7(@types/node@24.19.2))
-
-  packages/node:
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

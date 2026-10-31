@@ -1,7 +1,7 @@
 # Zyvor Payments: status against the brief
 
 Legend: ✅ built and tested · 🟡 built, verified only against local simulators · ◐ partial · ❌ not built.
-"Simulated" means the local mock provider (`zyvor-provider-mock`) or the in-process simulator. **Nothing here has run against a live Razorpay or Cashfree sandbox**; that needs your test credentials.
+"Simulated" means the local mock provider (`zyvor-provider-mock`) or the in-process simulator. **Nothing here has run against a live provider.** One capability, Cashfree UPI intent and QR, has been run against Cashfree's own **sandbox** (see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)); every other provider path is simulator-only until you supply test credentials and run [REAL_SANDBOX.md](REAL_SANDBOX.md).
 
 ## Release 1: payments, ledger, reconciliation
 

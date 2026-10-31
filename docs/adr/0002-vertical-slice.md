@@ -1,6 +1,6 @@
 # ADR 0002: Vertical slice design
 
-**Status:** accepted
+**Status:** superseded. The single-merchant slice described here (the `vayora-*` crates, `apps/dashboard` and `@vayora/node`) was removed once the multi-tenant Zyvor API replaced it. The decisions below still hold in `zyvor-api`: Postgres as the source of truth, idempotency as a row in the request's own transaction, an append-only double-entry ledger, and a transactional outbox. Kept as history.
 
 - **Postgres is the source of truth.** Orders, payments, refunds, ledger, idempotency keys and the webhook outbox commit in one DB transaction, so they cannot disagree.
 - **Idempotency** is a row in `idempotency_keys` written in the request's own transaction. Concurrent duplicates block on the primary key, then replay the stored response. Reusing a key with different parameters returns 422. Failed requests roll back and leave the key reusable.
