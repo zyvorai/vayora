@@ -9,7 +9,7 @@ const LABEL: Record<string, string> = { current: "Not yet due", "1_30": "1–30 
 
 export default async function Collections() {
   const z = api();
-  const [ageing, promises, drafts] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts()]);
+  const [ageing, promises, drafts, fx] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts(), z.fx.exposure()]);
   const ai = process.env.CONSOLE_AI === "1";
   const rows = ageing.data.flatMap((b) => b.invoices.map((i) => ({ ...i, bucket: b.bucket, currency: b.currency })));
   return (
@@ -30,6 +30,31 @@ export default async function Collections() {
           <h2>Reminders to review</h2>
           <div style={{ display: "grid", gap: 12, marginBottom: 28 }}>
             {drafts.data.map((d) => <DraftReview key={d.id} id={d.id} invoice={d.invoice_number} channel={d.channel} message={d.message} source={d.source} />)}
+          </div>
+        </>
+      )}
+      {fx.data.length > 0 && (
+        <>
+          <h2>Dollar invoices</h2>
+          <p className="muted">
+            Value in rupees when each was raised and at {fx.rate_date ?? "no recorded rate"}.{" "}
+            {fx.complete && fx.unrealised_inr_minor != null ? <>Difference <strong>{inr(fx.unrealised_inr_minor)}</strong>. </> : "Some days have no recorded rate, so the total is not shown. "}
+            This is a report only; nothing is posted to your books.
+          </p>
+          <div className="tablewrap" style={{ marginBottom: 28 }}>
+            <table>
+              <thead><tr><th>Invoice</th><th>Raised</th><th className="num">Owed (USD)</th><th className="num">When raised</th><th className="num">Now</th><th className="num">Difference</th></tr></thead>
+              <tbody>
+                {fx.data.map((i) => (
+                  <tr key={i.invoice_id}>
+                    <td>{i.number}</td><td>{i.raised_on}</td><td className="num">${(i.outstanding_usd_minor / 100).toFixed(2)}</td>
+                    <td className="num">{i.booked_inr_minor != null ? inr(i.booked_inr_minor) : "no rate"}</td>
+                    <td className="num">{i.current_inr_minor != null ? inr(i.current_inr_minor) : "no rate"}</td>
+                    <td className="num">{i.unrealised_inr_minor != null ? inr(i.unrealised_inr_minor) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}

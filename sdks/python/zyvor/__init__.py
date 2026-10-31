@@ -94,6 +94,21 @@ class Zyvor:
     def ageing(self, as_of: Optional[str] = None) -> dict:
         return self._req("GET", "/v1/collections/ageing" + (f"?as_of={as_of}" if as_of else ""))
 
+    # ---- exchange rates (reporting only) ----
+    def set_fx_rate(self, rate: str, currency: str = "USD", as_of: Optional[str] = None, note: Optional[str] = None) -> dict:
+        """Record the INR-per-unit rate you use for a day, e.g. "83.2150". One per day; never edited."""
+        return self._req("POST", "/v1/fx/rates", {k: v for k, v in {"currency": currency, "rate": rate, "as_of": as_of, "note": note}.items() if v is not None})
+
+    def fx_rates(self) -> dict:
+        return self._req("GET", "/v1/fx/rates")
+
+    def fx_convert(self, amount_minor: int, from_currency: str, to_currency: str, as_of: Optional[str] = None) -> dict:
+        return self._req("GET", f"/v1/fx/convert?amount_minor={amount_minor}&from={from_currency}&to={to_currency}" + (f"&as_of={as_of}" if as_of else ""))
+
+    def fx_exposure(self, as_of: Optional[str] = None) -> dict:
+        """Open dollar invoices at the rate when raised vs the report date. Reporting only; nothing is posted."""
+        return self._req("GET", "/v1/fx/exposure" + (f"?as_of={as_of}" if as_of else ""))
+
     def promise_to_pay(self, invoice_id: str, promised_minor: int, promised_date: str, note: Optional[str] = None) -> dict:
         return self._req("POST", f"/v1/invoices/{invoice_id}/promises", {k: v for k, v in {"promised_minor": promised_minor, "promised_date": promised_date, "note": note}.items() if v is not None})
 

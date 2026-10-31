@@ -46,6 +46,18 @@ class Tests(unittest.TestCase):
             ("POST", "/v1/invoices/inv_1/promises"), ("POST", "/v1/invoices/inv_1/reminders")])
         self.assertEqual(seen[2][2], {"quantity": 5, "reference": "u1"})
 
+    def test_fx_paths(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        z.set_fx_rate("83.2150", as_of="2026-10-01"); z.fx_rates(); z.fx_convert(100, "USD", "INR"); z.fx_exposure("2026-10-31"); z.fx_exposure()
+        self.assertEqual(seen, [
+            ("POST", "/v1/fx/rates", {"currency": "USD", "rate": "83.2150", "as_of": "2026-10-01"}),
+            ("GET", "/v1/fx/rates", None), ("GET", "/v1/fx/convert?amount_minor=100&from=USD&to=INR", None),
+            ("GET", "/v1/fx/exposure?as_of=2026-10-31", None), ("GET", "/v1/fx/exposure", None)])
+
     def test_links_dunning_and_rotation_paths(self):
         seen = []
         def opener(req, timeout=None):

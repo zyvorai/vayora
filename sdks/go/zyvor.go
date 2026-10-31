@@ -221,6 +221,28 @@ func (c *Client) Ageing(asOf string) (map[string]any, error) {
 	return out, err
 }
 
+// SetFxRate records the INR-per-dollar rate you use for a day, e.g. "83.2150" (asOf "" = today). One per day; never edited.
+func (c *Client) SetFxRate(rate, asOf string) (map[string]any, error) {
+	body := map[string]any{"currency": "USD", "rate": rate}
+	if asOf != "" {
+		body["as_of"] = asOf
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/fx/rates", body, "", &out)
+	return out, err
+}
+
+// FxExposure values open dollar invoices at the rate when raised and at asOf ("" = today). Reporting only.
+func (c *Client) FxExposure(asOf string) (map[string]any, error) {
+	path := "/v1/fx/exposure"
+	if asOf != "" {
+		path += "?as_of=" + asOf
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
 func (c *Client) PromiseToPay(invoiceID string, promisedMinor int64, promisedDate string) (map[string]any, error) {
 	var out map[string]any
 	err := c.do("POST", "/v1/invoices/"+invoiceID+"/promises", map[string]any{"promised_minor": promisedMinor, "promised_date": promisedDate}, "", &out)
