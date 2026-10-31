@@ -40,7 +40,7 @@ struct CollectView: View {
             if !amountText.isEmpty && amount == nil { Text("Enter an amount like 499 or 499.50").font(.footnote).foregroundStyle(Theme.danger) }
             TextField("Note (optional)", text: $note).textFieldStyle(.roundedBorder)
             Button(phase == .creating ? "Creating…" : "Show QR") { start() }
-                .buttonStyle(PrimaryButtonStyle()).disabled(amount == nil || phase == .creating)
+                .buttonStyle(PrimaryButtonStyle(gradient: Theme.merchantGradient)).disabled(amount == nil || phase == .creating)
             if store.client == nil { Text("Add your API key in Settings first.").font(.footnote).foregroundStyle(.secondary) }
         }
     }
@@ -63,7 +63,7 @@ struct CollectView: View {
             Image(systemName: icon).font(.system(size: 88)).foregroundStyle(color).symbolEffect(.bounce, value: true)
             Text(title).font(.title.bold())
             if let detail { Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.center) }
-            Button("New payment") { amountText = ""; note = ""; phase = .entering }.buttonStyle(PrimaryButtonStyle())
+            Button("New payment") { amountText = ""; note = ""; phase = .entering }.buttonStyle(PrimaryButtonStyle(gradient: Theme.merchantGradient))
         }
     }
 

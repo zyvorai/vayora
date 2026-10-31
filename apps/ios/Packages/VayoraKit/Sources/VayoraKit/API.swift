@@ -38,10 +38,16 @@ public struct AttemptInfo: Codable, Equatable, Sendable {
     public let status: String
     public let failureReason: String?
     public let clientAction: ClientActionInfo?
+    public let amountMinor: Int64?
+    public let refundedMinor: Int64?
+    public let reservedRefundMinor: Int64?
     enum CodingKeys: String, CodingKey {
         case id, status
         case failureReason = "failure_reason"
         case clientAction = "client_action"
+        case amountMinor = "amount_minor"
+        case refundedMinor = "refunded_minor"
+        case reservedRefundMinor = "reserved_refund_minor"
     }
 
     /// The `upi://` payload to show as a QR, when the attempt issued one.
@@ -56,6 +62,22 @@ public struct AttemptInfo: Codable, Equatable, Sendable {
 struct ErrorEnvelope: Decodable {
     struct Body: Decodable { let code: String; let message: String }
     let error: Body
+}
+
+/// How much of a captured payment has been (or is being) given back. A refund in progress counts as given back,
+/// so the app never offers to refund money that is already on its way.
+public struct RefundState: Equatable, Sendable {
+    public let capturedMinor: Int64
+    public let refundedMinor: Int64
+    public init(capturedMinor: Int64, refundedMinor: Int64) { self.capturedMinor = capturedMinor; self.refundedMinor = refundedMinor }
+    public var remainingMinor: Int64 { max(0, capturedMinor - refundedMinor) }
+    public var isFullyRefunded: Bool { capturedMinor > 0 && remainingMinor == 0 }
+    public var isPartlyRefunded: Bool { refundedMinor > 0 && remainingMinor > 0 }
+
+    public init?(attempts: [AttemptInfo]) {
+        guard let a = attempts.first(where: { $0.status == "captured" }), let total = a.amountMinor else { return nil }
+        self.init(capturedMinor: total, refundedMinor: (a.refundedMinor ?? 0) + (a.reservedRefundMinor ?? 0))
+    }
 }
 
 public struct RefundInfo: Codable, Equatable, Sendable {
@@ -110,6 +132,26 @@ public struct VayoraClient: Sendable {
     public func intent(id: String) async throws -> PaymentIntent {
         struct Detail: Decodable { let intent: PaymentIntent }
         return try await send(request("GET", "/payment_intents/\(id)"), as: Detail.self).intent
+    }
+
+    /// Asks the server to re-check every open attempt of a payment with its provider, then returns the payment as it
+    /// now stands. A payment is only recorded as paid once someone asks, so lists call this for unfinished payments.
+    public func settle(id: String) async throws -> PaymentIntent {
+        struct Detail: Decodable { let intent: PaymentIntent; let attempts: [AttemptInfo] }
+        let d = try await send(request("GET", "/payment_intents/\(id)"), as: Detail.self)
+        var asked = false
+        for a in d.attempts where a.status == "pending" || a.status == "authorized" {
+            _ = try? await refreshAttempt(id: a.id)
+            asked = true
+        }
+        return asked ? try await intent(id: id) : d.intent
+    }
+
+    /// Refund position of a payment, or nil when it has no captured attempt.
+    public func refundState(id: String) async throws -> RefundState? {
+        struct Detail: Decodable { let attempts: [AttemptInfo] }
+        let d = try await send(request("GET", "/payment_intents/\(id)"), as: Detail.self)
+        return RefundState(attempts: d.attempts)
     }
 
     public func listIntents() async throws -> [PaymentIntent] {

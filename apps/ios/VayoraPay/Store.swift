@@ -17,6 +17,7 @@ struct Txn: Codable, Identifiable, Equatable {
 /// The payer's local state. The wallet is **test money kept on this phone**: it is not a bank account.
 @MainActor
 final class Store: ObservableObject {
+    @Published var lastError = ""
     @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "serverURL") } }
     @Published var balanceMinor: Int64 { didSet { UserDefaults.standard.set(balanceMinor, forKey: "balance") } }
     @Published var history: [Txn] { didSet { save() } }
@@ -67,6 +68,7 @@ final class Store: ObservableObject {
         } catch let e as APIError where e.status == 409 || e.status == 422 {
             return .declined(e.message)
         } catch {
+            lastError = "\(error) [url: \(serverURL)]"
             return .unknown
         }
     }

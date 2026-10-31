@@ -13,10 +13,27 @@ struct HomeView: View {
                 VStack(spacing: 16) {
                     TestModeChip()
                     balanceCard
-                    HStack(spacing: 12) {
-                        action("Scan & pay", "qrcode.viewfinder") { scanning = true }
-                        action("Paste UPI link", "link") { pasting = true }
+                    Button { scanning = true } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "qrcode.viewfinder").font(.system(size: 34, weight: .semibold))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Scan & pay").font(.title3.bold())
+                                Text("Point at a Vayora Merchant QR").font(.footnote).opacity(0.85)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.body.weight(.semibold)).opacity(0.7)
+                        }
+                        .foregroundStyle(.white).padding(20)
+                        .background(Theme.heroGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the camera to scan a payment QR code")
+                    Button { pasting = true } label: {
+                        Label("Paste a UPI link instead", systemImage: "link").font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                     insights
                     recent
                 }

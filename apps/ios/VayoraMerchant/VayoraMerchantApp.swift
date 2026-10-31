@@ -11,7 +11,7 @@ struct VayoraMerchantApp: App {
                 PaymentsView().tabItem { Label("Payments", systemImage: "list.bullet.rectangle") }
                 MerchantSettings().tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
-            .environmentObject(store).tint(Theme.accent)
+            .environmentObject(store).tint(Theme.merchant)
         }
     }
 }

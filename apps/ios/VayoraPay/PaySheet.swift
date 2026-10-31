@@ -125,6 +125,10 @@ struct PaySheet: View {
                 Text("Checking…").font(.title.bold())
                 Text("We couldn't confirm this payment. Don't pay again: ask the merchant if it arrived.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                if !store.lastError.isEmpty {
+                    Text("Details: \(store.lastError)").font(.caption2).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).textSelection(.enabled)
+                }
             case .notAvailable:
                 Image(systemName: "wifi.exclamationmark").font(.system(size: 72)).foregroundStyle(Theme.warn)
                 Text("Test server not available").font(.title2.bold())
