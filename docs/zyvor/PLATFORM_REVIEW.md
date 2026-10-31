@@ -59,6 +59,27 @@ approved. Every step is audited (`live_access.revoked`, `.restored`) and raises 
 **Not covered:** money already with the provider is not clawed back or held here (do that at Razorpay or Cashfree);
 revoking does not sign anyone out; and a business is frozen as a whole, not per provider or per branch.
 
+## Re-review: changes after approval
+
+Once Zyvor has approved a business, its details are locked, so the one thing it can still change is **where its money
+can go**: a new bank account. That is re-reviewed by Zyvor, not only by a second person in the merchant's own
+organisation:
+
+- adding a bank account to an approved business records a **change** (`live_changes`: who, when, bank, IFSC, last four
+  digits; no account number) and **holds that business's live payouts** (`change_awaiting_review`, 409) until a reviewer
+  decides. Test mode is not held. Accounts added before approval are part of the first review and flag nothing.
+- the reviewer page shows **Changes waiting** above the queue; or `scripts/platform-review.sh changes`,
+  `change-approve <id>`, `change-reject <id> "why"`. **Approve** releases the hold. **Reject** needs a reason, removes
+  the account, emails the merchant the reason and releases the hold. The record of what it was stays.
+- the merchant sees "Zyvor is reviewing a change you made" on Onboarding and by `GET /v1/live_access` (`changes`),
+  and is emailed the decision. Audit actions and webhook events: `live_change.approved` / `live_change.rejected`.
+- the gauge `zyvor_live_changes_pending` counts waiting changes; the alert `ZyvorLiveChangeWaiting` fires after 4 hours.
+
+**What this does not do:** it does not re-run KYC. Zyvor keeps only the last four digits of a PAN, so it cannot re-check
+a PAN or GSTIN later (a GSTIN that is cancelled next year goes unnoticed), and legal name, PAN, GSTIN and address
+cannot be edited at all once approved (the merchant has to ask Zyvor). A held payout is not queued: the merchant
+retries after approval. With no reviewer set up a held business stays held, as with live access itself.
+
 ## Doing a review in the console
 
 Set `CONSOLE_REVIEWER=1` on the console that Zyvor's own people use (leave it off for any console merchants reach: it
@@ -103,5 +124,5 @@ When unsure, reject with a note that says exactly what would change your mind.
 ## Not built yet
 
 - A second reviewer for large or unusual merchants; assignment and an SLA clock.
-- Re-review when the business changes after approval (profiles are locked once approved, but a new bank account is
-  only verified by a person, not re-reviewed by Zyvor).
+- Re-checking identity later (GSTIN status, name change) and a way for an approved business to ask for a change to
+  its legal details; today it can only add bank accounts, and those are re-reviewed (see above).

@@ -161,11 +161,24 @@ pub async fn live_access_status(
     .fetch_optional(&s.pool)
     .await?;
     let ready = onboarding_approved(&s, &org).await?;
+    // changes made after approval that Zyvor has not settled yet (and the last few it has)
+    let changes: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, kind, summary, status, note FROM live_changes WHERE organisation_id = $1 ORDER BY requested_at DESC LIMIT 5",
+    )
+    .bind(&org)
+    .fetch_all(&s.pool)
+    .await?;
+    let changes: Vec<Value> = changes
+        .into_iter()
+        .map(|c| json!({ "id": c.0, "kind": c.1, "summary": c.2, "status": c.3, "note": c.4 }))
+        .collect();
     Ok(Json(match row {
         Some((st, note, at, rev, round)) => {
-            json!({ "status": st, "note": note, "requested_at": at, "reviewed_at": rev, "round": round, "onboarding_approved": ready })
+            json!({ "status": st, "note": note, "requested_at": at, "reviewed_at": rev, "round": round, "onboarding_approved": ready, "changes": changes })
         }
-        None => json!({ "status": "not_requested", "note": null, "onboarding_approved": ready }),
+        None => {
+            json!({ "status": "not_requested", "note": null, "onboarding_approved": ready, "changes": changes })
+        }
     }))
 }
 
@@ -431,6 +444,146 @@ pub async fn decide(
         }
     }
     Ok(Json(json!({ "organisation_id": org, "status": new })))
+}
+
+#[derive(Deserialize)]
+pub struct ChangeDecision {
+    decision: String,
+    note: Option<String>,
+}
+
+/// `GET /v1/platform/changes?status=pending`: changes a business made after Zyvor approved it, waiting for a reviewer.
+pub async fn list_changes(
+    State(s): State<AppState>,
+    _p: PlatformAuth,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Value>, ApiError> {
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note
+         FROM live_changes c JOIN organisations o ON o.id = c.organisation_id
+         WHERE ($1::text IS NULL OR c.status = $1) ORDER BY c.requested_at LIMIT 100",
+    )
+    .bind(&q.status)
+    .fetch_all(&s.pool)
+    .await?;
+    Ok(Json(json!({ "data": rows.into_iter().map(|r| json!({
+        "id": r.0, "organisation_id": r.1, "organisation": r.2, "kind": r.3, "summary": r.4,
+        "status": r.5, "requested_by": r.6, "requested_at": r.7, "note": r.8,
+    })).collect::<Vec<_>>() })))
+}
+
+/// `POST /v1/platform/changes/{id}/decision`: approve, or reject with a note (the account is then removed and the
+/// merchant is told why). Either way the hold on live payouts ends once nothing else is waiting.
+pub async fn decide_change(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(id): Path<String>,
+    Json(b): Json<ChangeDecision>,
+) -> Result<Json<Value>, ApiError> {
+    let approve = match b.decision.as_str() {
+        "approve" => true,
+        "reject" => false,
+        _ => {
+            return Err(ApiError::invalid(
+                "invalid_decision",
+                "decision is approve or reject",
+            ));
+        }
+    };
+    let note = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    if !approve && note.is_none() {
+        return Err(ApiError::invalid(
+            "note_required",
+            "say why it was rejected; the merchant is shown this",
+        ));
+    }
+    let tid: Option<String> =
+        sqlx::query_scalar("SELECT tenant_id FROM live_changes WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&s.pool)
+            .await?;
+    let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT status, kind, ref_id, requested_by, summary FROM live_changes WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, kind, ref_id, requested_by, summary) =
+        cur.ok_or_else(|| ApiError::not_found("change"))?;
+    if status != "pending" {
+        return Err(ApiError::conflict(
+            "not_pending",
+            format!("this change is already {status}"),
+        ));
+    }
+    let new = if approve { "approved" } else { "rejected" };
+    sqlx::query("UPDATE live_changes SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE id = $1")
+        .bind(&id)
+        .bind(new)
+        .bind(&p.id)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    if !approve && kind == "bank_account" {
+        // the account Zyvor did not accept is removed; the review record keeps what it was
+        sqlx::query("DELETE FROM merchant_bank_accounts WHERE id = $1")
+            .bind(&ref_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let actor = format!("zyvor:{}", p.name);
+    let event = format!("live_change.{new}");
+    tenant::audit(
+        &mut tx,
+        &tid,
+        &actor,
+        &event,
+        Some(&ref_id),
+        json!({ "kind": kind, "note": note }),
+    )
+    .await?;
+    tenant::emit(
+        &mut tx,
+        &tid,
+        &event,
+        json!({ "id": id, "kind": kind, "summary": summary, "reviewed_by": actor, "note": note }),
+    )
+    .await?;
+    tx.commit().await?;
+    let (subject, body) = if approve {
+        (
+            "Zyvor approved the change to your business".to_string(),
+            format!(
+                "Zyvor reviewed this change and approved it: {summary}.\n\nPayouts are no longer held for it: {}\n",
+                s.console_url
+            ),
+        )
+    } else {
+        (
+            "Zyvor did not approve a change to your business".to_string(),
+            format!(
+                "Zyvor reviewed this change and did not approve it: {summary}.\nThe account was removed.\n\nWhy: {}\n\nYou can add the right one from the Onboarding page: {}/onboarding\n",
+                note.unwrap_or(""),
+                s.console_url
+            ),
+        )
+    };
+    let to_addr = requested_by.strip_prefix("user:").unwrap_or(&requested_by);
+    if to_addr.contains('@') {
+        crate::mail::enqueue(&s.pool, to_addr, &subject, &body).await?;
+    }
+    Ok(Json(json!({ "id": id, "status": new })))
+}
+
+/// Changes waiting for a reviewer (for the `/metrics` gauge and an alert).
+pub async fn pending_changes(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM live_changes WHERE status = 'pending'")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(-1)
 }
 
 /// Is this tenant a live one whose organisation has had live mode taken away? Such a tenant can read and

@@ -64,3 +64,22 @@ export async function changeLiveAccess(_: State, form: FormData): Promise<State>
   revalidatePath("/reviewer");
   redirect(`/reviewer?status=${action === "revoke" ? "revoked" : "approved"}&done=${action}`);
 }
+
+/** Approve or reject a change a live business made (a new bank account). Rejecting needs the reason the merchant sees. */
+export async function decideChange(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const id = String(form.get("id") ?? "");
+  const decision = String(form.get("decision") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+  if (decision !== "approve" && decision !== "reject") return { error: "Choose approve or reject." };
+  if (decision === "reject" && !note) return { error: "Say why. The merchant is shown this, and the account is removed." };
+  const r = await platform(key, "POST", `/changes/${encodeURIComponent(id)}/decision`, { decision, note: note || undefined });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer");
+  redirect(`/reviewer?status=pending&done=change_${decision}`);
+}

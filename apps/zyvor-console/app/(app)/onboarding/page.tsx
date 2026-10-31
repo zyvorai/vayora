@@ -40,6 +40,16 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
           <strong>Your business details are approved.</strong> {o.profile?.reviewed_by === "system:auto" ? "Every check passed, so no one needed to review them." : `Reviewed by ${o.profile?.reviewed_by}.`}
         </div>
       )}
+      {access?.changes?.some((c) => c.status === "pending") && (
+        <div className="note" role="status" style={{ marginBottom: 16 }}>
+          <strong>Zyvor is reviewing a change you made.</strong> {access.changes.filter((c) => c.status === "pending").map((c) => c.summary).join("; ")}. Payouts in live mode are held until it is approved. We email you when it is.
+        </div>
+      )}
+      {access?.changes?.[0]?.status === "rejected" && !access.changes.some((c) => c.status === "pending") && (
+        <div className="note bad" role="status" style={{ marginBottom: 16 }}>
+          <strong>Zyvor did not approve your last change.</strong> {access.changes[0].summary}: {access.changes[0].note ?? "no reason was given"}. The account was removed; add the right one below.
+        </div>
+      )}
       {access && (
         <div className={`card${access.status === "approved" ? "" : access.status === "revoked" ? " note bad" : " note"}`} style={{ marginBottom: 16 }} role="status">
           {access.status === "approved" && <><strong>Live mode is open.</strong> {live ? "You are in live mode." : "Use the Test / Live switch at the top to go live."}</>}

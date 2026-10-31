@@ -8,6 +8,9 @@
 #   ... reject <organisation_id> "what to fix" the merchant is shown this note (required)
 #   ... revoke <organisation_id> "why"         takes live mode away from an approved business (note required)
 #   ... restore <organisation_id> ["note"]     gives it back
+#   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account)
+#   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
+#   ... change-reject <id> "why"               removes the account; the merchant is shown why (note required)
 #
 # Never prints the key.
 set -euo pipefail
@@ -53,5 +56,17 @@ if d.get("note"): print("last note  :", d["note"])' ;;
     if [ -z "${3:-}" ]; then echo "say why:  $0 revoke <organisation_id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: revoke <organisation_id> \"why\"}/revoke" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "revoked: no new payments or payouts for " + d["organisation_id"])' ;;
   restore) call POST "/v1/platform/reviews/${2:?usage: restore <organisation_id> [note]}/restore" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "restored: live mode is open again for " + d["organisation_id"])' ;;
-  *) sed -n '2,14p' "$0"; exit 1 ;;
+  changes)
+    call GET "/v1/platform/changes${2:+?status=$2}" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
+for c in d["data"]:
+    print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]))
+if not d["data"]: print("nothing here")' ;;
+  change-approve) call POST "/v1/platform/changes/${2:?usage: change-approve <id> [note]}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"approve","note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "approved: payouts are no longer held for " + d["id"])' ;;
+  change-reject)
+    if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
+    call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
+  *) sed -n '2,17p' "$0"; exit 1 ;;
 esac
