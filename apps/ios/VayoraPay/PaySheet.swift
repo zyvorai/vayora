@@ -7,6 +7,8 @@ struct PaySheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let payload: UPIPayload
+    /// A person-to-person test transfer (recorded on this phone only) instead of a merchant payment through Vayora.
+    let transfer: Bool
 
     enum Step: Equatable { case amount, review, pin, working, done(Store.Outcome) }
     @State private var step: Step
@@ -16,8 +18,8 @@ struct PaySheet: View {
     @State private var shake: CGFloat = 0
     @State private var progress = 0.0
 
-    init(payload: UPIPayload) {
-        self.payload = payload
+    init(payload: UPIPayload, transfer: Bool = false) {
+        self.payload = payload; self.transfer = transfer
         _step = State(initialValue: payload.amount == nil ? .amount : .review)
     }
 
@@ -33,6 +35,8 @@ struct PaySheet: View {
             case .review:
                 if let amount {
                     PayReviewScreen(name: payload.name, payee: payload.payee, amount: amount, balance: store.balance) {
+                        // a small payment (when switched on, and inside today's limit) needs only the slide
+                        if !store.needsPIN(for: amount) { submit(noPIN: true); return }
                         pin.clear(); pinError = false
                         withAnimation(VUI.spring) { step = .pin }
                     }
@@ -64,7 +68,7 @@ struct PaySheet: View {
     func digit(_ d: Int) {
         pin.press(d)
         guard pin.isFull else { return }
-        if pin.code == store.testPIN { submit() } else {
+        if pin.code == store.testPIN { submit(noPIN: false) } else {
             pinError = true; Haptics.error()
             Task {
                 for x: CGFloat in [12, -12, 8, -8, 0] { withAnimation(.linear(duration: 0.06)) { shake = x }; try? await Task.sleep(nanoseconds: 60_000_000) }
@@ -74,14 +78,12 @@ struct PaySheet: View {
         }
     }
 
-    func submit() {
+    func submit(noPIN: Bool) {
         guard let amount else { return }
         withAnimation(VUI.spring) { step = .working }
         Task {
-            let outcome = await store.pay(payload, amount: amount)
-            if outcome != .unknown && outcome != .notAvailable {
-                store.record(Txn(payee: payload.payee, name: payload.name, amountMinor: amount.minor, note: payload.note, status: outcome == .paid ? .success : .failed))
-            }
+            let outcome = transfer ? store.transfer(payload, amount: amount) : await store.pay(payload, amount: amount)
+            store.settle(payload, amount: amount, outcome: outcome, transfer: transfer, noPIN: noPIN)
             progress = 0
             withAnimation(.easeInOut(duration: 0.3)) { step = .done(outcome) }
             outcome == .paid ? Haptics.success() : Haptics.error()
@@ -97,5 +99,9 @@ struct PaySheet: View {
         case .notAvailable: .failed("Test server not available. Check the address in Settings, and that the server runs with ZYVOR_SIM_PAYER=1.")
         }
     }
-    func footnote(_ o: Store.Outcome) -> String? { o == .unknown && !store.lastError.isEmpty ? "Details: \(store.lastError)" : nil }
+    func footnote(_ o: Store.Outcome) -> String? {
+        if o == .unknown && !store.lastError.isEmpty { return "Details: \(store.lastError)" }
+        if transfer && o == .paid { return "Test transfer: recorded on this phone only, not in Vayora's ledger." }
+        return nil
+    }
 }
