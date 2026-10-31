@@ -166,6 +166,7 @@ export const refundPayment = async (_: FormState, f: FormData) => {
   const r = await run([`/payments/${intent}`, "/refunds", "/"], (z) => z.intents.refund(intent, { amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100), reason: String(f.get("reason") ?? "").trim() || undefined, idempotencyKey: key || undefined }));
   return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
 };
+export const sendTestEvent = async (_: FormState) => run(["/webhooks", "/developers"], (z) => z.webhooks.sendTest(), "admin");
 export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
 export const resolveCase = async (_: FormState, f: FormData) => {
   const note = String(f.get("resolution") ?? "").trim();

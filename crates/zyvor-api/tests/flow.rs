@@ -8209,3 +8209,45 @@ async fn onboarding_checks_that_fail_or_do_not_fit_go_to_review(pool: PgPool) {
         "{sub}"
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn test_event_needs_a_webhook_url_and_is_sent_even_when_unsubscribed(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let (s, b) = t.call(a, "POST", "/v1/outbox/test", None, json!({})).await;
+    assert_eq!(
+        (s, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("no_webhook_url"))
+    );
+    t.ok(a, "POST", "/v1/settings", None, json!({ "outbound_webhook_url": t.mock.clone(), "outbound_webhook_secret": "whsec_out", "webhook_events": ["payment.captured"] })).await;
+    let r = t.ok(a, "POST", "/v1/outbox/test", None, json!({})).await;
+    assert_eq!(r["status"], "pending");
+    let list = t.ok(a, "GET", "/v1/outbox", None, Value::Null).await;
+    let ev = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == r["id"])
+        .expect("queued");
+    assert_eq!(ev["type"], "webhook.test");
+    assert_eq!(ev["payload"]["type"], "webhook.test");
+    // a read-only key cannot send one
+    let k = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "reader", "scopes": ["payments:read"] }),
+        )
+        .await;
+    let ro = Tenant {
+        id: a.id.clone(),
+        key: k["key"].as_str().unwrap().to_string(),
+    };
+    let (s, _) = t
+        .call(&ro, "POST", "/v1/outbox/test", None, json!({}))
+        .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}

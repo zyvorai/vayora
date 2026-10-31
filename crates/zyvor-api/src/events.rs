@@ -84,6 +84,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "onboarding.submitted",
         "Onboarding was submitted for review.",
     ),
+    (
+        "webhook.test",
+        "A test event you sent yourself from the console or the API. It is sent even if you did not subscribe to it.",
+    ),
     ("onboarding.approved", "Onboarding was approved."),
     (
         "onboarding.rejected",

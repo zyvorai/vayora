@@ -331,6 +331,7 @@ pub fn app(state: AppState) -> Router {
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))
         .route("/outbox", get(list_outbox))
+        .route("/outbox/test", post(admin::send_test_event))
         .route("/outbox/{id}/replay", post(replay_outbox))
         .route("/inbox", get(list_inbox))
         // payment links

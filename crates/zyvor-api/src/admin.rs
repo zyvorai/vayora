@@ -982,6 +982,49 @@ pub async fn replay_outbox(
     Ok(Json(json!({ "id": id, "status": "pending" })))
 }
 
+/// Queue a `webhook.test` event for the merchant's endpoint, so they can see delivery and signature
+/// checking work before real events flow. Sent whatever the subscription list says.
+pub async fn send_test_event(
+    State(s): State<AppState>,
+    auth: Auth,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let url: Option<Option<String>> =
+        sqlx::query_scalar("SELECT outbound_webhook_url FROM tenant_settings WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if url.flatten().is_none() {
+        return Err(ApiError::conflict(
+            "no_webhook_url",
+            "set a webhook URL in Settings first",
+        ));
+    }
+    let id = new_id("evt");
+    let payload = json!({ "id": id, "type": "webhook.test", "created_at": chrono::Utc::now(), "data": { "message": "This is a test event from Zyvor.", "sent_by": auth.actor } });
+    sqlx::query("INSERT INTO outbox_events (id, tenant_id, type, payload) VALUES ($1, $2, 'webhook.test', $3)")
+        .bind(&id)
+        .bind(&auth.tenant_id)
+        .bind(&payload)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "outbox.test_sent",
+        Some(&id),
+        json!({}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "status": "pending" })),
+    ))
+}
+
 /// What the platform has received from providers (the inbound inspector).
 pub async fn list_inbox(
     State(s): State<AppState>,

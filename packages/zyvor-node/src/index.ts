@@ -427,6 +427,8 @@ export class Zyvor {
     catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),
     outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
+    /** Queue a `webhook.test` event for your webhook endpoint. Needs a webhook URL in settings. */
+    sendTest: () => this.req<{ id: string; status: string }>("POST", "/v1/outbox/test"),
   };
 }
 

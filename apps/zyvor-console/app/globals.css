@@ -261,3 +261,11 @@ label.field.checkbox input { width: auto; }
 .tabs { margin: 0 0 18px; overflow-x: auto; max-width: 100%; }
 .tabs .seg { flex-wrap: nowrap; }
 .tabs .seg a { white-space: nowrap; }
+
+/* developers */
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.steps h2 { margin-bottom: 6px; }
+.code { margin: 12px 0 0; padding: 14px 16px; border-radius: 12px; background: var(--code); border: 1px solid var(--line); overflow-x: auto; font-size: .8125rem; line-height: 1.55; white-space: pre; }
+code { background: var(--code); padding: 1px 6px; border-radius: 6px; }
+.code, .code * { letter-spacing: 0; }
+td .code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 260px; max-width: 420px; }
