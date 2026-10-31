@@ -7466,3 +7466,70 @@ async fn with_an_actor_secret_only_signed_requests_can_name_a_person(pool: PgPoo
     }
     assert_eq!(who("signed").await, "user:priya");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_custom_provider_needs_a_public_https_gateway_and_a_key(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut st = t.state.clone();
+    st.allow_private_targets = false; // production posture
+    let app = zyvor_api::app(st);
+    let add = |body: Value| {
+        let (app, key) = (app.clone(), a.key.clone());
+        async move {
+            raw(
+                &app,
+                &key,
+                None,
+                "POST",
+                "/v1/provider_accounts",
+                None,
+                body,
+            )
+            .await
+        }
+    };
+    let creds = json!({ "api_key": "k_gateway" });
+    let code = |r: &(StatusCode, Value)| (r.0, r.1["error"]["code"].as_str().map(str::to_string));
+
+    // your own gateway has no default URL
+    let r = add(json!({ "provider": "custom", "credentials": creds, "webhook_secret": "w" })).await;
+    assert_eq!(
+        code(&r),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("missing_base_url".into())
+        )
+    );
+    // and the URL cannot point inside your network, or skip https
+    for url in [
+        "https://10.0.0.5",
+        "https://localhost",
+        "http://gateway.example.com",
+    ] {
+        let r = add(json!({ "provider": "custom", "credentials": creds, "webhook_secret": "w", "base_url": url })).await;
+        assert_eq!(
+            code(&r),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("bad_base_url".into())
+            ),
+            "{url} must be refused"
+        );
+    }
+    let r = add(json!({ "provider": "custom", "credentials": {}, "webhook_secret": "w", "base_url": "https://gateway.example.com" })).await;
+    assert_eq!(
+        code(&r),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("missing_credentials".into())
+        )
+    );
+
+    let r = add(json!({ "provider": "custom", "credentials": creds, "webhook_secret": "w", "base_url": "https://gateway.example.com" })).await;
+    assert_eq!(r.0, StatusCode::CREATED, "{}", r.1);
+    assert_eq!(
+        r.1["webhook_url"].as_str(),
+        Some(format!("/v1/webhooks/custom/{}", a.id).as_str())
+    );
+}

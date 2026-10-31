@@ -9,6 +9,7 @@ use sqlx::PgConnection;
 use zyvor_providers::{
     Method, Provider,
     cashfree::Cashfree,
+    custom::Custom,
     razorpay::Razorpay,
     router::{Candidate, Fee, Health, Rule},
 };
@@ -78,6 +79,15 @@ pub async fn load(
             s("client_secret"),
             state.provider_timeout,
         )),
+        "custom" => {
+            // Unlike the two hosted providers there is no default endpoint: it is your own gateway.
+            let base = base_url.ok_or_else(ApiError::internal)?;
+            crate::ssrf::check_url(&base, state.allow_private_targets).map_err(|e| {
+                tracing::error!(provider, error = %e, "custom provider base_url refused");
+                ApiError::internal()
+            })?;
+            Arc::new(Custom::new(base, s("api_key"), state.provider_timeout))
+        }
         other => {
             return Err(ApiError::internal())
                 .inspect_err(|_| tracing::error!(other, "unknown provider"));

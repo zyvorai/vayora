@@ -12,6 +12,7 @@ use serde_json::Value;
 use zyvor_core::Currency;
 
 pub mod cashfree;
+pub mod custom;
 pub mod razorpay;
 pub mod router;
 pub mod sim;
