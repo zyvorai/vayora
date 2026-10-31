@@ -118,12 +118,43 @@ flowchart LR
   T([Every cycle, one tenant at a time]) --> A
   A[1. Resolve unknowns<br/>ask the provider] --> B[2. Deliver merchant webhooks<br/>retries with backoff]
   B --> C[3. Bill recurring invoices that are due<br/>and send reminders for tenants who opted in]
-  C --> D[4. Seal the audit trail<br/>tamper-evident]
+  C --> M[3a. AutoPay mandates<br/>notice, due debits, settle]
+  M --> D[4. Seal the audit trail<br/>tamper-evident]
   D --> E[5. Find payments that<br/>never reached a settlement]
   E --> T
 ```
 
 Each job runs inside one tenant's scope, so a job can never touch another tenant's rows. Delivery uses `FOR UPDATE SKIP LOCKED`, so you can run more workers ([`worker.rs`](../../crates/zyvor-api/src/worker.rs)).
+
+### UPI AutoPay (mandates), simulator only today
+
+The payer approves once; the merchant then schedules debits and the payer is told before each one. A debit is an ordinary payment attempt, so everything after it (ledger, events, invoice, an unknown outcome) is the same as for any payment.
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending_authorization: merchant creates the mandate
+  pending_authorization --> active: payer approves
+  pending_authorization --> failed: payer declines
+  active --> paused: merchant hold
+  paused --> active: resume
+  active --> revoked: merchant or payer revokes
+  active --> expired: end date passes
+  revoked --> [*]
+  expired --> [*]
+```
+
+```mermaid
+flowchart LR
+  S[Debit scheduled<br/>cap, dates, notice, one per period] --> N[Notice due:<br/>mandate.debit_notified]
+  N --> W{Due day, notice old enough,<br/>mandate still active?}
+  W -- yes --> P[Save the attempt,<br/>then call the provider]
+  P -- captured --> L[Ledger pair, invoice paid]
+  P -- no answer --> U[unknown: resolved by asking,<br/>never sent again]
+  P -- declined --> R[Retry once next day,<br/>then mandate.debit_failed]
+  W -- no --> H[Held or skipped]
+```
+
+Zyvor emits the notice; it does not message the payer. See [REGULATORY.md](REGULATORY.md) for the rules assumed and not yet verified.
 
 ## 3. Afterwards: the books
 

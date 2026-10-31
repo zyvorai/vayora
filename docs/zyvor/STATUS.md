@@ -79,6 +79,19 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 - **Console payouts**: vendors' split-payment balances, a "pay from their balance" option, and a bulk upload (`vendor, amount, purpose, reference` per line; names or ids; refuses lines with extra columns so `12,500` cannot silently become ₹12; keeps the text on an error; repeat-safe by reference). Verified in a browser.
 - Still open from the plan: AI assist, payouts, multi-currency/FX, GST, vertical templates, webhooks v2.
 
+## UPI AutoPay mandates (simulator only)
+
+| Area | State | Notes |
+|---|---|---|
+| Mandate lifecycle: create, payer approves, refresh, pause, resume, revoke, expire | 🟡 | `POST /v1/mandates` and friends. The payer's approval is played by the simulator's test payer (`POST /v1/sim/mandate`, off unless `ZYVOR_SIM_PAYER=1`). A merchant pause is Zyvor's own hold; a provider revoke or decline always wins on refresh. |
+| Scheduled debits | 🟡 | A debit is an ordinary payment attempt, so the ledger pair, `payment.*` events and unknown-outcome resolution are the existing ones. At most the mandate's cap; inside its dates and currency; at most one per frequency period; **never two on the same day** (`UNIQUE (mandate_id, due_date)`). |
+| Pre-debit notice | 🟡 | The worker emits `mandate.debit_notified`; a debit goes out only when the notice is at least `ZYVOR_MANDATE_NOTICE_HOURS` old (default 24). **Zyvor does not message the payer**: the merchant or the provider must. |
+| Failed debits | 🟡 | One retry the next day, then `failed` with `mandate.debit_failed`; the invoice stays open and the usual reminders carry on. |
+| Auto-collect for subscriptions | 🟡 | Link a mandate to a subscription; each invoice is scheduled as a debit and marked paid when captured. Without an active mandate nothing changes. |
+| Real providers | ❌ | No Cashfree Subscriptions or Razorpay recurring adapter. Their `mandates` capability is false, so a mandate request answers `no_route`. |
+| The rules (notice window, per-debit ceiling default ₹15,000) | ◐ | Configurable, strict by default, **not verified against NPCI's current circular**; see [REGULATORY.md](REGULATORY.md). |
+| iOS screens | ❌ | Not built. |
+
 ## Deviations from the brief
 - **Rust instead of Go** for the backend (decision made with the owner: it keeps the tested ledger/idempotency/outbox code).
 - JSON bodies for bank-statement and settlement import instead of file formats.

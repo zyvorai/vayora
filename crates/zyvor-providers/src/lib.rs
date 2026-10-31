@@ -64,6 +64,10 @@ pub struct Capabilities {
     /// for a flow verified with that partner.
     #[serde(default)]
     pub upi_intent: bool,
+    /// Provider can hold a UPI AutoPay mandate (the payer approves once, the merchant debits later). Default
+    /// off: turn it on only for a flow verified with that partner. Today only the simulator has it.
+    #[serde(default)]
+    pub mandates: bool,
     /// Refunds are refused after this many days.
     pub refund_window_days: Option<u32>,
 }
@@ -271,6 +275,150 @@ pub struct SettlementRecord {
 
 pub type Headers = BTreeMap<String, String>;
 
+// ---- UPI AutoPay mandates -------------------------------------------------------------------------------
+
+/// How often a mandate may be debited. `AsPresented` means the merchant picks the dates (each still needs
+/// its pre-debit notice).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Frequency {
+    Daily,
+    Weekly,
+    Fortnightly,
+    Monthly,
+    Bimonthly,
+    Quarterly,
+    HalfYearly,
+    Yearly,
+    AsPresented,
+}
+
+impl Frequency {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Frequency::Daily => "daily",
+            Frequency::Weekly => "weekly",
+            Frequency::Fortnightly => "fortnightly",
+            Frequency::Monthly => "monthly",
+            Frequency::Bimonthly => "bimonthly",
+            Frequency::Quarterly => "quarterly",
+            Frequency::HalfYearly => "half_yearly",
+            Frequency::Yearly => "yearly",
+            Frequency::AsPresented => "as_presented",
+        }
+    }
+}
+
+impl std::str::FromStr for Frequency {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        Ok(match s {
+            "daily" => Frequency::Daily,
+            "weekly" => Frequency::Weekly,
+            "fortnightly" => Frequency::Fortnightly,
+            "monthly" => Frequency::Monthly,
+            "bimonthly" => Frequency::Bimonthly,
+            "quarterly" => Frequency::Quarterly,
+            "half_yearly" => Frequency::HalfYearly,
+            "yearly" => Frequency::Yearly,
+            "as_presented" => Frequency::AsPresented,
+            o => return Err(format!("unknown frequency {o}")),
+        })
+    }
+}
+
+impl Frequency {
+    /// The first date of the *next* period after `d`, or `None` for `AsPresented` (no fixed periods). Two
+    /// debits may not fall in the same period: the period of `d` runs from the previous boundary up to,
+    /// and not including, this date.
+    pub fn period_end(self, d: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+        use chrono::{Datelike, Days, Months};
+        Some(match self {
+            Frequency::Daily => d.checked_add_days(Days::new(1))?,
+            Frequency::Weekly => d.checked_add_days(Days::new(7))?,
+            Frequency::Fortnightly => d.checked_add_days(Days::new(14))?,
+            Frequency::Monthly => d.with_day(1)?.checked_add_months(Months::new(1))?,
+            Frequency::Bimonthly => d.with_day(1)?.checked_add_months(Months::new(2))?,
+            Frequency::Quarterly => {
+                let m0 = (d.month0() / 3) * 3;
+                d.with_day(1)?
+                    .with_month0(m0)?
+                    .checked_add_months(Months::new(3))?
+            }
+            Frequency::HalfYearly => {
+                let m0 = (d.month0() / 6) * 6;
+                d.with_day(1)?
+                    .with_month0(m0)?
+                    .checked_add_months(Months::new(6))?
+            }
+            Frequency::Yearly => d
+                .with_day(1)?
+                .with_month0(0)?
+                .checked_add_months(Months::new(12))?,
+            Frequency::AsPresented => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MandateStatus {
+    /// Created; the payer has not approved it yet.
+    Pending,
+    Active,
+    Paused,
+    Revoked,
+    Expired,
+    Failed,
+}
+
+impl MandateStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MandateStatus::Pending => "pending_authorization",
+            MandateStatus::Active => "active",
+            MandateStatus::Paused => "paused",
+            MandateStatus::Revoked => "revoked",
+            MandateStatus::Expired => "expired",
+            MandateStatus::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateMandate {
+    /// Our own reference, so a lost response can be resolved by asking.
+    pub mandate_id: String,
+    /// The most a single debit may take, in minor units.
+    pub max_amount_minor: i64,
+    pub currency: Currency,
+    pub frequency: Frequency,
+    pub start_date: chrono::NaiveDate,
+    pub end_date: chrono::NaiveDate,
+    pub customer_id: Option<String>,
+    pub customer_phone: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MandateState {
+    pub status: MandateStatus,
+    pub provider_mandate_ref: Option<String>,
+    /// What the payer must do to approve it (for example a `upi://mandate?...` link). Shown, never edited.
+    pub authorization: Option<Value>,
+    pub failure_reason: Option<String>,
+    pub raw: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DebitRequest {
+    /// Our reference for this debit, which is also the payment attempt id.
+    pub attempt_id: String,
+    pub mandate_id: String,
+    pub provider_mandate_ref: String,
+    pub amount_minor: i64,
+    pub currency: Currency,
+}
+
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn name(&self) -> &'static str;
@@ -297,6 +445,23 @@ pub trait Provider: Send + Sync {
         &self,
         on: chrono::NaiveDate,
     ) -> Result<Vec<SettlementRecord>, ProviderError>;
+
+    /// Create a UPI AutoPay mandate for the payer to approve. Providers without `mandates` refuse it.
+    async fn create_mandate(&self, _req: &CreateMandate) -> Result<MandateState, ProviderError> {
+        Err(ProviderError::Unsupported("UPI AutoPay mandates".into()))
+    }
+    /// Look a mandate up by our own reference (its id), so a lost response can be resolved.
+    async fn fetch_mandate(&self, _mandate_id: &str) -> Result<MandateState, ProviderError> {
+        Err(ProviderError::Unsupported("UPI AutoPay mandates".into()))
+    }
+    async fn revoke_mandate(&self, _mandate_id: &str) -> Result<MandateState, ProviderError> {
+        Err(ProviderError::Unsupported("UPI AutoPay mandates".into()))
+    }
+    /// Debit an active mandate. The result is an ordinary payment state, so the same handling (including an
+    /// uncertain outcome that is resolved by asking, never by re-sending) applies.
+    async fn debit(&self, _req: &DebitRequest) -> Result<Initiated, ProviderError> {
+        Err(ProviderError::Unsupported("UPI AutoPay debits".into()))
+    }
 
     /// Is the account reachable, and are its credentials accepted? Read-only: nothing is created. The
     /// string says what was found, for a person to read.

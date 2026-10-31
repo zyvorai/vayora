@@ -249,6 +249,7 @@ mod tests {
             manual_capture: false,
             server_initiated_upi: false,
             upi_intent: false,
+            mandates: false,
             refund_window_days: None,
         }
     }

@@ -16,6 +16,13 @@ async fn main() {
     let mut state = AppState::new(pool, crypto);
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
     state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
+    if let Some(v) = env::var("ZYVOR_MANDATE_NOTICE_HOURS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v >= 0)
+    {
+        state.mandate_notice_hours = v;
+    }
     let client = outbox::http_client();
     // Mail has its own loop: a mail server that hangs must not hold up webhooks, polling or refunds.
     let mail_state = state.clone();

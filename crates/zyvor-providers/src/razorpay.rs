@@ -106,6 +106,7 @@ impl Provider for Razorpay {
             server_initiated_upi: false,
             // Hosted flows exist, but no QR/intent payload is verified with this partner yet.
             upi_intent: false,
+            mandates: false,
             refund_window_days: Some(180),
         }
     }

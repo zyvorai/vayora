@@ -50,6 +50,7 @@ impl Custom {
                 manual_capture: false,
                 server_initiated_upi: true,
                 upi_intent: false,
+                mandates: false,
                 refund_window_days: None,
             },
         }

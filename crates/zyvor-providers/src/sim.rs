@@ -1,6 +1,10 @@
 //! In-process provider for development and tests. Behaviour is chosen by the UPI handle:
 //! `fail*` declines, `uncertain*` accepts the payment but answers with a timeout (outcome unknown),
 //! `pending*` stays pending, anything else captures.
+//!
+//! Mandate debits are chosen by the amount's last two digits (paise): `...13` declines
+//! (`insufficient_funds`), `...07` is accepted but answers with a timeout (outcome unknown), anything
+//! else captures. A mandate must be approved first (by the payer; see `mandate_decide`).
 
 use std::{
     collections::HashMap,
@@ -18,6 +22,7 @@ use crate::*;
 
 #[derive(Default)]
 pub struct SimProvider {
+    mandates: Mutex<HashMap<String, SimMandate>>,
     payments: Mutex<HashMap<String, PaymentState>>,
     refunds: Mutex<HashMap<String, RefundState>>,
     /// When set, a pending QR / intent payment waits for `payer_decide` instead of being approved by the
@@ -25,9 +30,46 @@ pub struct SimProvider {
     manual_payer: AtomicBool,
 }
 
+struct SimMandate {
+    state: MandateState,
+    max_amount_minor: i64,
+    currency: Currency,
+}
+
 impl SimProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The simulated payer approves or declines a pending mandate. `None` when there is no such mandate
+    /// waiting (unknown, or already decided).
+    pub fn mandate_decide(&self, mandate_id: &str, approve: bool) -> Option<MandateStatus> {
+        let mut m = self.mandates.lock().unwrap();
+        let s = m.get_mut(mandate_id)?;
+        if s.state.status != MandateStatus::Pending {
+            return None;
+        }
+        if approve {
+            s.state.status = MandateStatus::Active;
+        } else {
+            s.state.status = MandateStatus::Failed;
+            s.state.failure_reason = Some("declined_by_payer".into());
+        }
+        Some(s.state.status.clone())
+    }
+
+    /// The payer revokes a mandate from their own UPI app. `None` when there is nothing live to revoke.
+    pub fn payer_revoke(&self, mandate_id: &str) -> Option<MandateStatus> {
+        let mut m = self.mandates.lock().unwrap();
+        let s = m.get_mut(mandate_id)?;
+        if !matches!(
+            s.state.status,
+            MandateStatus::Pending | MandateStatus::Active | MandateStatus::Paused
+        ) {
+            return None;
+        }
+        s.state.status = MandateStatus::Revoked;
+        Some(MandateStatus::Revoked)
     }
 
     pub fn set_manual_payer(&self, on: bool) {
@@ -71,6 +113,7 @@ impl Provider for SimProvider {
             manual_capture: true,
             server_initiated_upi: true,
             upi_intent: true,
+            mandates: true,
             refund_window_days: None,
         }
     }
@@ -158,6 +201,103 @@ impl Provider for SimProvider {
             .ok_or_else(|| ProviderError::Rejected("unknown payment".into()))?;
         s.status = PaymentStatus::Captured;
         Ok(s.clone())
+    }
+
+    async fn create_mandate(&self, req: &CreateMandate) -> Result<MandateState, ProviderError> {
+        let state = MandateState {
+            status: MandateStatus::Pending,
+            provider_mandate_ref: Some(new_id("simmnd")),
+            authorization: Some(json!({
+                "type": "upi_mandate",
+                "uri": format!(
+                    "upi://mandate?pa=sandbox@zyvor-sim&pn=Zyvor%20Sandbox&am={}&cu={}&tn={}&recur={}",
+                    zyvor_core::minor_to_decimal(req.max_amount_minor, req.currency),
+                    req.currency.code(),
+                    req.mandate_id,
+                    req.frequency.as_str()
+                ),
+                "expires_at": null,
+            })),
+            failure_reason: None,
+            raw: json!({ "sim": true, "max_amount_minor": req.max_amount_minor }),
+        };
+        self.mandates.lock().unwrap().insert(
+            req.mandate_id.clone(),
+            SimMandate {
+                state: state.clone(),
+                max_amount_minor: req.max_amount_minor,
+                currency: req.currency,
+            },
+        );
+        Ok(state)
+    }
+
+    async fn fetch_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        let mut m = self.mandates.lock().unwrap();
+        let s = m
+            .get_mut(mandate_id)
+            .ok_or_else(|| ProviderError::Rejected("not found".into()))?;
+        // As with payments: without a manual payer the first lookup approves, so a sandbox run completes.
+        if s.state.status == MandateStatus::Pending && !self.manual_payer.load(Ordering::Relaxed) {
+            s.state.status = MandateStatus::Active;
+        }
+        Ok(s.state.clone())
+    }
+
+    async fn revoke_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        let mut m = self.mandates.lock().unwrap();
+        let s = m
+            .get_mut(mandate_id)
+            .ok_or_else(|| ProviderError::Rejected("not found".into()))?;
+        s.state.status = MandateStatus::Revoked;
+        Ok(s.state.clone())
+    }
+
+    async fn debit(&self, req: &DebitRequest) -> Result<Initiated, ProviderError> {
+        {
+            let m = self.mandates.lock().unwrap();
+            let s = m
+                .get(&req.mandate_id)
+                .ok_or_else(|| ProviderError::Rejected("unknown mandate".into()))?;
+            if s.state.status != MandateStatus::Active {
+                return Err(ProviderError::Rejected("mandate_not_active".into()));
+            }
+            if req.currency != s.currency {
+                return Err(ProviderError::Rejected("currency_mismatch".into()));
+            }
+            if req.amount_minor <= 0 || req.amount_minor > s.max_amount_minor {
+                return Err(ProviderError::Rejected("amount_exceeds_mandate".into()));
+            }
+        }
+        let last = req.amount_minor % 100;
+        let (status, reason) = if last == 13 {
+            (
+                PaymentStatus::Failed,
+                Some("insufficient_funds".to_string()),
+            )
+        } else {
+            (PaymentStatus::Captured, None)
+        };
+        let state = PaymentState {
+            status,
+            provider_order_ref: Some(req.attempt_id.clone()),
+            provider_payment_ref: Some(new_id("simdeb")),
+            failure_reason: reason,
+            raw: json!({ "sim": true, "flow": "mandate_debit", "mandate": req.mandate_id, "amount_minor": req.amount_minor }),
+        };
+        self.payments
+            .lock()
+            .unwrap()
+            .insert(req.attempt_id.clone(), state.clone());
+        if last == 7 {
+            return Err(ProviderError::Uncertain(
+                "simulated timeout after acceptance".into(),
+            ));
+        }
+        Ok(Initiated {
+            state,
+            action: ClientAction::None,
+        })
     }
 
     async fn fetch_payment(&self, attempt_id: &str) -> Result<PaymentState, ProviderError> {
@@ -288,5 +428,191 @@ mod payer_tests {
             sim.fetch_payment("att_c").await.unwrap().status,
             PaymentStatus::Captured
         );
+    }
+}
+
+#[cfg(test)]
+mod mandate_tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn new_mandate(id: &str, max: i64) -> CreateMandate {
+        CreateMandate {
+            mandate_id: id.into(),
+            max_amount_minor: max,
+            currency: Currency::Inr,
+            frequency: Frequency::Monthly,
+            start_date: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2027, 11, 1).unwrap(),
+            customer_id: None,
+            customer_phone: None,
+        }
+    }
+    fn debit(att: &str, mandate: &str, pref: &str, amount: i64) -> DebitRequest {
+        DebitRequest {
+            attempt_id: att.into(),
+            mandate_id: mandate.into(),
+            provider_mandate_ref: pref.into(),
+            amount_minor: amount,
+            currency: Currency::Inr,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mandate_waits_for_the_payer_and_debits_only_once_active() {
+        let sim = SimProvider::new();
+        sim.set_manual_payer(true);
+        let m = sim
+            .create_mandate(&new_mandate("mnd_1", 100_000))
+            .await
+            .unwrap();
+        assert_eq!(m.status, MandateStatus::Pending);
+        let pref = m.provider_mandate_ref.unwrap();
+        assert!(
+            m.authorization.unwrap()["uri"]
+                .as_str()
+                .unwrap()
+                .starts_with("upi://mandate?")
+        );
+        assert_eq!(
+            sim.fetch_mandate("mnd_1").await.unwrap().status,
+            MandateStatus::Pending,
+            "looking does not approve"
+        );
+        assert!(
+            matches!(sim.debit(&debit("att_1", "mnd_1", &pref, 50_000)).await, Err(ProviderError::Rejected(r)) if r == "mandate_not_active")
+        );
+        assert_eq!(
+            sim.mandate_decide("mnd_1", true),
+            Some(MandateStatus::Active)
+        );
+        assert_eq!(sim.mandate_decide("mnd_1", true), None, "decided once");
+        let d = sim
+            .debit(&debit("att_1", "mnd_1", &pref, 50_000))
+            .await
+            .unwrap();
+        assert_eq!(d.state.status, PaymentStatus::Captured);
+        assert_eq!(
+            sim.fetch_payment("att_1").await.unwrap().status,
+            PaymentStatus::Captured,
+            "a lost reply can be resolved by asking"
+        );
+    }
+
+    #[tokio::test]
+    async fn limits_and_payer_revoke_are_enforced_by_the_provider_too() {
+        let sim = SimProvider::new();
+        sim.set_manual_payer(true);
+        let pref = sim
+            .create_mandate(&new_mandate("mnd_2", 100_000))
+            .await
+            .unwrap()
+            .provider_mandate_ref
+            .unwrap();
+        sim.mandate_decide("mnd_2", true);
+        assert!(
+            matches!(sim.debit(&debit("a1", "mnd_2", &pref, 100_001)).await, Err(ProviderError::Rejected(r)) if r == "amount_exceeds_mandate")
+        );
+        assert!(matches!(
+            sim.debit(&debit("a2", "mnd_2", &pref, 0)).await,
+            Err(ProviderError::Rejected(_))
+        ));
+        let mut usd = debit("a3", "mnd_2", &pref, 100);
+        usd.currency = Currency::Usd;
+        assert!(
+            matches!(sim.debit(&usd).await, Err(ProviderError::Rejected(r)) if r == "currency_mismatch")
+        );
+        assert!(matches!(
+            sim.debit(&debit("a4", "nope", &pref, 100)).await,
+            Err(ProviderError::Rejected(_))
+        ));
+        assert_eq!(sim.payer_revoke("mnd_2"), Some(MandateStatus::Revoked));
+        assert_eq!(sim.payer_revoke("mnd_2"), None, "nothing live to revoke");
+        assert!(
+            matches!(sim.debit(&debit("a5", "mnd_2", &pref, 100)).await, Err(ProviderError::Rejected(r)) if r == "mandate_not_active")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_amount_picks_a_decline_or_an_unknown_outcome() {
+        let sim = SimProvider::new();
+        sim.set_manual_payer(true);
+        let pref = sim
+            .create_mandate(&new_mandate("mnd_3", 1_000_000))
+            .await
+            .unwrap()
+            .provider_mandate_ref
+            .unwrap();
+        sim.mandate_decide("mnd_3", true);
+        let declined = sim
+            .debit(&debit("b1", "mnd_3", &pref, 50_013))
+            .await
+            .unwrap();
+        assert_eq!(declined.state.status, PaymentStatus::Failed);
+        assert_eq!(
+            declined.state.failure_reason.as_deref(),
+            Some("insufficient_funds")
+        );
+        assert!(matches!(
+            sim.debit(&debit("b2", "mnd_3", &pref, 50_007)).await,
+            Err(ProviderError::Uncertain(_))
+        ));
+        assert_eq!(
+            sim.fetch_payment("b2").await.unwrap().status,
+            PaymentStatus::Captured,
+            "it did happen; asking finds out"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_manual_payer_the_first_lookup_activates_and_other_providers_refuse() {
+        let sim = SimProvider::new();
+        sim.create_mandate(&new_mandate("mnd_4", 1000))
+            .await
+            .unwrap();
+        assert_eq!(
+            sim.fetch_mandate("mnd_4").await.unwrap().status,
+            MandateStatus::Active
+        );
+        assert_eq!(sim.mandate_decide("nope", true), None);
+    }
+
+    #[test]
+    fn periods_end_on_calendar_boundaries() {
+        let d = |y, m, dd| NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+        assert_eq!(
+            Frequency::Monthly.period_end(d(2026, 11, 17)),
+            Some(d(2026, 12, 1))
+        );
+        assert_eq!(
+            Frequency::Monthly.period_end(d(2026, 12, 31)),
+            Some(d(2027, 1, 1))
+        );
+        assert_eq!(
+            Frequency::Quarterly.period_end(d(2026, 11, 17)),
+            Some(d(2027, 1, 1))
+        );
+        assert_eq!(
+            Frequency::HalfYearly.period_end(d(2026, 7, 1)),
+            Some(d(2027, 1, 1))
+        );
+        assert_eq!(
+            Frequency::Yearly.period_end(d(2026, 12, 31)),
+            Some(d(2027, 1, 1))
+        );
+        assert_eq!(
+            Frequency::Bimonthly.period_end(d(2026, 1, 20)),
+            Some(d(2026, 3, 1))
+        );
+        assert_eq!(
+            Frequency::Weekly.period_end(d(2026, 11, 17)),
+            Some(d(2026, 11, 24))
+        );
+        assert_eq!(Frequency::AsPresented.period_end(d(2026, 11, 17)), None);
+        assert_eq!(
+            "half_yearly".parse::<Frequency>(),
+            Ok(Frequency::HalfYearly)
+        );
+        assert!("hourly".parse::<Frequency>().is_err());
     }
 }

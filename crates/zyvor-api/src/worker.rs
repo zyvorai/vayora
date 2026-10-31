@@ -48,12 +48,21 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         // 3. recurring invoices that have come due
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
-            if crate::billing::run_billing(&mut tx, &tid, crate::ist_today())
-                .await
-                .is_ok()
+            if crate::billing::run_billing(
+                &mut tx,
+                &tid,
+                crate::ist_today(),
+                s.mandate_notice_hours,
+            )
+            .await
+            .is_ok()
             {
                 tx.commit().await?;
             }
+        }
+        // 3a. UPI AutoPay: expire, give notice, send due debits, settle those in flight
+        if let Err(e) = crate::mandates::run_cycle(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "mandate cycle failed");
         }
         // 3b. automatic reminders for tenants that opted in
         {
