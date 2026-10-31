@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -248,6 +249,28 @@ func (c *Client) UpdateCustomer(customerID string, fields map[string]string) (ma
 func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
 	var out map[string]any
 	err := c.do("GET", "/v1/invoices/"+invoiceID+"/einvoice", nil, "", &out)
+	return out, err
+}
+
+// ListPayments returns payments newest first. status and q are optional; q matches a payment id exactly, or part of
+// its reference or description. limit 0 uses the server default.
+func (c *Client) ListPayments(status, q string, limit int) (map[string]any, error) {
+	v := url.Values{}
+	if status != "" {
+		v.Set("status", status)
+	}
+	if q != "" {
+		v.Set("q", q)
+	}
+	if limit > 0 {
+		v.Set("limit", fmt.Sprint(limit))
+	}
+	path := "/v1/payment_intents"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
 	return out, err
 }
 

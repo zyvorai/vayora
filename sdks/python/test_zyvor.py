@@ -115,6 +115,17 @@ class Tests(unittest.TestCase):
         Zyvor("k", opener=opener).create_intent(500, branch_id="br_1", counter_id="ctr_1")
         self.assertEqual((seen[0]["branch_id"], seen[0]["counter_id"], seen[0]["amount_minor"]), ("br_1", "ctr_1", 500))
 
+    def test_list_payments_sends_the_search_and_filters(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append(req.full_url.split("8080")[1])
+            return FakeRes(b"{}")
+
+        z = Zyvor("k", opener=opener)
+        z.list_payments(); z.list_payments(status="succeeded", q="ORD 1&x", limit=10)
+        self.assertEqual(seen, ["/v1/payment_intents", "/v1/payment_intents?status=succeeded&q=ORD+1%26x&limit=10"])
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

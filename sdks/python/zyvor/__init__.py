@@ -6,6 +6,7 @@ import hmac
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from typing import Any, Optional
@@ -152,6 +153,11 @@ class Zyvor:
 
     def cancel_payment_link(self, link_id: str) -> dict:
         return self._req("POST", f"/v1/payment_links/{link_id}/cancel")
+
+    def list_payments(self, status: Optional[str] = None, q: Optional[str] = None, limit: Optional[int] = None, starting_after: Optional[str] = None) -> dict:
+        """Newest first. `q` matches a payment id exactly, or part of its reference or description."""
+        params = {k: v for k, v in {"status": status, "q": q, "limit": limit, "starting_after": starting_after}.items() if v not in (None, "")}
+        return self._req("GET", "/v1/payment_intents" + ("?" + urllib.parse.urlencode(params) if params else ""))
 
     # --- merchant operations -------------------------------------------------------------------
     def payment_timeline(self, intent_id: str) -> dict:
