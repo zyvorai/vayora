@@ -11,7 +11,7 @@ public enum Attempt: String, Codable, Sendable {
     case created, pending, authorized, captured, failed, unknown, canceled
 }
 
-public struct PaymentIntent: Codable, Equatable, Sendable, Identifiable {
+public struct PaymentIntent: Codable, Equatable, Hashable, Sendable, Identifiable {
     public let id: String
     public let amountMinor: Int64
     public let currency: String

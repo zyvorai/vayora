@@ -1,152 +1,101 @@
-import LocalAuthentication
 import SwiftUI
 import VayoraKit
+import VayoraUI
 
+/// Amount (when the QR has none), review and slide, PIN, then the result. All the looks live in VayoraUI.
 struct PaySheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let payload: UPIPayload
 
-    enum Step { case review, pin, working, done(Store.Outcome) }
-    @State private var step: Step = .review
-    @State private var typed = ""
-    @State private var pin = ""
+    enum Step: Equatable { case amount, review, pin, working, done(Store.Outcome) }
+    @State private var step: Step
+    @State private var entry = AmountEntry()
+    @State private var pin = PinEntry()
     @State private var pinError = false
+    @State private var shake: CGFloat = 0
+    @State private var progress = 0.0
 
-    var amount: Money? { payload.amount ?? Money(decimal: typed) }
+    init(payload: UPIPayload) {
+        self.payload = payload
+        _step = State(initialValue: payload.amount == nil ? .amount : .review)
+    }
+
+    var amount: Money? { payload.amount ?? entry.money }
+    var payeeName: String { payload.name.isEmpty ? payload.payee : payload.name }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch step {
-                case .review: review
-                case .pin: pinEntry
-                case .working: ProgressView("Paying…").controlSize(.large)
-                case .done(let o): result(o)
+        ZStack(alignment: .topLeading) {
+            switch step {
+            case .amount:
+                CollectKeypadScreen(text: entry.text, note: "", chips: [], canContinue: amount != nil, title: "Pay \(payeeName)", actionLabel: "Continue", actionIcon: "arrow.right", brand: .pay,
+                                    onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() }, onShowQR: { withAnimation(VUI.spring) { step = .review } })
+            case .review:
+                if let amount {
+                    PayReviewScreen(name: payload.name, payee: payload.payee, amount: amount, balance: store.balance) {
+                        pin.clear(); pinError = false
+                        withAnimation(VUI.spring) { step = .pin }
+                    }
                 }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.canvas)
-            .navigationTitle("Pay")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { if case .done = step {} else { Button("Cancel") { dismiss() } } } }
-        }
-        .interactiveDismissDisabled({ if case .working = step { return true } else { return false } }())
-    }
-
-    var review: some View {
-        VStack(spacing: 20) {
-            TestModeChip()
-            Image(systemName: "storefront.fill").font(.system(size: 44)).foregroundStyle(Theme.accent)
-            Text(payload.name.isEmpty ? payload.payee : payload.name).font(.title2.bold())
-            Text(payload.payee).font(.footnote).foregroundStyle(.secondary)
-            if let a = payload.amount {
-                Text(a.display).font(.system(size: 44, weight: .bold, design: .rounded))
-            } else {
-                TextField("Amount", text: $typed).keyboardType(.decimalPad).font(.system(size: 44, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-            }
-            Text("Test balance \(store.balance.display)").font(.footnote).foregroundStyle(.secondary)
-            Spacer()
-            Button("Pay \(amount?.display ?? "")") { pin = ""; step = .pin }
-                .buttonStyle(PrimaryButtonStyle()).disabled(amount == nil)
-        }
-    }
-
-    var pinEntry: some View {
-        VStack(spacing: 20) {
-            Text("Enter your test PIN").font(.title3.bold())
-            Text("This is a local test PIN, not a UPI PIN. Default 1234.").font(.footnote).foregroundStyle(.secondary)
-            HStack(spacing: 14) {
-                ForEach(0..<4, id: \.self) { i in
-                    Circle().fill(i < pin.count ? Theme.accent : Color.secondary.opacity(0.3)).frame(width: 18, height: 18)
+            case .pin:
+                PinScreen(filled: pin.digits.count, error: pinError, shake: shake, onDigit: { digit($0) }, onDelete: { pin.delete(); pinError = false })
+            case .working:
+                ZStack {
+                    AmbientBackground(brand: .pay)
+                    VStack(spacing: 18) { ProgressView().controlSize(.large).tint(.white); Text("Paying…").font(VUI.display(22)).foregroundStyle(VUI.textPrimary) }
                 }
+            case .done(let o):
+                ResultScreen(kind: kind(o), amount: amount ?? Money(minor: 0), to: payeeName, progress: progress, brand: .pay, footnote: footnote(o), onDone: { dismiss() })
             }
-            .modifier(Shake(trigger: pinError))
-            Spacer()
-            keypad
-        }
-    }
-
-    var keypad: some View {
-        let keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"]
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
-            ForEach(keys, id: \.self) { k in
-                if k.isEmpty { Color.clear.frame(height: 56) } else {
-                    Button { tap(k) } label: {
-                        Text(k).font(.title.weight(.medium)).frame(maxWidth: .infinity, minHeight: 56)
-                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
-                    }.buttonStyle(.plain).accessibilityLabel(k == "⌫" ? "Delete" : k)
+            if closable {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(VUI.textPrimary).frame(width: 36, height: 36).background(.white.opacity(0.14), in: Circle())
                 }
+                .padding(.leading, 18).padding(.top, 14).accessibilityLabel("Close")
             }
         }
+        .background(VUI.ink)
+        .preferredColorScheme(.dark)
+        .interactiveDismissDisabled(step == .working)
     }
 
-    func tap(_ k: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        if k == "⌫" { _ = pin.popLast(); return }
-        guard pin.count < 4 else { return }
-        pin += k
-        if pin.count == 4 {
-            if pin == store.testPIN { submit() } else {
-                pinError.toggle(); UINotificationFeedbackGenerator().notificationOccurred(.error)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pin = "" }
+    var closable: Bool { switch step { case .working, .done: false; default: true } }
+
+    func digit(_ d: Int) {
+        pin.press(d)
+        guard pin.isFull else { return }
+        if pin.code == store.testPIN { submit() } else {
+            pinError = true; Haptics.error()
+            Task {
+                for x: CGFloat in [12, -12, 8, -8, 0] { withAnimation(.linear(duration: 0.06)) { shake = x }; try? await Task.sleep(nanoseconds: 60_000_000) }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                pin.clear()
             }
         }
     }
 
     func submit() {
         guard let amount else { return }
-        step = .working
+        withAnimation(VUI.spring) { step = .working }
         Task {
             let outcome = await store.pay(payload, amount: amount)
-            let status: Txn.Status = outcome == .paid ? .success : .failed
             if outcome != .unknown && outcome != .notAvailable {
-                store.record(Txn(payee: payload.payee, name: payload.name, amountMinor: amount.minor, note: payload.note, status: status))
+                store.record(Txn(payee: payload.payee, name: payload.name, amountMinor: amount.minor, note: payload.note, status: outcome == .paid ? .success : .failed))
             }
-            UINotificationFeedbackGenerator().notificationOccurred(outcome == .paid ? .success : .error)
-            step = .done(outcome)
+            progress = 0
+            withAnimation(.easeInOut(duration: 0.3)) { step = .done(outcome) }
+            outcome == .paid ? Haptics.success() : Haptics.error()
+            withAnimation(.easeOut(duration: 1.3)) { progress = 1 }
         }
     }
 
-    @ViewBuilder func result(_ o: Store.Outcome) -> some View {
-        VStack(spacing: 16) {
-            switch o {
-            case .paid:
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 88)).foregroundStyle(Theme.success).symbolEffect(.bounce, value: true)
-                Text("Paid \(amount?.display ?? "")").font(.title.bold())
-                Text("to \(payload.name.isEmpty ? payload.payee : payload.name)").foregroundStyle(.secondary)
-            case .declined(let why):
-                Image(systemName: "xmark.circle.fill").font(.system(size: 88)).foregroundStyle(Theme.danger)
-                Text("Payment failed").font(.title.bold())
-                Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            case .unknown:
-                Image(systemName: "questionmark.circle.fill").font(.system(size: 88)).foregroundStyle(Theme.warn)
-                Text("Checking…").font(.title.bold())
-                Text("We couldn't confirm this payment. Don't pay again: ask the merchant if it arrived.")
-                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                if !store.lastError.isEmpty {
-                    Text("Details: \(store.lastError)").font(.caption2).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center).textSelection(.enabled)
-                }
-            case .notAvailable:
-                Image(systemName: "wifi.exclamationmark").font(.system(size: 72)).foregroundStyle(Theme.warn)
-                Text("Test server not available").font(.title2.bold())
-                Text("Check the server address in Settings, and that the server was started with ZYVOR_SIM_PAYER=1.")
-                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
-            Spacer()
-            Button("Done") { dismiss() }.buttonStyle(PrimaryButtonStyle())
+    func kind(_ o: Store.Outcome) -> ResultKind {
+        switch o {
+        case .paid: .paid
+        case .declined(let why): .failed(why)
+        case .unknown: .checking
+        case .notAvailable: .failed("Test server not available. Check the address in Settings, and that the server runs with ZYVOR_SIM_PAYER=1.")
         }
     }
-}
-
-struct Shake: ViewModifier {
-    var trigger: Bool
-    func body(content: Content) -> some View {
-        content.offset(x: trigger ? 0 : 0).animation(nil, value: trigger)
-            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { v, x in v.offset(x: x) } keyframes: { _ in
-                KeyframeTrack { LinearKeyframe(10, duration: 0.07); LinearKeyframe(-10, duration: 0.07); LinearKeyframe(6, duration: 0.07); LinearKeyframe(0, duration: 0.07) }
-            }
-    }
+    func footnote(_ o: Store.Outcome) -> String? { o == .unknown && !store.lastError.isEmpty ? "Details: \(store.lastError)" : nil }
 }

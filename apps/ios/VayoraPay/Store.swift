@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import VayoraKit
 
-struct Txn: Codable, Identifiable, Equatable {
+struct Txn: Codable, Identifiable, Equatable, Hashable {
     enum Status: String, Codable { case success, failed }
     var id = UUID()
     var payee: String
@@ -18,7 +18,8 @@ struct Txn: Codable, Identifiable, Equatable {
 @MainActor
 final class Store: ObservableObject {
     @Published var lastError = ""
-    @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "serverURL") } }
+    /// Kept in the Keychain as well, because iOS keeps Keychain items when an app is deleted and reinstalled.
+    @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "serverURL"); Keychain.set(serverURL, for: "serverURL") } }
     @Published var balanceMinor: Int64 { didSet { UserDefaults.standard.set(balanceMinor, forKey: "balance") } }
     @Published var history: [Txn] { didSet { save() } }
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
@@ -27,7 +28,10 @@ final class Store: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        serverURL = d.string(forKey: "serverURL") ?? "http://127.0.0.1:8080"
+        let saved = Keychain.get("serverURL") ?? d.string(forKey: "serverURL") ?? "http://127.0.0.1:8080"
+        serverURL = saved
+        // an address saved by an older build lives only in UserDefaults: copy it to the Keychain so a reinstall keeps it
+        if URL(string: saved)?.host != "127.0.0.1", Keychain.get("serverURL") == nil { Keychain.set(saved, for: "serverURL") }
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []

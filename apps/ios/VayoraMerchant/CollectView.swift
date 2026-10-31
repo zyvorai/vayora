@@ -1,81 +1,89 @@
 import SwiftUI
+import UIKit
 import VayoraKit
+import VayoraUI
 
-/// Create a payment, show its QR, and watch it complete.
+/// Counter keypad, then the QR as the hero, then a felt "Received".
 struct CollectView: View {
     @EnvironmentObject var store: MerchantStore
-    @State private var amountText = ""
+    @State private var entry = AmountEntry()
     @State private var note = ""
     @State private var phase: Phase = .entering
+    @State private var customerMode = false
+    @State private var resultProgress = 0.0
+    @State private var savedBrightness: CGFloat?
 
     enum Phase: Equatable {
         case entering, creating
-        case waiting(intentId: String, attemptId: String, uri: String, amount: Money)
+        case waiting(intentId: String, attemptId: String, uri: String, amount: Money, started: Date)
         case paid(Money), failed(String), error(String)
     }
 
-    var amount: Money? { Money(decimal: amountText) }
+    static let chips = ["Takeaway", "Dine in", "Delivery", "Tip"]
+    static let window: TimeInterval = 10 * 60   // how long the QR is shown as fresh
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                TestModeChip()
-                switch phase {
-                case .entering, .creating: entry
-                case .waiting(let intent, let attempt, let uri, let amt): waiting(intent, attempt, uri, amt)
-                case .paid(let m): outcome("checkmark.circle.fill", Theme.success, "Received \(m.display)")
-                case .failed(let why): outcome("xmark.circle.fill", Theme.danger, "Payment failed", why)
-                case .error(let why): outcome("exclamationmark.triangle.fill", Theme.warn, "Couldn't start", why)
+        Group {
+            switch phase {
+            case .entering, .creating:
+                VStack(spacing: 0) {
+                    CollectKeypadScreen(text: entry.text, note: note, chips: Self.chips, canContinue: entry.money != nil && phase == .entering && store.client != nil,
+                                        actionLabel: phase == .creating ? "Creating…" : "Show QR",
+                                        onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() },
+                                        onChip: { note = (note == $0 ? "" : $0) }, onShowQR: start)
+                    if store.client == nil { Text("Add your API key in Settings first, or scan a setup QR.").font(.footnote).foregroundStyle(VUI.textSecondary).padding(.bottom, 8).background(VUI.ink) }
                 }
-                Spacer()
+            case .waiting(_, let attempt, let uri, let amt, let started):
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+                    let elapsed = ctx.date.timeIntervalSince(started)
+                    QRHeroScreen(amount: amt, qr: QR.image(uri), expiry: max(0, 1 - elapsed / Self.window),
+                                 pulse: (ctx.date.timeIntervalSinceReferenceDate / 2.2).truncatingRemainder(dividingBy: 1),
+                                 customerMode: customerMode, note: note, onCustomerMode: toggleCustomer, onCancel: { reset() })
+                }
+                .task(id: attempt) { await poll(attempt, amt) }
+            case .paid(let m):
+                ResultScreen(kind: .paid, amount: m, to: note.isEmpty ? "this payment" : note, progress: resultProgress, brand: .merchant, paidTitle: "Received", doneLabel: "New payment", onDone: reset)
+            case .failed(let why):
+                ResultScreen(kind: .failed(why), amount: Money(minor: 0), to: "", progress: 1, brand: .merchant, doneLabel: "New payment", onDone: reset)
+            case .error(let why):
+                ResultScreen(kind: .failed(why), amount: Money(minor: 0), to: "", progress: 1, brand: .merchant, doneLabel: "Back", onDone: reset)
             }
-            .padding(20).background(Theme.canvas).navigationTitle("Collect")
         }
+        .background(VUI.ink)
+        .animation(VUI.spring, value: phase)
+        .onChange(of: phase) { _, new in
+            if case .paid = new { resultProgress = 0; withAnimation(.easeOut(duration: 1.3)) { resultProgress = 1 } }
+        }
+        .onDisappear { endCustomerMode() }
     }
 
-    var entry: some View {
-        VStack(spacing: 16) {
-            TextField("₹0", text: $amountText).keyboardType(.decimalPad)
-                .font(.system(size: 56, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
-            if !amountText.isEmpty && amount == nil { Text("Enter an amount like 499 or 499.50").font(.footnote).foregroundStyle(Theme.danger) }
-            TextField("Note (optional)", text: $note).textFieldStyle(.roundedBorder)
-            Button(phase == .creating ? "Creating…" : "Show QR") { start() }
-                .buttonStyle(PrimaryButtonStyle(gradient: Theme.merchantGradient)).disabled(amount == nil || phase == .creating)
-            if store.client == nil { Text("Add your API key in Settings first.").font(.footnote).foregroundStyle(.secondary) }
-        }
+    func reset() {
+        endCustomerMode(); entry.clear(); note = ""; phase = .entering
     }
 
-    func waiting(_ intent: String, _ attempt: String, _ uri: String, _ amt: Money) -> some View {
-        VStack(spacing: 14) {
-            Text(amt.display).font(.system(size: 40, weight: .bold, design: .rounded))
-            if let qr = QR.image(uri) {
-                qr.resizable().frame(width: 260, height: 260).padding(14)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 20)).accessibilityLabel("Payment QR code")
-            }
-            HStack { ProgressView(); Text("Waiting for payment…").foregroundStyle(.secondary) }
-            Button("Cancel", role: .cancel) { phase = .entering }
-        }
-        .task(id: attempt) { await poll(attempt, amt) }
+    func toggleCustomer() { customerMode ? endCustomerMode() : beginCustomerMode() }
+    func beginCustomerMode() {
+        customerMode = true
+        savedBrightness = UIScreen.main.brightness
+        UIScreen.main.brightness = 1
+        UIApplication.shared.isIdleTimerDisabled = true
     }
-
-    func outcome(_ icon: String, _ color: Color, _ title: String, _ detail: String? = nil) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: icon).font(.system(size: 88)).foregroundStyle(color).symbolEffect(.bounce, value: true)
-            Text(title).font(.title.bold())
-            if let detail { Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.center) }
-            Button("New payment") { amountText = ""; note = ""; phase = .entering }.buttonStyle(PrimaryButtonStyle(gradient: Theme.merchantGradient))
-        }
+    /// Always puts brightness and sleep back, whichever way the QR screen is left.
+    func endCustomerMode() {
+        if let b = savedBrightness { UIScreen.main.brightness = b; savedBrightness = nil }
+        UIApplication.shared.isIdleTimerDisabled = false
+        customerMode = false
     }
 
     func start() {
-        guard let amt = amount, let c = store.client else { return }
+        guard let amt = entry.money, let c = store.client else { return }
         phase = .creating
         Task {
             do {
                 let intent = try await c.createIntent(amount: amt, note: note)
                 let attempt = try await c.createUPIAttempt(intentId: intent.id)
                 guard let uri = attempt.upiURI else { phase = .error("This provider did not issue a UPI QR. Is upi_intent enabled?"); return }
-                phase = .waiting(intentId: intent.id, attemptId: attempt.id, uri: uri, amount: amt)
+                phase = .waiting(intentId: intent.id, attemptId: attempt.id, uri: uri, amount: amt, started: Date())
             } catch { phase = .error(error.localizedDescription) }
         }
     }
@@ -86,8 +94,9 @@ struct CollectView: View {
         var delay: UInt64 = 1_500_000_000
         while !Task.isCancelled {
             if let a = try? await c.refreshAttempt(id: attemptId), a.isFinal {
+                endCustomerMode()
                 phase = a.isPaid ? .paid(amt) : .failed(a.failureReason ?? "Declined")
-                UINotificationFeedbackGenerator().notificationOccurred(a.isPaid ? .success : .error)
+                a.isPaid ? Haptics.success() : Haptics.error()
                 return
             }
             try? await Task.sleep(nanoseconds: delay)

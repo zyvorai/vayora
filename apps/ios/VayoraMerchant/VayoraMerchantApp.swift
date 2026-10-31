@@ -1,5 +1,6 @@
 import SwiftUI
 import VayoraKit
+import VayoraUI
 
 @main
 struct VayoraMerchantApp: App {
@@ -11,7 +12,7 @@ struct VayoraMerchantApp: App {
                 PaymentsView().tabItem { Label("Payments", systemImage: "list.bullet.rectangle") }
                 MerchantSettings().tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
-            .environmentObject(store).tint(Theme.merchant)
+            .environmentObject(store).tint(VUI.emerald).preferredColorScheme(.dark)
         }
     }
 }

@@ -1,69 +1,77 @@
 import SwiftUI
 import VayoraKit
+import VayoraUI
 
 struct PaymentsView: View {
     @EnvironmentObject var store: MerchantStore
     @State private var items: [PaymentIntent] = []
     @State private var refunds: [String: RefundState] = [:]
     @State private var error: String?
-    @State private var loading = false
+    @State private var open: PaymentIntent?
+
+    func state(_ i: PaymentIntent) -> PaymentRowModel.State {
+        if let r = refunds[i.id], r.isFullyRefunded { return .refunded }
+        if let r = refunds[i.id], r.isPartlyRefunded { return .partRefunded }
+        switch i.status { case "succeeded": return .succeeded; case "processing", "requires_payment_method", "requires_action": return .processing; default: return .failed }
+    }
+
+    var rows: [PaymentRowModel] {
+        items.map { PaymentRowModel(id: $0.id, amount: $0.money, when: when($0), note: "", state: state($0)) }
+    }
+    func when(_ i: PaymentIntent) -> String {
+        guard let s = i.createdAt, let d = ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter.withFraction.date(from: s) else { return String(i.id.suffix(6)) }
+        return d.formatted(.relative(presentation: .named))
+    }
 
     /// Money kept after refunds: paid payments minus what has been given back.
+    var paid: [PaymentIntent] { items.filter { $0.status == "succeeded" } }
     var collected: Money {
-        let paid = items.filter { $0.status == "succeeded" }
         let back = paid.reduce(Int64(0)) { $0 + (refunds[$1.id]?.refundedMinor ?? 0) }
         return Money(minor: paid.reduce(Int64(0)) { $0 + $1.amountMinor } - back)
     }
-
-    func badge(_ i: PaymentIntent) -> (text: String, colour: Color) {
-        if let r = refunds[i.id], r.isFullyRefunded { return ("refunded", Theme.warn) }
-        if let r = refunds[i.id], r.isPartlyRefunded { return ("part refunded", Theme.warn) }
-        return (i.status, i.status == "succeeded" ? Theme.success : .secondary)
+    /// Running total of what was kept, oldest payment first, for the sparkline.
+    var trend: [Double] {
+        var run = 0.0
+        return paid.reversed().map { i in run += Double(i.amountMinor - (refunds[i.id]?.refundedMinor ?? 0)) / 100; return run }
     }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section { VStack(alignment: .leading) { Text("Collected").font(.subheadline).foregroundStyle(.secondary); Text(collected.display).font(.title.bold()) } }
-                if let error { Text(error).foregroundStyle(Theme.danger) }
-                ForEach(items) { i in
-                    NavigationLink { PaymentDetail(intent: i) } label: {
-                        HStack { VStack(alignment: .leading) { Text(i.money.display).font(.body.weight(.semibold)); Text(i.id).font(.caption2).foregroundStyle(.secondary) }
-                            Spacer(); Text(badge(i).text).font(.caption.weight(.semibold)).foregroundStyle(badge(i).colour) }
-                    }
-                }
-            }
-            .overlay { if items.isEmpty && !loading && error == nil { ContentUnavailableView("No payments yet", systemImage: "tray") } }
-            .refreshable { await load() }
-            .task { await load() }
-            .navigationTitle("Payments")
+            MerchantTodayScreen(collected: collected, count: paid.count, average: Money(minor: paid.isEmpty ? 0 : collected.minor / Int64(paid.count)),
+                                trend: trend.count > 1 ? trend : [0, 0], rows: rows, error: error, onOpen: { r in open = items.first { $0.id == r.id } })
+                .refreshable { await load() }
+                .task { await load() }
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(item: $open) { PaymentDetail(intent: $0) }
         }
     }
 
     func load() async {
         guard let c = store.client else { error = "Add your API key in Settings."; return }
-        loading = true; defer { loading = false }
         do {
             items = try await c.listIntents(); error = nil
             // Unfinished payments only turn paid when the server is asked, so ask for the most recent ones.
-            let open = items.filter { $0.status == "processing" }.prefix(10).map(\.id)
-            if !open.isEmpty {
+            let unfinished = items.filter { $0.status == "processing" }.prefix(10).map(\.id)
+            if !unfinished.isEmpty {
                 await withTaskGroup(of: Void.self) { g in
-                    for id in open { g.addTask { _ = try? await c.settle(id: id) } }
+                    for id in unfinished { g.addTask { _ = try? await c.settle(id: id) } }
                 }
                 items = try await c.listIntents()
             }
             // Refund position of the most recent paid payments, so the list can say "refunded".
-            let paid = items.filter { $0.status == "succeeded" }.prefix(20).map(\.id)
-            let states = await withTaskGroup(of: (String, RefundState?).self) { g -> [String: RefundState] in
-                for id in paid { g.addTask { (id, try? await c.refundState(id: id)) } }
+            let ids = items.filter { $0.status == "succeeded" }.prefix(20).map(\.id)
+            refunds = await withTaskGroup(of: (String, RefundState?).self) { g -> [String: RefundState] in
+                for id in ids { g.addTask { (id, try? await c.refundState(id: id)) } }
                 var out: [String: RefundState] = [:]
                 for await (id, s) in g { if let s { out[id] = s } }
                 return out
             }
-            refunds = states
         } catch { self.error = error.localizedDescription }
     }
+}
+
+extension ISO8601DateFormatter {
+    static let withFraction: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
 }
 
 struct PaymentDetail: View {
@@ -72,35 +80,55 @@ struct PaymentDetail: View {
     @State private var state: RefundState?
     @State private var message: String?
     @State private var refunding = false
+    @State private var confirm = false
+
+    var pill: (String, StatusPill.Kind) {
+        if let s = state, s.isFullyRefunded { return ("Refunded", .warn) }
+        if let s = state, s.isPartlyRefunded { return ("Part refunded", .warn) }
+        return intent.status == "succeeded" ? ("Paid", .success) : (intent.status, .neutral)
+    }
 
     var body: some View {
-        Form {
-            LabeledContent("Amount", value: intent.money.display)
-            LabeledContent("Status", value: statusText)
-            LabeledContent("ID", value: intent.id)
-            if let s = state, s.refundedMinor > 0 {
-                LabeledContent("Refunded", value: Money(minor: s.refundedMinor, currency: intent.currency).display)
-            }
-            if intent.status == "succeeded", let s = state {
-                Section {
-                    if s.remainingMinor > 0 {
-                        Button(s.isPartlyRefunded ? "Refund the remaining \(Money(minor: s.remainingMinor, currency: intent.currency).display)" : "Refund in full", role: .destructive) { refund(s.remainingMinor) }
-                            .disabled(refunding)
-                    } else {
-                        Label("Fully refunded", systemImage: "arrow.uturn.backward.circle.fill").foregroundStyle(Theme.warn)
+        ZStack {
+            AmbientBackground(brand: .merchant, phase: 0.4)
+            ScrollView {
+                VStack(spacing: 18) {
+                    AmountText(intent.money, size: 60).padding(.top, 24)
+                    StatusPill(pill.0, pill.1)
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            row("Payment", intent.id)
+                            if let s = state, s.refundedMinor > 0 { row("Refunded", Money(minor: s.refundedMinor, currency: intent.currency).display) }
+                        }
                     }
-                    if let message { Text(message).font(.footnote) }
-                } footer: { Text("Test mode: the refund is recorded against the simulator.") }
+                    if intent.status == "succeeded", let s = state {
+                        if s.remainingMinor > 0 {
+                            Button(role: .destructive) { confirm = true } label: {
+                                Text(s.isPartlyRefunded ? "Refund the remaining \(Money(minor: s.remainingMinor, currency: intent.currency).display)" : "Refund in full")
+                                    .font(VUI.display(18, .semibold)).foregroundStyle(VUI.coral).frame(maxWidth: .infinity).padding(.vertical, 17)
+                                    .background(VUI.coral.opacity(0.14), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(VUI.coral.opacity(0.35)))
+                            }.buttonStyle(PressScale()).disabled(refunding)
+                            .confirmationDialog("Refund this payment?", isPresented: $confirm, titleVisibility: .visible) {
+                                Button("Refund \(Money(minor: s.remainingMinor, currency: intent.currency).display)", role: .destructive) { refund(s.remainingMinor) }
+                            } message: { Text("Test mode: recorded against the simulator.") }
+                        } else {
+                            Label("Fully refunded", systemImage: "arrow.uturn.backward.circle.fill").font(VUI.display(17, .semibold)).foregroundStyle(VUI.amber)
+                        }
+                    }
+                    if let message { Text(message).font(.system(size: 14, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+                }
+                .padding(20)
             }
         }
-        .navigationTitle("Payment")
+        .environment(\.colorScheme, .dark)
+        .navigationTitle("Payment").navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
     }
 
-    var statusText: String {
-        if let s = state, s.isFullyRefunded { return "refunded" }
-        if let s = state, s.isPartlyRefunded { return "part refunded" }
-        return intent.status
+    func row(_ k: String, _ v: String) -> some View {
+        HStack { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).lineLimit(1).truncationMode(.middle) }
+            .font(.system(size: 15, design: .rounded))
     }
 
     func reload() async {
@@ -115,8 +143,8 @@ struct PaymentDetail: View {
             defer { refunding = false }
             do {
                 let r = try await c.refund(intentId: intent.id, amount: Money(minor: remaining, currency: intent.currency), reason: "requested_by_merchant")
-                message = "Refund \(r.status)"
-            } catch { message = error.localizedDescription }
+                message = "Refund \(r.status)"; Haptics.success()
+            } catch { message = error.localizedDescription; Haptics.error() }
             await reload()
         }
     }
@@ -149,7 +177,7 @@ struct MerchantSettings: View {
             }
             .navigationTitle("Settings")
             .fullScreenCover(isPresented: $scanning) {
-                ScannerView { text in
+                ScannerView(brand: .merchant, hint: "Scan the setup QR") { text in
                     scanning = false
                     do {
                         let p = try SetupPayload.parse(text)

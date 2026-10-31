@@ -16,7 +16,7 @@ targets:
     type: application
     platform: iOS
     sources: [VayoraPay]
-    dependencies: [{ package: VayoraKit }]
+    dependencies: [{ package: VayoraKit, product: VayoraKit }, { package: VayoraKit, product: VayoraUI }]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.pay
@@ -33,7 +33,7 @@ targets:
     type: application
     platform: iOS
     sources: [VayoraMerchant]
-    dependencies: [{ package: VayoraKit }]
+    dependencies: [{ package: VayoraKit, product: VayoraKit }, { package: VayoraKit, product: VayoraUI }]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.merchant
