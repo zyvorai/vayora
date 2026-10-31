@@ -41,9 +41,10 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         </div>
       )}
       {access && (
-        <div className={`card${access.status === "approved" ? "" : " note"}`} style={{ marginBottom: 16 }} role="status">
+        <div className={`card${access.status === "approved" ? "" : access.status === "revoked" ? " note bad" : " note"}`} style={{ marginBottom: 16 }} role="status">
           {access.status === "approved" && <><strong>Live mode is open.</strong> {live ? "You are in live mode." : "Use the Test / Live switch at the top to go live."}</>}
           {access.status === "pending" && <><strong>Zyvor is reviewing your business.</strong> You do not need to do anything. We email you when live mode opens, or if we need something changed.</>}
+          {access.status === "revoked" && <><strong>Zyvor has paused live mode for your business.</strong><p style={{ margin: "6px 0" }}>{access.note ?? "No reason was given."}</p>New payments and payouts are stopped. You can still see everything and refund your customers. Contact Zyvor to have your business reviewed again.</>}
           {access.status === "rejected" && <><strong>Zyvor could not open live mode yet.</strong><p style={{ margin: "6px 0" }}>{access.note ?? "No reason was given."}</p>Fix that, then ask again: <Act action={requestLiveAccess} label="Ask again" primary /></>}
           {access.status === "not_requested" && <><strong>One more step before live mode: a Zyvor review.</strong><p className="muted" style={{ margin: "6px 0 10px" }}>Zyvor looks at your business details and the checks that ran, then opens live mode. Test mode keeps working in the meantime.</p><Act action={requestLiveAccess} label="Request live access" primary /></>}
         </div>

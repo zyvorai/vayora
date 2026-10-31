@@ -406,6 +406,14 @@ pub fn app(state: AppState) -> Router {
             "/platform/reviews/{organisation_id}/decision",
             post(platform::decide),
         )
+        .route(
+            "/platform/reviews/{organisation_id}/revoke",
+            post(platform::revoke),
+        )
+        .route(
+            "/platform/reviews/{organisation_id}/restore",
+            post(platform::restore),
+        )
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))

@@ -5,11 +5,14 @@ import { Nav } from "@/components/Nav";
 import { ThemeToggle } from "@/components/Theme";
 import { logout } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
+import { api } from "@/lib/zyvor";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const me = await currentSession();
+  // live mode taken away by Zyvor: say so on every page, not only on Onboarding (the API refuses the writes either way)
+  const paused = me?.e === "live" && (await (await api()).liveAccess.get().catch(() => null))?.status === "revoked";
   return (
     <div className="shell">
       <aside className="side">
@@ -33,6 +36,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             </details>
           )}
         </header>
+        {paused && <div className="testbar bad" role="alert">Zyvor has paused live mode for this business: new payments and payouts are stopped. <a href="/onboarding">See why</a></div>}
         {me?.e === "test" && <div className="testbar" role="status">Test mode: nothing here moves real money.</div>}
         <main id="main">{children}</main>
       </div>

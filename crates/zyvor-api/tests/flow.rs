@@ -10540,3 +10540,313 @@ async fn payment_search_matches_id_reference_and_description_and_treats_wildcard
         .await;
     assert!(r["data"].as_array().unwrap().is_empty());
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_reviewer_can_take_live_mode_away_and_give_it_back(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": "Pause Ltd", "email": "o@pause.in", "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "o@pause.in", "password": pw }),
+        )
+        .await;
+    let tn = Tenant {
+        id: home.clone(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status, reviewed_by) VALUES ($1, 'Pause Ltd', 'private_limited', '1234', 'Pune 411001', 'approved', 'the merchant themselves')")
+        .bind(&home).execute(&t.root).await.unwrap();
+    let (_, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let rv = |m: &'static str, p: String, b: Value| {
+        let (app, k) = (t.app.clone(), rkey.clone());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (st, _) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("o@pause.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let org = rv(
+        "GET",
+        "/v1/platform/reviews?status=pending".into(),
+        Value::Null,
+    )
+    .await
+    .1["data"][0]["organisation_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // nothing to revoke until it was approved
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/revoke"),
+        json!({ "note": "too early" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("wrong_state"))
+    );
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (st, live) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{live}");
+    let ln = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    // switching ended the test session key; sign in again for the test side
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "o@pause.in", "password": pw }),
+        )
+        .await;
+    let tn = Tenant {
+        id: home.clone(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    let new_payment = json!({ "amount_minor": 10000, "currency": "INR", "reference": "o-1" });
+    let post = |k: &str, path: &str, b: Value| {
+        let (app, k, path) = (t.app.clone(), k.to_string(), path.to_string());
+        async move { common::raw(&app, &k, None, "POST", &path, None, b).await }
+    };
+    assert!(
+        !zyvor_api::platform::live_frozen(&t.state.pool, &ln.id)
+            .await
+            .unwrap()
+    );
+    assert_ne!(
+        post(&ln.key, "/v1/payment_intents", new_payment.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+
+    // a reason is required, and a merchant's own key cannot do it
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/revoke"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(b["error"]["code"], "note_required", "{st} {b}");
+    assert_eq!(
+        post(
+            &ln.key,
+            &format!("/v1/platform/reviews/{org}/revoke"),
+            json!({ "note": "x" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/revoke"),
+        json!({ "note": "Chargeback rate is too high" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("revoked"))
+    );
+    assert!(
+        zyvor_api::platform::live_frozen(&t.state.pool, &ln.id)
+            .await
+            .unwrap()
+    );
+    // the test side is untouched
+    assert!(
+        !zyvor_api::platform::live_frozen(&t.state.pool, &home)
+            .await
+            .unwrap()
+    );
+
+    // live: reading still works; new payments, payouts and settings do not; refunds are still allowed
+    assert_eq!(
+        t.call(&ln, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    for path in ["/v1/payment_intents", "/v1/payouts", "/v1/payment_links"] {
+        let (st, b) = post(&ln.key, path, new_payment.clone()).await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{path} {b}");
+    }
+    assert_ne!(
+        post(&ln.key, "/v1/payment_intents/pi_none/refunds", json!({}))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    // test mode keeps working
+    assert_ne!(
+        post(&tn.key, "/v1/payment_intents", new_payment.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+
+    // every way a new payment starts (API, payment link, checkout) asks for routing candidates, and gets none
+    let candidates = |tid: &str, env: &str| {
+        let (state, pool, tid, env) = (
+            t.state.clone(),
+            t.state.pool.clone(),
+            tid.to_string(),
+            env.to_string(),
+        );
+        async move {
+            let mut tx = zyvor_api::tenant::begin(&pool, &tid).await.unwrap();
+            zyvor_api::registry::candidates(&state, &mut tx, &tid, &env, &Default::default()).await
+        }
+    };
+    assert_eq!(
+        candidates(&ln.id, "live").await.unwrap_err().code,
+        "live_access_revoked"
+    );
+    assert!(candidates(&home, "test").await.is_ok());
+
+    // the merchant sees why, and cannot switch to live or ask again by themselves
+    let s1 = t.ok(&tn, "GET", "/v1/live_access", None, Value::Null).await;
+    assert_eq!(
+        (s1["status"].clone(), s1["note"].clone()),
+        (json!("revoked"), json!("Chargeback rate is too high"))
+    );
+    let (st, b) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("live_access_revoked"))
+    );
+    let (st, b) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("o@pause.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("live_access_revoked"))
+    );
+    // it is on the record, as an event, and by email
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.revoked' AND actor = 'zyvor:Asha'").await, 1);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'live_access.revoked'")
+            .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'o@pause.in' AND body LIKE '%Chargeback rate is too high%'").await, 1);
+    // a revoked review is not pending, and cannot be revoked twice
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .1["error"]["code"],
+        "not_pending"
+    );
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/revoke"),
+            json!({ "note": "again" })
+        )
+        .await
+        .1["error"]["code"],
+        "wrong_state"
+    );
+
+    // giving it back opens everything again
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/restore"),
+        json!({ "note": "chargebacks resolved" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("approved"))
+    );
+    assert!(
+        !zyvor_api::platform::live_frozen(&t.state.pool, &ln.id)
+            .await
+            .unwrap()
+    );
+    assert_ne!(
+        post(&ln.key, "/v1/payment_intents", new_payment).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        t.call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/restore"),
+            json!({})
+        )
+        .await
+        .1["error"]["code"],
+        "wrong_state"
+    );
+}

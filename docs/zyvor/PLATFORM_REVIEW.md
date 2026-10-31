@@ -35,6 +35,30 @@ k3s: `kubectl -n zyvor exec deploy/zyvor-api -- zyvor-api platform-reviewer add 
 Hand the key to that person over a channel you trust; do not put it in chat or a ticket. Make one per person and
 disable it when they leave. No key, no live mode: with no reviewer set up, every request stays pending.
 
+## Taking live mode away (revoke) and giving it back
+
+For a business that is already live and should not be: a chargeback spike, a failed re-check, a complaint, a request from
+a provider. In the reviewer page open the business and use **Take live mode away** (a reason is required, and you tick
+that you understand it stops things at once), or `scripts/platform-review.sh revoke <organisation_id> "why"`.
+
+What stops at once, for the **live** side only (test mode is untouched):
+
+- every write through a live key or console session except refunds: no new payments, payment links, checkout
+  sessions, payouts, captures, mandates or settings changes (the API answers 403 with the reason);
+- new payments from the public checkout and payment links (they get no provider, `live_access_revoked`);
+- UPI AutoPay notices and debits, and automatic payment reminders, in the worker.
+
+What keeps working: reading everything, refunds (so customers can still be repaid), refreshing and cancelling
+payments already in flight, in-flight debits settling, webhooks and the audit trail.
+
+The merchant sees a red bar on every live page and the reason on the Onboarding page, and is emailed. Their Test /
+Live switch is refused with `live_access_revoked`, and "Request live access" does not reopen it: only a reviewer can.
+**Give live mode back** (or `restore`) when what you asked for is fixed; it needs the business details to still be
+approved. Every step is audited (`live_access.revoked`, `.restored`) and raises the same webhook events.
+
+**Not covered:** money already with the provider is not clawed back or held here (do that at Razorpay or Cashfree);
+revoking does not sign anyone out; and a business is frozen as a whole, not per provider or per branch.
+
 ## Doing a review in the console
 
 Set `CONSOLE_REVIEWER=1` on the console that Zyvor's own people use (leave it off for any console merchants reach: it
@@ -81,4 +105,3 @@ When unsure, reject with a note that says exactly what would change your mind.
 - A second reviewer for large or unusual merchants; assignment and an SLA clock.
 - Re-review when the business changes after approval (profiles are locked once approved, but a new bank account is
   only verified by a person, not re-reviewed by Zyvor).
-- Revoking live access for a merchant already live.

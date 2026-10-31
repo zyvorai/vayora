@@ -44,3 +44,23 @@ export async function decideReview(_: State, form: FormData): Promise<State> {
   revalidatePath("/reviewer");
   redirect(`/reviewer?status=pending&done=${decision}`);
 }
+
+/** Take live mode away from an approved business, or give it back. Taking it away needs the reason the merchant will see. */
+export async function changeLiveAccess(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const org = String(form.get("org") ?? "");
+  const action = String(form.get("action") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+  if (action !== "revoke" && action !== "restore") return { error: "Choose revoke or restore." };
+  if (action === "revoke" && !note) return { error: "Say why. The merchant is shown this." };
+  if (action === "revoke" && form.get("confirm") !== "yes") return { error: "Tick the box to confirm: new payments and payouts stop at once." };
+  const r = await platform(key, "POST", `/reviews/${encodeURIComponent(org)}/${action}`, { note: note || undefined });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer");
+  redirect(`/reviewer?status=${action === "revoke" ? "revoked" : "approved"}&done=${action}`);
+}

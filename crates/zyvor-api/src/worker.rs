@@ -64,8 +64,8 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         if let Err(e) = crate::mandates::run_cycle(s, &tid, &env).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "mandate cycle failed");
         }
-        // 3b. automatic reminders for tenants that opted in
-        {
+        // 3b. automatic reminders for tenants that opted in (not for a business whose live mode was taken away)
+        if !crate::platform::live_frozen(&s.pool, &tid).await? {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
             let pol: Option<(String, i32, i32, bool)> = sqlx::query_as("SELECT dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1 AND auto_dunning")
                 .bind(&tid).fetch_optional(&mut *tx).await?;

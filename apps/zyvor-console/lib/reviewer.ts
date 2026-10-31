@@ -39,7 +39,7 @@ export async function platform<T>(key: string, method: "GET" | "POST", path: str
   }
 }
 
-export type ReviewRow = { organisation_id: string; organisation: string; status: "pending" | "approved" | "rejected"; requested_by: string; requested_at: string; round: number; legal_name: string | null; checks_failed: number };
+export type ReviewRow = { organisation_id: string; organisation: string; status: "pending" | "approved" | "rejected" | "revoked"; requested_by: string; requested_at: string; round: number; legal_name: string | null; checks_failed: number };
 export type ReviewDetail = {
   organisation_id: string; organisation: string; status: ReviewRow["status"]; requested_by: string; requested_at: string; round: number; note: string | null; reviewed_by: string | null;
   profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; status: string; submitted_by: string; reviewed_by: string | null; review_note: string | null; review_reasons: string[] | null } | null;

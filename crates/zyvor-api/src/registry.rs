@@ -122,6 +122,13 @@ pub async fn candidates(
     env: &str,
     routing: &Routing,
 ) -> Result<Vec<Candidate>, ApiError> {
+    // every new payment (API, payment link, checkout) starts here: none for a business whose live mode was taken away
+    if env == "live" && crate::platform::live_frozen(&state.pool, tenant_id).await? {
+        return Err(ApiError::conflict(
+            "live_access_revoked",
+            "this business cannot take new payments: Zyvor has taken live mode away",
+        ));
+    }
     let accounts: Vec<(String, bool)> = sqlx::query_as(
         "SELECT provider, enabled FROM provider_accounts WHERE tenant_id = $1 ORDER BY provider",
     )

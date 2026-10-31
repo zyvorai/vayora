@@ -969,8 +969,11 @@ pub async fn run_cycle(s: &AppState, tenant_id: &str, env: &str) -> Result<Stats
         tx.commit().await?;
     }
 
+    // A business whose live mode was taken away sends no new notices and no new debits; what is in flight still settles.
+    let frozen = crate::platform::live_frozen(&s.pool, tenant_id).await?;
+
     // 2. tell the payer (emit the pre-debit notice) for every scheduled debit
-    {
+    if !frozen {
         let mut tx = tenant::begin(&s.pool, tenant_id).await?;
         let due: Vec<DebitRow> = sqlx::query_as(debit_select!("WHERE state = 'scheduled' AND notify_at <= now() ORDER BY due_date FOR UPDATE SKIP LOCKED LIMIT 200"))
             .fetch_all(&mut *tx).await?;
@@ -983,7 +986,9 @@ pub async fn run_cycle(s: &AppState, tenant_id: &str, env: &str) -> Result<Stats
     }
 
     // 3. send the debits that are due, on an active mandate, whose notice was given long enough ago
-    let ready: Vec<String> = {
+    let ready: Vec<String> = if frozen {
+        Vec::new()
+    } else {
         let mut tx = tenant::begin(&s.pool, tenant_id).await?;
         sqlx::query_scalar("SELECT d.id FROM mandate_debits d JOIN mandates m ON m.id = d.mandate_id WHERE d.state = 'notified' AND d.due_date <= $1 AND m.status = 'active' AND d.notified_at <= now() - make_interval(hours => $2::int) ORDER BY d.due_date LIMIT 50")
             .bind(today).bind(s.mandate_notice_hours as i32).fetch_all(&mut *tx).await?

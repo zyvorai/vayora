@@ -129,6 +129,10 @@ pub async fn live_gate(s: &AppState, org: &str) -> Result<String, ApiError> {
     .await?;
     match row {
         Some((st, Some(name))) if st == "approved" => Ok(name),
+        Some((st, _)) if st == "revoked" => Err(ApiError::conflict(
+            "live_access_revoked",
+            "Zyvor has taken live mode away from this business; see the note on the Onboarding page or contact Zyvor",
+        )),
         Some((st, _)) if st == "pending" => Err(ApiError::conflict(
             "live_access_pending",
             "Zyvor is reviewing your business; live mode opens when that is approved",
@@ -203,6 +207,13 @@ pub async fn request_live_access(
             ("pending", true)
         }
         Some("approved") => ("approved", false),
+        // only a reviewer can give live mode back; asking again would hide that it was taken away
+        Some("revoked") => {
+            return Err(ApiError::conflict(
+                "live_access_revoked",
+                "Zyvor has taken live mode away from this business; contact Zyvor to have it reviewed again",
+            ));
+        }
         Some(_) => ("pending", false),
     };
     tx.commit().await?;
@@ -420,6 +431,130 @@ pub async fn decide(
         }
     }
     Ok(Json(json!({ "organisation_id": org, "status": new })))
+}
+
+/// Is this tenant a live one whose organisation has had live mode taken away? Such a tenant can read and
+/// refund, but cannot take new payments, move money out, or change anything else (see `Auth`).
+pub async fn live_frozen(pool: &PgPool, tenant_id: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM tenants t JOIN live_access l ON l.organisation_id = t.organisation_id
+         WHERE t.id = $1 AND t.env = 'live' AND l.status = 'revoked')",
+    )
+    .bind(tenant_id)
+    .fetch_one(pool)
+    .await
+}
+
+#[derive(Deserialize)]
+pub struct Revocation {
+    note: Option<String>,
+}
+
+/// `POST /v1/platform/reviews/{organisation_id}/revoke`: take live mode away from an approved business. The note is
+/// required: the merchant is shown it.
+pub async fn revoke(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(org): Path<String>,
+    Json(b): Json<Revocation>,
+) -> Result<Json<Value>, ApiError> {
+    let note = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let Some(note) = note else {
+        return Err(ApiError::invalid(
+            "note_required",
+            "say why live mode is being taken away; the merchant is shown this",
+        ));
+    };
+    change_live_access(&s, &p, &org, "approved", "revoked", Some(note)).await
+}
+
+/// `POST /v1/platform/reviews/{organisation_id}/restore`: give live mode back to a revoked business.
+pub async fn restore(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(org): Path<String>,
+    Json(b): Json<Revocation>,
+) -> Result<Json<Value>, ApiError> {
+    let note = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    if !onboarding_approved(&s, &org).await? {
+        return Err(ApiError::conflict(
+            "onboarding_incomplete",
+            "the business details are no longer approved; a person must approve them again first",
+        ));
+    }
+    change_live_access(&s, &p, &org, "revoked", "approved", note).await
+}
+
+/// Move a review between two states, with the record, the event and the email that go with it.
+async fn change_live_access(
+    s: &AppState,
+    p: &PlatformAuth,
+    org: &str,
+    from: &str,
+    to: &str,
+    note: Option<&str>,
+) -> Result<Json<Value>, ApiError> {
+    let tid = test_tenant_of(s, org).await?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, String)> = sqlx::query_as(
+        "SELECT status, requested_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    )
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, requested_by) = cur.ok_or_else(|| ApiError::not_found("review"))?;
+    if status != from {
+        return Err(ApiError::conflict(
+            "wrong_state",
+            format!("this review is {status}, not {from}"),
+        ));
+    }
+    sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE organisation_id = $1")
+        .bind(org)
+        .bind(to)
+        .bind(&p.id)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    let actor = format!("zyvor:{}", p.name);
+    let event = if to == "revoked" {
+        "live_access.revoked"
+    } else {
+        "live_access.restored"
+    };
+    tenant::audit(&mut tx, &tid, &actor, event, None, json!({ "note": note })).await?;
+    tenant::emit(
+        &mut tx,
+        &tid,
+        event,
+        json!({ "reviewed_by": actor, "note": note }),
+    )
+    .await?;
+    tx.commit().await?;
+    let (subject, body) = if to == "revoked" {
+        (
+            "Zyvor has paused live mode for your business".to_string(),
+            format!(
+                "Zyvor has taken live mode away from your business, so new payments and payouts are stopped. Your records stay readable and refunds still work.\n\nWhy: {}\n\nContact Zyvor to have it reviewed again. Details are on the Onboarding page: {}/onboarding\n",
+                note.unwrap_or(""),
+                s.console_url
+            ),
+        )
+    } else {
+        (
+            "Live mode is open again for your business".to_string(),
+            format!(
+                "Zyvor has reviewed your business again and opened live mode.\n\nSign in: {}\n",
+                s.console_url
+            ),
+        )
+    };
+    if let Some(to_addr) = requested_by.strip_prefix("user:").or(Some(&requested_by))
+        && to_addr.contains('@')
+    {
+        crate::mail::enqueue(&s.pool, to_addr, &subject, &body).await?;
+    }
+    Ok(Json(json!({ "organisation_id": org, "status": to })))
 }
 
 /// How many requests are waiting for a reviewer (for the `/metrics` gauge and an alert).

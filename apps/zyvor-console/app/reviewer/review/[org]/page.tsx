@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
-import { DecisionForm } from "@/components/ReviewerForms";
+import { DecisionForm, LiveAccessForm } from "@/components/ReviewerForms";
 import { outcomeTone, platform, requireReviewerSurface, reviewerKey, type ReviewDetail } from "@/lib/reviewer";
 
 const KIND: Record<string, string> = { pan: "PAN", bank_account: "Bank account", gstin: "GSTIN" };
@@ -27,7 +27,7 @@ export default async function Review({ params }: { params: Promise<{ org: string
 
       {!pending && (
         <div className={`note ${d.status === "approved" ? "ok" : "bad"}`} role="status" style={{ marginBottom: 16 }}>
-          {d.status === "approved" ? "Approved" : "Rejected"} by {d.reviewed_by ?? "a reviewer"}.{d.note ? ` Note: ${d.note}` : ""}
+          {d.status === "approved" ? "Approved" : d.status === "revoked" ? "Live mode taken away" : "Rejected"} by {d.reviewed_by ?? "a reviewer"}.{d.note ? ` Note: ${d.note}` : ""}
         </div>
       )}
       {pending && d.checks.length === 0 && (
@@ -87,6 +87,21 @@ export default async function Review({ params }: { params: Promise<{ org: string
           )}
         </section>
       </div>
+
+      {d.status === "approved" && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h2>Take live mode away</h2>
+          <p className="fine">For a business that is already live and should not be: a fraud signal, a failed re-check, a request from a provider. The merchant is emailed your reason.</p>
+          <LiveAccessForm org={d.organisation_id} mode="revoke" />
+        </section>
+      )}
+      {d.status === "revoked" && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h2>Give live mode back</h2>
+          <p className="fine">Only after what you asked for has been fixed. The business details must still be approved.</p>
+          <LiveAccessForm org={d.organisation_id} mode="restore" />
+        </section>
+      )}
 
       {pending && (
         <section className="card" style={{ marginTop: 16 }}>

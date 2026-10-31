@@ -3,7 +3,14 @@ import { Chip } from "@/components/Chip";
 import { ReviewerSignIn } from "@/components/ReviewerForms";
 import { platform, requireReviewerSurface, reviewerKey, type ReviewRow } from "@/lib/reviewer";
 
-const FILTERS = ["pending", "approved", "rejected"] as const;
+const FILTERS = ["pending", "approved", "rejected", "revoked"] as const;
+
+const DONE: Record<string, string> = {
+  approve: "Approved. The merchant can switch to Live and has been emailed.",
+  reject: "Rejected. The merchant sees your note and has been emailed.",
+  revoke: "Live mode taken away. New payments and payouts for that business have stopped, and the merchant has been emailed.",
+  restore: "Live mode given back. The merchant has been emailed.",
+};
 
 export default async function Queue({ searchParams }: { searchParams: Promise<{ status?: string; done?: string }> }) {
   requireReviewerSurface();
@@ -27,7 +34,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <div className="head"><div><h1>Live access requests</h1><p className="lede">Oldest first. Open one to see what the business submitted and the checks that ran.</p></div></div>
-      {q.done && <div className="note ok" role="status" style={{ marginBottom: 16 }}>{q.done === "approve" ? "Approved. The merchant can switch to Live and has been emailed." : "Rejected. The merchant sees your note and has been emailed."}</div>}
+      {q.done && <div className="note ok" role="status" style={{ marginBottom: 16 }}>{DONE[q.done] ?? "Done."}</div>}
       {!r.ok && <div className="note bad" role="alert" style={{ marginBottom: 16 }}>{r.message}</div>}
       <nav className="tabs" aria-label="Status" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {FILTERS.map((f) => <a key={f} className={`btn small${f === status ? " primary" : ""}`} href={`/reviewer?status=${f}`} aria-current={f === status ? "page" : undefined}>{f[0].toUpperCase() + f.slice(1)}</a>)}

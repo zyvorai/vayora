@@ -6,6 +6,8 @@
 #   ... show <organisation_id>                 what the business submitted and the checks that ran
 #   ... approve <organisation_id> ["note"]     opens live mode for that business
 #   ... reject <organisation_id> "what to fix" the merchant is shown this note (required)
+#   ... revoke <organisation_id> "why"         takes live mode away from an approved business (note required)
+#   ... restore <organisation_id> ["note"]     gives it back
 #
 # Never prints the key.
 set -euo pipefail
@@ -47,5 +49,9 @@ if d.get("note"): print("last note  :", d["note"])' ;;
   reject)
     if [ -z "${3:-}" ]; then echo "say what the merchant must fix:  $0 reject <organisation_id> \"what to fix\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: reject <organisation_id> \"what to fix\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "${3:?say what the merchant must fix}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the merchant will see your note")' ;;
-  *) sed -n '2,12p' "$0"; exit 1 ;;
+  revoke)
+    if [ -z "${3:-}" ]; then echo "say why:  $0 revoke <organisation_id> \"why\"" >&2; exit 2; fi
+    call POST "/v1/platform/reviews/${2:?usage: revoke <organisation_id> \"why\"}/revoke" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "revoked: no new payments or payouts for " + d["organisation_id"])' ;;
+  restore) call POST "/v1/platform/reviews/${2:?usage: restore <organisation_id> [note]}/restore" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "restored: live mode is open again for " + d["organisation_id"])' ;;
+  *) sed -n '2,14p' "$0"; exit 1 ;;
 esac
