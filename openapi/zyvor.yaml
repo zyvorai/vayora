@@ -1723,6 +1723,21 @@ paths:
               schema: {type: string}
         '404':
           description: Unknown intent, wrong secret, or nothing to show
+  /v1/sim/pay:
+    post:
+      summary: Pay or decline the simulator's UPI payload (test mode only)
+      description: 'Body: {"upi_uri": "upi://pay?pa=sandbox@zyvor-sim&tn=<attempt_id>...", "approve": true}. Lets a test payer app complete a payment against the in-process simulator without a bank. Answers 404 unless the server was started with ZYVOR_SIM_PAYER=1. 422 not_a_sim_payment when the payee is not the simulator or the input is not a UPI link; 409 nothing_to_pay when the attempt is not waiting for a payer. Never touches a real provider.'
+      tags:
+      - payments
+      responses:
+        '200':
+          description: The attempt's status after the payer acted (captured or failed)
+        '404':
+          description: Not enabled on this server
+        '409':
+          description: The attempt is not waiting for a payer
+        '422':
+          description: Not a simulator UPI payload
   /v1/checkout/{tenant_id}/{intent_id}:
     get:
       summary: Public checkout session (client-secret authorised)
