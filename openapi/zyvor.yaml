@@ -1019,6 +1019,176 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/signup:
+    post:
+      summary: Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/signup/verify:
+    post:
+      summary: Public: confirm the emailed verification token
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/login:
+    post:
+      summary: Public: sign in by signup email; returns the person and a 12-hour role-scoped session key
+      tags:
+      - console_users
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/switch_env:
+    post:
+      summary: Exchange a console session key for the same person's key in the other environment (live needs approved onboarding)
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/outbox/test:
+    post:
+      summary: Queue a `webhook.test` event for your webhook endpoint (needs a webhook URL in settings)
+      tags:
+      - webhooks
+      responses:
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/signup/resend:
+    post:
+      summary: Public: email a fresh verification link (always answers the same)
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invitations/lookup:
+    post:
+      summary: Public: who an invitation link is for
+      tags:
+      - invitations
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invitations/accept:
+    post:
+      summary: Public: accept an invitation by choosing a password
+      tags:
+      - invitations
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/password_reset/request:
+    post:
+      summary: Public: email a password reset link (always answers the same)
+      tags:
+      - password_reset
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/password_reset/confirm:
+    post:
+      summary: Public: set a new password with the emailed token
+      tags:
+      - password_reset
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/invitations:
+    post:
+      summary: Email someone a one-time link to join this organisation (admin)
+      tags:
+      - invitations
+      responses:
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: Invitations nobody has accepted yet (admin)
+      tags:
+      - invitations
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/invitations/{id}/revoke:
+    post:
+      summary: Cancel an unused invitation (admin)
+      tags:
+      - invitations
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/provider_accounts/{provider}/check:
+    post:
+      summary: Ask the provider whether it accepts this account's credentials (read-only; a refusal is `ok: false`)
+      tags:
+      - providers
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/sim/pay:
+    post:
+      summary: A simulated payer approves or declines a sandbox UPI payload (test environments, off unless ZYVOR_SIM_PAYER=1; only the in-process simulator)
+      tags:
+      - sandbox
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN

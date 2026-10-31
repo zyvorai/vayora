@@ -27,4 +27,4 @@ export async function proxy(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/((?!login|_next/|favicon.svg).*)"] };
+export const config = { matcher: ["/((?!login|signup|accept|forgot|reset|verify|check-email|_next/|favicon.svg).*)"] };

@@ -1,11 +1,13 @@
 import { Act } from "@/components/Act";
 import { KeyForm } from "@/components/KeyForm";
 import { revokeKey } from "@/lib/actions";
+import { requireRole } from "@/lib/auth";
 import { istDateTime } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Keys() {
-  const z = api();
+  await requireRole("admin");
+  const z = await api();
   const [keys, branches] = await Promise.all([z.keys.list(), z.branches.list()]);
   const branch = new Map(branches.data.map((b) => [b.id, b.name]));
   return (

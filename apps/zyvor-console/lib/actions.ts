@@ -5,10 +5,41 @@ import { revalidatePath } from "next/cache";
 import { ZyvorError, type Zyvor } from "@zyvor/node";
 import { currentSession } from "@/lib/auth";
 import { parseBulk } from "@/lib/bulk";
-import { COOKIE, SESSION_TTL_SECONDS, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
-import { api, authConfig } from "@/lib/zyvor";
+import { handleFor } from "@/lib/sandbox";
+import { publicPost, type EmailLogin } from "@/lib/public";
+import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
+import { api, authConfig, sessionKey } from "@/lib/zyvor";
 
-export type FormState = { ok?: string; error?: string; otp?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
+export type FormState = { ok?: string; error?: string; otp?: boolean; unverified?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
+
+async function startWithKey(who: Omit<Session, "exp">, key: string) {
+  await start(who);
+  (await cookies()).set(KEY_COOKIE, await sealText(authConfig().secret, key), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  });
+}
+
+/** Sign in by email as a member of the organisation that signed up with it. */
+async function emailSignIn(email: string, password: string, otp: string): Promise<{ who: Omit<Session, "exp">; key: string } | NonNullable<FormState>> {
+  const r = await publicPost<EmailLogin>("/v1/console/login", { email, password, otp: otp || undefined });
+  if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, e: r.body.env, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
+  if (r.code === "otp_required") return { otp: true };
+  if (r.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes." };
+  if (r.code === "email_not_verified") return { error: "Confirm your email first: we sent you a link when you signed up.", unverified: true };
+  if (r.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
+  await new Promise((x) => setTimeout(x, 500)); // slow down guessing
+  return { error: "Incorrect email, password or code." };
+}
+
+function safeNext(form: FormData): string {
+  const next = String(form.get("next") ?? "/");
+  // Only same-site relative paths; never an open redirect.
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
 
 async function start(who: Omit<Session, "exp">) {
   (await cookies()).set(COOKIE, await createSession(authConfig().secret, who), {
@@ -26,8 +57,17 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   const p = String(form.get("password") ?? "");
   const otp = String(form.get("otp") ?? "").trim();
   let signedIn: Omit<Session, "exp"> | null = null;
+  if (u.includes("@")) {
+    const r = await emailSignIn(u, p, otp);
+    if ("who" in r) {
+      await startWithKey(r.who, r.key);
+      redirect(safeNext(form));
+    }
+    // not an organisation's email: fall through to the deployment's own users
+    if (r.otp || (r.error && !r.error.startsWith("Incorrect"))) return r;
+  }
   try {
-    const r = await api().consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
+    const r = await (await api(undefined, { deployment: true })).consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
     signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled, ...(r.user.branch_id ? { b: r.user.branch_id } : {}) };
   } catch (e) {
     if (!(e instanceof ZyvorError)) return { error: "Sign-in is unavailable right now. Try again in a moment." };
@@ -43,7 +83,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     let noUsers = false;
     if (userOk && passOk) {
       try {
-        noUsers = (await api().consoleUsers.list()).data.length === 0;
+        noUsers = (await (await api(undefined, { deployment: true })).consoleUsers.list()).data.length === 0;
       } catch {
         noUsers = false;
       }
@@ -55,13 +95,85 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     return { error: "Incorrect username, password or code." };
   }
   await start(signedIn);
-  const next = String(form.get("next") ?? "/");
-  // Only same-site relative paths; never an open redirect.
-  redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
+  (await cookies()).delete(KEY_COOKIE); // an earlier organisation sign-in must not leave its key behind
+  redirect(safeNext(form));
 }
+
+/** Move to the organisation's other environment. The API swaps the session key; live needs approved onboarding. */
+export async function switchEnv(_: FormState, form: FormData): Promise<FormState> {
+  const s = await currentSession();
+  const key = await sessionKey();
+  const env = form.get("env") === "live" ? "live" : "test";
+  if (!s || !key) return { error: "Switching is available when you sign in with your email." };
+  if (s.e === env) return undefined;
+  const r = await publicPost<EmailLogin>("/v1/console/switch_env", { env }, key);
+  if (!r.ok) {
+    if (r.code === "onboarding_incomplete") return { error: "Live mode opens once your business details are approved. Finish onboarding first." };
+    return { error: "Could not switch right now. Try again in a moment." };
+  }
+  const { exp: _exp, ...who } = s;
+  await startWithKey({ ...who, e: r.body.env }, r.body.session_key);
+  revalidatePath("/", "layout");
+  return undefined;
+}
+
+export async function signup(_: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+  const r = await publicPost("/v1/signup", { organisation_name: String(form.get("organisation") ?? ""), email, password });
+  if (!r.ok) {
+    if (r.status === 409) return { error: "An account already exists for that email. Sign in instead." };
+    if (r.status === 422) return { error: r.message ? `${r.message[0].toUpperCase()}${r.message.slice(1)}.` : "Check the details and try again." };
+    if (r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+    return { error: "Signup is unavailable right now. Try again in a moment." };
+  }
+  const si = await emailSignIn(email, password, "");
+  if ("unverified" in si && si.unverified) redirect(`/check-email?email=${encodeURIComponent(email)}`);
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/onboarding");
+}
+
+/** Send a fresh confirmation link. Always the same answer, so addresses cannot be probed. */
+export async function resendVerification(_: FormState, form: FormData): Promise<FormState> {
+  await publicPost("/v1/signup/resend", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  return { ok: "If that address is waiting to be confirmed, a new link is on its way." };
+}
+
+export async function requestReset(_: FormState, form: FormData): Promise<FormState> {
+  const r = await publicPost("/v1/password_reset/request", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  if (!r.ok && r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+  return { ok: "If that address has an account, a reset link is on its way. It works for an hour." };
+}
+
+export async function confirmReset(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost("/v1/password_reset/confirm", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That link has expired.")[0].toUpperCase()}${(r.message ?? "That link has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : "Could not reset the password right now. Try again in a moment." };
+  redirect("/login?reset=1");
+}
+
+export async function acceptInvitation(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost<{ email: string }>("/v1/invitations/accept", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That invitation has expired.")[0].toUpperCase()}${(r.message ?? "That invitation has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : r.status === 409 ? "That email already belongs to an account." : "Could not accept right now. Try again in a moment." };
+  const si = await emailSignIn(r.body.email, password, "");
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/");
+}
+
+export const inviteUser = async (_: FormState, f: FormData) => {
+  const r = await run(["/users"], (z) => z.consoleUsers.invite({ email: text(f, "email"), role: text(f, "role") as "viewer", branchId: text(f, "branch_id") || undefined }), "admin");
+  return r?.ok ? { ok: "Invitation sent. The link works once and expires in 7 days." } : r;
+};
+export const revokeInvitation = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.revokeInvitation(id(f)), "admin");
 
 export async function logout() {
   (await cookies()).delete(COOKIE);
+  (await cookies()).delete(KEY_COOKIE);
   redirect("/login");
 }
 
@@ -72,7 +184,7 @@ async function run(paths: string[], fn: (z: Zyvor, s: Session) => Promise<unknow
   const s = await currentSession();
   if (!s || !allows(s.r, need)) return DENIED;
   try {
-    await fn(api(s.u), s);
+    await fn(await api(s.u), s);
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
     throw e;
@@ -85,13 +197,73 @@ const id = (f: FormData) => String(f.get("id") ?? "");
 export const approveRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.approve(id(f)));
 export const rejectRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.reject(id(f)));
 export const retryRefund = async (_: FormState, f: FormData) => run(["/refunds"], (z) => z.refunds.retry(id(f)));
+/** Refund all or part of a payment. The key comes from the form, so a double click is one refund, not two. */
+export const refundPayment = async (_: FormState, f: FormData) => {
+  const raw = String(f.get("amount") ?? "").replace(/,/g, "").trim();
+  const rupees = raw === "" ? undefined : Number(raw);
+  if (rupees !== undefined && (!Number.isFinite(rupees) || rupees <= 0)) return { error: "Enter an amount greater than zero, or leave it empty to refund what is left." };
+  const key = String(f.get("key") ?? "");
+  const intent = id(f);
+  const r = await run([`/payments/${intent}`, "/refunds", "/"], (z) => z.intents.refund(intent, { amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100), reason: String(f.get("reason") ?? "").trim() || undefined, idempotencyKey: key || undefined }));
+  return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
+};
+export const sendTestEvent = async (_: FormState) => run(["/webhooks", "/developers"], (z) => z.webhooks.sendTest(), "admin");
+/** Make a test payment that ends the way you pick, then open it. Test environments only. */
+export async function createTestPayment(_: FormState, f: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  const handle = handleFor(String(f.get("outcome") ?? ""));
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  if (!handle) return { error: "Pick an outcome." };
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  const key = String(f.get("key") ?? "") || crypto.randomUUID();
+  let intentId: string;
+  try {
+    const z = await api(s.u);
+    if ((await z.settings.get()).env !== "test") return { error: "Test payments are only available in test mode." };
+    const i = await z.intents.create({ amountMinor: Math.round(rupees * 100), externalRef: String(f.get("reference") ?? "").trim() || undefined, description: "Sandbox payment", idempotencyKey: key });
+    intentId = i.id;
+    await z.intents.attempt(i.id, { method: "upi", vpa: handle, idempotencyKey: `${key}:attempt` });
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.code === "no_route" || /provider/i.test(e.message) ? "No test provider is set up yet. An admin can turn the simulator on from this page." : e.message };
+    throw e;
+  }
+  revalidatePath("/payments");
+  redirect(`/payments/${intentId}`);
+}
+/** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
+export const connectProvider = async (_: FormState, f: FormData) => {
+  const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";
+  const credentials: Record<string, string | boolean> = provider === "razorpay" ? { key_id: text(f, "id"), key_secret: text(f, "secret") } : { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
+  // Cashfree signs its webhooks with the account's secret key, so that is the webhook secret; Razorpay has its own.
+  const webhookSecret = provider === "cashfree" ? text(f, "secret") : text(f, "webhook_secret");
+  if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: provider === "cashfree" ? "Fill in the app id and its secret key." : "Fill in the key, its secret and the webhook secret." };
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect(provider, { credentials, webhookSecret, label: text(f, "label") || undefined }), "admin");
+  return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
+};
+/** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */
+export async function checkProvider(provider: string): Promise<{ ok: boolean; detail: string }> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "admin")) return { ok: false, detail: DENIED.error };
+  try {
+    const r = await (await api(s.u)).providers.check(provider);
+    return { ok: r.ok, detail: r.detail };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { ok: false, detail: e.message };
+    throw e;
+  }
+}
+export async function setProviderEnabled(provider: string, enabled: boolean): Promise<FormState> {
+  return run(["/providers"], (z) => z.providers.setEnabled(provider, enabled), "admin");
+}
+export const enableSandbox = async (_: FormState) => run(["/sandbox"], (z) => z.providers.enableSimulator(), "admin");
 export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
 export const resolveCase = async (_: FormState, f: FormData) => {
   const note = String(f.get("resolution") ?? "").trim();
   if (!note) return { error: "Say how it was resolved." };
   return run(["/reconciliation", "/"], (z) => z.cases.resolve(id(f), note));
 };
-export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)));
+export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)), "admin");
 export const runBilling = async (_: FormState): Promise<FormState> => {
   let made = 0;
   const r = await run(["/billing"], async (z) => {
@@ -149,7 +321,7 @@ export async function beginMfa(): Promise<FormState> {
   const s = await currentSession();
   if (!s || s.i === "bootstrap") return { error: "Create a named user first; the deployment admin cannot enrol a device." };
   try {
-    const r = await api(s.u).consoleUsers.mfaBegin(s.i);
+    const r = await (await api(s.u)).consoleUsers.mfaBegin(s.i);
     return { secret: r.secret, uri: r.otpauth_uri };
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
@@ -161,8 +333,9 @@ export async function confirmMfa(_: FormState, f: FormData): Promise<FormState> 
   const s = await currentSession();
   if (!s || s.i === "bootstrap") return DENIED;
   try {
-    const r = await api(s.u).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
-    await start({ i: s.i, u: s.u, r: s.r, m: true });
+    const r = await (await api(s.u)).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
+    const { exp: _exp, ...who } = s; // keep everything else (environment, a cashier's branch)
+    await start({ ...who, m: true });
     return { codes: r.recovery_codes };
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
@@ -330,16 +503,3 @@ export const createKey = async (_: FormState, f: FormData): Promise<FormState> =
 };
 export const revokeKey = async (_: FormState, f: FormData) => run(["/keys"], (z) => z.keys.revoke(id(f)), "admin");
 
-// ---- payment providers (admin). The secrets are typed into the console, sent once and never shown again ----
-export const connectProvider = async (_: FormState, f: FormData) => {
-  const t = (k: string) => String(f.get(k) ?? "").trim();
-  const provider = t("provider");
-  if (provider !== "cashfree" && provider !== "razorpay") return { error: "Choose Cashfree or Razorpay." };
-  const credentials: Record<string, string | boolean> = provider === "cashfree"
-    ? { client_id: t("key_id"), client_secret: t("key_secret"), ...(on(f, "upi_intent") ? { upi_intent: true } : {}) }
-    : { key_id: t("key_id"), key_secret: t("key_secret") };
-  if (!t("key_id") || !t("key_secret") || !t("webhook_secret")) return { error: "Enter the key, its secret and the webhook secret." };
-  return run(["/providers"], (z) => z.providers.connect(provider, { credentials, webhookSecret: t("webhook_secret"), label: t("label") || undefined }), "admin");
-};
-export const toggleProvider = async (_: FormState, f: FormData) =>
-  run(["/providers"], (z) => z.providers.setEnabled(String(f.get("provider") ?? ""), String(f.get("enabled")) === "1"), "admin");

@@ -269,15 +269,6 @@ export class Zyvor {
     exposure: (p: { asOf?: string } = {}) => this.req<{ as_of: string; rate_date: string | null; outstanding_usd_minor: number; complete: boolean; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null; data: Array<{ invoice_id: string; number: string; outstanding_usd_minor: number; raised_on: string; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null }> }>("GET", `/v1/fx/exposure${this.qs({ as_of: p.asOf })}`),
   };
 
-  /** Payment provider accounts (admin). Secrets go in and are never returned. */
-  readonly providers = {
-    list: () => this.req<{ data: { id: string; provider: string; label: string; enabled: boolean; base_url: string | null; webhook_url: string; capabilities: Record<string, unknown> | null }[] }>("GET", "/v1/provider_accounts"),
-    /** Store these credentials for the provider, replacing its account if there is one. Leave `baseUrl` out for the provider's own test or live address. */
-    connect: (provider: "razorpay" | "cashfree" | "custom", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
-      this.req<{ id: string; provider: string; enabled: boolean; replaced: boolean }>("PUT", `/v1/provider_accounts/${provider}`, { credentials: p.credentials, webhook_secret: p.webhookSecret, label: p.label, base_url: p.baseUrl }),
-    setEnabled: (provider: string, enabled: boolean) => this.req<{ provider: string; enabled: boolean }>("POST", `/v1/provider_accounts/${provider}/enabled`, { enabled }),
-  };
-
   readonly settings = {
     get: () => this.req<Settings>("GET", "/v1/settings"),
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
@@ -292,14 +283,15 @@ export class Zyvor {
   };
 
   readonly onboarding = {
-    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[] }>("GET", "/v1/onboarding"),
+    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[]; /** `true` when the deployment runs identity and bank checks itself */ automated_checks: boolean; /** why a submission went to a person */ review_reasons: string[]; checks: { kind: "pan" | "gstin" | "bank"; subject: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[] }>("GET", "/v1/onboarding"),
     saveProfile: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string }) =>
       this.req("PUT", "/v1/onboarding", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address }),
     addDocument: (p: { kind: string; reference: string }) => this.req<{ id: string }>("POST", "/v1/onboarding/documents", p),
     addBankAccount: (p: { holderName: string; ifsc: string; accountNumber: string }) =>
-      this.req<{ id: string; account_last4: string }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
+      this.req<{ id: string; account_last4: string; check: { outcome: "pass" | "fail" | "inconclusive"; detail: string } | null }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
     verifyBankAccount: (id: string) => this.req("POST", `/v1/onboarding/bank_accounts/${encodeURIComponent(id)}/verify`),
-    submit: () => this.req("POST", "/v1/onboarding/submit"),
+    /** `automatic: true` means every check passed and the business was approved without a person. */
+    submit: () => this.req<{ status: "approved" | "in_review"; automatic: boolean; reasons: string[] }>("POST", "/v1/onboarding/submit"),
     review: (p: { decision: "approve" | "reject"; note?: string }) => this.req("POST", "/v1/onboarding/review", p),
   };
 
@@ -408,6 +400,10 @@ export class Zyvor {
   readonly consoleUsers = {
     create: (p: { username: string; password: string; role: "admin" | "finance" | "viewer" | "cashier"; branchId?: string }) => this.req<{ id: string; username: string; role: string; branch_id: string | null }>("POST", "/v1/console/users", { username: p.username, password: p.password, role: p.role, branch_id: p.branchId }),
     list: () => this.req<Page<{ id: string; username: string; role: "admin" | "finance" | "viewer" | "cashier"; branch_id: string | null; mfa_enrolled: boolean; last_login_at: string | null; locked: boolean; disabled: boolean }>>("GET", "/v1/console/users"),
+    /** Email someone a one-time link to join. The link works once and expires in 7 days. */
+    invite: (p: { email: string; role: "admin" | "finance" | "viewer" | "cashier"; branchId?: string }) => this.req<{ id: string; email: string; role: string; expires_at: string }>("POST", "/v1/console/invitations", { email: p.email, role: p.role, branch_id: p.branchId }),
+    invitations: () => this.req<Page<{ id: string; email: string; role: string; expires_at: string; invited_by: string | null }>>("GET", "/v1/console/invitations"),
+    revokeInvitation: (id: string) => this.req("POST", `/v1/console/invitations/${encodeURIComponent(id)}/revoke`),
     disable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/disable`),
     enable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/enable`),
     setPassword: (id: string, password: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/password`, { password }),
@@ -435,11 +431,25 @@ export class Zyvor {
     rotate: (id: string, overlapHours?: number) => this.req<{ id: string; key: string }>("POST", `/v1/api_keys/${encodeURIComponent(id)}/rotate`, { overlap_hours: overlapHours }),
   };
 
+  readonly providers = {
+    list: () => this.req<Page<{ id: string; provider: string; enabled: boolean; label: string; base_url: string | null; webhook_url: string; capabilities: { methods?: string[] } | null }>>("GET", "/v1/provider_accounts"),
+    /** Test environments only: an in-process provider whose outcome the payer's UPI handle chooses. */
+    enableSimulator: () => this.req<{ id: string }>("POST", "/v1/provider_accounts", { provider: "sim", credentials: {}, webhook_secret: "sim-unused" }),
+    /** Store these credentials for the provider, replacing its account if there is one, and turn it on. Leave `baseUrl` out for the provider's own test or live address. A Razorpay key must match the environment (rzp_test_ in test, rzp_live_ in live). */
+    connect: (provider: "razorpay" | "cashfree" | "custom", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
+      this.req<{ id: string; provider: string; enabled: boolean; replaced: boolean }>("PUT", `/v1/provider_accounts/${provider}`, { credentials: p.credentials, webhook_secret: p.webhookSecret, label: p.label, base_url: p.baseUrl }),
+    /** Ask the provider whether it accepts the credentials. Read-only; a refusal comes back as `ok: false`. */
+    check: (provider: string) => this.req<{ provider: string; ok: boolean; detail: string; env: string }>("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/check`),
+    setEnabled: (provider: string, enabled: boolean) => this.req("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/enabled`, { enabled }),
+  };
+
   readonly webhooks = {
     /** Every event type with its meaning. Choose which to receive with the `webhook_events` setting. */
     catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),
     outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
+    /** Queue a `webhook.test` event for your webhook endpoint. Needs a webhook URL in settings. */
+    sendTest: () => this.req<{ id: string; status: string }>("POST", "/v1/outbox/test"),
   };
 }
 

@@ -1,6 +1,7 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { CouponForm, LinkForm } from "@/components/LinkForm";
+import { ShareSheet } from "@/components/ShareSheet";
 import { cancelLink, deactivateCoupon } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
@@ -8,7 +9,7 @@ import { api } from "@/lib/zyvor";
 const base = () => (process.env.CHECKOUT_PUBLIC_URL ?? "http://localhost:3002").replace(/\/$/, "");
 
 export default async function Links() {
-  const z = api();
+  const z = await api();
   const [page, coupons, counters, branches] = await Promise.all([z.paymentLinks.list(), z.coupons.list(), z.counters.list(), z.branches.list()]);
   const branchName = new Map(branches.data.map((b) => [b.id, b.name]));
   return (
@@ -26,7 +27,7 @@ export default async function Links() {
                 <td className="num">{l.amount_minor ? inr(l.amount_minor) : <span className="muted">{l.invoice_id ? "invoice balance" : "payer chooses"}</span>}</td>
                 <td className="num">{l.uses}{l.max_uses ? ` / ${l.max_uses}` : ""}</td>
                 <td><Chip status={l.status} /></td>
-                <td>{l.status === "active" && <Act action={cancelLink} id={l.id} label="Cancel" />}</td>
+                <td style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>{l.status === "active" && <><ShareSheet id={l.id} url={base() + l.path} title={l.description ?? "Payment link"} /><Act action={cancelLink} id={l.id} label="Cancel" /></>}</td>
               </tr>
             ))}
           </tbody>

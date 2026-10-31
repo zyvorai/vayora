@@ -5,7 +5,7 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Disputes() {
-  const page = await api().disputes.list();
+  const page = await (await api()).disputes.list();
   const active = page.data.filter((d) => d.status === "open" || d.status === "under_review");
   return (
     <>

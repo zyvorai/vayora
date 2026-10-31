@@ -80,6 +80,7 @@ pub fn router(cfg: MockConfig) -> Router {
     };
     Router::new()
         // ---- razorpay ----
+        .route("/v1/payments", get(rz_list_payments))
         .route("/v1/orders", post(rz_create_order).get(rz_find_orders))
         .route("/v1/orders/{id}/payments", get(rz_order_payments))
         .route("/v1/payments/{id}/capture", post(rz_capture))
@@ -87,6 +88,7 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/v1/payments/{id}/refunds", get(rz_payment_refunds))
         .route("/v1/settlements/recon/combined", get(settlement_recon_rz))
         // ---- cashfree ----
+        .route("/pg/orders/{id}", get(cf_get_order))
         .route("/pg/orders", post(cf_create_order))
         .route("/pg/orders/sessions", post(cf_pay))
         .route("/pg/orders/{id}/payments", get(cf_order_payments))
@@ -125,6 +127,50 @@ async fn rz_create_order(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     let o = json!({ "id": id, "entity": "order", "amount": amount, "currency": b["currency"], "receipt": b["receipt"], "status": "created", "notes": b["notes"] });
     m.inner.lock().unwrap().rz_orders.insert(id, o.clone());
     Ok(Json(o))
+}
+
+/// A key id ending in `bad` is refused, so tests can see a rejected connection check.
+async fn rz_list_payments(headers: axum::http::HeaderMap) -> Resp {
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let decoded = auth.strip_prefix("Basic ").and_then(|b| {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.decode(b).ok()
+    });
+    let user = decoded
+        .map(|d| {
+            String::from_utf8_lossy(&d)
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .unwrap_or_default();
+    if user.ends_with("bad") {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": { "description": "Authentication failed" } })),
+        ));
+    }
+    Ok(Json(
+        json!({ "entity": "collection", "count": 0, "items": [] }),
+    ))
+}
+
+/// Cashfree order lookup: no order exists (404), unless the client id is `BADID` (401).
+async fn cf_get_order(headers: axum::http::HeaderMap, Path(_id): Path<String>) -> Resp {
+    if headers.get("x-client-id").and_then(|v| v.to_str().ok()) == Some("BADID") {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "message": "authentication Failed", "type": "authentication_error" })),
+        ));
+    }
+    Err((
+        StatusCode::NOT_FOUND,
+        Json(json!({ "message": "order not found", "type": "order_not_found" })),
+    ))
 }
 
 async fn rz_find_orders(State(m): State<Mock>, Query(q): Query<BTreeMap<String, String>>) -> Resp {

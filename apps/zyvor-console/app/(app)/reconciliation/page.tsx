@@ -5,7 +5,7 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Reconciliation() {
-  const z = api();
+  const z = await api();
   const [cases, settlements] = await Promise.all([z.cases.list({}), z.settlements.list()]);
   const open = cases.data.filter((c) => c.status !== "resolved");
   // a likeliest explanation for the first few open cases; failures just leave the row without a hint

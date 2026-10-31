@@ -5,7 +5,7 @@ import { api } from "@/lib/zyvor";
 export const dynamic = "force-dynamic";
 
 export default async function Customers() {
-  const { data } = await api().customers.list();
+  const { data } = await (await api()).customers.list();
   return (
     <>
       <div className="head"><div><h1>Customers</h1><p className="lede">Fix a name, GSTIN or address here. Invoices already issued keep the GSTIN they were issued with; printed invoices and draft e-invoices read the address from this record.</p></div></div>

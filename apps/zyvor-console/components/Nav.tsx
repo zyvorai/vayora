@@ -19,22 +19,25 @@ const items = [
   { href: "/collections", label: "Collections", icon: icon("M12 3v18M17 7H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6") },
   { href: "/billing", label: "Billing", icon: icon("M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6") },
   { href: "/customers", label: "Customers", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0M18 8h4M20 6v4") },
-  { href: "/webhooks", label: "Webhooks", icon: icon("M4 12h4l2-6 4 12 2-6h4") },
 ];
 const admin = [
   { href: "/users", label: "People", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0") },
   { href: "/onboarding", label: "Onboarding", icon: icon("M9 12l2 2 4-4M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z") },
-  { href: "/providers", label: "Providers", icon: icon("M3 7h18v10H3zM7 12h4M15 12h2") },
+  { href: "/developers", label: "Developers", icon: icon("M8 8l-5 4 5 4M16 8l5 4-5 4M14 4l-4 16") },
+  { href: "/webhooks", label: "Webhooks", icon: icon("M4 12h4l2-6 4 12 2-6h4") },
+  { href: "/providers", label: "Providers", icon: icon("M4 7h16M4 12h16M4 17h10M18 17h2") },
   { href: "/keys", label: "API keys", icon: icon("M15 7a4 4 0 11-3.9 4.9L3 20v-3l2-1v-2l2-1 4.1-4.1A4 4 0 0115 7zM16 9h.01") },
   { href: "/settings", label: "Settings", icon: icon("M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.4-2.7a7 7 0 002-1.2l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z") },
 ];
+// only where it makes sense: test mode, and a role that can make payments
+const sandbox = { href: "/sandbox", label: "Sandbox", icon: icon("M9 3h6M10 3v6L5 19a2 2 0 002 3h10a2 2 0 002-3l-5-10V3M8 15h8") };
 const account = { href: "/account", label: "Account", icon: icon("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4") };
 
-export function Nav({ role }: { role: "admin" | "finance" | "viewer" | "cashier" }) {
+export function Nav({ role, env }: { role: "admin" | "finance" | "viewer" | "cashier"; env?: "test" | "live" }) {
   const path = usePathname();
   return (
     <nav aria-label="Main">
-      {[...(role === "cashier" ? items.filter((i) => i.href === "/closing") : items), ...(role === "admin" ? admin : []), account].map((i) => {
+      {[...(role === "cashier" ? items.filter((i) => i.href === "/closing") : items), ...(env === "test" && (role === "admin" || role === "finance") ? [sandbox] : []), ...(role === "admin" ? admin : []), account].map((i) => {
         const on = i.href === "/" ? path === "/" : path.startsWith(i.href);
         return (
           <Link key={i.href} href={i.href} className="nav" aria-current={on ? "page" : undefined}>

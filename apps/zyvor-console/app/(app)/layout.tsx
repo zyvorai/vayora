@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { CommandPalette, PaletteButton } from "@/components/CommandPalette";
+import { EnvSwitch } from "@/components/EnvSwitch";
 import { Nav } from "@/components/Nav";
 import { ThemeToggle } from "@/components/Theme";
 import { logout } from "@/lib/actions";
@@ -13,18 +14,28 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="side">
         <a className="brand" href="/"><img src="/favicon.svg" alt="" width="26" height="26" />Zyvor</a>
-        <PaletteButton />
-        <Nav role={me?.r ?? "viewer"} />
-        <div className="spacer" />
-        <div className="foot">
-          {me && <p className="fine" style={{ margin: "0 0 8px" }}>{me.u} · {me.r}</p>}
-          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <form action={logout}><button className="linkbtn" type="submit">Sign out</button></form>
-            <ThemeToggle />
-          </span>
-        </div>
+        <Nav role={me?.r ?? "viewer"} env={me?.e} />
       </aside>
-      <main id="main">{children}</main>
+      <div className="col">
+        <header className="top">
+          <PaletteButton />
+          <span className="grow" />
+          {me?.e && me.r !== "cashier" && <EnvSwitch env={me.e} />}
+          <ThemeToggle />
+          {me && (
+            <details className="menu">
+              <summary aria-label="Account menu"><span className="avatar" aria-hidden="true">{me.u.slice(0, 1).toUpperCase()}</span></summary>
+              <div className="pop">
+                <p className="fine" style={{ margin: "0 0 8px" }}>{me.u} · {me.r}</p>
+                <a href="/account">Account and security</a>
+                <form action={logout}><button className="linkbtn" type="submit">Sign out</button></form>
+              </div>
+            </details>
+          )}
+        </header>
+        {me?.e === "test" && <div className="testbar" role="status">Test mode: nothing here moves real money.</div>}
+        <main id="main">{children}</main>
+      </div>
       <CommandPalette />
     </div>
   );

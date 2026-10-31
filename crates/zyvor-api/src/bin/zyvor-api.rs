@@ -98,6 +98,21 @@ async fn main() {
         .ok()
         .filter(|s| s.len() >= 16)
         .map(String::into_bytes);
+    if let Ok(name) = env::var("ZYVOR_KYC_PROVIDER") {
+        state.kyc = zyvor_api::kyc::Kyc::from_name(&name);
+        match state.kyc {
+            Some(_) => tracing::warn!(
+                "KYC simulator is on: onboarding approvals are NOT real verification. Never use this for live merchants."
+            ),
+            None => panic!(
+                "ZYVOR_KYC_PROVIDER={name} is not a known provider (only `simulator` exists)"
+            ),
+        }
+    }
+    state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
+    if let Ok(u) = env::var("ZYVOR_CONSOLE_PUBLIC_URL") {
+        state.console_url = u.trim_end_matches('/').to_string();
+    }
     state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
         .ok()
         .and_then(|v| v.parse().ok())

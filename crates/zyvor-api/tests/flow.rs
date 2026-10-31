@@ -8040,3 +8040,1537 @@ async fn upi_checkout_issues_a_qr_or_intent_instead_of_asking_for_a_upi_id(pool:
         "a finished payment has no QR to show"
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_creates_org_with_working_test_key_and_admin_user(pool: PgPool) {
+    let t = setup(pool).await;
+    let body = json!({ "organisation_name": "Acme Pharmacy", "email": "Owner@Acme.in", "password": "correct horse battery" });
+    let r = t.ok_public("POST", "/v1/signup", body.clone()).await;
+    let key = r["test_key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("zk_test") || key.contains("test"), "{key}");
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key,
+    };
+    // the returned key works and the console user can authenticate
+    t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
+    let who = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/console/authenticate",
+            None,
+            json!({ "username": "owner@acme.in", "password": "correct horse battery" }),
+        )
+        .await;
+    assert_eq!(who["user"]["role"], "admin");
+    // same email again is refused
+    let (s, _) = t.public("POST", "/v1/signup", None, body).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    // weak password and bad email are refused
+    let (s, _) = t
+        .public(
+            "POST",
+            "/v1/signup",
+            None,
+            json!({ "organisation_name": "X Co", "email": "b@c.io", "password": "short" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, _) = t.public("POST", "/v1/signup", None, json!({ "organisation_name": "X Co", "email": "nope", "password": "correct horse battery" })).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    // a wrong verification token is refused
+    let (s, _) = t
+        .public(
+            "POST",
+            "/v1/signup/verify",
+            None,
+            json!({ "token": "nope" }),
+        )
+        .await;
+    assert_ne!(s, StatusCode::OK);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Beta Foods", "email": "cfo@beta.in", "password": "correct horse battery" })).await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "CFO@beta.in", "password": "correct horse battery" }),
+        )
+        .await;
+    assert_eq!(login["user"]["role"], "admin");
+    assert_eq!(login["tenant_id"], r["test_tenant"]);
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
+    // asking for live at sign-in changes nothing: people always land in test (live is reached by the switch)
+    let asked = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "cfo@beta.in", "password": "correct horse battery", "env": "live" }),
+        )
+        .await;
+    assert_eq!(asked["env"], "test");
+    assert_eq!(asked["tenant_id"], login["tenant_id"]);
+    // wrong password and unknown email look the same
+    let (s1, b1) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "cfo@beta.in", "password": "wrong password here" }),
+        )
+        .await;
+    let (s2, b2) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "nobody@beta.in", "password": "wrong password here" }),
+        )
+        .await;
+    assert_eq!((s1, &b1["error"]["message"]), (s2, &b2["error"]["message"]));
+    assert_eq!(s1, StatusCode::UNAUTHORIZED);
+    // the session key expires in the future, not never
+    assert_eq!(
+        t.count(
+            "SELECT count(*) FROM api_keys WHERE name = 'console session' AND expires_at > now()"
+        )
+        .await,
+        2
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Gamma Mills", "email": "md@gamma.in", "password": "correct horse battery" })).await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "md@gamma.in", "password": "correct horse battery" }),
+        )
+        .await;
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    // live is closed until the business is approved
+    let (s, b) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT, "{b}");
+    // a plain API key (the signup test key) is not a session and cannot switch
+    let plain = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let (s, _) = t
+        .call(
+            &plain,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Gamma Mills', 'private_limited', '1234', 'Mumbai 400001', 'approved')")
+        .bind(&tn.id).execute(&t.root).await.unwrap();
+    let live = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(live["env"], "live");
+    assert_ne!(live["tenant_id"], login["tenant_id"]);
+    let ln = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    assert!(ln.key.starts_with("zk_live"));
+    // the approval is carried into the live tenant, so its own onboarding view and payout gate agree
+    let view = t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
+    assert_eq!(view["status"], "approved");
+    assert_eq!(view["profile"]["legal_name"], "Gamma Mills");
+    // and back
+    let back = t
+        .ok(
+            &ln,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "test" }),
+        )
+        .await;
+    assert_eq!(back["tenant_id"], login["tenant_id"]);
+    let (s, _) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "staging" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+/// Onboard through the API with the KYC simulator on; returns the submit response and the onboarding view.
+async fn kyc_onboard(
+    app: &axum::Router,
+    key: &str,
+    pan: &str,
+    business_type: &str,
+    gstin: Option<&str>,
+    account: &str,
+) -> (Value, Value) {
+    let call = |m: &'static str, p: &'static str, b: Value| {
+        let key = key.to_string();
+        async move { common::raw(app, &key, None, m, p, None, b).await }
+    };
+    let (s, b) = call("PUT", "/v1/onboarding", json!({ "legal_name": "Kiran Traders", "business_type": business_type, "pan": pan, "gstin": gstin, "address": "12 MG Road, Pune 411001" })).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let (s, b) = call(
+        "POST",
+        "/v1/onboarding/documents",
+        json!({ "kind": "pan", "reference": "docs://pan.pdf" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let (s, b) = call(
+        "POST",
+        "/v1/onboarding/bank_accounts",
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": account }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let (s, submit) = call("POST", "/v1/onboarding/submit", json!({})).await;
+    assert_eq!(s, StatusCode::OK, "{submit}");
+    let (_, view) = common::raw(app, key, None, "GET", "/v1/onboarding", None, Value::Null).await;
+    (submit, view)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_auto_approves_a_clean_case_and_routes_the_rest_to_a_person(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    let gst14 = "27ABCPE1234F1Z";
+    let gstin = format!("{gst14}{}", zyvor_api::gst::gstin_check_char(gst14));
+
+    // every check passes: approved without a person, and live mode is no longer blocked
+    let (sub, view) = kyc_onboard(
+        &app,
+        &t.a.key,
+        "ABCPE1234F",
+        "proprietorship",
+        Some(&gstin),
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "approved", "{sub}");
+    assert_eq!(sub["automatic"], true);
+    assert_eq!(view["status"], "approved");
+    assert_eq!(view["profile"]["reviewed_by"], "system:auto");
+    assert!(
+        view["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["outcome"] == "pass")
+    );
+    assert_eq!(view["checks"].as_array().unwrap().len(), 3); // pan, gstin, bank
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'onboarding.auto_approved'")
+            .await,
+        1
+    );
+    // the full PAN and account number are not stored anywhere
+    assert_eq!(t.count("SELECT count(*) FROM kyc_checks WHERE detail LIKE '%ABCPE1234F%' OR detail LIKE '%123456789012%'").await, 0);
+
+    // a bank account whose holder name does not match: a person decides, and is told why
+    let (sub, view) = kyc_onboard(
+        &app,
+        &t.b.key,
+        "ABCPE1234F",
+        "proprietorship",
+        None,
+        "123456781111",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review", "{sub}");
+    assert_eq!(sub["automatic"], false);
+    assert!(
+        sub["reasons"][0].as_str().unwrap().contains("bank"),
+        "{sub}"
+    );
+    assert_eq!(view["review_reasons"], sub["reasons"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_without_a_kyc_provider_still_needs_a_person(pool: PgPool) {
+    let t = setup(pool).await;
+    // default state: no provider, so nothing is checked and nothing is approved automatically
+    let (sub, view) = kyc_onboard(
+        &t.app,
+        &t.a.key,
+        "ABCPE1234F",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review", "{sub}");
+    assert_eq!(view["automated_checks"], false);
+    assert_eq!(view["checks"].as_array().unwrap().len(), 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_checks_that_fail_or_do_not_fit_go_to_review(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    // PAN not found
+    let (sub, _) = kyc_onboard(
+        &app,
+        &t.a.key,
+        "ABCPE1234X",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(
+        sub["reasons"].to_string().contains("PAN check failed"),
+        "{sub}"
+    );
+    // PAN is a person's but the business says private limited; and the account does not exist
+    let (sub, _) = kyc_onboard(
+        &app,
+        &t.b.key,
+        "ABCPE1234F",
+        "private_limited",
+        None,
+        "123456780000",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    let r = sub["reasons"].to_string();
+    assert!(
+        r.contains("PAN check was inconclusive") && r.contains("bank account check failed"),
+        "{sub}"
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn test_event_needs_a_webhook_url_and_is_sent_even_when_unsubscribed(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let (s, b) = t.call(a, "POST", "/v1/outbox/test", None, json!({})).await;
+    assert_eq!(
+        (s, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("no_webhook_url"))
+    );
+    t.ok(a, "POST", "/v1/settings", None, json!({ "outbound_webhook_url": t.mock.clone(), "outbound_webhook_secret": "whsec_out", "webhook_events": ["payment.captured"] })).await;
+    let r = t.ok(a, "POST", "/v1/outbox/test", None, json!({})).await;
+    assert_eq!(r["status"], "pending");
+    let list = t.ok(a, "GET", "/v1/outbox", None, Value::Null).await;
+    let ev = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == r["id"])
+        .expect("queued");
+    assert_eq!(ev["type"], "webhook.test");
+    assert_eq!(ev["payload"]["type"], "webhook.test");
+    // a read-only key cannot send one
+    let k = t
+        .ok(
+            a,
+            "POST",
+            "/v1/api_keys",
+            None,
+            json!({ "name": "reader", "scopes": ["payments:read"] }),
+        )
+        .await;
+    let ro = Tenant {
+        id: a.id.clone(),
+        key: k["key"].as_str().unwrap().to_string(),
+    };
+    let (s, _) = t
+        .call(&ro, "POST", "/v1/outbox/test", None, json!({}))
+        .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn members_sign_in_by_email_with_role_limited_keys_and_lose_sessions_when_disabled(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Delta Foods", "email": "boss@delta.in", "password": "correct horse battery" })).await;
+    t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Other Co", "email": "x@other.in", "password": "correct horse battery" })).await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "boss@delta.in", "password": "correct horse battery" }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+    // the admin adds a finance member, a viewer and a cashier
+    for (email, role) in [
+        ("fin@delta.in", "finance"),
+        ("view@delta.in", "viewer"),
+        ("till@delta.in", "cashier"),
+    ] {
+        t.ok(
+            &atn,
+            "POST",
+            "/v1/console/users",
+            None,
+            json!({ "username": email, "password": "member password 1", "role": role }),
+        )
+        .await;
+    }
+    // an email that belongs to another organisation cannot be added
+    let (s1, _) = t
+        .call(
+            &atn,
+            "POST",
+            "/v1/console/users",
+            None,
+            json!({ "username": "x@other.in", "password": "member password 1", "role": "viewer" }),
+        )
+        .await;
+    assert_eq!(s1, StatusCode::CONFLICT);
+    // the finance member signs in, with a key that cannot administer anything
+    let fin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "fin@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(fin["user"]["role"], "finance");
+    assert_eq!(fin["tenant_id"], admin["tenant_id"]);
+    let ftn = Tenant {
+        id: atn.id.clone(),
+        key: fin["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&ftn, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    for (m, p) in [
+        ("GET", "/v1/console/users"),
+        ("GET", "/v1/outbox"),
+        ("GET", "/v1/api_keys"),
+        ("POST", "/v1/outbox/test"),
+    ] {
+        let (st, _) = t.call(&ftn, m, p, None, json!({})).await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{m} {p}");
+    }
+    // the viewer can read but not write
+    let view = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "view@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    let vtn = Tenant {
+        id: atn.id.clone(),
+        key: view["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&vtn, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    let (st, _) = t
+        .call(
+            &vtn,
+            "POST",
+            "/v1/payment_intents",
+            Some("viewer-1"),
+            json!({ "amount_minor": 100, "currency": "INR" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    // a member can set up their own second factor, and only their own
+    let users0 = t
+        .ok(&atn, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    let id_of = |u: &str| {
+        users0["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["username"] == u)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (st, _) = t
+        .call(
+            &vtn,
+            "POST",
+            &format!("/v1/console/users/{}/mfa/begin", id_of("fin@delta.in")),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, b) = t
+        .call(
+            &vtn,
+            "POST",
+            &format!("/v1/console/users/{}/mfa/begin", id_of("view@delta.in")),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b}");
+    // approve the business so live can open; a cashier stays out of live, a finance member goes in
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Delta Foods', 'private_limited', '1234', 'Pune 411001', 'approved')")
+        .bind(&atn.id).execute(&t.root).await.unwrap();
+    let till = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "till@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    let ttn = Tenant {
+        id: atn.id.clone(),
+        key: till["session_key"].as_str().unwrap().into(),
+    };
+    let (st, _) = t
+        .call(
+            &ttn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let live = t
+        .ok(
+            &ftn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(live["user"]["role"], "finance");
+    let fl = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&fl, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    // disabling the finance member ends both sessions at once, and they cannot sign in again
+    let users = t
+        .ok(&atn, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    let fid = users["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "fin@delta.in")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    t.ok(
+        &atn,
+        "POST",
+        &format!("/v1/console/users/{fid}/disable"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.call(&ftn, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        t.call(&fl, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (st, _) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "fin@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    // managing people from the live environment acts on the same people
+    let alive = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    let aln = Tenant {
+        id: alive["tenant_id"].as_str().unwrap().into(),
+        key: alive["session_key"].as_str().unwrap().into(),
+    };
+    let seen = t
+        .ok(&aln, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    assert!(
+        seen["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["username"] == "view@delta.in")
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+/// The one-time token in the latest email to this address.
+async fn mailed_token(t: &T, to: &str) -> String {
+    let body: String = sqlx::query_scalar(
+        "SELECT body FROM mail_queue WHERE to_email = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(to)
+    .fetch_one(&t.root)
+    .await
+    .unwrap_or_else(|_| panic!("no email queued for {to}"));
+    body.split("token=")
+        .nth(1)
+        .expect("a link with a token")
+        .split(|c: char| !c.is_ascii_hexdigit())
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_emails_a_verification_link_that_gates_sign_in_only_when_mail_is_delivered(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    // log-only mailer: the link is queued, and nothing blocks sign-in (nobody could read it)
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Alpha Ltd", "email": "a@alpha.in", "password": pw }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'a@alpha.in'")
+            .await,
+        1
+    );
+    t.ok_public(
+        "POST",
+        "/v1/console/login",
+        json!({ "email": "a@alpha.in", "password": pw }),
+    )
+    .await;
+
+    // a delivering mailer: sign-in waits for the link to be used
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::Null;
+    let app = zyvor_api::app(st.clone());
+    let pubcall = |p: &'static str, b: Value| {
+        let app = app.clone();
+        async move { common::raw(&app, "", None, "POST", p, None, b).await }
+    };
+    assert_eq!(
+        pubcall(
+            "/v1/signup",
+            json!({ "organisation_name": "Beta Ltd", "email": "b@beta.in", "password": pw })
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    let (s1, b1) = pubcall(
+        "/v1/console/login",
+        json!({ "email": "b@beta.in", "password": pw }),
+    )
+    .await;
+    assert_eq!(
+        (s1, b1["error"]["code"].clone()),
+        (StatusCode::FORBIDDEN, json!("email_not_verified"))
+    );
+    // a wrong password is still just a wrong password
+    assert_eq!(
+        pubcall(
+            "/v1/console/login",
+            json!({ "email": "b@beta.in", "password": "not the password" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // resending replaces the link: the first no longer works
+    let first = mailed_token(&t, "b@beta.in").await;
+    assert_eq!(
+        pubcall("/v1/signup/resend", json!({ "email": "b@beta.in" }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall("/v1/signup/resend", json!({ "email": "nobody@beta.in" }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'nobody@beta.in'")
+            .await,
+        0
+    );
+    let second = mailed_token(&t, "b@beta.in").await;
+    assert_ne!(first, second);
+    assert_ne!(
+        pubcall("/v1/signup/verify", json!({ "token": first }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall("/v1/signup/verify", json!({ "token": second }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall(
+            "/v1/console/login",
+            json!({ "email": "b@beta.in", "password": pw })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+
+    // the worker sends what is queued, and blanks the body (it carried a one-time link)
+    let pending = t
+        .count("SELECT count(*) FROM mail_queue WHERE status = 'pending'")
+        .await;
+    assert!(pending >= 3);
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap() as i64, pending);
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent' AND body = ''")
+            .await,
+        pending
+    );
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_admin_invites_someone_by_email_and_the_link_works_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Gamma Ltd", "email": "boss@gamma.in", "password": pw }),
+    )
+    .await;
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Elsewhere", "email": "x@elsewhere.in", "password": pw }),
+    )
+    .await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "boss@gamma.in", "password": pw }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+
+    let inv = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "Fin@Gamma.in", "role": "finance" }),
+        )
+        .await;
+    assert_eq!(inv["email"], "fin@gamma.in");
+    let token = mailed_token(&t, "fin@gamma.in").await;
+    // the people who cannot be invited
+    for (email, code) in [
+        ("boss@gamma.in", "already_member"),
+        ("x@elsewhere.in", "email_taken"),
+    ] {
+        let (st, b) = t
+            .call(
+                &atn,
+                "POST",
+                "/v1/console/invitations",
+                None,
+                json!({ "email": email, "role": "viewer" }),
+            )
+            .await;
+        assert_eq!(
+            (st, b["error"]["code"].clone()),
+            (StatusCode::CONFLICT, json!(code)),
+            "{email}"
+        );
+    }
+    let (st, _) = t
+        .call(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "c@gamma.in", "role": "cashier", "branch_id": "br_nope" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    // pending list, and nothing exists for the person yet
+    let list = t
+        .ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+        .await;
+    assert_eq!(list["data"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "fin@gamma.in", "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // the link says who it is for; a wrong token says nothing
+    let who = t
+        .ok_public("POST", "/v1/invitations/lookup", json!({ "token": token }))
+        .await;
+    assert_eq!(
+        (
+            who["email"].clone(),
+            who["organisation"].clone(),
+            who["role"].clone()
+        ),
+        (json!("fin@gamma.in"), json!("Gamma Ltd"), json!("finance"))
+    );
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/lookup",
+            None,
+            json!({ "token": "nope" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // a weak password does not spend the link; a good one joins
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": token, "password": "short" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": token, "password": "member password 1" }),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": token, "password": "another password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let fin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "fin@gamma.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(fin["user"]["role"], "finance");
+    assert_eq!(fin["tenant_id"], admin["tenant_id"]);
+    assert_eq!(
+        t.ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'console_user.joined'")
+            .await,
+        1
+    );
+
+    // a revoked invitation, and a re-invitation that replaces an older one
+    let inv2 = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "v@gamma.in", "role": "viewer" }),
+        )
+        .await;
+    let old = mailed_token(&t, "v@gamma.in").await;
+    t.ok(
+        &atn,
+        "POST",
+        &format!(
+            "/v1/console/invitations/{}/revoke",
+            inv2["id"].as_str().unwrap()
+        ),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": old, "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "v@gamma.in", "role": "viewer" }),
+    )
+    .await;
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "v@gamma.in", "role": "admin" }),
+    )
+    .await;
+    let fresh = mailed_token(&t, "v@gamma.in").await;
+    assert_eq!(
+        t.ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": fresh, "password": "member password 1" }),
+    )
+    .await;
+    assert_eq!(
+        t.ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "v@gamma.in", "password": "member password 1" })
+        )
+        .await["user"]["role"],
+        "admin"
+    );
+
+    // a member cannot invite
+    let ftn = Tenant {
+        id: atn.id.clone(),
+        key: fin["session_key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.call(
+            &ftn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "z@gamma.in", "role": "viewer" })
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    // an invitation that expired cannot be used
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "late@gamma.in", "role": "viewer" }),
+    )
+    .await;
+    let late = mailed_token(&t, "late@gamma.in").await;
+    sqlx::query("UPDATE email_tokens SET expires_at = now() - interval '1 minute' WHERE email = 'late@gamma.in'").execute(&t.root).await.unwrap();
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": late, "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_forgotten_password_is_reset_by_a_link_that_ends_old_sessions(pool: PgPool) {
+    let t = setup(pool).await;
+    let (old, new) = ("correct horse battery", "a brand new password");
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Delta Ltd", "email": "d@delta.in", "password": old }),
+    )
+    .await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "d@delta.in", "password": old }),
+        )
+        .await;
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    // an unknown address looks the same and queues nothing
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "ghost@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'ghost@delta.in'")
+            .await,
+        0
+    );
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "D@Delta.in" }),
+    )
+    .await;
+    let token = mailed_token(&t, "d@delta.in").await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": token, "password": "short" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/confirm",
+        json!({ "token": token, "password": new }),
+    )
+    .await;
+    // the link works once; the old password and the old session are gone; the new password works
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": token, "password": new })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "d@delta.in", "password": old })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        t.call(&tn, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    t.ok_public(
+        "POST",
+        "/v1/console/login",
+        json!({ "email": "d@delta.in", "password": new }),
+    )
+    .await;
+    // a second request replaces the first link
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    let first = mailed_token(&t, "d@delta.in").await;
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": first, "password": old })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // a disabled person gets no link
+    sqlx::query("UPDATE console_users SET disabled_at = now() WHERE username = 'd@delta.in'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let before = t
+        .count("SELECT count(*) FROM mail_queue WHERE to_email = 'd@delta.in'")
+        .await;
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'd@delta.in'")
+            .await,
+        before
+    );
+}
+
+/// A tiny SMTP server that accepts one message and hands back what it was sent.
+async fn smtp_sink() -> (String, tokio::task::JoinHandle<String>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("smtp://{}", l.local_addr().unwrap());
+    let h = tokio::spawn(async move {
+        let (sock, _) = l.accept().await.unwrap();
+        let (r, mut w) = sock.into_split();
+        let mut r = BufReader::new(r);
+        w.write_all(b"220 sink ready\r\n").await.unwrap();
+        let (mut got, mut in_data, mut line) = (String::new(), false, String::new());
+        loop {
+            line.clear();
+            if r.read_line(&mut line).await.unwrap() == 0 {
+                break;
+            }
+            if in_data {
+                if line == ".\r\n" {
+                    in_data = false;
+                    w.write_all(b"250 queued\r\n").await.unwrap();
+                } else {
+                    got.push_str(&line);
+                }
+                continue;
+            }
+            let cmd = line.trim().to_uppercase();
+            if cmd.starts_with("EHLO") || cmd.starts_with("HELO") {
+                w.write_all(b"250 sink\r\n").await.unwrap();
+            } else if cmd.starts_with("DATA") {
+                in_data = true;
+                w.write_all(b"354 go\r\n").await.unwrap();
+            } else if cmd.starts_with("QUIT") {
+                w.write_all(b"221 bye\r\n").await.unwrap();
+                break;
+            } else {
+                w.write_all(b"250 ok\r\n").await.unwrap();
+            }
+        }
+        got
+    });
+    (url, h)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
+    let t = setup(pool).await;
+    let (url, got) = smtp_sink().await;
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::smtp(&url, "Zyvor <no-reply@example.com>").unwrap();
+    zyvor_api::mail::enqueue(
+        &st.pool,
+        "to@example.com",
+        "Hello there",
+        "Line one\nhttps://console.example/accept?token=abc",
+    )
+    .await
+    .unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 1);
+    let raw = got.await.unwrap();
+    assert!(
+        raw.contains("Subject: Hello there")
+            && raw.contains("To: to@example.com")
+            && raw.contains("no-reply@example.com"),
+        "{raw}"
+    );
+    assert!(raw.contains("token=abc"), "{raw}");
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent' AND body = ''")
+            .await,
+        1
+    );
+
+    // a server that is not there: the message stays queued, with the error, and waits before the next try
+    st.mailer = zyvor_api::mail::Mailer::smtp("smtp://127.0.0.1:1", "Zyvor <no-reply@example.com>")
+        .unwrap();
+    zyvor_api::mail::enqueue(&st.pool, "later@example.com", "Later", "body")
+        .await
+        .unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0);
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'later@example.com' AND status = 'pending' AND attempts = 1 AND last_error IS NOT NULL AND next_attempt_at > now()").await, 1);
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0); // not due yet, not tried again
+    assert_eq!(
+        t.count("SELECT attempts::bigint FROM mail_queue WHERE to_email = 'later@example.com'")
+            .await,
+        1
+    );
+    // after eight failed tries it is marked dead
+    sqlx::query("UPDATE mail_queue SET attempts = 7, next_attempt_at = now() WHERE to_email = 'later@example.com'").execute(&t.root).await.unwrap();
+    zyvor_api::mail::drain(&st).await.unwrap();
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'later@example.com' AND status = 'dead'").await, 1);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_with_a_taken_email_creates_nothing_even_when_two_arrive_together(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    // an address that belongs to someone through an invitation (it is not in `signups`)
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Host Ltd", "email": "host@host.in", "password": pw }),
+    )
+    .await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "host@host.in", "password": pw }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "guest@host.in", "role": "viewer" }),
+    )
+    .await;
+    let token = mailed_token(&t, "guest@host.in").await;
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": token, "password": "member password 1" }),
+    )
+    .await;
+    let orgs = t.count("SELECT count(*) FROM organisations").await;
+    let (s1, b1) = t.public("POST", "/v1/signup", None, json!({ "organisation_name": "Takeover Ltd", "email": "guest@host.in", "password": pw })).await;
+    assert_eq!(
+        (s1, b1["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("email_taken"))
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM organisations").await,
+        orgs,
+        "no organisation left behind"
+    );
+
+    // two signups for one new address at the same moment: one wins, the other is refused, one organisation exists
+    let body = json!({ "organisation_name": "Twin Ltd", "email": "twin@twin.in", "password": pw });
+    let (a, b) = tokio::join!(
+        t.public("POST", "/v1/signup", None, body.clone()),
+        t.public("POST", "/v1/signup", None, body.clone())
+    );
+    let mut codes = [a.0.as_u16(), b.0.as_u16()];
+    codes.sort();
+    assert_eq!(codes, [201, 409]);
+    assert_eq!(
+        t.count("SELECT count(*) FROM organisations WHERE name = 'Twin Ltd'")
+            .await,
+        1
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_new_organisation_can_complete_and_refund_a_test_payment_with_no_setup(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Sandbox Ltd", "email": "s@sandbox.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let pay = |handle: &'static str, n: u32| {
+        let tn = tn.clone();
+        let t = &t;
+        async move {
+            let i = t
+                .ok(
+                    &tn,
+                    "POST",
+                    "/v1/payment_intents",
+                    Some(&format!("i-{handle}-{n}")),
+                    json!({ "amount_minor": 50_000, "currency": "INR" }),
+                )
+                .await;
+            let id = i["id"].as_str().unwrap().to_string();
+            let a = t
+                .ok(
+                    &tn,
+                    "POST",
+                    &format!("/v1/payment_intents/{id}/attempts"),
+                    Some(&format!("a-{handle}-{n}")),
+                    json!({ "method": "upi", "vpa": handle }),
+                )
+                .await;
+            (
+                id,
+                a["status"].as_str().unwrap().to_string(),
+                a["failure_reason"].clone(),
+            )
+        }
+    };
+    let (ok_id, st, _) = pay("ok@bank", 1).await;
+    assert_eq!(st, "captured");
+    assert_eq!(pay("fail@bank", 1).await.1, "failed");
+    assert_eq!(pay("pending@bank", 1).await.1, "pending");
+    assert_eq!(pay("uncertain@bank", 1).await.1, "unknown");
+    // the captured payment can be refunded, which is what the console's refund form does
+    let rf = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{ok_id}/refunds"),
+            Some("rf-1"),
+            json!({ "amount_minor": 20_000, "reason": "test" }),
+        )
+        .await;
+    assert!(
+        ["processed", "pending", "pending_approval", "processing"]
+            .contains(&rf["status"].as_str().unwrap()),
+        "{rf}"
+    );
+    // exactly one simulator account on the test tenant, and none on any live tenant
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM provider_accounts WHERE provider = 'sim' AND tenant_id = '{}'",
+            tn.id
+        ))
+        .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM provider_accounts p JOIN tenants x ON x.id = p.tenant_id WHERE p.provider = 'sim' AND x.env = 'live'").await, 0);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn provider_connection_check_says_whether_credentials_are_accepted_and_keys_stay_in_their_mode(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    // the accounts `setup` made talk to the mock, which accepts them
+    for p in ["razorpay", "cashfree"] {
+        let r = t
+            .ok(
+                &t.a,
+                "POST",
+                &format!("/v1/provider_accounts/{p}/check"),
+                None,
+                json!({}),
+            )
+            .await;
+        assert_eq!(r["ok"], true, "{p}: {r}");
+    }
+    // a fresh organisation: the simulator checks out, and a rejected key is an answer, not an error
+    let su = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Check Ltd", "email": "c@check.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: su["test_tenant"].as_str().unwrap().into(),
+        key: su["test_key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/sim/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        true
+    );
+    t.ok(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_test_bad", "key_secret": "x" }, "webhook_secret": "w", "base_url": t.mock })).await;
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/razorpay/check",
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(r["ok"], false);
+    assert!(
+        r["detail"].as_str().unwrap().contains("did not accept"),
+        "{r}"
+    );
+    t.ok(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "BADID", "client_secret": "x" }, "webhook_secret": "w", "base_url": t.mock })).await;
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/cashfree/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        false
+    );
+    // connecting a provider again replaces its credentials in place: same account, same webhook address
+    let before = t
+        .ok(&tn, "GET", "/v1/provider_accounts", None, Value::Null)
+        .await;
+    let id_before = before["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["provider"] == "cashfree")
+        .unwrap()["id"]
+        .clone();
+    let (st, upd) = t.call(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "GOODID", "client_secret": "y" }, "webhook_secret": "y", "base_url": t.mock })).await;
+    assert_eq!(
+        (st, upd["updated"].clone(), upd["id"].clone()),
+        (StatusCode::OK, json!(true), id_before)
+    );
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/cashfree/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        true
+    );
+    assert_eq!(t.count(&format!("SELECT count(*) FROM provider_accounts WHERE tenant_id = '{}' AND provider = 'cashfree'", tn.id)).await, 1);
+    let (st, _) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/nope/check",
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    // a live key cannot be saved in a test environment; the sandbox address is required for Cashfree
+    let tn2 = {
+        let su = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Mode Ltd", "email": "m@mode.in", "password": "correct horse battery" })).await;
+        Tenant {
+            id: su["test_tenant"].as_str().unwrap().into(),
+            key: su["test_key"].as_str().unwrap().into(),
+        }
+    };
+    let (st, b) = t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_live_abc", "key_secret": "x" }, "webhook_secret": "w" })).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!("wrong_mode_credentials")
+        )
+    );
+    let (st, b) = t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "TEST1", "client_secret": "x" }, "webhook_secret": "w", "base_url": "https://api.cashfree.com" })).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!("wrong_mode_credentials")
+        )
+    );
+    assert_eq!(t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_test_abc", "key_secret": "x" }, "webhook_secret": "w" })).await.0, StatusCode::CREATED);
+}

@@ -15,7 +15,18 @@ async fn main() {
     let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
     let mut state = AppState::new(pool, crypto);
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
+    state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
     let client = outbox::http_client();
+    // Mail has its own loop: a mail server that hangs must not hold up webhooks, polling or refunds.
+    let mail_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = zyvor_api::mail::drain(&mail_state).await {
+                tracing::error!(error = %e, "mail drain failed");
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
     tracing::info!("zyvor-worker started");
     loop {
         tokio::select! {

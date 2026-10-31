@@ -8,7 +8,7 @@ import { api } from "@/lib/zyvor";
 const LABEL: Record<string, string> = { current: "Not yet due", "1_30": "1–30 days", "31_60": "31–60 days", "61_90": "61–90 days", over_90: "Over 90 days", no_due_date: "No due date" };
 
 export default async function Collections() {
-  const z = api();
+  const z = await api();
   const [ageing, promises, drafts, fx] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts(), z.fx.exposure()]);
   const ai = process.env.CONSOLE_AI === "1";
   const rows = ageing.data.flatMap((b) => b.invoices.map((i) => ({ ...i, bucket: b.bucket, currency: b.currency })));

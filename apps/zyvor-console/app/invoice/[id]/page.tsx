@@ -16,7 +16,7 @@ export default async function InvoicePrint({ params }: { params: Promise<{ id: s
   const me = await currentSession();
   if (!me || !allows(me.r, "finance")) notFound();
   const { id } = await params;
-  const z = api(me.u);
+  const z = await api(me.u);
   const inv = await z.invoices.retrieve(id).catch(() => null) as null | { number: string; currency: string; amount_minor: number; tax_minor: number; status: string; due_date: string | null; issued_on: string; customer_id: string | null; place_of_supply: string | null; buyer_gstin: string | null; reverse_charge: boolean; paid_minor: number; credited_minor: number; outstanding_minor: number };
   if (!inv) notFound();
   const [settings, customer, tax] = await Promise.all([

@@ -274,6 +274,36 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
         crate::ssrf::check_url(url, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("bad_base_url", e))?;
     }
+    // Pointing at the real provider (no custom address): the key must belong to this environment, so a live
+    // key can never sit in a test environment (or the reverse). Custom addresses are for simulators.
+    if b.base_url.is_none() {
+        let id = |k: &str| b.credentials[k].as_str().unwrap_or_default();
+        let mismatch = match (b.provider.as_str(), auth.env.as_str()) {
+            ("razorpay", "test") if !id("key_id").starts_with("rzp_test_") => {
+                Some("a Razorpay key for a test environment starts with rzp_test_")
+            }
+            ("razorpay", "live") if !id("key_id").starts_with("rzp_live_") => {
+                Some("a Razorpay key for a live environment starts with rzp_live_")
+            }
+            ("cashfree", "live") if id("client_id").to_uppercase().starts_with("TEST") => {
+                Some("this looks like a Cashfree sandbox app id; live needs a production one")
+            }
+            _ => None,
+        };
+        if let Some(m) = mismatch {
+            return Err(ApiError::invalid("wrong_mode_credentials", m));
+        }
+    }
+    if let Some(u) = b.base_url.as_deref()
+        && b.provider == "cashfree"
+        && auth.env == "test"
+        && u.contains("://api.cashfree.com")
+    {
+        return Err(ApiError::invalid(
+            "wrong_mode_credentials",
+            "api.cashfree.com is Cashfree's production address; use sandbox.cashfree.com in a test environment",
+        ));
+    }
     if auth.env == "live" && b.provider == "sim" {
         return Err(ApiError::invalid(
             "sim_in_live",
@@ -306,33 +336,98 @@ pub async fn create_provider_account(
     auth.require("admin")?;
     check_provider(&s, &auth, &b)?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let id = new_id("pa");
-    sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-        .bind(&id)
+    // Connecting a provider that is already connected replaces its credentials in place (and keeps its
+    // webhook address and on/off state), so a wrong secret can be fixed without starting over.
+    let (id, inserted): (String, bool) = sqlx::query_as("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (tenant_id, provider) DO UPDATE SET label = EXCLUDED.label, base_url = EXCLUDED.base_url, credentials_enc = EXCLUDED.credentials_enc, webhook_secret_enc = EXCLUDED.webhook_secret_enc
+         RETURNING id, (xmax = 0)")
+        .bind(new_id("pa"))
         .bind(&auth.tenant_id)
         .bind(&b.provider)
         .bind(b.label.as_deref().unwrap_or(""))
         .bind(&b.base_url)
         .bind(s.crypto.encrypt(b.credentials.to_string().as_bytes()))
         .bind(s.crypto.encrypt(b.webhook_secret.as_bytes()))
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
-        "provider_account.created",
+        if inserted {
+            "provider_account.created"
+        } else {
+            "provider_account.updated"
+        },
         Some(&id),
         json!({ "provider": b.provider }),
     )
     .await?;
     tx.commit().await?;
     Ok((
-        StatusCode::CREATED,
+        if inserted {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(
-            json!({ "id": id, "provider": b.provider, "webhook_url": format!("/v1/webhooks/{}/{}", b.provider, auth.tenant_id) }),
+            json!({ "id": id, "provider": b.provider, "updated": !inserted, "webhook_url": format!("/v1/webhooks/{}/{}", b.provider, auth.tenant_id) }),
         ),
     ))
+}
+
+/// `POST /v1/provider_accounts/{provider}/check`: ask the provider whether it accepts this account's
+/// credentials. Read-only. A failure is an answer (`ok: false`), not an error, so the page can show why.
+pub async fn check_provider_account(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(provider): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let p = crate::registry::load(&s, &mut tx, &auth.tenant_id, &auth.env, &provider).await?;
+    tx.commit().await?;
+    let (ok, detail) = if provider == "sim" {
+        (
+            true,
+            "the built-in simulator needs no credentials".to_string(),
+        )
+    } else {
+        match p.check().await {
+            Ok(d) => (true, d),
+            Err(e) => (false, e.to_string()),
+        }
+    };
+    Ok(Json(
+        json!({ "provider": provider, "ok": ok, "detail": detail, "env": auth.env }),
+    ))
+}
+
+/// Give a test tenant the in-process simulator, so a new organisation can complete a payment on day one
+/// (the UPI handle picks the outcome; see `zyvor-providers::sim`). Never for a live tenant. Safe to repeat.
+pub async fn ensure_simulator_account(s: &AppState, tenant_id: &str) -> Result<(), ApiError> {
+    let env: String = sqlx::query_scalar("SELECT env FROM tenants WHERE id = $1")
+        .bind(tenant_id)
+        .fetch_one(&s.pool)
+        .await?;
+    if env != "test" {
+        return Err(ApiError::invalid(
+            "sim_in_live",
+            "the simulator cannot be used in a live environment",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    let id = new_id("pa");
+    sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, credentials_enc, webhook_secret_enc)
+                 SELECT $1, $2, 'sim', 'Simulator', $3, $4 WHERE NOT EXISTS (SELECT 1 FROM provider_accounts WHERE tenant_id = $2 AND provider = 'sim')")
+        .bind(&id)
+        .bind(tenant_id)
+        .bind(s.crypto.encrypt(b"{}"))
+        .bind(s.crypto.encrypt(b"sim-unused"))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 pub async fn list_provider_accounts(
@@ -1145,6 +1240,49 @@ pub async fn replay_outbox(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({ "id": id, "status": "pending" })))
+}
+
+/// Queue a `webhook.test` event for the merchant's endpoint, so they can see delivery and signature
+/// checking work before real events flow. Sent whatever the subscription list says.
+pub async fn send_test_event(
+    State(s): State<AppState>,
+    auth: Auth,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let url: Option<Option<String>> =
+        sqlx::query_scalar("SELECT outbound_webhook_url FROM tenant_settings WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if url.flatten().is_none() {
+        return Err(ApiError::conflict(
+            "no_webhook_url",
+            "set a webhook URL in Settings first",
+        ));
+    }
+    let id = new_id("evt");
+    let payload = json!({ "id": id, "type": "webhook.test", "created_at": chrono::Utc::now(), "data": { "message": "This is a test event from Zyvor.", "sent_by": auth.actor } });
+    sqlx::query("INSERT INTO outbox_events (id, tenant_id, type, payload) VALUES ($1, $2, 'webhook.test', $3)")
+        .bind(&id)
+        .bind(&auth.tenant_id)
+        .bind(&payload)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "outbox.test_sent",
+        Some(&id),
+        json!({}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "status": "pending" })),
+    ))
 }
 
 /// What the platform has received from providers (the inbound inspector).

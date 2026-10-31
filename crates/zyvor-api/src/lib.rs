@@ -2,6 +2,7 @@
 // sqlx row tuples are the idiomatic shape for these queries.
 #![allow(clippy::type_complexity)]
 
+pub mod accounts;
 pub mod admin;
 pub mod ai;
 pub mod audit;
@@ -25,6 +26,8 @@ pub mod gst;
 pub mod idempotency;
 pub mod insights;
 pub mod installments;
+pub mod kyc;
+pub mod mail;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -34,6 +37,7 @@ pub mod recon;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
+pub mod signup;
 pub mod sim_pay;
 pub mod state_machine;
 pub mod suggestions;
@@ -77,6 +81,12 @@ pub struct AppState {
     /// When set, `Zyvor-Actor` is believed only with a valid `Zyvor-Actor-Signature` made with this secret
     /// (`ZYVOR_ACTOR_SECRET`, shared with the console). Without it the header is taken at its word.
     pub actor_secret: Option<Vec<u8>>,
+    /// Identity and bank checks for onboarding (`ZYVOR_KYC_PROVIDER`). `None`: every submission goes to a person.
+    pub kyc: Option<kyc::Kyc>,
+    /// Outgoing email (`ZYVOR_SMTP_URL`); the log-only mailer when unset.
+    pub mailer: mail::Mailer,
+    /// Where the console is reached, for links in emails (`ZYVOR_CONSOLE_PUBLIC_URL`).
+    pub console_url: String,
     /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
     pub sim_payer: bool,
 }
@@ -101,6 +111,9 @@ impl AppState {
             ai: None,
             checkout_public_url: None,
             actor_secret: None,
+            kyc: None,
+            mailer: mail::Mailer::Log,
+            console_url: "http://localhost:3000".to_string(),
             sim_payer: false,
         }
     }
@@ -174,6 +187,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/provider_accounts",
             post(create_provider_account).get(list_provider_accounts),
+        )
+        .route(
+            "/provider_accounts/{provider}/check",
+            post(admin::check_provider_account),
         )
         .route(
             "/provider_accounts/{provider}",
@@ -325,10 +342,29 @@ pub fn app(state: AppState) -> Router {
             post(console_users::reset_mfa),
         )
         .route("/console/authenticate", post(console_users::authenticate))
+        // public self-serve signup
+        .route("/signup", post(signup::signup))
+        .route("/signup/verify", post(signup::verify))
+        .route("/signup/resend", post(signup::resend))
+        .route(
+            "/console/invitations",
+            post(accounts::invite).get(accounts::list_invitations),
+        )
+        .route(
+            "/console/invitations/{id}/revoke",
+            post(accounts::revoke_invitation),
+        )
+        .route("/invitations/lookup", post(accounts::lookup_invitation))
+        .route("/invitations/accept", post(accounts::accept_invitation))
+        .route("/password_reset/request", post(accounts::request_reset))
+        .route("/password_reset/confirm", post(accounts::confirm_reset))
+        .route("/console/login", post(signup::console_login))
+        .route("/console/switch_env", post(signup::switch_env))
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))
         .route("/outbox", get(list_outbox))
+        .route("/outbox/test", post(admin::send_test_event))
         .route("/outbox/{id}/replay", post(replay_outbox))
         .route("/inbox", get(list_inbox))
         // payment links

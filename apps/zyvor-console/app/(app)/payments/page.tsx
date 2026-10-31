@@ -7,7 +7,7 @@ const FILTERS = ["", "succeeded", "processing", "failed", "requires_payment_meth
 
 export default async function Payments({ searchParams }: { searchParams: Promise<{ status?: string; after?: string }> }) {
   const { status, after } = await searchParams;
-  const page = await api().intents.list({ limit: 25, status: status || undefined, startingAfter: after });
+  const page = await (await api()).intents.list({ limit: 25, status: status || undefined, startingAfter: after });
   const last = page.data.at(-1);
   return (
     <>

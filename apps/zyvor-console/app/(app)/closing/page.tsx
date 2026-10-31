@@ -7,11 +7,15 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Closing() {
-  const [me, z] = [await currentSession(), api()];
-  const [allBranches, allClosings] = await Promise.all([z.branches.list(), z.closings.list()]);
-  // a cashier tied to a branch sees and works on that branch only
+  const [me, z] = [await currentSession(), await api()];
+  // a cashier tied to a branch sees and works on that branch only. Their key may not list branches (only the
+  // branch endpoints are open to it), so the one name comes from that branch's summary.
   const mine = (id: string) => !me?.b || id === me.b;
-  const branches = { ...allBranches, data: allBranches.data.filter((b) => mine(b.id)) };
+  const [allBranches, allClosings] = await Promise.all([
+    me?.b ? z.counters.branchSummary(me.b).then((b) => ({ data: [{ id: b.branch.id, name: b.branch.name }] })) : z.branches.list(),
+    z.closings.list(),
+  ]);
+  const branches = { data: allBranches.data.filter((b) => mine(b.id)) };
   const closings = { ...allClosings, data: allClosings.data.filter((c) => mine(c.branch_id)) };
   const name = new Map(branches.data.map((b) => [b.id, b.name]));
   const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
