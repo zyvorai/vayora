@@ -65,6 +65,50 @@ async fn main() {
         return;
     }
 
+    // `zyvor-api platform-reviewer add "Asha Rao"` | `list` | `disable <id>`: the people who approve a business before live
+    // mode opens. Each gets their own key (shown once); a merchant's key can never act as a reviewer.
+    if args.get(1).map(String::as_str) == Some("platform-reviewer") {
+        match args.get(2).map(String::as_str) {
+            Some("add") => {
+                let name = args
+                    .get(3)
+                    .expect("usage: zyvor-api platform-reviewer add \"Name\"");
+                let (id, key) = zyvor_api::platform::create_reviewer(&pool, name)
+                    .await
+                    .expect("create reviewer");
+                println!(
+                    "reviewer {id} ({name})\n  key: {key}\n\nStore this key now; it cannot be shown again."
+                );
+            }
+            Some("list") => {
+                for (id, name, disabled) in zyvor_api::platform::list_reviewers(&pool)
+                    .await
+                    .expect("list reviewers")
+                {
+                    println!("{id}  {name}{}", if disabled { "  (disabled)" } else { "" });
+                }
+            }
+            Some("disable") => {
+                let id = args
+                    .get(3)
+                    .expect("usage: zyvor-api platform-reviewer disable <id>");
+                let done = zyvor_api::platform::disable_reviewer(&pool, id)
+                    .await
+                    .expect("disable reviewer");
+                println!(
+                    "{}",
+                    if done {
+                        "disabled"
+                    } else {
+                        "no such active reviewer"
+                    }
+                );
+            }
+            _ => eprintln!("usage: zyvor-api platform-reviewer add \"Name\" | list | disable <id>"),
+        }
+        return;
+    }
+
     let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
 
     // `zyvor-api rekey [--dry-run]` re-seals stored secrets under the current key (see crypto.rs).

@@ -1199,6 +1199,69 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/live_access:
+    get:
+      summary: Where this business stands on live access (not_requested, pending, approved, rejected, with the reviewer's note)
+      tags:
+      - live_access
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Ask Zyvor to review the business for live mode (needs the business details approved first)
+      tags:
+      - live_access
+      responses:
+        '200':
+          description: OK
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/reviews:
+    get:
+      summary: Zyvor reviewers only (a zp_ key): live-access requests, optionally filtered by status
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/reviews/{organisation_id}:
+    get:
+      summary: Zyvor reviewers only: what the business submitted and the checks that ran (no secrets)
+      tags:
+      - platform
+      parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/reviews/{organisation_id}/decision:
+    post:
+      summary: Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)
+      tags:
+      - platform
+      parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN
