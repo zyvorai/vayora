@@ -7,7 +7,7 @@ import { currentSession } from "@/lib/auth";
 import { parseBulk } from "@/lib/bulk";
 import { publicPost, type EmailLogin } from "@/lib/public";
 import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
-import { api, authConfig } from "@/lib/zyvor";
+import { api, authConfig, sessionKey } from "@/lib/zyvor";
 
 export type FormState = { ok?: string; error?: string; otp?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
 
@@ -25,7 +25,7 @@ async function startWithKey(who: Omit<Session, "exp">, key: string) {
 /** Sign in by email as a member of the organisation that signed up with it. */
 async function emailSignIn(email: string, password: string, otp: string): Promise<{ who: Omit<Session, "exp">; key: string } | NonNullable<FormState>> {
   const r = await publicPost<EmailLogin>("/v1/console/login", { email, password, otp: otp || undefined });
-  if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
+  if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, e: r.body.env, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
   if (r.code === "otp_required") return { otp: true };
   if (r.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes." };
   if (r.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
@@ -94,6 +94,24 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   }
   await start(signedIn);
   redirect(safeNext(form));
+}
+
+/** Move to the organisation's other environment. The API swaps the session key; live needs approved onboarding. */
+export async function switchEnv(_: FormState, form: FormData): Promise<FormState> {
+  const s = await currentSession();
+  const key = await sessionKey();
+  const env = form.get("env") === "live" ? "live" : "test";
+  if (!s || !key) return { error: "Switching is available when you sign in with your email." };
+  if (s.e === env) return undefined;
+  const r = await publicPost<EmailLogin>("/v1/console/switch_env", { env }, key);
+  if (!r.ok) {
+    if (r.code === "onboarding_incomplete") return { error: "Live mode opens once your business details are approved. Finish onboarding first." };
+    return { error: "Could not switch right now. Try again in a moment." };
+  }
+  const { exp: _exp, ...who } = s;
+  await startWithKey({ ...who, e: r.body.env }, r.body.session_key);
+  revalidatePath("/", "layout");
+  return undefined;
 }
 
 export async function signup(_: FormState, form: FormData): Promise<FormState> {

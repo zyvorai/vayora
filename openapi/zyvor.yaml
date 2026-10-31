@@ -1037,6 +1037,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/console/switch_env:
+    post:
+      summary: Exchange a console session key for the same person's key in the other environment (live needs approved onboarding)
+      tags:
+      - console_users
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN

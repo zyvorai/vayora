@@ -322,6 +322,7 @@ pub fn app(state: AppState) -> Router {
         .route("/signup", post(signup::signup))
         .route("/signup/verify", post(signup::verify))
         .route("/console/login", post(signup::console_login))
+        .route("/console/switch_env", post(signup::switch_env))
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))

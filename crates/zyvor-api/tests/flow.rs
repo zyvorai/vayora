@@ -7961,3 +7961,87 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
         2
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Gamma Mills", "email": "md@gamma.in", "password": "correct horse battery" })).await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "md@gamma.in", "password": "correct horse battery" }),
+        )
+        .await;
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    // live is closed until the business is approved
+    let (s, b) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT, "{b}");
+    // a plain API key (the signup test key) is not a session and cannot switch
+    let plain = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let (s, _) = t
+        .call(
+            &plain,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Gamma Mills', 'private_limited', '1234', 'Mumbai 400001', 'approved')")
+        .bind(&tn.id).execute(&t.root).await.unwrap();
+    let live = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(live["env"], "live");
+    assert_ne!(live["tenant_id"], login["tenant_id"]);
+    let ln = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    assert!(ln.key.starts_with("zk_live"));
+    t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
+    // and back
+    let back = t
+        .ok(
+            &ln,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "test" }),
+        )
+        .await;
+    assert_eq!(back["tenant_id"], login["tenant_id"]);
+    let (s, _) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "staging" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+}

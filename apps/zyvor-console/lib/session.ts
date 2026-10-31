@@ -18,7 +18,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export type Role = "admin" | "finance" | "viewer" | "cashier";
-export type Session = { exp: number; /** user id */ i: string; /** username */ u: string; r: Role; /** second factor enrolled */ m: boolean; /** branch a cashier is tied to */ b?: string };
+export type Session = { exp: number; /** user id */ i: string; /** username */ u: string; r: Role; /** second factor enrolled */ m: boolean; /** branch a cashier is tied to */ b?: string; /** environment of the organisation being worked in; absent for the deployment's own sign-in */ e?: "test" | "live" };
 
 const b64 = (s: string) => btoa(String.fromCharCode(...enc.encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64 = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
