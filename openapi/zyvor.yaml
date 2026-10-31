@@ -1488,6 +1488,32 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/changes:
+    get:
+      summary: Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/changes/{id}/decision:
+    post:
+      summary: Zyvor reviewers only: approve a change, or reject it with a note (the account is removed and the merchant is told why)
+      tags:
+      - platform
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN

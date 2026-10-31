@@ -110,6 +110,19 @@ pub fn valid_ifsc(i: &str) -> bool {
 
 /// Payouts wait for approval once onboarding has been started.
 pub async fn require_approved(conn: &mut PgConnection) -> Result<(), ApiError> {
+    // a change Zyvor has not reviewed yet (a new bank account) holds the live side's payouts
+    let waiting: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM live_changes c JOIN tenants t ON t.organisation_id = c.organisation_id
+         WHERE t.id = current_setting('zyvor.tenant_id', true) AND t.env = 'live' AND c.status = 'pending')",
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if waiting {
+        return Err(ApiError::conflict(
+            "change_awaiting_review",
+            "a change to your business (a new bank account) is waiting for Zyvor to review it; payouts resume when it is approved",
+        ));
+    }
     let st: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles")
         .fetch_optional(&mut *conn)
         .await?;
@@ -315,6 +328,22 @@ pub async fn add_bank_account(
             sqlx::query("UPDATE merchant_bank_accounts SET verified_by = 'system:kyc', verified_at = now() WHERE id = $1")
                 .bind(&id).execute(&mut *tx).await?;
         }
+    }
+    // A business Zyvor already approved for live mode must get this account approved by Zyvor too: until then its
+    // live payouts are held (see `require_approved`). Only what a reviewer needs to recognise it is kept.
+    let change = sqlx::query_scalar::<_, String>(
+        "SELECT t.organisation_id FROM tenants t JOIN live_access l ON l.organisation_id = t.organisation_id
+         WHERE t.id = $1 AND l.status = 'approved'",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(org) = change {
+        sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by) VALUES ($1,$2,$3,'bank_account',$4,$5,$6)")
+            .bind(new_id("lchg")).bind(&org).bind(&auth.tenant_id).bind(&id)
+            .bind(format!("{} · {} · ••••{}", b.holder_name.trim(), ifsc, &acct[acct.len() - 4..]))
+            .bind(&auth.actor)
+            .execute(&mut *tx).await?;
     }
     tenant::audit(
         &mut tx,

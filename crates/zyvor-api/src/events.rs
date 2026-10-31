@@ -138,6 +138,14 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "Zyvor took live mode away: no new payments or payouts until it is restored; the note says why.",
     ),
     (
+        "live_change.approved",
+        "Zyvor reviewed a change you made after going live (a new bank account) and approved it.",
+    ),
+    (
+        "live_change.rejected",
+        "Zyvor did not approve a change you made after going live; the note says why and the account was removed.",
+    ),
+    (
         "live_access.restored",
         "Zyvor opened live mode again after taking it away.",
     ),

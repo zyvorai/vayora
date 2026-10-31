@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
-import { ReviewerSignIn } from "@/components/ReviewerForms";
-import { platform, requireReviewerSurface, reviewerKey, type ReviewRow } from "@/lib/reviewer";
+import { ChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
+import { platform, requireReviewerSurface, reviewerKey, type ChangeRow, type ReviewRow } from "@/lib/reviewer";
 
 const FILTERS = ["pending", "approved", "rejected", "revoked"] as const;
 
@@ -10,6 +10,8 @@ const DONE: Record<string, string> = {
   reject: "Rejected. The merchant sees your note and has been emailed.",
   revoke: "Live mode taken away. New payments and payouts for that business have stopped, and the merchant has been emailed.",
   restore: "Live mode given back. The merchant has been emailed.",
+  change_approve: "Change approved. Live payouts for that business are no longer held for it.",
+  change_reject: "Change rejected. The account was removed and the merchant has been emailed your reason.",
 };
 
 export default async function Queue({ searchParams }: { searchParams: Promise<{ status?: string; done?: string }> }) {
@@ -31,11 +33,27 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
   const r = await platform<{ data: ReviewRow[] }>(key, "GET", `/reviews?status=${status}`);
   if (!r.ok && r.status === 401) redirect("/reviewer?expired=1");
   const rows = r.ok ? r.body.data : [];
+  const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", "/changes?status=pending") : null;
+  const changes = ch?.ok ? ch.body.data : [];
   return (
     <>
       <div className="head"><div><h1>Live access requests</h1><p className="lede">Oldest first. Open one to see what the business submitted and the checks that ran.</p></div></div>
       {q.done && <div className="note ok" role="status" style={{ marginBottom: 16 }}>{DONE[q.done] ?? "Done."}</div>}
       {!r.ok && <div className="note bad" role="alert" style={{ marginBottom: 16 }}>{r.message}</div>}
+      {changes.length > 0 && (
+        <section className="card" style={{ marginBottom: 16 }}>
+          <h2>Changes waiting ({changes.length})</h2>
+          <p className="fine">Businesses already live added something after you approved them. Their live payouts are held until you decide.</p>
+          <div style={{ display: "grid", gap: 14 }}>
+            {changes.map((c) => (
+              <div key={c.id} style={{ display: "grid", gap: 6, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", alignItems: "start" }}>
+                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>: new bank account<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div></div>
+                <ChangeForm id={c.id} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <nav className="tabs" aria-label="Status" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {FILTERS.map((f) => <a key={f} className={`btn small${f === status ? " primary" : ""}`} href={`/reviewer?status=${f}`} aria-current={f === status ? "page" : undefined}>{f[0].toUpperCase() + f.slice(1)}</a>)}
       </nav>

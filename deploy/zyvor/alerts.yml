@@ -19,6 +19,10 @@ groups:
         expr: zyvor_live_access_pending > 0
         for: 1d
         annotations: { summary: "A merchant has waited a day for live access review." }
+      - alert: ZyvorLiveChangeWaiting
+        expr: zyvor_live_changes_pending > 0
+        for: 4h
+        annotations: { summary: "A live merchant's new bank account has waited 4 hours for Zyvor review, and its live payouts are held." }
       - alert: ZyvorMetricsUnavailable
         expr: zyvor_outbox_pending < 0 or zyvor_mail_dead < 0
         for: 5m

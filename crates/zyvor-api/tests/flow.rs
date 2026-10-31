@@ -10982,3 +10982,254 @@ async fn a_test_organisation_can_settle_its_simulated_payments_without_a_provide
             .all(|x| x["provider"] != "sim")
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_new_bank_account_after_approval_needs_zyvor_and_holds_live_payouts_until_then(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": "Change Ltd", "email": "o@change.in", "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    let sign_in = || async {
+        let l = t
+            .ok_public(
+                "POST",
+                "/v1/console/login",
+                json!({ "email": "o@change.in", "password": pw }),
+            )
+            .await;
+        Tenant {
+            id: home.clone(),
+            key: l["session_key"].as_str().unwrap().into(),
+        }
+    };
+    let tn = sign_in().await;
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status, reviewed_by) VALUES ($1, 'Change Ltd', 'private_limited', '1234', 'Pune 411001', 'approved', 'the merchant themselves')")
+        .bind(&home).execute(&t.root).await.unwrap();
+    let bank = |holder: &str, acct: &str| json!({ "holder_name": holder, "ifsc": "HDFC0001234", "account_number": acct });
+    let add_bank = |k: &str, b: Value| {
+        let (app, k) = (t.app.clone(), k.to_string());
+        async move {
+            common::raw(
+                &app,
+                &k,
+                Some("o@change.in"),
+                "POST",
+                "/v1/onboarding/bank_accounts",
+                None,
+                b,
+            )
+            .await
+        }
+    };
+    // before Zyvor has approved the business, accounts are part of the first review and nothing is flagged
+    assert_eq!(
+        add_bank(&tn.key, bank("Change Ltd", "111122223333"))
+            .await
+            .0,
+        StatusCode::CREATED
+    );
+    assert_eq!(t.count("SELECT count(*) FROM live_changes").await, 0);
+
+    let (_, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let rv = |m: &'static str, p: String, b: Value| {
+        let (app, k) = (t.app.clone(), rkey.clone());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    common::raw(
+        &t.app,
+        &tn.key,
+        Some("o@change.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    let org = rv(
+        "GET",
+        "/v1/platform/reviews?status=pending".into(),
+        Value::Null,
+    )
+    .await
+    .1["data"][0]["organisation_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    let (st, live) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{live}");
+    let ln = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    let tn = sign_in().await;
+
+    // live payouts work
+    let v = t.ok(&ln, "POST", "/v1/vendors", None, json!({ "name": "Sharma Stationers", "account_number": "1234567890123", "ifsc": "HDFC0001234", "external_ref": "V-1" })).await;
+    let pay = |r: &str| {
+        let (app, k, vid) = (
+            t.app.clone(),
+            ln.key.clone(),
+            v["id"].as_str().unwrap().to_string(),
+        );
+        let body = json!({ "vendor_id": vid, "amount_minor": 1000, "purpose": "Stationery", "external_ref": r });
+        async move { common::raw(&app, &k, None, "POST", "/v1/payouts", None, body).await }
+    };
+    assert_eq!(pay("p-1").await.0, StatusCode::CREATED);
+
+    // a new account now needs Zyvor, and holds live payouts
+    let (st, b) = add_bank(&tn.key, bank("Change Ltd", "444455556666")).await;
+    assert_eq!(st, StatusCode::CREATED, "{b}");
+    assert_eq!(
+        t.count("SELECT count(*) FROM live_changes WHERE status = 'pending'")
+            .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM live_changes WHERE summary LIKE '%••••6666' AND summary NOT LIKE '%4444%'").await, 1);
+    assert_eq!(zyvor_api::platform::pending_changes(&t.state.pool).await, 1);
+    let (st, b) = pay("p-2").await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("change_awaiting_review"))
+    );
+    // the merchant is told
+    let s1 = t.ok(&tn, "GET", "/v1/live_access", None, Value::Null).await;
+    assert_eq!(s1["changes"][0]["status"], "pending");
+    // reviewers see it; merchants cannot
+    let (_, list) = rv(
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (
+            list["data"].as_array().unwrap().len(),
+            list["data"][0]["organisation"].clone()
+        ),
+        (1, json!("Change Ltd"))
+    );
+    let id = list["data"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        common::raw(
+            &t.app,
+            &ln.key,
+            None,
+            "GET",
+            "/v1/platform/changes",
+            None,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // rejecting needs a reason, removes the account, tells the merchant and releases the hold
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/changes/{id}/decision"),
+            json!({ "decision": "reject" })
+        )
+        .await
+        .1["error"]["code"],
+        "note_required"
+    );
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/changes/{id}/decision"),
+        json!({ "decision": "reject", "note": "Holder name does not match the business" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("rejected"))
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM merchant_bank_accounts WHERE account_last4 = '6666'")
+            .await,
+        0
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM merchant_bank_accounts WHERE account_last4 = '3333'")
+            .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_change.rejected' AND actor = 'zyvor:Asha'").await, 1);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'live_change.rejected'")
+            .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'o@change.in' AND body LIKE '%Holder name does not match%'").await, 1);
+    assert_eq!(pay("p-2").await.0, StatusCode::CREATED);
+
+    // approving keeps the account and releases the hold
+    add_bank(&tn.key, bank("Change Ltd", "777788889999")).await;
+    assert_eq!(
+        pay("p-3").await.1["error"]["code"],
+        "change_awaiting_review"
+    );
+    let id2 = rv(
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await
+    .1["data"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/changes/{id2}/decision"),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM merchant_bank_accounts WHERE account_last4 = '9999'")
+            .await,
+        1
+    );
+    assert_eq!(pay("p-3").await.0, StatusCode::CREATED);
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/changes/{id2}/decision"),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .1["error"]["code"],
+        "not_pending"
+    );
+    assert_eq!(zyvor_api::platform::pending_changes(&t.state.pool).await, 0);
+}

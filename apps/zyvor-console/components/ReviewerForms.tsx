@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { changeLiveAccess, decideReview, reviewerSignIn } from "@/lib/reviewer-actions";
+import { changeLiveAccess, decideChange, decideReview, reviewerSignIn } from "@/lib/reviewer-actions";
 
 export function ReviewerSignIn() {
   const [state, action, pending] = useActionState(reviewerSignIn, undefined);
@@ -60,6 +60,23 @@ export function LiveAccessForm({ org, mode }: { org: string; mode: "revoke" | "r
       )}
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <div><button className={revoke ? "btn" : "btn primary"} disabled={pending}>{pending ? "…" : revoke ? "Take live mode away" : "Give live mode back"}</button></div>
+    </form>
+  );
+}
+
+/** One waiting change: approve, or reject with the reason the merchant is shown. */
+export function ChangeForm({ id }: { id: string }) {
+  const [state, action, pending] = useActionState(decideChange, undefined);
+  const [note, setNote] = useState("");
+  return (
+    <form action={action} style={{ display: "grid", gap: 8 }}>
+      <input type="hidden" name="id" value={id} />
+      <input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason (required to reject)" aria-label="Reason" type="text" />
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn small primary" name="decision" value="approve" disabled={pending}>Approve</button>
+        <button className="btn small" name="decision" value="reject" disabled={pending}>Reject and remove</button>
+      </div>
     </form>
   );
 }

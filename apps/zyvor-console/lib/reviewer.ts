@@ -50,3 +50,5 @@ export type ReviewDetail = {
 
 /** How a check outcome is shown: only a pass is green. */
 export const outcomeTone = (o: string): "ok" | "bad" | "warn" => (o === "pass" ? "ok" : o === "fail" ? "bad" : "warn");
+
+export type ChangeRow = { id: string; organisation_id: string; organisation: string; kind: "bank_account"; summary: string; status: "pending" | "approved" | "rejected"; requested_by: string; requested_at: string; note: string | null };

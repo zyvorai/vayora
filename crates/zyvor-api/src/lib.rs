@@ -406,6 +406,11 @@ pub fn app(state: AppState) -> Router {
             "/platform/reviews/{organisation_id}/decision",
             post(platform::decide),
         )
+        .route("/platform/changes", get(platform::list_changes))
+        .route(
+            "/platform/changes/{id}/decision",
+            post(platform::decide_change),
+        )
         .route(
             "/platform/reviews/{organisation_id}/revoke",
             post(platform::revoke),
@@ -535,8 +540,9 @@ async fn readyz(
 async fn metrics(axum::extract::State(s): axum::extract::State<AppState>) -> String {
     let (pending, dead, cases) = worker::queue_depths(&s.pool).await.unwrap_or((-1, -1, -1));
     let live = platform::pending_count(&s.pool).await;
+    let changes = platform::pending_changes(&s.pool).await;
     let (mail_pending, mail_dead) = mail::counts(&s.pool).await;
     format!(
-        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n"
+        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n# TYPE zyvor_live_changes_pending gauge\nzyvor_live_changes_pending {changes}\n"
     )
 }
