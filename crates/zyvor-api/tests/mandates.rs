@@ -30,7 +30,7 @@ async fn with_sim(t: &T, tn: &Tenant) {
         "POST",
         "/v1/provider_accounts",
         None,
-        json!({ "provider": "sim", "credentials": {}, "webhook_secret": "sim-secret-123456" }),
+        json!({ "provider": "sim", "credentials": {}, "webhook_secret": "test-only-placeholder" }),
     )
     .await;
 }
