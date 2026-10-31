@@ -344,41 +344,35 @@ pub async fn switch_env(
     })))
 }
 
-/// Live opens only for an organisation whose business is approved (in either environment). The approval
-/// is copied into the live tenant, so its own payout gate and onboarding page agree with it.
+/// Live opens only after a Zyvor reviewer approved the organisation (`platform::live_gate`). The approved profile is
+/// copied into the live tenant, with the reviewer's name, so its own payout gate and onboarding page agree.
 async fn open_live(s: &AppState, org: &str, live: &str) -> Result<(), ApiError> {
+    let reviewer = crate::platform::live_gate(s, org).await?;
     let tenants: Vec<String> =
         sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1")
             .bind(org)
             .fetch_all(&s.pool)
             .await?;
-    type Profile = (
-        String,
-        String,
-        String,
-        Option<String>,
-        String,
-        Option<String>,
-    );
+    type Profile = (String, String, String, Option<String>, String);
     let mut approved: Option<Profile> = None;
     let mut live_has_profile = false;
     // merchant_profiles is per tenant (row-level security), so ask each of the organisation's tenants
     for tid in &tenants {
         let mut tx = tenant::begin(&s.pool, tid).await?;
-        let row: Option<(String, String, String, String, Option<String>, String, Option<String>)> = sqlx::query_as(
-            "SELECT status, legal_name, business_type, pan_last4, gstin, address, reviewed_by FROM merchant_profiles",
+        let row: Option<(String, String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT status, legal_name, business_type, pan_last4, gstin, address FROM merchant_profiles",
         )
         .fetch_optional(&mut *tx)
         .await?;
         tx.commit().await?;
-        if let Some((status, name, bt, pan, gstin, addr, by)) = row {
+        if let Some((status, name, bt, pan, gstin, addr)) = row {
             live_has_profile |= tid == live;
             if status == "approved" && approved.is_none() {
-                approved = Some((name, bt, pan, gstin, addr, by));
+                approved = Some((name, bt, pan, gstin, addr));
             }
         }
     }
-    let Some((name, bt, pan, gstin, addr, by)) = approved else {
+    let Some((name, bt, pan, gstin, addr)) = approved else {
         return Err(ApiError::conflict(
             "onboarding_incomplete",
             "live mode opens once your business details are approved",
@@ -386,8 +380,8 @@ async fn open_live(s: &AppState, org: &str, live: &str) -> Result<(), ApiError> 
     };
     if !live_has_profile {
         let mut tx = tenant::begin(&s.pool, live).await?;
-        sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, gstin, address, status, reviewed_by, reviewed_at, review_note) VALUES ($1,$2,$3,$4,$5,$6,'approved',$7, now(), 'Carried over from the approval of the test environment')")
-            .bind(live).bind(name).bind(bt).bind(pan).bind(gstin).bind(addr).bind(by)
+        sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, gstin, address, status, reviewed_by, reviewed_at, review_note) VALUES ($1,$2,$3,$4,$5,$6,'approved',$7, now(), 'Approved by a Zyvor review before live mode opened')")
+            .bind(live).bind(name).bind(bt).bind(pan).bind(gstin).bind(addr).bind(format!("zyvor:{reviewer}"))
             .execute(&mut *tx).await?;
         tx.commit().await?;
     }

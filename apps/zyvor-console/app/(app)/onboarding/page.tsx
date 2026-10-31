@@ -2,7 +2,7 @@ import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { BankForm, DocForm, ProfileForm, ReviewForm } from "@/components/OnboardingForms";
 import { Stepper, type Step } from "@/components/Stepper";
-import { submitOnboarding, verifyBankAccount } from "@/lib/actions";
+import { requestLiveAccess, submitOnboarding, verifyBankAccount } from "@/lib/actions";
 import { currentSession, requireRole } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -26,6 +26,8 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
   const current = steps.some((s) => s.key === q.step) ? q.step! : firstOpen;
   const next = steps[steps.findIndex((s) => s.key === current) + 1];
   const live = me?.e === "live";
+  // Zyvor's own review comes after the business details are approved
+  const access = o.status === "approved" ? await (await api()).liveAccess.get().catch(() => null) : null;
   const checkFor = (kind: string, subject?: string) => o.checks.find((c) => c.kind === kind && (subject ? c.subject === subject : true));
   const Next = () => next && <p><a className="btn primary" href={`/onboarding?step=${next.key}`}>Continue to {next.label.toLowerCase()}</a></p>;
 
@@ -35,8 +37,15 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
       {o.status === "approved" && (
         <div className="note ok" role="status" style={{ marginBottom: 16 }}>
-          <strong>You are approved.</strong> {o.profile?.reviewed_by === "system:auto" ? "Every check passed, so no one needed to review it." : `Reviewed by ${o.profile?.reviewed_by}.`}{" "}
-          {live ? "You are in live mode." : "Use the Test / Live switch at the top to go live."}
+          <strong>Your business details are approved.</strong> {o.profile?.reviewed_by === "system:auto" ? "Every check passed, so no one needed to review them." : `Reviewed by ${o.profile?.reviewed_by}.`}
+        </div>
+      )}
+      {access && (
+        <div className={`card${access.status === "approved" ? "" : " note"}`} style={{ marginBottom: 16 }} role="status">
+          {access.status === "approved" && <><strong>Live mode is open.</strong> {live ? "You are in live mode." : "Use the Test / Live switch at the top to go live."}</>}
+          {access.status === "pending" && <><strong>Zyvor is reviewing your business.</strong> You do not need to do anything. We email you when live mode opens, or if we need something changed.</>}
+          {access.status === "rejected" && <><strong>Zyvor could not open live mode yet.</strong><p style={{ margin: "6px 0" }}>{access.note ?? "No reason was given."}</p>Fix that, then ask again: <Act action={requestLiveAccess} label="Ask again" primary /></>}
+          {access.status === "not_requested" && <><strong>One more step before live mode: a Zyvor review.</strong><p className="muted" style={{ margin: "6px 0 10px" }}>Zyvor looks at your business details and the checks that ran, then opens live mode. Test mode keeps working in the meantime.</p><Act action={requestLiveAccess} label="Request live access" primary /></>}
         </div>
       )}
       {o.status === "in_review" && (

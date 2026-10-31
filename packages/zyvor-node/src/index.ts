@@ -443,6 +443,12 @@ export class Zyvor {
     setEnabled: (provider: string, enabled: boolean) => this.req("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/enabled`, { enabled }),
   };
 
+  /** Zyvor reviews every business before live mode opens. Ask once your business details are approved. */
+  readonly liveAccess = {
+    get: () => this.req<{ status: "not_requested" | "pending" | "approved" | "rejected"; note: string | null; requested_at?: string; reviewed_at?: string | null; round?: number; onboarding_approved: boolean }>("GET", "/v1/live_access"),
+    request: () => this.req<{ status: "pending" | "approved" }>("POST", "/v1/live_access"),
+  };
+
   readonly webhooks = {
     /** Every event type with its meaning. Choose which to receive with the `webhook_events` setting. */
     catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),

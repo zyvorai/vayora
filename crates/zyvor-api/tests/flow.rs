@@ -8150,6 +8150,15 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
     );
 }
 
+/// Record that a Zyvor reviewer approved this organisation for live mode, which is what the console's switch now
+/// requires (any one of the organisation's tenant ids will do).
+async fn let_live_in(t: &T, tenant_id: &str) {
+    sqlx::query("INSERT INTO platform_reviewers (id, name, key_hash) VALUES ('rev_fixture', 'Fixture Reviewer', 'fixture') ON CONFLICT DO NOTHING")
+        .execute(&t.root).await.unwrap();
+    sqlx::query("INSERT INTO live_access (organisation_id, status, requested_by, reviewed_by, reviewed_at) SELECT organisation_id, 'approved', 'fixture', 'rev_fixture', now() FROM tenants WHERE id = $1 ON CONFLICT (organisation_id) DO UPDATE SET status = 'approved', reviewed_by = 'rev_fixture'")
+        .bind(tenant_id).execute(&t.root).await.unwrap();
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 #[sqlx::test(migrations = "./migrations")]
 async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(pool: PgPool) {
@@ -8194,6 +8203,7 @@ async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(
     assert_eq!(s, StatusCode::FORBIDDEN);
     sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Gamma Mills', 'private_limited', '1234', 'Mumbai 400001', 'approved')")
         .bind(&tn.id).execute(&t.root).await.unwrap();
+    let_live_in(&t, &tn.id).await;
     let live = t
         .ok(
             &tn,
@@ -8573,6 +8583,7 @@ async fn members_sign_in_by_email_with_role_limited_keys_and_lose_sessions_when_
     // approve the business so live can open; a cashier stays out of live, a finance member goes in
     sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Delta Foods', 'private_limited', '1234', 'Pune 411001', 'approved')")
         .bind(&atn.id).execute(&t.root).await.unwrap();
+    let_live_in(&t, &atn.id).await;
     let till = t
         .ok_public(
             "POST",
@@ -9699,6 +9710,7 @@ async fn a_console_session_cannot_be_stretched_and_logout_really_ends_it(pool: P
     let home = su["test_tenant"].as_str().unwrap().to_string();
     sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Cap Ltd', 'private_limited', '1234', 'Pune 411001', 'approved')")
         .bind(&home).execute(&t.root).await.unwrap();
+    let_live_in(&t, &home).await;
     let login = || {
         t.ok_public(
             "POST",
@@ -9878,4 +9890,280 @@ async fn a_new_bank_account_after_approval_needs_a_person_and_must_carry_the_rig
         b["check"]["detail"].as_str().unwrap().contains("name"),
         "{b}"
     );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn live_mode_opens_only_when_a_zyvor_reviewer_approves(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": "Live Ltd", "email": "c@lv.in", "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "c@lv.in", "password": pw }),
+        )
+        .await;
+    let tn = Tenant {
+        id: home.clone(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    let switch = |k: &Tenant| {
+        let k = k.clone();
+        let t = &t;
+        async move {
+            t.call(
+                &k,
+                "POST",
+                "/v1/console/switch_env",
+                None,
+                json!({ "env": "live" }),
+            )
+            .await
+        }
+    };
+
+    // asking before the business details are approved is refused
+    let (st, b) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("c@lv.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("onboarding_incomplete"))
+    );
+    // the merchant's own onboarding is approved (by anyone in the organisation, even themselves)
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status, reviewed_by) VALUES ($1, 'Live Ltd', 'private_limited', '1234', 'Pune 411001', 'approved', 'the merchant themselves')")
+        .bind(&home).execute(&t.root).await.unwrap();
+    // ...and that is not enough: live stays closed
+    let (st, b) = switch(&tn).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("live_access_required")),
+        "{b}"
+    );
+    let s0 = t.ok(&tn, "GET", "/v1/live_access", None, Value::Null).await;
+    assert_eq!(
+        (s0["status"].clone(), s0["onboarding_approved"].clone()),
+        (json!("not_requested"), json!(true))
+    );
+
+    // ask: pending, and asking again changes nothing
+    let (st, b) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("c@lv.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::CREATED, json!("pending"))
+    );
+    let (st, _) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("c@lv.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, b) = switch(&tn).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("live_access_pending"))
+    );
+
+    // nothing a merchant holds works as a reviewer
+    let plain = su["test_key"].as_str().unwrap().to_string();
+    for key in [tn.key.clone(), plain, "zp_notarealreviewerkey".to_string()] {
+        let (st, _) = common::raw(
+            &t.app,
+            &key,
+            None,
+            "GET",
+            "/v1/platform/reviews",
+            None,
+            Value::Null,
+        )
+        .await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED, "{key}");
+    }
+    let (rid, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    assert!(rkey.starts_with("zp_"));
+    let rv = |m: &'static str, p: String, b: Value| {
+        let (app, k) = (t.app.clone(), rkey.clone());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    // a reviewer cannot use a merchant endpoint
+    assert_eq!(
+        common::raw(
+            &t.app,
+            &rkey,
+            None,
+            "GET",
+            "/v1/live_access",
+            None,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // the reviewer sees the request and what the business submitted, without secrets or a full PAN
+    let (_, list) = rv(
+        "GET",
+        "/v1/platform/reviews?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    let org = list["data"][0]["organisation_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(list["data"][0]["organisation"], "Live Ltd");
+    let (st, d) = rv("GET", format!("/v1/platform/reviews/{org}"), Value::Null).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(
+        (
+            d["profile"]["legal_name"].clone(),
+            d["profile"]["pan"].clone()
+        ),
+        (json!("Live Ltd"), json!("XXXXXX1234"))
+    );
+    assert!(!d.to_string().contains("key_hash") && !d.to_string().contains("password"));
+
+    // rejecting needs a note the merchant will read; then the merchant fixes things and asks again
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "reject" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "maybe" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "reject", "note": "GSTIN certificate is missing" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let s1 = t.ok(&tn, "GET", "/v1/live_access", None, Value::Null).await;
+    assert_eq!(
+        (s1["status"].clone(), s1["note"].clone()),
+        (json!("rejected"), json!("GSTIN certificate is missing"))
+    );
+    assert_eq!(switch(&tn).await.0, StatusCode::CONFLICT);
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'c@lv.in' AND body LIKE '%GSTIN certificate is missing%'").await, 1);
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .1["error"]["code"],
+        "not_pending"
+    );
+    let (_, again) = common::raw(
+        &t.app,
+        &tn.key,
+        Some("c@lv.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(again["status"], "pending");
+    assert_eq!(
+        t.ok(&tn, "GET", "/v1/live_access", None, Value::Null).await["round"],
+        2
+    );
+
+    // approval opens live, with the reviewer on the record
+    assert_eq!(
+        rv(
+            "POST",
+            format!("/v1/platform/reviews/{org}/decision"),
+            json!({ "decision": "approve", "note": "documents checked" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (st, live) = switch(&tn).await;
+    assert_eq!(st, StatusCode::OK, "{live}");
+    let ln = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    let view = t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
+    assert_eq!(
+        (
+            view["status"].clone(),
+            view["profile"]["reviewed_by"].clone()
+        ),
+        (json!("approved"), json!("zyvor:Asha"))
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.approved' AND actor = 'zyvor:Asha'").await, 1);
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'live_access.approved'")
+            .await,
+        1
+    );
+
+    // a reviewer who is disabled can do nothing more
+    assert!(
+        zyvor_api::platform::disable_reviewer(&t.state.pool, &rid)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        rv("GET", "/v1/platform/reviews".into(), Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // the metrics gauge counts waiting requests
+    assert_eq!(zyvor_api::platform::pending_count(&t.state.pool).await, 0);
 }

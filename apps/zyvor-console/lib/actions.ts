@@ -109,6 +109,8 @@ export async function switchEnv(_: FormState, form: FormData): Promise<FormState
   const r = await publicPost<EmailLogin>("/v1/console/switch_env", { env }, key);
   if (!r.ok) {
     if (r.code === "onboarding_incomplete") return { error: "Live mode opens once your business details are approved. Finish onboarding first." };
+    if (r.code === "live_access_pending") return { error: "Zyvor is still reviewing your business. We email you as soon as live mode opens." };
+    if (r.code === "live_access_required") return { error: "Zyvor reviews every business before live mode opens. Request live access on the Onboarding page." };
     return { error: "Could not switch right now. Try again in a moment." };
   }
   const { exp: _exp, ...who } = s;
@@ -210,6 +212,8 @@ export const refundPayment = async (_: FormState, f: FormData) => {
   const r = await run([`/payments/${intent}`, "/refunds", "/"], (z) => z.intents.refund(intent, { amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100), reason: String(f.get("reason") ?? "").trim() || undefined, idempotencyKey: key || undefined }));
   return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
 };
+/** Ask Zyvor to review the business for live mode. */
+export const requestLiveAccess = async (_: FormState) => run(["/onboarding", "/"], (z) => z.liveAccess.request(), "admin");
 export const sendTestEvent = async (_: FormState) => run(["/webhooks", "/developers"], (z) => z.webhooks.sendTest(), "admin");
 /** Make a test payment that ends the way you pick, then open it. Test environments only. */
 export async function createTestPayment(_: FormState, f: FormData): Promise<FormState> {

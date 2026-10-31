@@ -6,9 +6,10 @@ export async function SetupChecklist() {
   const z = await api();
   let steps: { label: string; hint: string; href: string; done: boolean }[];
   try {
-    const [o, keys, s, links] = await Promise.all([z.onboarding.get(), z.keys.list(), z.settings.get(), z.paymentLinks.list()]);
+    const [o, keys, s, links, access] = await Promise.all([z.onboarding.get(), z.keys.list(), z.settings.get(), z.paymentLinks.list(), z.liveAccess.get()]);
     steps = [
-      { label: "Verify your business", hint: o.status === "in_review" ? "Waiting for review" : "PAN, bank account and documents", href: "/onboarding", done: o.status === "approved" },
+      { label: "Get your business details approved", hint: o.status === "in_review" ? "Waiting for review" : "PAN, bank account and documents", href: "/onboarding", done: o.status === "approved" },
+      { label: "Get live access", hint: access.status === "pending" ? "Zyvor is reviewing your business" : access.status === "rejected" ? "Zyvor asked for a change" : "Zyvor reviews every business before live mode opens", href: "/onboarding", done: access.status === "approved" },
       { label: "Create an API key", hint: "To take payments from your own app", href: "/keys", done: keys.data.some((k) => !k.revoked_at && !k.name.startsWith("console session")) },
       { label: "Add a webhook address", hint: "To hear about payments as they happen", href: "/settings", done: !!s.outbound_webhook_url },
       { label: "Create a payment link", hint: "The quickest way to get paid", href: "/links", done: links.data.length > 0 },

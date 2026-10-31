@@ -11,7 +11,7 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
 
 ## 1. Before any real merchant (do these first)
 
-### 1.1 A merchant can approve their own onboarding, so live opens with no Zyvor-side check
+### 1.1 A merchant can approve their own onboarding, so live opens with no Zyvor-side check — **DONE** (Zyvor-operated review: `docs/zyvor/PLATFORM_REVIEW.md`)
 - **Why:** `open_live` (`crates/zyvor-api/src/signup.rs`) opens live for an organisation whose business is approved in
   either of its own tenants. A signed-up merchant can invite a second admin they control to approve the first (the
   admin scope includes `onboarding:review`), and with `ZYVOR_KYC_PROVIDER=simulator` almost any PAN is auto-approved.

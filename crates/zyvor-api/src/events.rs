@@ -88,6 +88,14 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "webhook.test",
         "A test event you sent yourself from the console or the API. It is sent even if you did not subscribe to it.",
     ),
+    (
+        "live_access.approved",
+        "Zyvor reviewed your business and opened live mode.",
+    ),
+    (
+        "live_access.rejected",
+        "Zyvor did not open live mode yet; the note says what to fix.",
+    ),
     ("onboarding.approved", "Onboarding was approved."),
     (
         "onboarding.rejected",

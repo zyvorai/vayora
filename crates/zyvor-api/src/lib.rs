@@ -33,6 +33,7 @@ pub mod outbox;
 pub mod payment_links;
 pub mod payments;
 pub mod payouts;
+pub mod platform;
 pub mod recon;
 pub mod refunds;
 pub mod registry;
@@ -361,6 +362,20 @@ pub fn app(state: AppState) -> Router {
         .route("/console/login", post(signup::console_login))
         .route("/console/switch_env", post(signup::switch_env))
         .route("/console/logout", post(signup::console_logout))
+        // Zyvor-operated review before live mode
+        .route(
+            "/live_access",
+            get(platform::live_access_status).post(platform::request_live_access),
+        )
+        .route("/platform/reviews", get(platform::list_reviews))
+        .route(
+            "/platform/reviews/{organisation_id}",
+            get(platform::show_review),
+        )
+        .route(
+            "/platform/reviews/{organisation_id}/decision",
+            post(platform::decide),
+        )
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
         .route("/export", get(export))
@@ -478,7 +493,8 @@ async fn readyz(
 /// Prometheus text format: queue depths and open reconciliation cases.
 async fn metrics(axum::extract::State(s): axum::extract::State<AppState>) -> String {
     let (pending, dead, cases) = worker::queue_depths(&s.pool).await.unwrap_or((-1, -1, -1));
+    let live = platform::pending_count(&s.pool).await;
     format!(
-        "# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n"
+        "# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n"
     )
 }
