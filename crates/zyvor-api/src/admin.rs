@@ -389,6 +389,10 @@ pub struct NewCustomer {
     external_ref: Option<String>,
     /// Buyer's GSTIN, used as the default on tax invoices.
     gstin: Option<String>,
+    /// Buyer's address, needed only for a draft e-invoice.
+    address1: Option<String>,
+    location: Option<String>,
+    pincode: Option<String>,
 }
 
 pub async fn create_customer(
@@ -403,9 +407,14 @@ pub async fn create_customer(
     {
         return Err(ApiError::invalid("invalid_gstin", "GSTIN is not valid"));
     }
+    crate::gst::check_address(
+        b.address1.as_deref(),
+        b.location.as_deref(),
+        b.pincode.as_deref(),
+    )?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let id = new_id("cus");
-    sqlx::query("INSERT INTO customers (id, tenant_id, name, email, phone, external_ref, gstin) VALUES ($1, $2, $3, $4, $5, $6, $7)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&b.email).bind(&b.phone).bind(&b.external_ref).bind(&b.gstin).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO customers (id, tenant_id, name, email, phone, external_ref, gstin, address1, location, pincode) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)").bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(&b.email).bind(&b.phone).bind(&b.external_ref).bind(&b.gstin).bind(&b.address1).bind(&b.location).bind(&b.pincode).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -712,6 +721,10 @@ pub struct Settings {
 pub struct GstProfile {
     gstin: String,
     legal_name: Option<String>,
+    /// Your registered address, needed only for a draft e-invoice.
+    address1: Option<String>,
+    location: Option<String>,
+    pincode: Option<String>,
 }
 
 /// Automatic reminders for overdue invoices; off until a tenant turns it on.
@@ -766,6 +779,13 @@ pub async fn put_settings(
             "gstin is not valid (15 characters, valid state code and check character)",
         ));
     }
+    if let Some(g) = &b.gst {
+        crate::gst::check_address(
+            g.address1.as_deref(),
+            g.location.as_deref(),
+            g.pincode.as_deref(),
+        )?;
+    }
     if let Some(u) = &b.outbound_webhook_url {
         crate::ssrf::check_url(u, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("invalid_webhook_url", e))?;
@@ -815,8 +835,8 @@ pub async fn put_settings(
         .await?;
     }
     if let Some(g) = &b.gst {
-        sqlx::query("UPDATE tenant_settings SET gstin = $2, gst_legal_name = COALESCE($3, gst_legal_name) WHERE tenant_id = $1")
-            .bind(&auth.tenant_id).bind(&g.gstin).bind(&g.legal_name).execute(&mut *tx).await?;
+        sqlx::query("UPDATE tenant_settings SET gstin = $2, gst_legal_name = COALESCE($3, gst_legal_name), gst_address1 = COALESCE($4, gst_address1), gst_location = COALESCE($5, gst_location), gst_pincode = COALESCE($6, gst_pincode) WHERE tenant_id = $1")
+            .bind(&auth.tenant_id).bind(&g.gstin).bind(&g.legal_name).bind(&g.address1).bind(&g.location).bind(&g.pincode).execute(&mut *tx).await?;
     }
     if let Some(d) = &b.dunning {
         sqlx::query("UPDATE tenant_settings SET auto_dunning = COALESCE($2, auto_dunning), dunning_channel = COALESCE($3, dunning_channel), dunning_min_days = COALESCE($4, dunning_min_days), dunning_repeat_days = COALESCE($5, dunning_repeat_days), dunning_requires_approval = COALESCE($6, dunning_requires_approval) WHERE tenant_id = $1")
@@ -843,9 +863,15 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr, wev, risk): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64, Option<Vec<String>>, Value) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor, webhook_events, risk_rules FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
+    let (gaddr, gloc, gpin): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT gst_address1, gst_location, gst_pincode FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_one(&mut *tx)
+    .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal }, "payout_approval_threshold_minor": ptr, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

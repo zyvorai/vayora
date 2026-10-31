@@ -70,7 +70,7 @@ export interface Settings {
   outbound_webhook_url: string | null;
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
-  gst: { gstin: string | null; legal_name: string | null };
+  gst: { gstin: string | null; legal_name: string | null; address1?: string | null; location?: string | null; pincode?: string | null };
   env: string;
 }
 
@@ -82,7 +82,7 @@ export interface SettingsPatch {
   outbound_webhook_secret?: string;
   webhook_events?: string[];
   dunning?: Partial<Settings["dunning"]>;
-  gst?: { gstin: string; legal_name?: string };
+  gst?: { gstin: string; legal_name?: string; address1?: string; location?: string; pincode?: string };
   /** Limits that stop a payment. Sending `risk` replaces the whole set, so include what you want to keep. */
   risk?: RiskRules;
 }
@@ -252,8 +252,8 @@ export class Zyvor {
 
   readonly customers = {
     list: (externalRef?: string) => this.req<Page<{ id: string; name: string; email: string | null; phone: string | null; external_ref: string | null }>>("GET", `/v1/customers${this.qs({ external_ref: externalRef })}`),
-    create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string }) =>
-      this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin }),
+    create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) =>
+      this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin, address1: p.address1, location: p.location, pincode: p.pincode }),
   };
 
   readonly fx = {
@@ -298,6 +298,8 @@ export class Zyvor {
 
   readonly gst = {
     /** GSTR-1 style summary for `YYYY-MM`: a preparation aid, Zyvor does not file returns. */
+    /** DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal. */
+    einvoice: (invoiceId: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${invoiceId}/einvoice`),
     gstr1: (period: string) => this.req<Record<string, unknown>>("GET", `/v1/gst/gstr1${this.qs({ period })}`),
   };
 

@@ -273,6 +273,154 @@ pub async fn invoice_lines(
     ))
 }
 
+/// Address parts, when given: a six-digit pincode (not starting with 0), and short, plain text.
+pub fn check_address(
+    address1: Option<&str>,
+    location: Option<&str>,
+    pincode: Option<&str>,
+) -> Result<(), ApiError> {
+    let text_ok = |t: &str| (3..=100).contains(&t.trim().chars().count());
+    if address1.is_some_and(|a| !text_ok(a))
+        || location.is_some_and(|l| !(3..=50).contains(&l.trim().chars().count()))
+    {
+        return Err(ApiError::invalid(
+            "invalid_address",
+            "address1 must be 3-100 characters and location 3-50",
+        ));
+    }
+    if pincode.is_some_and(|p| {
+        p.len() != 6 || !p.chars().all(|c| c.is_ascii_digit()) || p.starts_with('0')
+    }) {
+        return Err(ApiError::invalid(
+            "invalid_pincode",
+            "pincode must be six digits",
+        ));
+    }
+    Ok(())
+}
+
+/// Paise as the decimal rupee number the IRP schema uses (two places).
+fn rupees(minor: i64) -> Value {
+    let s = format!(
+        "{}{}.{:02}",
+        if minor < 0 { "-" } else { "" },
+        minor.abs() / 100,
+        minor.abs() % 100
+    );
+    serde_json::from_str(&s).unwrap_or(Value::Null)
+}
+
+/// `GET /v1/invoices/{id}/einvoice`: a DRAFT e-invoice payload in the shape of the government's IRP schema
+/// version 1.1, for a tax invoice to a GST-registered buyer. Zyvor does not call the IRP, generate an IRN or QR,
+/// or check this against the portal's validator: hand it to your GSP or the portal's JSON upload and read what
+/// they say. It lists what is missing (422) rather than guessing an address.
+pub async fn einvoice(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    #[allow(clippy::type_complexity)]
+    let head: Option<(String, DateTime<Utc>, Option<String>, Option<String>, Option<String>, bool, i64, String)> = sqlx::query_as(
+        "SELECT number, created_at, customer_id, place_of_supply, buyer_gstin, reverse_charge, amount_minor, currency FROM invoices WHERE id = $1",
+    ).bind(&id).fetch_optional(&mut *tx).await?;
+    let (number, created, customer, pos, buyer_gstin, rev, total, currency) =
+        head.ok_or_else(|| ApiError::not_found("invoice"))?;
+    let mut missing: Vec<&str> = Vec::new();
+    if currency != "INR" {
+        return Err(ApiError::invalid(
+            "einvoice_not_applicable",
+            "e-invoices are for rupee invoices",
+        ));
+    }
+    #[allow(clippy::type_complexity)]
+    let seller: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT gstin, gst_legal_name, gst_address1, gst_location, gst_pincode FROM tenant_settings LIMIT 1",
+    ).fetch_optional(&mut *tx).await?;
+    let (sg, sn, sa, sl, sp) = seller.unwrap_or_default();
+    #[allow(clippy::type_complexity)]
+    let buyer: Option<(
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = match &customer {
+        Some(c) => {
+            sqlx::query_as(
+                "SELECT name, gstin, address1, location, pincode FROM customers WHERE id = $1",
+            )
+            .bind(c)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        None => None,
+    };
+    let (bn, _, ba, bl, bp) = buyer.unwrap_or_default();
+    let bg = buyer_gstin.clone();
+    for (v, name) in [
+        (&sg, "seller gstin (settings gst.gstin)"),
+        (&sn, "seller legal name (settings gst.legal_name)"),
+        (&sa, "seller address1"),
+        (&sl, "seller location"),
+        (&sp, "seller pincode"),
+        (&bg, "buyer gstin (e-invoices are for B2B)"),
+        (&ba, "buyer address1 (on the customer)"),
+        (&bl, "buyer location"),
+        (&bp, "buyer pincode"),
+        (&pos, "place_of_supply"),
+    ] {
+        if v.as_deref().is_none_or(str::is_empty) {
+            missing.push(name);
+        }
+    }
+    if customer.is_none() {
+        missing.push("customer on the invoice");
+    }
+    let lines: Vec<(i32, String, String, i64, i64, i64, i32, i64, i64, i64)> = sqlx::query_as("SELECT position, description, hsn_sac, quantity, unit_price_minor, taxable_minor, rate_bp, cgst_minor, sgst_minor, igst_minor FROM invoice_lines WHERE invoice_id = $1 ORDER BY position").bind(&id).fetch_all(&mut *tx).await?;
+    if lines.is_empty() {
+        missing.push("tax invoice lines (HSN/SAC)");
+    }
+    if !missing.is_empty() {
+        return Err(ApiError::invalid(
+            "einvoice_incomplete",
+            format!(
+                "cannot draft an e-invoice yet; missing: {}",
+                missing.join(", ")
+            ),
+        ));
+    }
+    let (sg, bg, pos) = (
+        sg.unwrap_or_default(),
+        bg.unwrap_or_default(),
+        pos.unwrap_or_default(),
+    );
+    let pin = |p: Option<String>| p.and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+    let (mut ass, mut cg, mut sgs, mut ig) = (0i64, 0i64, 0i64, 0i64);
+    let items: Vec<Value> = lines.iter().map(|(p, d, h, q, u, t, r, c, sgst, i)| {
+        ass += t; cg += c; sgs += sgst; ig += i;
+        json!({
+            "SlNo": p.to_string(), "PrdDesc": d, "IsServc": if h.starts_with("99") { "Y" } else { "N" }, "HsnCd": h,
+            "Qty": q, "Unit": "OTH", "UnitPrice": rupees(*u), "TotAmt": rupees(q * u), "AssAmt": rupees(*t),
+            "GstRt": serde_json::from_str::<Value>(&format!("{}.{:02}", r / 100, r % 100)).unwrap_or(Value::Null),
+            "CgstAmt": rupees(*c), "SgstAmt": rupees(*sgst), "IgstAmt": rupees(*i), "TotItemVal": rupees(t + c + sgst + i),
+        })
+    }).collect();
+    let ist = created.with_timezone(&chrono::FixedOffset::east_opt(19_800).unwrap());
+    Ok(Json(json!({
+        "draft": true,
+        "note": "Draft in the shape of IRP e-invoice schema 1.1. Not submitted, no IRN or QR, and not checked against the portal's validator.",
+        "Version": "1.1",
+        "TranDtls": { "TaxSch": "GST", "SupTyp": "B2B", "RegRev": if rev { "Y" } else { "N" }, "IgstOnIntra": "N" },
+        "DocDtls": { "Typ": "INV", "No": number, "Dt": ist.format("%d/%m/%Y").to_string() },
+        "SellerDtls": { "Gstin": sg, "LglNm": sn.unwrap_or_default(), "Addr1": sa.unwrap_or_default(), "Loc": sl.unwrap_or_default(), "Pin": pin(sp), "Stcd": &sg[..2] },
+        "BuyerDtls": { "Gstin": bg, "LglNm": bn, "Pos": pos, "Addr1": ba.unwrap_or_default(), "Loc": bl.unwrap_or_default(), "Pin": pin(bp), "Stcd": &bg[..2] },
+        "ItemList": items,
+        "ValDtls": { "AssVal": rupees(ass), "CgstVal": rupees(cg), "SgstVal": rupees(sgs), "IgstVal": rupees(ig), "TotInvVal": rupees(total) },
+    })))
+}
+
 #[derive(Deserialize)]
 pub struct PeriodQuery {
     /// `YYYY-MM`, in Indian time.

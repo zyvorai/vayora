@@ -232,6 +232,13 @@ func (c *Client) SetFxRate(rate, asOf string) (map[string]any, error) {
 	return out, err
 }
 
+// EinvoiceDraft returns a DRAFT e-invoice (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal.
+func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("GET", "/v1/invoices/"+invoiceID+"/einvoice", nil, "", &out)
+	return out, err
+}
+
 // FxExposure values open dollar invoices at the rate when raised and at asOf ("" = today). Reporting only.
 func (c *Client) FxExposure(asOf string) (map[string]any, error) {
 	path := "/v1/fx/exposure"

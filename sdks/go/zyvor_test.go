@@ -89,9 +89,10 @@ func TestBillingAndCollectionsPaths(t *testing.T) {
 	_, _ = c.PromiseToPay("inv_1", 500, "2026-11-05")
 	_, _ = c.SetFxRate("83.2150", "")
 	_, _ = c.FxExposure("2026-10-31")
+	_, _ = c.EinvoiceDraft("inv_1")
 	want := []string{"POST /v1/subscriptions", "POST /v1/subscriptions/sub_1/change_plan", "POST /v1/subscriptions/sub_1/usage",
 		"POST /v1/invoices/inv_1/credit_notes", "GET /v1/collections/ageing?as_of=2026-10-31", "POST /v1/invoices/inv_1/promises",
-		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31"}
+		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31", "GET /v1/invoices/inv_1/einvoice"}
 	if fmt.Sprint(seen) != fmt.Sprint(want) {
 		t.Fatalf("got %v", seen)
 	}

@@ -52,11 +52,11 @@ class Tests(unittest.TestCase):
             seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
             return FakeRes(b"{}")
         z = Zyvor("k", opener=opener)
-        z.set_fx_rate("83.2150", as_of="2026-10-01"); z.fx_rates(); z.fx_convert(100, "USD", "INR"); z.fx_exposure("2026-10-31"); z.fx_exposure()
+        z.set_fx_rate("83.2150", as_of="2026-10-01"); z.fx_rates(); z.fx_convert(100, "USD", "INR"); z.fx_exposure("2026-10-31"); z.fx_exposure(); z.einvoice_draft("inv_1")
         self.assertEqual(seen, [
             ("POST", "/v1/fx/rates", {"currency": "USD", "rate": "83.2150", "as_of": "2026-10-01"}),
             ("GET", "/v1/fx/rates", None), ("GET", "/v1/fx/convert?amount_minor=100&from=USD&to=INR", None),
-            ("GET", "/v1/fx/exposure?as_of=2026-10-31", None), ("GET", "/v1/fx/exposure", None)])
+            ("GET", "/v1/fx/exposure?as_of=2026-10-31", None), ("GET", "/v1/fx/exposure", None), ("GET", "/v1/invoices/inv_1/einvoice", None)])
 
     def test_links_dunning_and_rotation_paths(self):
         seen = []

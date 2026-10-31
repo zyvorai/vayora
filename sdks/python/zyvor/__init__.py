@@ -94,6 +94,10 @@ class Zyvor:
     def ageing(self, as_of: Optional[str] = None) -> dict:
         return self._req("GET", "/v1/collections/ageing" + (f"?as_of={as_of}" if as_of else ""))
 
+    def einvoice_draft(self, invoice_id: str) -> dict:
+        """DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal."""
+        return self._req("GET", f"/v1/invoices/{invoice_id}/einvoice")
+
     # ---- exchange rates (reporting only) ----
     def set_fx_rate(self, rate: str, currency: str = "USD", as_of: Optional[str] = None, note: Optional[str] = None) -> dict:
         """Record the INR-per-unit rate you use for a day, e.g. "83.2150". One per day; never edited."""

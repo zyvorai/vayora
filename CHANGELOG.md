@@ -5,6 +5,7 @@ live Razorpay or Cashfree. See [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for 
 
 ## Release 2 (current)
 **Merchant operations (Release 3, in progress)**
+- Draft e-invoice (`GET /v1/invoices/{id}/einvoice`, IRP schema 1.1 shape) for B2B tax invoices, with seller/buyer addresses; says what is missing; not submitted, no IRN, not validated against the portal.
 - FX exposure report (`GET /v1/fx/exposure`, SDK `fx.exposure`): open dollar invoices at the rate when raised vs the report date, with the difference; reporting only, nothing is posted to the ledger.
 - Merchant onboarding: profile (PAN, GSTIN), document references, bank accounts, second-person verification and review; payouts wait for approval once onboarding has started. Console page and Node SDK included.
 - Counters within branches: a counter's payment-link QR ties payments to the counter and branch; branch filter on payments; per-branch daily summary net of refunds. Open-amount QR (payer types the amount) is not built.

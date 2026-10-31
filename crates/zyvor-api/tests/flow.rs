@@ -5103,6 +5103,114 @@ async fn fx_rates_you_enter_convert_amounts_and_show_foreign_receivables_in_inr(
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn einvoice_draft_lists_what_is_missing_then_matches_the_tax_invoice(pool: PgPool) {
+    use zyvor_api::gst::gstin_check_char;
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let head = "07AABCT1332L1Z";
+    let buyer = format!("{head}{}", gstin_check_char(head));
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "gst": { "gstin": "27AAPFU0939F1ZV", "legal_name": "Acme School Trust" } }),
+    )
+    .await;
+    let cus = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Delhi Traders", "gstin": buyer }),
+        )
+        .await;
+    let inv = t.ok(a, "POST", "/v1/invoices", None, json!({
+        "number": "E-1", "customer_id": cus["id"], "place_of_supply": "07",
+        "lines": [{ "description": "Tuition", "hsn_sac": "999293", "quantity": 2, "unit_price_minor": 50_000, "rate_bp": 1800 }]
+    })).await;
+    let path = format!("/v1/invoices/{}/einvoice", inv["id"].as_str().unwrap());
+
+    // nothing guessed: the seller's and buyer's addresses are missing
+    let (st, body) = t.call(a, "GET", &path, None, Value::Null).await;
+    assert_eq!(
+        (st.as_u16(), body["error"]["code"].clone()),
+        (422, json!("einvoice_incomplete"))
+    );
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("seller address1") && msg.contains("buyer pincode"),
+        "{msg}"
+    );
+
+    // bad addresses are refused when stored
+    for g in [
+        json!({ "gstin": "27AAPFU0939F1ZV", "pincode": "0123" }),
+        json!({ "gstin": "27AAPFU0939F1ZV", "pincode": "12345a" }),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/settings", None, json!({ "gst": g }))
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    t.ok(a, "POST", "/v1/settings", None, json!({ "gst": { "gstin": "27AAPFU0939F1ZV", "address1": "12 Station Road", "location": "Pune", "pincode": "411001" } })).await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["gst"]["pincode"],
+        "411001"
+    );
+    let cus2 = t.ok(a, "POST", "/v1/customers", None, json!({ "name": "Delhi Traders", "gstin": buyer, "address1": "5 Market Lane", "location": "New Delhi", "pincode": "110001" })).await;
+    let inv2 = t.ok(a, "POST", "/v1/invoices", None, json!({
+        "number": "E-2", "customer_id": cus2["id"], "place_of_supply": "07",
+        "lines": [{ "description": "Tuition", "hsn_sac": "999293", "quantity": 2, "unit_price_minor": 50_000, "rate_bp": 1800 }]
+    })).await;
+    let d = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}/einvoice", inv2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(d["draft"], true);
+    assert_eq!(d["Version"], "1.1");
+    assert_eq!(d["TranDtls"]["SupTyp"], "B2B");
+    assert_eq!(d["SellerDtls"]["Stcd"], "27");
+    assert_eq!(d["SellerDtls"]["Pin"], 411001);
+    assert_eq!(d["BuyerDtls"]["Stcd"], "07");
+    assert_eq!(d["BuyerDtls"]["Pos"], "07");
+    assert_eq!(d["DocDtls"]["No"], "E-2");
+    assert_eq!(d["ItemList"][0]["IsServc"], "Y");
+    assert_eq!(d["ItemList"][0]["AssAmt"], 1000.0);
+    assert_eq!(
+        d["ItemList"][0]["IgstAmt"], 180.0,
+        "27 -> 07 is inter-state"
+    );
+    assert_eq!(d["ItemList"][0]["CgstAmt"], 0.0);
+    assert_eq!(d["ValDtls"]["TotInvVal"], 1180.0);
+    assert_eq!(d["ValDtls"]["AssVal"], 1000.0);
+
+    // another tenant cannot see it
+    assert_eq!(
+        t.call(
+            b,
+            "GET",
+            &format!("/v1/invoices/{}/einvoice", inv2["id"].as_str().unwrap()),
+            None,
+            Value::Null
+        )
+        .await
+        .0
+        .as_u16(),
+        404
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn fx_exposure_values_open_dollar_invoices_then_and_now_without_posting_anything(
     pool: PgPool,
 ) {

@@ -256,6 +256,7 @@ pub fn app(state: AppState) -> Router {
         .route("/fx/exposure", get(fx::exposure))
         .route("/events/catalogue", get(events::catalogue))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
+        .route("/invoices/{id}/einvoice", get(gst::einvoice))
         .route("/gst/gstr1", get(gst::gstr1))
         .route("/customers/{id}/statement", get(billing::statement))
         // collections
