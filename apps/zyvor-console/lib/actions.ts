@@ -222,7 +222,7 @@ export const saveApprovals = async (_: FormState, f: FormData) => {
 export const saveGst = async (_: FormState, f: FormData) => {
   const gstin = String(f.get("gstin") ?? "").trim().toUpperCase();
   if (!gstin) return { error: "Enter your GSTIN." };
-  return run(["/settings"], (z) => z.settings.update({ gst: { gstin, legal_name: String(f.get("legal_name") ?? "").trim() || undefined } }), "admin");
+  return run(["/settings"], (z) => z.settings.update({ gst: { gstin, legal_name: String(f.get("legal_name") ?? "").trim() || undefined, address1: String(f.get("address1") ?? "").trim() || undefined, location: String(f.get("location") ?? "").trim() || undefined, pincode: String(f.get("pincode") ?? "").trim() || undefined } }), "admin");
 };
 export const saveWebhooks = async (_: FormState, f: FormData) => {
   const events = on(f, "all") ? ["*"] : f.getAll("event").map(String);
@@ -235,7 +235,7 @@ export const saveWebhooks = async (_: FormState, f: FormData) => {
 // ---- invoices and instalment plans ----
 const money = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "").replace(/,/g, "")) * 100);
 export const createCustomer = async (_: FormState, f: FormData) =>
-  run(["/billing"], (z) => z.customers.create({ name: String(f.get("name") ?? "").trim(), email: String(f.get("email") ?? "").trim() || undefined, phone: String(f.get("phone") ?? "").trim() || undefined, gstin: String(f.get("gstin") ?? "").trim().toUpperCase() || undefined }));
+  run(["/billing"], (z) => z.customers.create({ name: String(f.get("name") ?? "").trim(), email: String(f.get("email") ?? "").trim() || undefined, phone: String(f.get("phone") ?? "").trim() || undefined, gstin: String(f.get("gstin") ?? "").trim().toUpperCase() || undefined, address1: String(f.get("address1") ?? "").trim() || undefined, location: String(f.get("location") ?? "").trim() || undefined, pincode: String(f.get("pincode") ?? "").trim() || undefined }));
 export const createInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
   const amount = money(f, "amount");
   if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };

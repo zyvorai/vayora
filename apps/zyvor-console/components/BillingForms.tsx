@@ -35,6 +35,9 @@ export function NewCustomer() {
       <label className="field" style={{ flex: "1 1 160px" }}>Email<input name="email" type="email" /></label>
       <label className="field" style={{ flex: "1 1 130px" }}>Phone<input name="phone" /></label>
       <label className="field" style={{ flex: "1 1 150px" }}>GSTIN (optional)<input name="gstin" maxLength={15} autoCapitalize="characters" spellCheck={false} /></label>
+      <label className="field" style={{ flex: "2 1 200px" }}>Address (for e-invoices)<input name="address1" maxLength={100} /></label>
+      <label className="field" style={{ flex: "1 1 120px" }}>City<input name="location" maxLength={50} /></label>
+      <label className="field" style={{ flex: "0 1 100px" }}>Pincode<input name="pincode" inputMode="numeric" maxLength={6} /></label>
     </Inline>
   );
 }
