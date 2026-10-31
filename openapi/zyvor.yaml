@@ -1004,6 +1004,39 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/signup:
+    post:
+      summary: Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/signup/verify:
+    post:
+      summary: Public: confirm the emailed verification token
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/login:
+    post:
+      summary: Public: sign in by signup email; returns the person and a 12-hour role-scoped session key
+      tags:
+      - console_users
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN
