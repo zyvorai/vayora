@@ -3,305 +3,257 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Zyvor Payments: orchestration, billing and reconciliation for India</title>
-<meta name="description" content="Zyvor Payments is open-source payment orchestration for India: connect your own Razorpay and Cashfree accounts, route safely, keep an append-only ledger, reconcile every settlement, and bill and collect. Verified against simulators; not a licensed payment service.">
+<title>Zyvor Payments: every rupee, accounted for</title>
+<meta name="description" content="Open-source payment orchestration, ledger and reconciliation for India. Connect your own Razorpay, Cashfree or gateway. UPI QR and intent, GST invoicing, an append-only ledger. Apache-2.0.">
 <link rel="canonical" href="https://zyvorai.github.io/vayora/">
-<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Zyvor">
-<meta property="og:title" content="Zyvor Payments: orchestration, billing and reconciliation for India">
-<meta property="og:description" content="Connect your own providers, route safely, reconcile every settlement, bill and collect. Open source, Apache-2.0.">
+<meta property="og:site_name" content="Zyvor Payments">
+<meta property="og:locale" content="en_IN">
+<meta property="og:title" content="Zyvor Payments: every rupee, accounted for">
+<meta property="og:description" content="Open-source payment orchestration, ledger and reconciliation for India. Bring your own Razorpay, Cashfree or gateway.">
 <meta property="og:url" content="https://zyvorai.github.io/vayora/">
 <meta property="og:image" content="https://zyvorai.github.io/vayora/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Zyvor Payments. Every rupee, accounted for.">
+<meta property="og:image:alt" content="Zyvor Payments. Every rupee, accounted for. Open source, Apache-2.0.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Zyvor Payments: orchestration, billing and reconciliation for India">
-<meta name="twitter:description" content="Connect your own providers, route safely, reconcile every settlement.">
+<meta name="twitter:title" content="Zyvor Payments: every rupee, accounted for">
+<meta name="twitter:description" content="Open-source payment orchestration, ledger and reconciliation for India.">
 <meta name="twitter:image" content="https://zyvorai.github.io/vayora/assets/og.png">
-<meta name="twitter:image:alt" content="Zyvor Payments. Every rupee, accounted for.">
+<meta name="twitter:image:alt" content="Zyvor Payments. Every rupee, accounted for. Open source, Apache-2.0.">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Zyvor Payments","description":"Open-source payment orchestration, billing and reconciliation for India.","codeRepository":"https://github.com/zyvorai/vayora","programmingLanguage":["Rust","TypeScript"],"license":"https://www.apache.org/licenses/LICENSE-2.0"}
+{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Zyvor Payments","description":"Open-source payment orchestration, ledger and reconciliation for India.","codeRepository":"https://github.com/zyvorai/vayora","license":"https://www.apache.org/licenses/LICENSE-2.0","programmingLanguage":"Rust","url":"https://zyvorai.github.io/vayora/"}
 </script>
-<script>try{var t=localStorage.getItem("zyvor-theme")}catch(e){}document.documentElement.dataset.theme=t||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")</script>
+<script>document.documentElement.className="js"</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<a class="sr" href="#main">Skip to content</a>
-<nav aria-label="Primary">
-  <div class="wrap">
-    <a class="brand" href="#top"><img src="assets/favicon.svg" width="24" height="24" alt="">Zyvor</a>
-    <div class="links">
-      <a class="hide-s" href="#demo">Try it</a>
-      <a class="hide-s" href="#how">How it works</a>
-      <a class="hide-s" href="#features">Features</a>
-      <a class="hide-s" href="#code">Code</a>
-      <a class="hide-s" href="#status">Status</a>
-      <a class="hide-s" href="https://github.com/zyvorai/vayora">GitHub</a>
-      <a class="live" href="#demo">Live demo</a>
-      <button class="theme" id="theme" type="button" aria-label="Toggle light or dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
-    </div>
+<a class="skip" href="#main">Skip to content</a>
+
+<nav class="nav" aria-label="Primary">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Zyvor Payments, top of page"><img src="assets/favicon.svg" width="22" height="22" alt="">Zyvor</a>
+    <ul class="nav-links">
+      <li><a href="#india">India</a></li>
+      <li><a href="#principles">Principles</a></li>
+      <li><a href="#screens">Screens</a></li>
+      <li><a href="#choose">Choose</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li><a href="https://github.com/zyvorai/vayora">GitHub</a></li>
+    </ul>
+    <a class="pill pill-sm" href="#choose">Get started</a>
   </div>
 </nav>
 
 <main id="main">
+
 <header class="hero" id="top">
-  <div class="aurora" aria-hidden="true"></div>
-  <div class="wrap">
-    <p class="eyebrow">Zyvor Payments</p>
-    <h1><span>Every rupee,</span><span class="grad">accounted for.</span></h1>
-    <p class="lede">Connect your own Razorpay and Cashfree accounts. Route safely, keep an append-only ledger, reconcile every settlement, then bill and collect. Open source, built in Rust.</p>
-    <div class="cta">
-      <a class="btn primary" href="#demo">Try the live demo</a>
-      <a class="btn" href="https://github.com/zyvorai/vayora">View on GitHub</a>
-      <a class="btn" href="#code">Get started</a>
-    </div>
-    <ul class="badges"><li>Apache-2.0</li><li>Rust core</li><li>Postgres ledger</li><li>Razorpay + Cashfree</li><li>Verified on simulators</li><li>Not a licensed payment service</li></ul>
-    <div class="cells" id="cells" aria-hidden="true"></div>
-    <p class="cap">Simulated payment stream. Each lit cell is one captured payment in a demo run.</p>
+  <div class="tricolour" aria-hidden="true"></div>
+  <p class="eyebrow">Zyvor Payments</p>
+  <h1>Every rupee,<br><span class="accent">accounted for.</span></h1>
+  <p class="lede">Open-source payment orchestration, ledger and reconciliation, made for how India pays. Connect your own Razorpay, Cashfree or gateway. Your provider settles. Zyvor routes, records and reconciles.</p>
+  <p class="ctas"><a class="pill" href="#choose">Try the sandbox</a><a class="link" href="https://github.com/zyvorai/vayora/blob/main/docs/README.md">Read the docs</a></p>
+  <div class="stage">
+    <div class="orb" aria-hidden="true"></div>
+    <figure class="phone phone-lg">
+      <img src="assets/screens/pay-paid-100.jpg" width="553" height="1200" alt="The Vayora Pay test app showing a completed payment of rupees 499 with a green tick." fetchpriority="high">
+    </figure>
+    <span class="float f1" aria-hidden="true">₹4,99,000 settled</span>
+    <span class="float f2" aria-hidden="true">UPI intent &amp; QR</span>
+    <span class="float f3" aria-hidden="true">GST invoice issued</span>
   </div>
+  <p class="foot">The phone is a real screenshot of the open-source Vayora Pay test app. Test money; nothing here moves real money.</p>
 </header>
 
-<section id="demo" class="alt" aria-labelledby="demo-h">
+<section class="india" id="india" aria-labelledby="india-h">
   <div class="wrap">
-    <h2 id="demo-h">One tap. Every entry accounted for.</h2>
-    <p class="sub">Pay, fail and refund below. The ledger and the signed webhook update the way the real platform does.</p>
-    <div class="demo">
-      <div class="phone" role="group" aria-label="Simulated phone checkout">
-        <div class="screen">
-          <p class="merchant">Zyvor Demo Store</p>
-          <p class="amt" id="amt">₹499.00</p>
-          <div class="field">
-            <label for="vpa">UPI ID</label>
-            <input id="vpa" value="asha@okzyvor" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email">
-            <p class="hint">Try <button type="button" data-vpa="fail@okzyvor">fail@okzyvor</button> or <button type="button" data-vpa="timeout@okzyvor">timeout@okzyvor</button></p>
-          </div>
-          <button class="pay" id="pay" type="button">Pay with UPI</button>
-          <div class="result" id="result" role="status" aria-live="polite">
-            <svg class="badge" viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="40" stroke="currentColor"/><path id="mark" d="M26 43l11 11 21-23" stroke="currentColor"/></svg>
-            <h3 id="rtitle"></h3>
-            <p id="rtext"></p>
-            <div>
-              <button class="mini" id="refund" type="button" hidden>Refund ₹100</button>
-              <button class="mini" id="again" type="button">Start over</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="panel" aria-live="polite">
-          <h3>Ledger</h3>
-          <table class="ledger" id="ledger"><tbody><tr class="empty"><td colspan="2">No entries yet. Press Pay.</td></tr></tbody></table>
-          <div class="bal"><span>Owed to merchant</span><b id="bal">₹0.00</b></div>
-        </div>
-        <div class="panel">
-          <h3>Webhook, signed with HMAC-SHA256</h3>
-          <pre class="json" id="hook">Waiting for an event…</pre>
-        </div>
-      </div>
+    <p class="eyebrow">Made for India</p>
+    <h2 id="india-h">Built for how India pays.</h2>
+    <p class="sub">UPI first, GST on every invoice, rupees counted in paise, and a checkout your customers can read.</p>
+    <div class="tiles">
+      <article class="tile"><span class="glyph" aria-hidden="true">₹</span><h3>Rupees, exactly</h3><p>Every amount is an integer in paise. Never a float, so ₹4,99,000.00 is always ₹4,99,000.00.</p></article>
+      <article class="tile"><span class="glyph glyph-text" aria-hidden="true">UPI</span><h3>Scan, tap, pay</h3><p>The checkout shows a QR or opens the customer's own UPI app. No UPI ID to type. A QR is never proof of payment: only a verified result is.</p></article>
+      <article class="tile"><span class="glyph glyph-text" aria-hidden="true">GST</span><h3>Invoices that file</h3><p>CGST, SGST and IGST by SAC code, GSTIN-checked, with a GSTR-1 style summary. Zyvor does not file returns for you.</p></article>
+      <article class="tile"><span class="glyph" aria-hidden="true">अ</span><h3>Six languages</h3><p>The checkout speaks English, हिन्दी, मराठी, தமிழ், తెలుగు and বাংলা. Translations still await a native reader.</p></article>
     </div>
-    <p class="simlabel">Simulated in your browser. No network calls, no real money.</p>
+    <ul class="uses" aria-label="What people build with it">
+      <li><b>A school</b>collects term fees in instalments, with a class payment link and reminders you approve.</li>
+      <li><b>A clinic</b>raises GST invoices by SAC code and takes a refundable deposit.</li>
+      <li><b>A shop counter</b>prints a QR that ties every payment to that counter, then closes the day with a second person's sign-off.</li>
+      <li><b>A marketplace</b>splits a payment between vendors and tracks what each is owed.</li>
+    </ul>
   </div>
 </section>
 
-<section id="how" aria-labelledby="how-h">
+<section class="dark" id="principles" aria-labelledby="pr-h">
   <div class="wrap">
-    <h2 id="how-h">From a tap to your books.</h2>
-    <p class="sub">What a customer sees, what the server does behind it, and how the books stay right afterwards. Your own provider account collects and settles the money; Zyvor never holds it.</p>
-
-    <ol class="journey" aria-label="A customer's payment, step by step">
-      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="8" width="14" height="14" rx="3"/><rect x="26" y="8" width="14" height="14" rx="3"/><rect x="8" y="26" width="14" height="14" rx="3"/><path d="M28 28h4v4h-4zM36 36h4M28 38h2"/></svg></span><b>Scan or tap</b><span>A counter QR or a payment link opens checkout in the customer's language.</span></li>
-      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="12" width="36" height="24" rx="5"/><path d="M6 20h36M12 30h10"/></svg></span><b>Pick UPI or card</b><span>Six languages. The page can pay this one payment and nothing else.</span></li>
-      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="14" y="5" width="20" height="38" rx="5"/><path d="M19 24l4 4 7-8"/></svg></span><b>Approve in the UPI app</b><span>The customer enters their PIN with their bank. Zyvor never sees it.</span></li>
-      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 10h28M10 20h28M10 30h18"/><path d="M34 34l4 4 6-7"/></svg></span><b>Recorded once</b><span>A signed webhook from the provider is checked, de-duplicated and posted to the ledger one time.</span></li>
-      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6a12 12 0 0 1 12 12c0 8 3 10 3 12H9c0-2 3-4 3-12A12 12 0 0 1 24 6zM20 36a4 4 0 0 0 8 0"/></svg></span><b>You are told</b><span>Your system gets a signed event. The customer sees "Payment received".</span></li>
-    </ol>
-
-    <figure class="fig reveal">
-      <figcaption>The pieces</figcaption>
-      <div class="figscroll">
-      <svg viewBox="0 0 920 400" role="img" aria-labelledby="arch-t arch-d" class="diagram">
-        <title id="arch-t">Zyvor Payments architecture</title>
-        <desc id="arch-d">Customers use the checkout, merchants use the API and console. Both reach zyvor-api, which stores everything in PostgreSQL and creates payments at the merchant's own Razorpay or Cashfree account. Providers send signed webhooks back. A worker resolves unknown outcomes and delivers signed events to the merchant. The provider settles to the merchant's bank.</desc>
-        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
-        <g class="edge"><path d="M180 70H240" marker-end="url(#ah)"/><path d="M400 72L470 150" marker-end="url(#ah)"/><path d="M180 285L470 235" marker-end="url(#ah)"/><path d="M560 260V312" marker-start="url(#ah)" marker-end="url(#ah)"/><path d="M400 330H460" marker-start="url(#ah)" marker-end="url(#ah)"/><path d="M660 165L725 105" marker-end="url(#ah)"/><path d="M745 108L670 185" marker-end="url(#ah)"/><path d="M240 340L150 322" marker-end="url(#ah)"/><path class="dash" d="M807 100V300" marker-end="url(#ah)"/></g>
-        <g class="box"><rect x="20" y="40" width="160" height="60" rx="14"/><rect x="20" y="260" width="160" height="60" rx="14"/><rect x="240" y="40" width="160" height="60" rx="14"/><rect class="hi" x="460" y="140" width="200" height="120" rx="18"/><rect x="460" y="312" width="200" height="60" rx="14"/><rect x="240" y="300" width="160" height="60" rx="14"/><rect x="705" y="40" width="205" height="60" rx="14"/><rect x="705" y="300" width="205" height="60" rx="14"/></g>
-        <g class="lbl">
-          <text x="100" y="66" text-anchor="middle" class="t">Customer</text><text x="100" y="86" text-anchor="middle" class="s">phone or laptop</text>
-          <text x="100" y="286" text-anchor="middle" class="t">Merchant</text><text x="100" y="306" text-anchor="middle" class="s">console, API, SDKs</text>
-          <text x="320" y="66" text-anchor="middle" class="t">Checkout</text><text x="320" y="86" text-anchor="middle" class="s">6 languages</text>
-          <text x="560" y="190" text-anchor="middle" class="t big">zyvor-api</text><text x="560" y="212" text-anchor="middle" class="s">Rust · axum</text><text x="560" y="230" text-anchor="middle" class="s">one transaction per request</text>
-          <text x="560" y="338" text-anchor="middle" class="t">PostgreSQL</text><text x="560" y="358" text-anchor="middle" class="s">ledger · row-level security</text>
-          <text x="320" y="326" text-anchor="middle" class="t">Worker</text><text x="320" y="346" text-anchor="middle" class="s">asks, never re-sends</text>
-          <text x="807" y="66" text-anchor="middle" class="t">Razorpay or Cashfree</text><text x="807" y="86" text-anchor="middle" class="s">your own accounts</text>
-          <text x="807" y="326" text-anchor="middle" class="t">Your bank</text><text x="807" y="346" text-anchor="middle" class="s">settled by the provider</text>
-          <text x="585" y="128" class="s">create payment</text><text x="676" y="236" class="s">signed webhooks</text><text x="820" y="205" class="s">settles</text><text x="140" y="352" class="s">signed events</text>
-        </g>
-      </svg>
-      </div>
-    </figure>
-
-    <div class="bento how-rules">
-      <article class="tile wide reveal"><h3>Tap twice, pay once.</h3><p>Each tap carries an idempotency key that is saved in the same database transaction as the work. A repeat returns what already happened.</p></article>
-      <article class="tile wide reveal"><h3>Lost the signal? We ask, never re-send.</h3><p>The attempt is saved before the provider is called. If no answer comes back it becomes <code>unknown</code>, blocks any new attempt, and the worker asks the provider what really happened.</p></article>
-      <article class="tile wide reveal"><h3>Late or duplicate webhooks are safe.</h3><p>Every event goes through one state function. State only moves forward, and money always wins: a capture is accepted even after a failure, and flagged for review.</p></article>
-      <article class="tile wide reveal"><h3>History cannot be rewritten.</h3><p>The ledger and audit trail reject updates and deletes in the database itself. A mistake is fixed with a reversal, never an edit.</p></article>
-    </div>
-
-    <figure class="fig reveal">
-      <figcaption>A payment's life</figcaption>
-      <div class="figscroll">
-      <svg viewBox="0 0 920 300" role="img" aria-labelledby="st-t st-d" class="diagram">
-        <title id="st-t">Payment attempt states</title>
-        <desc id="st-d">An attempt starts as created, moves to pending, then authorized, then captured. If the provider does not answer it becomes unknown and the worker asks the provider; it can then become captured or failed. An attempt can fail from created or pending. Captured is never left.</desc>
-        <g class="edge"><path d="M170 85H240" marker-end="url(#ah)"/><path d="M390 85H460" marker-end="url(#ah)"/><path d="M610 85H700" marker-end="url(#ah)"/><path d="M70 115V205" marker-end="url(#ah)"/><path d="M160 115C160 170 290 150 290 205" marker-end="url(#ah)"/><path d="M240 235H150" marker-end="url(#ah)"/><path d="M390 235C600 235 770 200 790 118" marker-end="url(#ah)"/></g>
-        <g class="box"><rect x="20" y="55" width="150" height="60" rx="14"/><rect x="240" y="55" width="150" height="60" rx="14"/><rect x="460" y="55" width="150" height="60" rx="14"/><rect class="hi fill" x="700" y="55" width="190" height="60" rx="14"/><rect x="20" y="205" width="130" height="60" rx="14"/><rect x="240" y="205" width="150" height="60" rx="14"/></g>
-        <g class="lbl">
-          <text x="95" y="90" text-anchor="middle" class="t">created</text><text x="315" y="90" text-anchor="middle" class="t">pending</text><text x="535" y="90" text-anchor="middle" class="t">authorized</text><text x="795" y="82" text-anchor="middle" class="t onfill">captured</text><text x="795" y="102" text-anchor="middle" class="s onfill">the only state that moves money</text>
-          <text x="85" y="240" text-anchor="middle" class="t">failed</text><text x="315" y="240" text-anchor="middle" class="t">unknown</text>
-          <text x="78" y="166" class="s">declined</text><text x="190" y="176" class="s">no answer</text><text x="540" y="198" class="s">provider confirms</text>
-          <text x="165" y="290" class="s">failed can also come from pending. unknown to failed: the provider says it never happened.</text>
-        </g>
-      </svg>
-      </div>
-      <p class="cap2">Webhooks arrive duplicated and out of order. One pure, unit-tested function decides every move. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/HOW_IT_WORKS.md">Read the full walkthrough</a>.</p>
-    </figure>
-
-    <figure class="fig reveal">
-      <figcaption>Your provider, or yours</figcaption>
-      <div class="figscroll">
-      <svg viewBox="0 0 920 340" role="img" aria-labelledby="sw-t sw-d" class="diagram">
-        <title id="sw-t">Providers are interchangeable adapters</title>
-        <desc id="sw-d">Zyvor's router, state machine, ledger and reconciliation talk to one Provider trait. Razorpay, Cashfree and a custom adapter that speaks an HTTP contract to your own gateway all implement it, and a simulator is for tests only. Money is collected and settled by whoever is licensed to do it.</desc>
-        <g class="edge"><path d="M230 165H290" marker-end="url(#ah)"/><path d="M440 165C470 165 470 48 500 48" marker-end="url(#ah)"/><path d="M440 165C470 165 470 128 500 128" marker-end="url(#ah)"/><path d="M440 165C470 165 470 208 500 208" marker-end="url(#ah)"/><path class="dash" d="M440 165C470 165 470 288 500 288" marker-end="url(#ah)"/><path d="M690 48C720 48 720 130 750 130" marker-end="url(#ah)"/><path d="M690 128H750" marker-end="url(#ah)"/><path d="M690 208C720 208 720 200 750 200" marker-end="url(#ah)"/></g>
-        <g class="box"><rect x="20" y="120" width="210" height="90" rx="16"/><rect class="hi" x="290" y="135" width="150" height="60" rx="30"/><rect x="500" y="20" width="190" height="56" rx="14"/><rect x="500" y="100" width="190" height="56" rx="14"/><rect class="hi" x="500" y="180" width="190" height="56" rx="14"/><rect x="500" y="260" width="190" height="56" rx="14"/><rect x="750" y="95" width="150" height="150" rx="16"/></g>
-        <g class="lbl">
-          <text x="125" y="160" text-anchor="middle" class="t">Zyvor</text><text x="125" y="180" text-anchor="middle" class="s">router, ledger, reconciliation</text><text x="125" y="197" text-anchor="middle" class="s">the same for every provider</text>
-          <text x="365" y="170" text-anchor="middle" class="t">Provider trait</text>
-          <text x="595" y="44" text-anchor="middle" class="t">Razorpay</text><text x="595" y="62" text-anchor="middle" class="s">adapter</text>
-          <text x="595" y="124" text-anchor="middle" class="t">Cashfree</text><text x="595" y="142" text-anchor="middle" class="s">adapter</text>
-          <text x="595" y="204" text-anchor="middle" class="t">custom</text><text x="595" y="222" text-anchor="middle" class="s">your own gateway, over HTTP</text>
-          <text x="595" y="284" text-anchor="middle" class="t">sim</text><text x="595" y="302" text-anchor="middle" class="s">tests only</text>
-          <text x="825" y="150" text-anchor="middle" class="t">Money</text><text x="825" y="170" text-anchor="middle" class="s">collected and settled</text><text x="825" y="186" text-anchor="middle" class="s">by whoever is</text><text x="825" y="202" text-anchor="middle" class="s">licensed to</text>
-        </g>
-      </svg>
-      </div>
-      <p class="cap2">Replacing Razorpay moves the responsibility; it does not remove it. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/BRING_YOUR_OWN_PROVIDER.md">Why a provider, and how to bring your own</a>.</p>
-    </figure>
-
-    <div class="bento how-rules">
-      <article class="tile wide reveal"><h3>Why a provider.</h3><p>Zyvor never holds money, and collecting it for merchants is a regulated activity. So your own provider account collects and settles, and Zyvor routes, records and reconciles.</p></article>
-      <article class="tile wide reveal"><h3>Bring your own.</h3><p>Point the generic <code>custom</code> adapter at your gateway or bank API over a small JSON contract, or copy it as the template for a native adapter. Routing, the ledger and reconciliation do not change.</p></article>
-    </div>
+    <p class="eyebrow">Principles</p>
+    <h2 id="pr-h">Six promises the code keeps.</h2>
   </div>
+
+  <article class="chapter reveal">
+    <div class="wrap two">
+      <div class="copy"><h3>Never charges twice.</h3><p>Every write carries an idempotency key. When a provider does not answer, the payment becomes <code>unknown</code>, and nothing new can start, through any provider, until it is resolved. Zyvor asks the provider. It never re-sends.</p></div>
+      <div class="panel" role="img" aria-label="Flow: no answer from the provider, the payment becomes unknown, new attempts are blocked, the provider confirms, the payment is captured.">
+        <ol class="steps">
+          <li><i>1</i>No answer from the provider</li>
+          <li class="warn"><i>2</i>Marked <code>unknown</code>. New attempts blocked.</li>
+          <li><i>3</i>Zyvor asks the provider</li>
+          <li class="ok"><i>4</i>Confirmed: <code>captured</code>, once</li>
+        </ol>
+      </div>
+    </div>
+  </article>
+
+  <article class="chapter reveal">
+    <div class="wrap two flip">
+      <div class="copy"><h3>Explains every rupee.</h3><p>Open a settlement and see the payments, refunds, fees and adjustments behind its net, and the bank line it matched. Anything that does not add up becomes a case someone can own.</p></div>
+      <div class="panel" role="img" aria-label="Example settlement: payments 4,99,000 rupees, refunds minus 10,000, fees minus 9,820, net 4,79,180.">
+        <p class="cap">Example settlement</p>
+        <dl class="ledger">
+          <div><dt>Payments</dt><dd>+₹4,99,000.00</dd></div>
+          <div><dt>Refunds</dt><dd class="neg">−₹10,000.00</dd></div>
+          <div><dt>Provider fees</dt><dd class="neg">−₹9,820.00</dd></div>
+          <div class="total"><dt>Net to your bank</dt><dd>₹4,79,180.00</dd></div>
+        </dl>
+      </div>
+    </div>
+  </article>
+
+  <article class="chapter reveal">
+    <div class="wrap two">
+      <div class="copy"><h3>Books you can audit.</h3><p>An append-only, double-entry ledger, balanced per currency by the code and again by a database constraint. Nothing is edited. A correction is a new entry that reverses the old one.</p></div>
+      <div class="panel" role="img" aria-label="A balanced pair: debit and credit of rupees 499 each.">
+        <p class="cap">One captured payment</p>
+        <div class="tacct"><div><b>Debit</b><span>provider receivable</span><em>₹499.00</em></div><div><b>Credit</b><span>collections</span><em>₹499.00</em></div></div>
+        <p class="cap eq">= balanced. Always.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="chapter reveal">
+    <div class="wrap two flip">
+      <div class="copy"><h3>Routes with receipts.</h3><p>A capability matrix and your rules choose where a payment goes, and the decision records every provider it considered and why it picked one. No black box.</p></div>
+      <div class="panel" role="img" aria-label="Example routing decision: Cashfree chosen because it issues a UPI intent; Razorpay skipped because it does not.">
+        <p class="cap">Example routing decision · UPI, no UPI ID</p>
+        <ul class="route">
+          <li class="ok"><b>Cashfree</b>Issues a UPI intent and QR (opt-in per account). Chosen.</li>
+          <li class="no"><b>Razorpay</b>No UPI intent capability. Skipped.</li>
+        </ul>
+      </div>
+    </div>
+  </article>
+
+  <article class="chapter reveal">
+    <div class="wrap two">
+      <div class="copy"><h3>Runs the shop floor.</h3><p>Branches and counters, each with its own QR. Cash entries, an end-of-day closing a second person signs off, and a plain-words timeline for every payment. Records and prompts only: Zyvor holds no cash and moves none.</p></div>
+      <div class="panel" role="img" aria-label="Counter QR, then cash entry, then closing signed by a second person.">
+        <ol class="steps row">
+          <li><i>1</i>Counter QR</li><li><i>2</i>Cash entry</li><li class="ok"><i>3</i>Signed by a second person</li>
+        </ol>
+      </div>
+    </div>
+  </article>
+
+  <article class="chapter reveal">
+    <div class="wrap two flip">
+      <div class="copy"><h3>Hard to abuse.</h3><p>Tenants are isolated by row-level security, tested as a non-superuser. Webhooks are guarded against SSRF and replays. The audit chain is tamper-evident. The <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/THREAT_MODEL.md">threat model</a> says what is defended and what is not.</p></div>
+      <div class="panel" aria-label="Controls">
+        <ul class="tags"><li>Row-level security</li><li>Rate limits</li><li>Expiring API keys</li><li>SSRF-guarded webhooks</li><li>TOTP and roles</li><li>Tamper-evident audit</li><li>Rotatable master key</li><li>Supply-chain scans</li></ul>
+      </div>
+    </div>
+  </article>
 </section>
 
-<section id="features" aria-labelledby="f-h">
+<section class="screens" id="screens" aria-labelledby="sc-h">
   <div class="wrap">
-    <h2 id="f-h">Built like infrastructure should be.</h2>
-    <p class="sub">The boring parts that make money software trustworthy, done first.</p>
-    <div class="bento">
-      <article class="tile wide reveal"><h3>Exactly once, even when networks aren’t.</h3><p>Every write takes an <code>Idempotency-Key</code>, stored in the same Postgres transaction as the work. Eight concurrent duplicates charge once.</p><div class="big grad">1×</div></article>
-      <article class="tile wide reveal"><h3>A ledger that can’t be rewritten.</h3><p>Double-entry, append-only. Unbalanced transactions are refused in code and updates are refused by the database.</p><div class="big grad">Dr = Cr</div></article>
-      <article class="tile reveal"><h3>Rust core</h3><p>axum, tokio and sqlx. Money is integer minor units, never a float.</p></article>
-      <article class="tile reveal"><h3>Signed webhooks</h3><p>Transactional outbox, retries with backoff, HMAC signatures with replay protection.</p></article>
-      <article class="tile reveal"><h3>SDKs and CLI</h3><p><code>@zyvor/node</code> with a <code>zyvor</code> command, plus Python and Go. OpenAPI covers every route.</p></article>
-      <article class="tile wide reveal"><h3>Your providers, one API.</h3><p>Merchants connect their own Razorpay and Cashfree accounts. A capability matrix stops a payment going to a provider that cannot take it, and every routing decision records why.</p></article>
-      <article class="tile wide reveal"><h3>Explain every rupee.</h3><p>Reconciliation turns each unexplained settlement difference into an assigned case, with a plain-language explanation of why the net is what it is.</p></article>
-    </div>
+    <p class="eyebrow">Take a closer look</p>
+    <h2 id="sc-h">Two test apps. Real iPhones.</h2>
+    <p class="sub">Vayora Pay is a payer. Vayora Merchant is the counter. Together they run the whole loop against the simulator, with no real money. They are not bank-linked UPI apps: that needs NPCI TPAP approval and a sponsor bank.</p>
   </div>
+  <div class="rail" tabindex="0" role="region" aria-label="App screens, scroll sideways">
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/pay-review-60.jpg" width="553" height="1200" alt="Vayora Pay: review a payment and slide to pay."></div><figcaption><b>Slide to pay</b>Slow to start, impossible to tap by accident.</figcaption></figure>
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/m-keypad.jpg" width="553" height="1200" alt="Vayora Merchant: a counter keypad showing an amount."></div><figcaption><b>Counter keypad</b>Type the amount, show the QR.</figcaption></figure>
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/m-qr.jpg" width="553" height="1200" alt="Vayora Merchant: a payment QR with an expiry ring."></div><figcaption><b>The QR is the hero</b>An expiry ring, and a Customer view for the buyer.</figcaption></figure>
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/m-today.jpg" width="553" height="1200" alt="Vayora Merchant: today's collections and recent payments."></div><figcaption><b>Today at a glance</b>Collected net of refunds, and every payment's status.</figcaption></figure>
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/split.jpg" width="553" height="1200" alt="Vayora Pay: split a bill, with a request QR."></div><figcaption><b>Split a bill</b>One request QR for everyone. Test mode, kept on the phone.</figcaption></figure>
+    <figure class="shot"><div class="phone"><img loading="lazy" src="assets/screens/payees.jpg" width="553" height="1200" alt="Vayora Pay: a list of saved payees with favourites."></div><figcaption><b>Payees</b>UPI IDs and mobile numbers, favourites first.</figcaption></figure>
+  </div>
+  <p class="foot wrap">Screens are real renders of the open-source apps with sample data. Payments are simulated.</p>
 </section>
 
-<section id="code" class="alt" aria-labelledby="c-h">
+<section class="choose" id="choose" aria-labelledby="ch-h">
   <div class="wrap">
-    <h2 id="c-h">Three calls. That’s the integration.</h2>
-    <p class="sub">Create a payment, start an attempt, verify the webhook.</p>
-    <div class="tabs" role="tablist" aria-label="Code examples">
-      <button role="tab" aria-selected="true" aria-controls="p-curl" id="t-curl">curl</button>
-      <button role="tab" aria-selected="false" aria-controls="p-node" id="t-node" tabindex="-1">Node SDK</button>
-      <button role="tab" aria-selected="false" aria-controls="p-hook" id="t-hook" tabindex="-1">Webhook</button>
+    <p class="eyebrow">Get started</p>
+    <h2 id="ch-h">Choose your setup.</h2>
+    <p class="sub">Zyvor is free and open source. Pick how you want to begin.</p>
+
+    <div class="options" role="radiogroup" aria-label="Choose your setup">
+      <button class="opt" role="radio" aria-checked="true" data-k="sandbox" type="button"><span class="k">Sandbox</span><span class="p">Free</span><span class="d">Try it in minutes with simulated providers. No money moves.</span></button>
+      <button class="opt" role="radio" aria-checked="false" data-k="self" type="button"><span class="k">Self-host</span><span class="p">Free · Apache-2.0</span><span class="d">Run it yourself with your own provider accounts.</span></button>
+      <button class="opt" role="radio" aria-checked="false" data-k="help" type="button"><span class="k">Talk to us</span><span class="p">No price list</span><span class="d">A question, a pilot, or help connecting a provider.</span></button>
     </div>
-    <div class="codebox">
-      <div class="bar"><i></i><i></i><i></i><span>zyvor · simulated</span></div>
-      <button class="copy" id="copy" type="button">Copy</button>
-      <div class="body">
-      <div role="tabpanel" id="p-curl" aria-labelledby="t-curl"><pre><code><span class="c"># amounts are integer minor units (₹499.00 = 49900)</span>
-<span class="f">curl</span> localhost:8080/v1/payment_intents \
-  -H <span class="s">"Authorization: Bearer zk_test_123"</span> \
-  -H <span class="s">"Idempotency-Key: fee-1001"</span> \
-  -H <span class="s">"Content-Type: application/json"</span> \
-  -d <span class="s">'{"amount_minor": 49900, "external_ref": "FEE-STU-2231"}'</span>
 
-<span class="f">curl</span> localhost:8080/v1/payment_intents/<span class="s">pi_…</span>/attempts \
-  -H <span class="s">"Authorization: Bearer zk_test_123"</span> \
-  -H <span class="s">"Idempotency-Key: attempt-1001"</span> \
-  -H <span class="s">"Content-Type: application/json"</span> \
-  -d <span class="s">'{"method": "upi"}'</span></code></pre></div>
-      <div role="tabpanel" id="p-node" aria-labelledby="t-node" hidden><pre><code><span class="k">import</span> { Zyvor } <span class="k">from</span> <span class="s">"@zyvor/node"</span>;
-
-<span class="k">const</span> zyvor = <span class="k">new</span> <span class="f">Zyvor</span>({ apiKey: process.env.ZYVOR_API_KEY! });
-
-<span class="k">const</span> intent = <span class="k">await</span> zyvor.intents.<span class="f">create</span>({
-  amountMinor: <span class="s">49900</span>,
-  externalRef: <span class="s">"FEE-STU-2231"</span>,
-});
-
-<span class="k">const</span> attempt = <span class="k">await</span> zyvor.intents.<span class="f">attempt</span>(intent.id, { method: <span class="s">"upi"</span> });
-<span class="c">// attempt.route.reasons explains why this provider was chosen</span></code></pre></div>
-      <div role="tabpanel" id="p-hook" aria-labelledby="t-hook" hidden><pre><code><span class="k">import</span> { verifyWebhook } <span class="k">from</span> <span class="s">"@zyvor/node"</span>;
-
-<span class="c">// use the RAW body, not re-serialised JSON</span>
-app.<span class="f">post</span>(<span class="s">"/webhooks"</span>, express.<span class="f">raw</span>({ type: <span class="s">"*/*"</span> }), (req, res) =&gt; {
-  <span class="k">const</span> ok = <span class="f">verifyWebhook</span>({
-    secret: process.env.ZYVOR_WEBHOOK_SECRET!,
-    header: req.get(<span class="s">"Zyvor-Signature"</span>)!,
-    rawBody: req.body,
-  });
-  <span class="k">if</span> (!ok) <span class="k">return</span> res.<span class="f">sendStatus</span>(<span class="s">400</span>);
-  <span class="c">// dedupe on event.id: delivery is at-least-once</span>
-  res.<span class="f">sendStatus</span>(<span class="s">200</span>);
-});</code></pre></div>
+    <div class="setup" id="setup" aria-live="polite">
+      <div class="setup-copy">
+        <h3 id="s-title">Sandbox</h3>
+        <p id="s-sub">Everything runs on your machine against a simulated provider. The fastest way to see a payment settle.</p>
+        <ul id="s-list" class="check"></ul>
       </div>
+      <div class="setup-side">
+        <div class="code" id="s-codebox"><button class="copy-btn" id="copy" type="button" aria-label="Copy the commands">Copy</button><pre><code id="s-code"></code></pre></div>
+        <a class="pill" id="s-cta" href="#">Open the guide</a>
       </div>
+    </div>
+
+    <div class="compare" role="region" aria-label="Compare setups" tabindex="0">
+      <table>
+        <thead><tr><th scope="col"></th><th scope="col">Sandbox</th><th scope="col">Self-host</th><th scope="col">Talk to us</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Cost</th><td>Free</td><td>Free, Apache-2.0</td><td>Ask us</td></tr>
+          <tr><th scope="row">Where it runs</th><td>Your laptop</td><td>Your servers</td><td>Not a hosted service today</td></tr>
+          <tr><th scope="row">Providers</th><td>Simulated</td><td>Your own Razorpay, Cashfree or gateway</td><td>We can help you connect one</td></tr>
+          <tr><th scope="row">Real money</th><td>None</td><td>Your provider collects and settles</td><td>Your provider collects and settles</td></tr>
+          <tr><th scope="row">Licences</th><td>Not needed</td><td>Yours to hold or borrow</td><td>Yours to hold or borrow</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
 
-<section id="status" aria-labelledby="s-h">
-  <div class="wrap">
-    <h2 id="s-h">Where it really stands.</h2>
-    <p class="sub">What is built, what is verified, and what is not. We would rather say so plainly.</p>
-    <div class="status">
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Payments, routing, refunds</b><span>Razorpay and Cashfree adapters behind a capability matrix; unknown outcomes are resolved, never re-sent. Verified against local provider simulators.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Ledger and reconciliation</b><span>Append-only double-entry ledger; settlements, bank lines and cases that explain every difference.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Billing, collections and disputes</b><span>Subscriptions, usage, proration, milestones, credit notes, ageing, promises to pay and chargebacks.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Links, splits, payouts and GST</b><span>Payment links with QR codes and coupons, marketplace splits to vendors, approved payouts with their bookkeeping, GST tax invoices, checkout in six languages.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Security basics</b><span>Rate limits, expiring and rotatable API keys, a tamper-evident audit chain, TOTP sign-in with roles, tenant isolation in the database. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/THREAT_MODEL.md">Threat model</a>.</span></div></div>
-      <div class="row reveal"><span class="chip done">Working</span><div><b>Console, SDKs and CLI</b><span>Merchant console, <code>@zyvor/node</code>, Python, Go and an OpenAPI spec.</span></div></div>
-      <div class="row reveal"><span class="chip next">Next</span><div><b>Live provider testing</b><span>The adapters follow each provider's public docs but have not yet run against live sandbox accounts.</span></div></div>
-      <div class="row reveal"><span class="chip next">Not built</span><div><b>Real payouts and mandates</b><span>Zyvor records and approves payouts but you make the transfer from your bank. UPI AutoPay mandates, instant settlement and GST filing are not built, and the non-English checkout text still needs native review.</span></div></div>
-      <div class="row reveal"><span class="chip lic">Your responsibility</span><div><b>Regulatory status</b><span>Zyvor does not hold or move funds; your providers do. Whether your deployment needs its own authorisation is a question for counsel. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/REGULATORY.md">Read the note</a>.</span></div></div>
-    </div>
+<section class="faq" id="faq" aria-labelledby="faq-h">
+  <div class="wrap narrow">
+    <h2 id="faq-h">Questions, answered straight.</h2>
+    <details><summary>Is Zyvor a licensed payment service?</summary><p>No. Zyvor never receives, holds or pays out customers' money. Your own provider account collects and settles. Whoever collects the money must be authorised to, and that is you or your provider. See the <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/REGULATORY.md">regulatory position</a> (not legal advice).</p></details>
+    <details><summary>What has actually been verified?</summary><p>The platform is tested against local simulators and a k3s sandbox. One capability, Cashfree UPI intent and QR, also ran against Cashfree's own sandbox. Nothing has run against a live provider, and Razorpay is simulator-only. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/STATUS.md">STATUS.md</a> lists every gap.</p></details>
+    <details><summary>Can I use my own gateway or bank API?</summary><p>Yes. A generic <code>custom</code> adapter speaks a small JSON contract, so you do not need to fork. Routing, the ledger and reconciliation stay the same. See <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/BRING_YOUR_OWN_PROVIDER.md">bring your own provider</a>.</p></details>
+    <details><summary>Do the iPhone apps move real money?</summary><p>No. Vayora Pay and Vayora Merchant are test apps against the simulator. A real consumer UPI app needs NPCI TPAP approval and a sponsor bank, which these do not have.</p></details>
+    <details><summary>Does it file my GST returns?</summary><p>No. It issues GST tax invoices and a GSTR-1 style summary. Filing is yours.</p></details>
+    <details><summary>What does it cost?</summary><p>The software is free under Apache-2.0. Your provider, bank and any licensed partner charge their own fees; Zyvor can measure the real cost from your settlements.</p></details>
   </div>
 </section>
+
 </main>
 
-<footer>
+<footer class="footer">
   <div class="wrap">
-    <h2>Help build it.</h2>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/zyvorai/vayora">Star on GitHub</a>
-      <a class="btn ghost" href="https://github.com/zyvorai/vayora/blob/main/CONTRIBUTING.md">Contribute</a>
+    <div class="cols">
+      <div><b>Zyvor Payments</b><a href="https://github.com/zyvorai/vayora">GitHub</a><a href="https://github.com/zyvorai/vayora/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/zyvorai/vayora/blob/main/LICENSE">Apache-2.0 licence</a></div>
+      <div><b>Learn</b><a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/HOW_IT_WORKS.md">How it works</a><a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/ARCHITECTURE.md">Architecture</a><a href="https://github.com/zyvorai/vayora/blob/main/openapi/zyvor.yaml">OpenAPI</a></div>
+      <div><b>Trust</b><a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/STATUS.md">Status</a><a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/THREAT_MODEL.md">Threat model</a><a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/REGULATORY.md">Regulatory position</a><a href="https://github.com/zyvorai/vayora/blob/main/SECURITY.md">Security</a></div>
+      <div><b>Talk</b><a href="https://zyvor.dev/contact">Contact</a><a href="https://zyvor.dev">zyvor.dev</a></div>
     </div>
-    <small>Apache-2.0 licensed. Zyvor is not affiliated with NPCI, RBI or any bank, and is not a licensed payment service.</small>
+    <p class="legal">Zyvor Payments is open-source software, not a licensed payment service. It does not hold or move customers' money, and it is verified on simulators and one provider sandbox, never live. © <span id="yr">2026</span> ZyvorAI Labs Private Limited. Made in India.</p>
   </div>
 </footer>
+
 <script src="app.js" defer></script>
 </body>
 </html>
