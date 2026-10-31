@@ -82,13 +82,20 @@ pub async fn signup(
         ));
     }
     let org = bootstrap_org(&s.pool, name).await?;
-    for tid in [&org.test_tenant, &org.live_tenant] {
+    // identity lives in the test tenant; live is reached through the environment switch
+    {
+        let tid = &org.test_tenant;
         let mut tx = tenant::begin(&s.pool, tid).await?;
         sqlx::query("INSERT INTO console_users (id, tenant_id, username, password_hash, role, created_by) VALUES ($1, $2, $3, $4, 'admin', 'signup')")
             .bind(new_id("usr")).bind(tid).bind(&email).bind(&hash)
             .execute(&mut *tx).await?;
         tx.commit().await?;
     }
+    sqlx::query("INSERT INTO login_directory (email, organisation_id) VALUES ($1, $2)")
+        .bind(&email)
+        .bind(&org.organisation_id)
+        .execute(&s.pool)
+        .await?;
     sqlx::query("INSERT INTO signups (id, email, organisation_id, token_hash, token_expires_at) VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))")
         .bind(new_id("sgn")).bind(&email).bind(&org.organisation_id).bind(token_hash(&token)).bind(TOKEN_HOURS as i32)
         .execute(&s.pool).await
@@ -150,8 +157,6 @@ pub struct LoginIn {
     email: String,
     password: String,
     otp: Option<String>,
-    /// `test` (default) or `live`.
-    env: Option<String>,
 }
 
 /// What a signed-in person's session key may do. The console still enforces roles on its own pages;
@@ -182,40 +187,20 @@ fn session_scopes(role: &str) -> Vec<String> {
     s.iter().map(|x| x.to_string()).collect()
 }
 
-/// `POST /v1/console/login`: public. Finds the organisation from the signup email, checks the password
+/// `POST /v1/console/login`: public. Finds the organisation from the email, checks the password
 /// (and second factor) and returns the person plus a session API key that expires in 12 hours.
 pub async fn console_login(
     State(s): State<AppState>,
     Json(b): Json<LoginIn>,
 ) -> Result<Json<Value>, ApiError> {
     let email = b.email.trim().to_lowercase();
-    let env = match b.env.as_deref() {
-        None | Some("test") => "test",
-        Some("live") => "live",
-        _ => return Err(ApiError::invalid("invalid_env", "env is test or live")),
-    };
+    let env = "test"; // people sign in to the test tenant; live is reached through `switch_env`
     let tenant_id: Option<String> = sqlx::query_scalar(
-        "SELECT t.id FROM signups g JOIN tenants t ON t.organisation_id = g.organisation_id WHERE g.email = $1 AND t.env = $2",
+        "SELECT t.id FROM login_directory d JOIN tenants t ON t.organisation_id = d.organisation_id WHERE d.email = $1 AND t.env = 'test'",
     )
     .bind(&email)
-    .bind(env)
     .fetch_optional(&s.pool)
     .await?;
-    if env == "live"
-        && let Some(live) = &tenant_id
-    {
-        let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
-            .bind(live)
-            .fetch_one(&s.pool)
-            .await?;
-        // an unapproved business gets the same refusal as a wrong password, so this cannot be probed
-        if open_live(&s, &org, live).await.is_err() {
-            let _ = hash_password(&b.password);
-            return Err(ApiError::unauthorized(
-                "incorrect username, password or code",
-            ));
-        }
-    }
     let Some(tenant_id) = tenant_id else {
         // same time and same answer as a wrong password, so emails cannot be probed
         let _ = hash_password(&b.password);
@@ -282,7 +267,13 @@ pub async fn switch_env(
     if env == "live" {
         open_live(&s, &org, &target).await?;
     }
-    let mut tx = tenant::begin(&s.pool, &target).await?;
+    // who they are is decided in the test tenant, where identity lives
+    let home: String =
+        sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1 AND env = 'test'")
+            .bind(&org)
+            .fetch_one(&s.pool)
+            .await?;
+    let mut tx = tenant::begin(&s.pool, &home).await?;
     let user: Option<(
         String,
         String,
@@ -296,10 +287,14 @@ pub async fn switch_env(
     .await?;
     tx.commit().await?;
     let Some((uid, role, branch, None)) = user else {
-        return Err(ApiError::forbidden(
-            "you do not have an account in that environment",
-        ));
+        return Err(ApiError::forbidden("your account is not active"));
     };
+    if env == "live" && role == "cashier" {
+        return Err(ApiError::forbidden(
+            "cashier sessions stay in test mode; use a branch-limited API key at the till",
+        ));
+    }
+    let branch = if env == "live" { None } else { branch };
     let (key, prefix, hash) = mint_key(env);
     sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id, session_username) VALUES ($1, $2, 'console session', $3, $4, $5, now() + make_interval(hours => $6), $7, $8)")
         .bind(new_id("key")).bind(&target).bind(prefix).bind(hash).bind(session_scopes(&role)).bind(SESSION_HOURS).bind(&branch).bind(&username)

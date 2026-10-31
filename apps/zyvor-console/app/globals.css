@@ -269,3 +269,28 @@ label.field.checkbox input { width: auto; }
 code { background: var(--code); padding: 1px 6px; border-radius: 6px; }
 .code, .code * { letter-spacing: 0; }
 td .code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 260px; max-width: 420px; }
+
+/* setup checklist */
+.meter { height: 6px; border-radius: 6px; background: var(--soft); margin: 12px 0 14px; overflow: hidden; }
+.meter span { display: block; height: 100%; background: var(--accent); border-radius: 6px; transition: width .4s var(--spring); }
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.checklist li { display: flex; align-items: center; gap: 12px; }
+.checklist a { flex: 1; padding: 8px 4px; color: var(--fg); }
+.checklist .tick { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: .75rem; font-weight: 700; color: #fff; }
+.checklist .done .tick { background: var(--ok); border-color: var(--ok); }
+.checklist .done a { color: var(--muted); }
+.checklist .done a strong { text-decoration: line-through; text-decoration-color: var(--faint); }
+
+/* phones: one-line menu strip and top bar */
+@media (max-width: 800px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .side { flex-wrap: nowrap; gap: 8px; min-width: 0; }
+  .side nav { flex-wrap: nowrap; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .side nav::-webkit-scrollbar { display: none; }
+  .nav { flex: none; white-space: nowrap; }
+  .top { flex-wrap: nowrap; gap: 8px; padding: 8px 12px; }
+  .top .kbtn { min-width: 0; flex: 1; }
+  .top .kbtn kbd { display: none; }
+  .top .grow { display: none; }
+  .envseg button { padding: 3px 10px; }
+}

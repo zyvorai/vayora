@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <header className="top">
           <PaletteButton />
           <span className="grow" />
-          {me?.e && <EnvSwitch env={me.e} />}
+          {me?.e && me.r !== "cashier" && <EnvSwitch env={me.e} />}
           <ThemeToggle />
           {me && (
             <details className="menu">

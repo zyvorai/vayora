@@ -7924,16 +7924,16 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
         key: login["session_key"].as_str().unwrap().into(),
     };
     t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
-    // live mode is a different tenant, and closed until the business is approved
-    let (s_live, _) = t
-        .public(
+    // asking for live at sign-in changes nothing: people always land in test (live is reached by the switch)
+    let asked = t
+        .ok_public(
             "POST",
             "/v1/console/login",
-            None,
             json!({ "email": "cfo@beta.in", "password": "correct horse battery", "env": "live" }),
         )
         .await;
-    assert_eq!(s_live, StatusCode::UNAUTHORIZED);
+    assert_eq!(asked["env"], "test");
+    assert_eq!(asked["tenant_id"], login["tenant_id"]);
     // wrong password and unknown email look the same
     let (s1, b1) = t
         .public(
@@ -7959,7 +7959,7 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
             "SELECT count(*) FROM api_keys WHERE name = 'console session' AND expires_at > now()"
         )
         .await,
-        1
+        2
     );
 }
 
@@ -8027,15 +8027,6 @@ async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(
     let view = t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
     assert_eq!(view["status"], "approved");
     assert_eq!(view["profile"]["legal_name"], "Gamma Mills");
-    // a direct live sign-in now works too
-    let direct = t
-        .ok_public(
-            "POST",
-            "/v1/console/login",
-            json!({ "email": "md@gamma.in", "password": "correct horse battery", "env": "live" }),
-        )
-        .await;
-    assert_eq!(direct["tenant_id"], live["tenant_id"]);
     // and back
     let back = t
         .ok(
@@ -8250,4 +8241,241 @@ async fn test_event_needs_a_webhook_url_and_is_sent_even_when_unsubscribed(pool:
         .call(&ro, "POST", "/v1/outbox/test", None, json!({}))
         .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn members_sign_in_by_email_with_role_limited_keys_and_lose_sessions_when_disabled(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Delta Foods", "email": "boss@delta.in", "password": "correct horse battery" })).await;
+    t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Other Co", "email": "x@other.in", "password": "correct horse battery" })).await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "boss@delta.in", "password": "correct horse battery" }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+    // the admin adds a finance member, a viewer and a cashier
+    for (email, role) in [
+        ("fin@delta.in", "finance"),
+        ("view@delta.in", "viewer"),
+        ("till@delta.in", "cashier"),
+    ] {
+        t.ok(
+            &atn,
+            "POST",
+            "/v1/console/users",
+            None,
+            json!({ "username": email, "password": "member password 1", "role": role }),
+        )
+        .await;
+    }
+    // an email that belongs to another organisation cannot be added
+    let (s1, _) = t
+        .call(
+            &atn,
+            "POST",
+            "/v1/console/users",
+            None,
+            json!({ "username": "x@other.in", "password": "member password 1", "role": "viewer" }),
+        )
+        .await;
+    assert_eq!(s1, StatusCode::CONFLICT);
+    // the finance member signs in, with a key that cannot administer anything
+    let fin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "fin@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(fin["user"]["role"], "finance");
+    assert_eq!(fin["tenant_id"], admin["tenant_id"]);
+    let ftn = Tenant {
+        id: atn.id.clone(),
+        key: fin["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&ftn, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    for (m, p) in [
+        ("GET", "/v1/console/users"),
+        ("GET", "/v1/outbox"),
+        ("GET", "/v1/api_keys"),
+        ("POST", "/v1/outbox/test"),
+    ] {
+        let (st, _) = t.call(&ftn, m, p, None, json!({})).await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{m} {p}");
+    }
+    // the viewer can read but not write
+    let view = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "view@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    let vtn = Tenant {
+        id: atn.id.clone(),
+        key: view["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&vtn, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    let (st, _) = t
+        .call(
+            &vtn,
+            "POST",
+            "/v1/payment_intents",
+            Some("viewer-1"),
+            json!({ "amount_minor": 100, "currency": "INR" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    // a member can set up their own second factor, and only their own
+    let users0 = t
+        .ok(&atn, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    let id_of = |u: &str| {
+        users0["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["username"] == u)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (st, _) = t
+        .call(
+            &vtn,
+            "POST",
+            &format!("/v1/console/users/{}/mfa/begin", id_of("fin@delta.in")),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, b) = t
+        .call(
+            &vtn,
+            "POST",
+            &format!("/v1/console/users/{}/mfa/begin", id_of("view@delta.in")),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b}");
+    // approve the business so live can open; a cashier stays out of live, a finance member goes in
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Delta Foods', 'private_limited', '1234', 'Pune 411001', 'approved')")
+        .bind(&atn.id).execute(&t.root).await.unwrap();
+    let till = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "till@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    let ttn = Tenant {
+        id: atn.id.clone(),
+        key: till["session_key"].as_str().unwrap().into(),
+    };
+    let (st, _) = t
+        .call(
+            &ttn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let live = t
+        .ok(
+            &ftn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    assert_eq!(live["user"]["role"], "finance");
+    let fl = Tenant {
+        id: live["tenant_id"].as_str().unwrap().into(),
+        key: live["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&fl, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    // disabling the finance member ends both sessions at once, and they cannot sign in again
+    let users = t
+        .ok(&atn, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    let fid = users["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "fin@delta.in")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    t.ok(
+        &atn,
+        "POST",
+        &format!("/v1/console/users/{fid}/disable"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.call(&ftn, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        t.call(&fl, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (st, _) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "fin@delta.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    // managing people from the live environment acts on the same people
+    let alive = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    let aln = Tenant {
+        id: alive["tenant_id"].as_str().unwrap().into(),
+        key: alive["session_key"].as_str().unwrap().into(),
+    };
+    let seen = t
+        .ok(&aln, "GET", "/v1/console/users", None, Value::Null)
+        .await;
+    assert!(
+        seen["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["username"] == "view@delta.in")
+    );
 }

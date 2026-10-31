@@ -113,6 +113,30 @@ fn hash_recovery(c: &str) -> String {
 
 // ---- management (admin key) ----
 
+/// People are managed in the organisation's test tenant, whichever environment the admin is looking at:
+/// their identity lives there, so disabling someone takes effect in both environments. Organisations
+/// that are not in the sign-in directory (made by `bootstrap`) keep the tenant of the key.
+pub(crate) async fn home(s: &AppState, mut auth: Auth) -> Result<Auth, ApiError> {
+    let t: Option<String> = sqlx::query_scalar(
+        "SELECT h.id FROM tenants t JOIN tenants h ON h.organisation_id = t.organisation_id AND h.env = 'test'
+         WHERE t.id = $1 AND EXISTS (SELECT 1 FROM login_directory d WHERE d.organisation_id = t.organisation_id)",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_optional(&s.pool)
+    .await?;
+    if let Some(t) = t {
+        auth.tenant_id = t;
+    }
+    Ok(auth)
+}
+
+/// Sign someone out everywhere: their console session keys stop working at once.
+async fn revoke_sessions(s: &AppState, tenant_id: &str, username: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE api_keys SET revoked_at = now() WHERE session_username = $2 AND revoked_at IS NULL AND tenant_id IN (SELECT b.id FROM tenants a JOIN tenants b ON b.organisation_id = a.organisation_id WHERE a.id = $1)")
+        .bind(tenant_id).bind(username).execute(&s.pool).await?;
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct NewUser {
     username: String,
@@ -145,6 +169,7 @@ pub async fn create_user(
     Json(b): Json<NewUser>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("admin")?;
+    let auth = home(&s, auth).await?;
     let username = b.username.trim().to_lowercase();
     if !valid_username(&username) {
         return Err(ApiError::invalid(
@@ -184,6 +209,33 @@ pub async fn create_user(
             sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::conflict("username_taken", "that username already exists"),
             e => e.into(),
         })?;
+    if username.contains('@') {
+        // an email address signs in to exactly one organisation
+        let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_one(&s.pool)
+            .await?;
+        let r = sqlx::query("INSERT INTO login_directory (email, organisation_id) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING")
+            .bind(&username)
+            .bind(&org)
+            .execute(&s.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            let same: bool = sqlx::query_scalar(
+                "SELECT organisation_id = $2 FROM login_directory WHERE email = $1",
+            )
+            .bind(&username)
+            .bind(&org)
+            .fetch_one(&s.pool)
+            .await?;
+            if !same {
+                return Err(ApiError::conflict(
+                    "username_taken",
+                    "that email already belongs to another organisation",
+                ));
+            }
+        }
+    }
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -202,6 +254,7 @@ pub async fn create_user(
 
 pub async fn list_users(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
+    let auth = home(&s, auth).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     type Row = (
         String,
@@ -237,6 +290,7 @@ async fn user_action(
     action: &str,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
+    let auth = home(s, auth.clone()).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let n = sqlx::query(sql)
         .bind(id)
@@ -264,14 +318,32 @@ pub async fn disable_user(
     auth: Auth,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    user_action(
+    let out = user_action(
         &s,
         &auth,
         &id,
         "UPDATE console_users SET disabled_at = now() WHERE id = $1 AND disabled_at IS NULL",
         "console_user.disabled",
     )
-    .await
+    .await?;
+    revoke_sessions_of(&s, &auth, &id).await?;
+    Ok(out)
+}
+
+/// End the sessions of the person with this user id (they were disabled or their password changed).
+async fn revoke_sessions_of(s: &AppState, auth: &Auth, id: &str) -> Result<(), ApiError> {
+    let home = home(s, auth.clone()).await?;
+    let mut tx = tenant::begin(&s.pool, &home.tenant_id).await?;
+    let name: Option<String> =
+        sqlx::query_scalar("SELECT username FROM console_users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    if let Some(name) = name {
+        revoke_sessions(s, &home.tenant_id, &name).await?;
+    }
+    Ok(())
 }
 
 pub async fn enable_user(
@@ -304,6 +376,7 @@ pub async fn set_password(
     auth.require("admin")?;
     check_password(&b.password)?;
     let hash = hash_password(&b.password)?;
+    let auth = home(&s, auth).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let n = sqlx::query("UPDATE console_users SET password_hash = $2, failed_attempts = 0, locked_until = NULL WHERE id = $1")
         .bind(&id).bind(&hash).execute(&mut *tx).await?.rows_affected();
@@ -320,10 +393,30 @@ pub async fn set_password(
     )
     .await?;
     tx.commit().await?;
+    revoke_sessions_of(&s, &auth, &id).await?;
     Ok(Json(json!({ "id": id, "ok": true })))
 }
 
 // ---- MFA enrolment ----
+
+/// Admins manage anyone's second factor; everyone else only their own, which their console session names.
+async fn may_manage(s: &AppState, auth: &Auth, username: &str) -> Result<(), ApiError> {
+    if auth.require("admin").is_ok() {
+        return Ok(());
+    }
+    let me: Option<Option<String>> =
+        sqlx::query_scalar("SELECT session_username FROM api_keys WHERE id = $1")
+            .bind(&auth.key_id)
+            .fetch_optional(&s.pool)
+            .await?;
+    if me.flatten().as_deref() == Some(username) {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden(
+            "you can only set up your own second factor".to_string(),
+        ))
+    }
+}
 
 /// Start enrolment: returns the secret and an `otpauth://` URI for an authenticator app. Not active until confirmed.
 pub async fn mfa_begin(
@@ -331,12 +424,13 @@ pub async fn mfa_begin(
     auth: Auth,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("admin")?;
+    let auth = home(&s, auth).await?;
     let secret: [u8; 20] = random_bytes();
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let row: Option<(String, bool)> = sqlx::query_as("SELECT username, totp_confirmed FROM console_users WHERE id = $1 AND disabled_at IS NULL FOR UPDATE")
         .bind(&id).fetch_optional(&mut *tx).await?;
     let (username, confirmed) = row.ok_or_else(|| ApiError::not_found("console user"))?;
+    may_manage(&s, &auth, &username).await?;
     if confirmed {
         return Err(ApiError::conflict(
             "mfa_already_enrolled",
@@ -367,11 +461,12 @@ pub async fn mfa_confirm(
     Path(id): Path<String>,
     Json(b): Json<Otp>,
 ) -> Result<Json<Value>, ApiError> {
-    auth.require("admin")?;
+    let auth = home(&s, auth).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let row: Option<(Option<Vec<u8>>, bool)> = sqlx::query_as("SELECT totp_secret_enc, totp_confirmed FROM console_users WHERE id = $1 AND disabled_at IS NULL FOR UPDATE")
+    let row: Option<(Option<Vec<u8>>, bool, String)> = sqlx::query_as("SELECT totp_secret_enc, totp_confirmed, username FROM console_users WHERE id = $1 AND disabled_at IS NULL FOR UPDATE")
         .bind(&id).fetch_optional(&mut *tx).await?;
-    let (enc, confirmed) = row.ok_or_else(|| ApiError::not_found("console user"))?;
+    let (enc, confirmed, username) = row.ok_or_else(|| ApiError::not_found("console user"))?;
+    may_manage(&s, &auth, &username).await?;
     let secret = enc
         .and_then(|e| s.crypto.decrypt(&e))
         .ok_or_else(|| ApiError::conflict("mfa_not_started", "begin enrolment first"))?;

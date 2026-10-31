@@ -173,7 +173,7 @@ export const resolveCase = async (_: FormState, f: FormData) => {
   if (!note) return { error: "Say how it was resolved." };
   return run(["/reconciliation", "/"], (z) => z.cases.resolve(id(f), note));
 };
-export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)));
+export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)), "admin");
 export const runBilling = async (_: FormState): Promise<FormState> => {
   let made = 0;
   const r = await run(["/billing"], async (z) => {

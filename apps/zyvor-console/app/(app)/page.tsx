@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { SetupChecklist } from "@/components/SetupChecklist";
+import { currentSession } from "@/lib/auth";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -8,7 +10,7 @@ const greeting = () => {
 };
 
 export default async function Overview() {
-  const z = await api();
+  const [z, me] = [await api(), await currentSession()];
   const [intents, refunds, cases, ageing, promises, disputes, cash, anomalies] = await Promise.all([
     z.intents.list({ limit: 50 }),
     z.refunds.list({ status: "pending_approval", limit: 50 }),
@@ -39,6 +41,7 @@ export default async function Overview() {
   return (
     <>
       <div className="head"><div><p className="hello">{greeting()}</p><h1>Here’s where things stand.</h1></div></div>
+      {me?.r === "admin" && <SetupChecklist />}
       <div className="grid stats">
         {stats.map((s) => (
           <Link key={s.k} href={s.href} className={`card stat${s.hot ? " hot" : ""}`} style={{ color: "inherit" }}>

@@ -3,12 +3,13 @@ import { Chip } from "@/components/Chip";
 import { BankForm, DocForm, ProfileForm, ReviewForm } from "@/components/OnboardingForms";
 import { Stepper, type Step } from "@/components/Stepper";
 import { submitOnboarding, verifyBankAccount } from "@/lib/actions";
-import { currentSession } from "@/lib/auth";
+import { currentSession, requireRole } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
 const KIND: Record<string, string> = { pan: "PAN", gstin: "GSTIN", bank: "Bank account" };
 
 export default async function Onboarding({ searchParams }: { searchParams: Promise<{ step?: string }> }) {
+  await requireRole("finance");
   const [o, me, q] = await Promise.all([(await api()).onboarding.get(), currentSession(), searchParams]);
   const admin = me?.r === "admin";
   const open = o.status === "not_started" || o.status === "draft" || o.status === "rejected";
