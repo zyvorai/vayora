@@ -5439,6 +5439,10 @@ async fn fx_exposure_values_open_dollar_invoices_then_and_now_without_posting_an
     assert_eq!(r["complete"], false);
     assert!(r["unrealised_inr_minor"].is_null());
     assert!(r["data"][0]["booked_inr_minor"].is_null());
+    // another organisation with no dollar invoices has nothing missing
+    let r = t.ok(b, "GET", "/v1/fx/exposure", None, Value::Null).await;
+    assert_eq!(r["complete"], true);
+    assert_eq!(r["outstanding_usd_minor"], 0);
 
     for (rate, day) in [("82.50", Some(old.as_str())), ("83.215", None)] {
         let mut body = json!({ "currency": "USD", "rate": rate });
