@@ -10850,3 +10850,37 @@ async fn a_reviewer_can_take_live_mode_away_and_give_it_back(pool: PgPool) {
         "wrong_state"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_simulator_follows_the_outcome_handle_for_card_netbanking_and_wallet(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Methods Ltd", "email": "m@methods.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    for method in ["card", "netbanking", "wallet"] {
+        for (handle, want) in [("ok@bank", "captured"), ("fail@bank", "failed")] {
+            let i = t
+                .ok(
+                    &tn,
+                    "POST",
+                    "/v1/payment_intents",
+                    Some(&format!("i-{method}-{handle}")),
+                    json!({ "amount_minor": 20_000, "currency": "INR" }),
+                )
+                .await;
+            let a = t
+                .ok(
+                    &tn,
+                    "POST",
+                    &format!("/v1/payment_intents/{}/attempts", i["id"].as_str().unwrap()),
+                    Some(&format!("a-{method}-{handle}")),
+                    json!({ "method": method, "vpa": handle }),
+                )
+                .await;
+            assert_eq!(a["status"], want, "{method} {handle}: {a}");
+            assert_eq!(a["method"], method);
+        }
+    }
+}

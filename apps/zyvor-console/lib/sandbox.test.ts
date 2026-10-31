@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OUTCOMES, handleFor } from "./sandbox";
+import { METHODS, OUTCOMES, handleFor, methodFor } from "./sandbox";
 
 describe("sandbox outcomes", () => {
   it("map to the simulator's handle prefixes", () => {
@@ -9,5 +9,14 @@ describe("sandbox outcomes", () => {
     expect(handleFor("unknown")?.startsWith("uncertain")).toBe(true);
     expect(handleFor("nonsense")).toBeNull();
     expect(new Set(OUTCOMES.map((o) => o.handle)).size).toBe(OUTCOMES.length);
+  });
+});
+
+describe("sandbox methods", () => {
+  it("accept only the four the simulator supports", () => {
+    expect(METHODS.map((m) => m.key)).toEqual(["upi", "card", "netbanking", "wallet"]);
+    expect(methodFor("card")).toBe("card");
+    expect(methodFor("bitcoin")).toBeNull();
+    expect(methodFor("")).toBeNull();
   });
 });

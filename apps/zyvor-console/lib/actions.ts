@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { ZyvorError, type Zyvor } from "@zyvor/node";
 import { currentSession } from "@/lib/auth";
 import { parseBulk } from "@/lib/bulk";
-import { handleFor } from "@/lib/sandbox";
+import { handleFor, methodFor } from "@/lib/sandbox";
 import { publicPost, type EmailLogin } from "@/lib/public";
 import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
 import { api, authConfig, sessionKey } from "@/lib/zyvor";
@@ -220,8 +220,10 @@ export async function createTestPayment(_: FormState, f: FormData): Promise<Form
   const s = await currentSession();
   if (!s || !allows(s.r, "finance")) return DENIED;
   const handle = handleFor(String(f.get("outcome") ?? ""));
+  const method = methodFor(String(f.get("method") ?? "upi"));
   const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
   if (!handle) return { error: "Pick an outcome." };
+  if (!method) return { error: "Pick a payment method." };
   if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
   const key = String(f.get("key") ?? "") || crypto.randomUUID();
   let intentId: string;
@@ -230,7 +232,7 @@ export async function createTestPayment(_: FormState, f: FormData): Promise<Form
     if ((await z.settings.get()).env !== "test") return { error: "Test payments are only available in test mode." };
     const i = await z.intents.create({ amountMinor: Math.round(rupees * 100), externalRef: String(f.get("reference") ?? "").trim() || undefined, description: "Sandbox payment", idempotencyKey: key });
     intentId = i.id;
-    await z.intents.attempt(i.id, { method: "upi", vpa: handle, idempotencyKey: `${key}:attempt` });
+    await z.intents.attempt(i.id, { method, vpa: handle, idempotencyKey: `${key}:attempt` });
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.code === "no_route" || /provider/i.test(e.message) ? "No test provider is set up yet. An admin can turn the simulator on from this page." : e.message };
     throw e;

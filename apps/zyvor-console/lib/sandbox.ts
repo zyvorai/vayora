@@ -9,3 +9,16 @@ export const OUTCOMES = [
 export type OutcomeKey = (typeof OUTCOMES)[number]["key"];
 
 export const handleFor = (key: string): string | null => OUTCOMES.find((o) => o.key === key)?.handle ?? null;
+
+/** The simulator accepts all four methods. It decides the outcome from the handle whatever the method, and no card number
+ *  or bank is collected, so these exercise routing, ledger and refunds, not a card form. */
+export const METHODS = [
+  { key: "upi", label: "UPI" },
+  { key: "card", label: "Card" },
+  { key: "netbanking", label: "Net banking" },
+  { key: "wallet", label: "Wallet" },
+] as const;
+
+export type MethodKey = (typeof METHODS)[number]["key"];
+
+export const methodFor = (key: string): MethodKey | null => METHODS.find((m) => m.key === key)?.key ?? null;

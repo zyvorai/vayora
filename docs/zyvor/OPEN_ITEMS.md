@@ -117,8 +117,9 @@ reset. Verified only against a plain local SMTP server.
 
 Built: every new test tenant gets the simulator; a Sandbox page creates payments with a chosen outcome.
 
-- Card, wallet and netbanking test payments in the console (the simulator supports them through the API): extend
-  `apps/zyvor-console/lib/sandbox.ts` and `components/SandboxForm.tsx`.
+- ~~Card, wallet and netbanking test payments in the console.~~ **Done:** the Sandbox form has a "Paid by" choice. The
+  simulator picks the outcome from the handle whatever the method and no card number or bank is collected, so this
+  exercises routing, the ledger and refunds, not a card form (a test covers all three methods).
 - Settlement and webhook-delivery simulation (so Reconciliation and your endpoint can be tried without a provider).
 - Test clocks for subscriptions and dunning; a "reset test data" button (delete everything for a test tenant, never live).
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
