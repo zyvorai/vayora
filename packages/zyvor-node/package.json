@@ -9,5 +9,5 @@
   "bin": { "zyvor": "dist/cli.js" },
   "files": ["dist"],
   "scripts": { "build": "tsc", "test": "vitest run", "lint": "tsc --noEmit" },
-  "devDependencies": { "@types/node": "^24.0.0", "typescript": "^7.0.2", "vitest": "^5.0.5" }
+  "devDependencies": { "@types/node": "^26.6.5", "typescript": "^7.0.2", "vitest": "^5.0.5" }
 }
