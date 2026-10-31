@@ -21,13 +21,56 @@ async fn record_check(
     kind: &str,
     subject: &str,
     c: &kyc::Check,
-    provider: Option<kyc::Kyc>,
+    provider: Option<&kyc::Kyc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO kyc_checks (id, tenant_id, kind, subject, outcome, detail, provider) VALUES ($1,$2,$3,$4,$5,$6,$7)")
         .bind(new_id("kyc")).bind(tenant_id).bind(kind).bind(subject).bind(c.outcome.as_str()).bind(&c.detail)
-        .bind(provider.map_or("none", kyc::Kyc::name))
+        .bind(provider.map_or("none", |k| k.name()))
         .execute(conn).await?;
     Ok(())
+}
+
+/// A paid check provider is only called this many times a day per business. Signup is public, so without a cap
+/// anyone could use it to run up the platform's bill. Past the cap the checks come back "a person will review".
+const MAX_PAID_CHECKS_PER_DAY: i64 = 12;
+
+/// Count `calls` paid provider calls for this business, or say there is no room left today. Free providers
+/// (the simulator) are never counted.
+async fn paid_checks_allowed(
+    s: &AppState,
+    tenant_id: &str,
+    k: &kyc::Kyc,
+    calls: i64,
+) -> Result<bool, sqlx::Error> {
+    if !k.is_metered() {
+        return Ok(true);
+    }
+    let used: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM kyc_usage WHERE tenant_id = $1 AND at > now() - interval '24 hours'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&s.pool)
+    .await?;
+    if used + calls > MAX_PAID_CHECKS_PER_DAY {
+        return Ok(false);
+    }
+    for _ in 0..calls {
+        sqlx::query("INSERT INTO kyc_usage (tenant_id, kind) VALUES ($1, $2)")
+            .bind(tenant_id)
+            .bind(k.name())
+            .execute(&s.pool)
+            .await?;
+    }
+    Ok(true)
+}
+
+fn capped() -> kyc::Check {
+    kyc::Check {
+        outcome: kyc::Outcome::Inconclusive,
+        detail: "too many automatic checks for this business today; a person will review this"
+            .into(),
+        registered_name: None,
+    }
 }
 
 const BUSINESS_TYPES: [&str; 6] = [
@@ -115,35 +158,26 @@ pub async fn put_profile(
     }
     // identity checks run now, while the full PAN is in hand; only their outcome is kept
     let mut checks: Vec<(&str, kyc::Check)> = Vec::new();
-    if let Some(k) = s.kyc {
-        let mut c = k.verify_pan(&pan, b.legal_name.trim()).await;
-        if c.outcome == kyc::Outcome::Pass && !kyc::pan_fits_business(&pan, &b.business_type) {
-            c = kyc::Check {
-                outcome: kyc::Outcome::Inconclusive,
-                detail: "PAN holder type does not fit the business type".to_string(),
-                registered_name: None,
-            };
-        }
-        checks.push(("pan", c));
-        if let Some(g) = &gstin {
-            let ok = kyc::gstin_matches_pan(g, &pan);
-            checks.push((
-                "gstin",
-                kyc::Check {
-                    outcome: if ok {
-                        kyc::Outcome::Pass
-                    } else {
-                        kyc::Outcome::Fail
-                    },
-                    detail: if ok {
-                        "GSTIN carries this PAN"
-                    } else {
-                        "GSTIN carries a different PAN"
-                    }
-                    .to_string(),
+    if let Some(k) = s.kyc.as_ref() {
+        let calls = 1 + i64::from(gstin.is_some());
+        if !paid_checks_allowed(&s, &auth.tenant_id, k, calls).await? {
+            checks.push(("pan", capped()));
+            if gstin.is_some() {
+                checks.push(("gstin", capped()));
+            }
+        } else {
+            let mut c = k.verify_pan(&pan, b.legal_name.trim()).await;
+            if c.outcome == kyc::Outcome::Pass && !kyc::pan_fits_business(&pan, &b.business_type) {
+                c = kyc::Check {
+                    outcome: kyc::Outcome::Inconclusive,
+                    detail: "PAN holder type does not fit the business type".to_string(),
                     registered_name: None,
-                },
-            ));
+                };
+            }
+            checks.push(("pan", c));
+            if let Some(g) = &gstin {
+                checks.push(("gstin", k.verify_gstin(g, &pan, b.legal_name.trim()).await));
+            }
         }
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
@@ -164,7 +198,7 @@ pub async fn put_profile(
         .execute(&mut *tx)
         .await?;
     for (kind, c) in &checks {
-        record_check(&mut tx, &auth.tenant_id, kind, "profile", c, s.kyc).await?;
+        record_check(&mut tx, &auth.tenant_id, kind, "profile", c, s.kyc.as_ref()).await?;
     }
     sqlx::query("UPDATE merchant_profiles SET review_reasons = '{}'")
         .execute(&mut *tx)
@@ -248,7 +282,8 @@ pub async fn add_bank_account(
         ));
     }
     let id = new_id("mba");
-    let penny = match s.kyc {
+    let penny = match s.kyc.as_ref() {
+        Some(k) if !paid_checks_allowed(&s, &auth.tenant_id, k, 1).await? => Some(capped()),
         Some(k) => {
             let mut c = k.verify_bank(&ifsc, acct, b.holder_name.trim()).await;
             // the bank's name for the account must be the merchant's, not just any live account
@@ -268,7 +303,7 @@ pub async fn add_bank_account(
         .bind(&id).bind(&auth.tenant_id).bind(b.holder_name.trim()).bind(&ifsc).bind(&acct[acct.len() - 4..]).bind(&auth.actor)
         .execute(&mut *tx).await?;
     if let Some(c) = &penny {
-        record_check(&mut tx, &auth.tenant_id, "bank", &id, c, s.kyc).await?;
+        record_check(&mut tx, &auth.tenant_id, "bank", &id, c, s.kyc.as_ref()).await?;
         // A passed penny drop stands in for the second person who would otherwise verify the account, but only
         // while onboarding is still open. Once a business is submitted or approved, a new payout account is
         // checked and then verified by a different person, as without KYC.

@@ -33,7 +33,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <div className="head"><div><h1>Get set up</h1><p className="lede">Tell us who the business is and where its money goes. {o.automated_checks ? "Your PAN, GSTIN and bank account are checked as you add them, and a clean submission is approved straight away." : "A second person reviews the submission before payouts and live mode open."} We keep references and the last four digits only.</p></div><Chip status={o.status.replace(/_/g, " ")} /></div>
+      <div className="head"><div><h1>Get set up</h1><p className="lede">Tell us who the business is and where its money goes. {o.automated_checks ? "Your PAN, GSTIN and bank account are checked with our verification partner as you add them, and a clean submission is approved straight away." : "A second person reviews the submission before payouts and live mode open."} We keep references and the last four digits only.</p></div><Chip status={o.status.replace(/_/g, " ")} /></div>
 
       {o.status === "approved" && (
         <div className="note ok" role="status" style={{ marginBottom: 16 }}>
