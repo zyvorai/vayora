@@ -1,0 +1,14 @@
+{
+  "name": "Zyvor Payments",
+  "short_name": "Zyvor",
+  "description": "Open-source payment orchestration, ledger and reconciliation for India.",
+  "start_url": "/vayora/",
+  "scope": "/vayora/",
+  "display": "browser",
+  "background_color": "#fbfbfd",
+  "theme_color": "#fbfbfd",
+  "icons": [
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
