@@ -9,10 +9,13 @@
 //! are still readable and are upgraded by `rekey`.
 
 use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm,
+    aead::{Aead, AeadCore, Generate, KeyInit},
 };
 use sha2::{Digest, Sha256};
+
+/// The 96-bit nonce of AES-256-GCM. The stored form is unchanged from earlier releases; only the library API moved.
+type Nonce = aes_gcm::Nonce<<Aes256Gcm as AeadCore>::NonceSize>;
 
 const MAGIC: [u8; 2] = [b'Z', 0x01];
 const HEADER: usize = 3;
@@ -65,7 +68,7 @@ impl Crypto {
     }
 
     pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let nonce = Nonce::generate();
         let mut out = MAGIC.to_vec();
         out.push(self.current.0);
         out.extend_from_slice(&nonce);
@@ -89,7 +92,7 @@ impl Crypto {
                 .filter(|(id, _)| *id == kid)
                 .chain(self.all.iter().filter(|(id, _)| *id != kid))
             {
-                if let Ok(p) = k.decrypt(Nonce::from_slice(nonce), ct) {
+                if let Ok(p) = k.decrypt(&Nonce::try_from(nonce).ok()?, ct) {
                     return Some(p);
                 }
             }
@@ -98,7 +101,7 @@ impl Crypto {
         if blob.len() >= 12 + 16 {
             let (nonce, ct) = blob.split_at(12);
             for (_, k) in &self.all {
-                if let Ok(p) = k.decrypt(Nonce::from_slice(nonce), ct) {
+                if let Ok(p) = k.decrypt(&Nonce::try_from(nonce).ok()?, ct) {
                     return Some(p);
                 }
             }
@@ -141,6 +144,27 @@ mod tests {
         assert!(Crypto::from_hex("abcd").is_err());
     }
 
+    /// Sealed by aes-gcm 0.10.3 (the library before the 0.11 upgrade), key `ab` x 32, nonce 01..0c, no header.
+    /// Stored provider secrets look like this or like the headered form, so the upgrade must still open them.
+    #[test]
+    fn data_sealed_by_the_previous_library_version_still_opens() {
+        let legacy = hex::decode("0102030405060708090a0b0c324b3eecad0b209c25b057eb898660c2b0599699bf4744d9a76de2b412d1c9").unwrap();
+        let c = Crypto::from_hex(&"ab".repeat(32)).unwrap();
+        assert_eq!(
+            c.decrypt(&legacy).as_deref(),
+            Some(b"provider-secret".as_ref())
+        );
+        // and the headered form: the same sealed bytes behind `Z 01 <key id>`
+        let mut headered = MAGIC.to_vec();
+        headered.push(Sha256::digest(hex::decode("ab".repeat(32)).unwrap())[0]);
+        headered.extend_from_slice(&legacy);
+        assert_eq!(
+            c.decrypt(&headered).as_deref(),
+            Some(b"provider-secret".as_ref())
+        );
+        assert!(!c.needs_rekey(&headered));
+    }
+
     #[test]
     fn rotation_reads_old_data_and_rekey_moves_it_to_the_new_key() {
         let (old_hex, new_hex) = ("ab".repeat(32), "cd".repeat(32));
@@ -148,7 +172,7 @@ mod tests {
         let sealed_old = old.encrypt(b"secret");
         // legacy blob from before the header existed
         let legacy = {
-            let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+            let nonce = Nonce::generate();
             let k = Aes256Gcm::new_from_slice(&hex::decode(&old_hex).unwrap()).unwrap();
             let mut v = nonce.to_vec();
             v.extend(k.encrypt(&nonce, b"legacy".as_ref()).unwrap());
