@@ -29,6 +29,7 @@ export default async function Developers({ searchParams }: { searchParams: Promi
         <li className="card">
           <h2>2. Make your first call</h2>
           <p className="muted">Creates a payment of ₹1,250.00. Set <code>ZYVOR_API_KEY</code> to the key from step 1. The SDKs live in this repository (<code>packages/zyvor-node</code>, <code>sdks/python</code>, <code>sdks/go</code>); they are not published to a package registry.</p>
+          {s.env === "test" && <p className="muted">No code needed to see a payment work: <Link href="/sandbox">create one in the Sandbox</Link>.</p>}
           <nav className="tabs" aria-label="Language"><div className="seg">{LANGS.map((l) => <Link key={l} href={`/developers?lang=${l}`} aria-current={l === lang}>{LANG_LABEL[l]}</Link>)}</div></nav>
           <pre className="code" tabIndex={0}>{createPayment(lang, base)}</pre>
         </li>

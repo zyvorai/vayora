@@ -9302,3 +9302,74 @@ async fn signup_with_a_taken_email_creates_nothing_even_when_two_arrive_together
         1
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_new_organisation_can_complete_and_refund_a_test_payment_with_no_setup(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Sandbox Ltd", "email": "s@sandbox.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let pay = |handle: &'static str, n: u32| {
+        let tn = tn.clone();
+        let t = &t;
+        async move {
+            let i = t
+                .ok(
+                    &tn,
+                    "POST",
+                    "/v1/payment_intents",
+                    Some(&format!("i-{handle}-{n}")),
+                    json!({ "amount_minor": 50_000, "currency": "INR" }),
+                )
+                .await;
+            let id = i["id"].as_str().unwrap().to_string();
+            let a = t
+                .ok(
+                    &tn,
+                    "POST",
+                    &format!("/v1/payment_intents/{id}/attempts"),
+                    Some(&format!("a-{handle}-{n}")),
+                    json!({ "method": "upi", "vpa": handle }),
+                )
+                .await;
+            (
+                id,
+                a["status"].as_str().unwrap().to_string(),
+                a["failure_reason"].clone(),
+            )
+        }
+    };
+    let (ok_id, st, _) = pay("ok@bank", 1).await;
+    assert_eq!(st, "captured");
+    assert_eq!(pay("fail@bank", 1).await.1, "failed");
+    assert_eq!(pay("pending@bank", 1).await.1, "pending");
+    assert_eq!(pay("uncertain@bank", 1).await.1, "unknown");
+    // the captured payment can be refunded, which is what the console's refund form does
+    let rf = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{ok_id}/refunds"),
+            Some("rf-1"),
+            json!({ "amount_minor": 20_000, "reason": "test" }),
+        )
+        .await;
+    assert!(
+        ["processed", "pending", "pending_approval", "processing"]
+            .contains(&rf["status"].as_str().unwrap()),
+        "{rf}"
+    );
+    // exactly one simulator account on the test tenant, and none on any live tenant
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM provider_accounts WHERE provider = 'sim' AND tenant_id = '{}'",
+            tn.id
+        ))
+        .await,
+        1
+    );
+    assert_eq!(t.count("SELECT count(*) FROM provider_accounts p JOIN tenants x ON x.id = p.tenant_id WHERE p.provider = 'sim' AND x.env = 'live'").await, 0);
+}

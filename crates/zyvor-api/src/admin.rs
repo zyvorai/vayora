@@ -321,6 +321,33 @@ pub async fn create_provider_account(
     ))
 }
 
+/// Give a test tenant the in-process simulator, so a new organisation can complete a payment on day one
+/// (the UPI handle picks the outcome; see `zyvor-providers::sim`). Never for a live tenant. Safe to repeat.
+pub async fn ensure_simulator_account(s: &AppState, tenant_id: &str) -> Result<(), ApiError> {
+    let env: String = sqlx::query_scalar("SELECT env FROM tenants WHERE id = $1")
+        .bind(tenant_id)
+        .fetch_one(&s.pool)
+        .await?;
+    if env != "test" {
+        return Err(ApiError::invalid(
+            "sim_in_live",
+            "the simulator cannot be used in a live environment",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    let id = new_id("pa");
+    sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, credentials_enc, webhook_secret_enc)
+                 SELECT $1, $2, 'sim', 'Simulator', $3, $4 WHERE NOT EXISTS (SELECT 1 FROM provider_accounts WHERE tenant_id = $2 AND provider = 'sim')")
+        .bind(&id)
+        .bind(tenant_id)
+        .bind(s.crypto.encrypt(b"{}"))
+        .bind(s.crypto.encrypt(b"sim-unused"))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn list_provider_accounts(
     State(s): State<AppState>,
     auth: Auth,

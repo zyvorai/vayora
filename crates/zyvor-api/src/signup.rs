@@ -90,6 +90,7 @@ pub async fn signup(
         ));
     }
     let org = bootstrap_org(&s.pool, name).await?;
+    crate::admin::ensure_simulator_account(&s, &org.test_tenant).await?;
     // identity lives in the test tenant; live is reached through the environment switch
     {
         let tid = &org.test_tenant;

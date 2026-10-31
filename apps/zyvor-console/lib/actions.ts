@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { ZyvorError, type Zyvor } from "@zyvor/node";
 import { currentSession } from "@/lib/auth";
 import { parseBulk } from "@/lib/bulk";
+import { handleFor } from "@/lib/sandbox";
 import { publicPost, type EmailLogin } from "@/lib/public";
 import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
 import { api, authConfig, sessionKey } from "@/lib/zyvor";
@@ -207,6 +208,30 @@ export const refundPayment = async (_: FormState, f: FormData) => {
   return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
 };
 export const sendTestEvent = async (_: FormState) => run(["/webhooks", "/developers"], (z) => z.webhooks.sendTest(), "admin");
+/** Make a test payment that ends the way you pick, then open it. Test environments only. */
+export async function createTestPayment(_: FormState, f: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  const handle = handleFor(String(f.get("outcome") ?? ""));
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  if (!handle) return { error: "Pick an outcome." };
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  const key = String(f.get("key") ?? "") || crypto.randomUUID();
+  let intentId: string;
+  try {
+    const z = await api(s.u);
+    if ((await z.settings.get()).env !== "test") return { error: "Test payments are only available in test mode." };
+    const i = await z.intents.create({ amountMinor: Math.round(rupees * 100), externalRef: String(f.get("reference") ?? "").trim() || undefined, description: "Sandbox payment", idempotencyKey: key });
+    intentId = i.id;
+    await z.intents.attempt(i.id, { method: "upi", vpa: handle, idempotencyKey: `${key}:attempt` });
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.code === "no_route" || /provider/i.test(e.message) ? "No test provider is set up yet. An admin can turn the simulator on from this page." : e.message };
+    throw e;
+  }
+  revalidatePath("/payments");
+  redirect(`/payments/${intentId}`);
+}
+export const enableSandbox = async (_: FormState) => run(["/sandbox"], (z) => z.providers.enableSimulator(), "admin");
 export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
 export const resolveCase = async (_: FormState, f: FormData) => {
   const note = String(f.get("resolution") ?? "").trim();

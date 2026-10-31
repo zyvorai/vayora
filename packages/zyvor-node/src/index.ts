@@ -431,6 +431,12 @@ export class Zyvor {
     rotate: (id: string, overlapHours?: number) => this.req<{ id: string; key: string }>("POST", `/v1/api_keys/${encodeURIComponent(id)}/rotate`, { overlap_hours: overlapHours }),
   };
 
+  readonly providers = {
+    list: () => this.req<Page<{ id: string; provider: string; enabled: boolean; label: string }>>("GET", "/v1/provider_accounts"),
+    /** Test environments only: an in-process provider whose outcome the payer's UPI handle chooses. */
+    enableSimulator: () => this.req<{ id: string }>("POST", "/v1/provider_accounts", { provider: "sim", credentials: {}, webhook_secret: "sim-unused" }),
+  };
+
   readonly webhooks = {
     /** Every event type with its meaning. Choose which to receive with the `webhook_events` setting. */
     catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),

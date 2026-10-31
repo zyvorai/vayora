@@ -28,13 +28,15 @@ const admin = [
   { href: "/keys", label: "API keys", icon: icon("M15 7a4 4 0 11-3.9 4.9L3 20v-3l2-1v-2l2-1 4.1-4.1A4 4 0 0115 7zM16 9h.01") },
   { href: "/settings", label: "Settings", icon: icon("M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.4-2.7a7 7 0 002-1.2l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z") },
 ];
+// only where it makes sense: test mode, and a role that can make payments
+const sandbox = { href: "/sandbox", label: "Sandbox", icon: icon("M9 3h6M10 3v6L5 19a2 2 0 002 3h10a2 2 0 002-3l-5-10V3M8 15h8") };
 const account = { href: "/account", label: "Account", icon: icon("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4") };
 
-export function Nav({ role }: { role: "admin" | "finance" | "viewer" | "cashier" }) {
+export function Nav({ role, env }: { role: "admin" | "finance" | "viewer" | "cashier"; env?: "test" | "live" }) {
   const path = usePathname();
   return (
     <nav aria-label="Main">
-      {[...(role === "cashier" ? items.filter((i) => i.href === "/closing") : items), ...(role === "admin" ? admin : []), account].map((i) => {
+      {[...(role === "cashier" ? items.filter((i) => i.href === "/closing") : items), ...(env === "test" && (role === "admin" || role === "finance") ? [sandbox] : []), ...(role === "admin" ? admin : []), account].map((i) => {
         const on = i.href === "/" ? path === "/" : path.startsWith(i.href);
         return (
           <Link key={i.href} href={i.href} className="nav" aria-current={on ? "page" : undefined}>
