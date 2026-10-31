@@ -9,7 +9,7 @@ const major = (minor: number) => (minor / 100).toFixed(2);
 export default async function Settings() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
-  const z = api();
+  const z = await api();
   const [s, cat, fx] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates()]);
   const all = s.webhook_events.includes("*");
   const chosen = (t: string) => s.webhook_events.some((p) => p === t || (p.endsWith(".*") && t.startsWith(p.slice(0, -1))));

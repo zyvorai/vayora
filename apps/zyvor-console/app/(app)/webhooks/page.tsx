@@ -9,7 +9,7 @@ const FILTERS = ["", "pending", "delivered", "dead"];
 
 export default async function Webhooks({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
-  const page = await api().webhooks.outbox(status || undefined);
+  const page = await (await api()).webhooks.outbox(status || undefined);
   return (
     <>
       <div className="head">

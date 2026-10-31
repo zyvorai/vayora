@@ -13,7 +13,7 @@ export function LoginForm({ next }: { next: string }) {
     <form action={action} style={{ display: "grid", gap: 14, marginTop: 22 }}>
       <input type="hidden" name="next" value={next} />
       <div>
-        <label className="f" htmlFor="username">Username</label>
+        <label className="f" htmlFor="username">Email or username</label>
         <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus={!needOtp} readOnly={needOtp} />
       </div>
       <div>
@@ -32,6 +32,7 @@ export function LoginForm({ next }: { next: string }) {
       )}
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <button className="btn primary" style={{ minHeight: 44 }} disabled={pending}>{pending ? "Signing in…" : needOtp ? "Verify and sign in" : "Sign in"}</button>
+      <p className="fine" style={{ margin: 0, textAlign: "center" }}>New to Zyvor? <a href="/signup">Create an account</a></p>
     </form>
   );
 }

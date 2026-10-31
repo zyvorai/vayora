@@ -6,7 +6,7 @@ import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
 export default async function Onboarding() {
-  const [o, me] = await Promise.all([api().onboarding.get(), currentSession()]);
+  const [o, me] = await Promise.all([(await api()).onboarding.get(), currentSession()]);
   const admin = me?.r === "admin";
   const open = o.status === "not_started" || o.status === "draft" || o.status === "rejected";
   return (

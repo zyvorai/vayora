@@ -8,7 +8,7 @@ import { api } from "@/lib/zyvor";
 const base = () => (process.env.CHECKOUT_PUBLIC_URL ?? "http://localhost:3002").replace(/\/$/, "");
 
 export default async function Links() {
-  const z = api();
+  const z = await api();
   const [page, coupons, counters, branches] = await Promise.all([z.paymentLinks.list(), z.coupons.list(), z.counters.list(), z.branches.list()]);
   const branchName = new Map(branches.data.map((b) => [b.id, b.name]));
   return (

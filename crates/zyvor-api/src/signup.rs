@@ -13,7 +13,8 @@ use zyvor_core::new_id;
 use crate::{
     ApiError, AppState,
     admin::bootstrap_org,
-    console_users::{check_password, hash_password, valid_username},
+    auth::mint_key,
+    console_users::{Login, authenticate_in, check_password, hash_password, valid_username},
     tenant,
 };
 
@@ -140,4 +141,91 @@ pub async fn verify(
             .await?;
     }
     Ok(Json(json!({ "organisation_id": org, "verified": true })))
+}
+
+const SESSION_HOURS: i32 = 12;
+
+#[derive(Deserialize)]
+pub struct LoginIn {
+    email: String,
+    password: String,
+    otp: Option<String>,
+    /// `test` (default) or `live`.
+    env: Option<String>,
+}
+
+/// What a signed-in person's session key may do. The console still enforces roles on its own pages;
+/// this limits what a leaked session key could do against the API directly.
+fn session_scopes(role: &str) -> Vec<String> {
+    let s: &[&str] = match role {
+        "admin" => &["admin"],
+        "finance" => &[
+            "payments:read",
+            "payments:write",
+            "refunds:write",
+            "refunds:approve",
+            "recon:read",
+            "recon:write",
+            "invoices:write",
+            "customers:write",
+            "collections:write",
+            "billing:write",
+            "disputes:write",
+            "payouts:write",
+            "payouts:approve",
+            "closings:approve",
+            "onboarding:write",
+        ],
+        "cashier" => &["payments:read", "payments:write"],
+        _ => &["payments:read", "recon:read"],
+    };
+    s.iter().map(|x| x.to_string()).collect()
+}
+
+/// `POST /v1/console/login`: public. Finds the organisation from the signup email, checks the password
+/// (and second factor) and returns the person plus a session API key that expires in 12 hours.
+pub async fn console_login(
+    State(s): State<AppState>,
+    Json(b): Json<LoginIn>,
+) -> Result<Json<Value>, ApiError> {
+    let email = b.email.trim().to_lowercase();
+    let env = match b.env.as_deref() {
+        None | Some("test") => "test",
+        Some("live") => "live",
+        _ => return Err(ApiError::invalid("invalid_env", "env is test or live")),
+    };
+    let tenant_id: Option<String> = sqlx::query_scalar(
+        "SELECT t.id FROM signups g JOIN tenants t ON t.organisation_id = g.organisation_id WHERE g.email = $1 AND t.env = $2",
+    )
+    .bind(&email)
+    .bind(env)
+    .fetch_optional(&s.pool)
+    .await?;
+    let Some(tenant_id) = tenant_id else {
+        // same time and same answer as a wrong password, so emails cannot be probed
+        let _ = hash_password(&b.password);
+        return Err(ApiError::unauthorized(
+            "incorrect username, password or code",
+        ));
+    };
+    let mut out = authenticate_in(
+        &s,
+        &tenant_id,
+        Login {
+            username: email,
+            password: b.password,
+            otp: b.otp,
+        },
+    )
+    .await?;
+    let role = out["user"]["role"].as_str().unwrap_or("viewer").to_string();
+    let branch = out["user"]["branch_id"].as_str().map(str::to_string);
+    let (key, prefix, hash) = mint_key(env);
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id) VALUES ($1, $2, 'console session', $3, $4, $5, now() + make_interval(hours => $6), $7)")
+        .bind(new_id("key")).bind(&tenant_id).bind(prefix).bind(hash).bind(session_scopes(&role)).bind(SESSION_HOURS).bind(branch)
+        .execute(&s.pool).await?;
+    out["session_key"] = json!(key);
+    out["tenant_id"] = json!(tenant_id);
+    out["env"] = json!(env);
+    Ok(Json(out))
 }

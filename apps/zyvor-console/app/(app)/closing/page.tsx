@@ -7,7 +7,7 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Closing() {
-  const [me, z] = [await currentSession(), api()];
+  const [me, z] = [await currentSession(), await api()];
   const [allBranches, allClosings] = await Promise.all([z.branches.list(), z.closings.list()]);
   // a cashier tied to a branch sees and works on that branch only
   const mine = (id: string) => !me?.b || id === me.b;

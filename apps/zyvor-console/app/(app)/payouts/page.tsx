@@ -8,7 +8,7 @@ import { api } from "@/lib/zyvor";
 
 export default async function Payouts() {
   const me = await currentSession();
-  const z = api();
+  const z = await api();
   const [payouts, vendors] = await Promise.all([z.payouts.list(), z.payouts.vendors()]);
   const name = new Map(vendors.data.map((v) => [v.id, v.name]));
   // what each vendor is owed from split payments (a few dozen vendors at most on this page)

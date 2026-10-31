@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ kind: strin
   if (!s) return new NextResponse("Sign in first", { status: 401 });
   const { kind } = await ctx.params;
   const status = req.nextUrl.searchParams.get("status") || undefined;
-  const z = api();
+  const z = await api();
   let body: string;
   if (kind === "payments") {
     const rows: Intent[] = [];

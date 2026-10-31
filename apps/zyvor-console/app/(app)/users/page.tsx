@@ -9,7 +9,7 @@ import { api } from "@/lib/zyvor";
 export default async function People() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
-  const [page, branches] = await Promise.all([api().consoleUsers.list(), api().branches.list()]);
+  const [page, branches] = await Promise.all([(await api()).consoleUsers.list(), (await api()).branches.list()]);
   return (
     <>
       <div className="head"><div><h1>People</h1><p className="lede">Who can sign in. <strong>Viewers</strong> can look, <strong>finance</strong> can also move money and send reminders, <strong>admins</strong> manage people.</p></div></div>

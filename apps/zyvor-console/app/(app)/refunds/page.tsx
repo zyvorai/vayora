@@ -5,7 +5,7 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Refunds() {
-  const page = await api().refunds.list({ limit: 50 });
+  const page = await (await api()).refunds.list({ limit: 50 });
   const needs = page.data.filter((r) => r.status === "pending_approval");
   return (
     <>

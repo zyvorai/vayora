@@ -8,7 +8,7 @@ import { api } from "@/lib/zyvor";
 type Row = Record<string, string | number | null>;
 
 export default async function Billing() {
-  const z = api();
+  const z = await api();
   const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
   return (
     <>

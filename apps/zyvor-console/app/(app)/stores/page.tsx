@@ -6,7 +6,7 @@ import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Stores() {
-  const [me, z] = [await currentSession(), api()];
+  const [me, z] = [await currentSession(), await api()];
   const [branches, counters] = await Promise.all([z.branches.list(), z.counters.list()]);
   const admin = me?.r === "admin";
   const summaries = await Promise.all(branches.data.map(async (b) => [b.id, (await z.counters.branchSummary(b.id)).data] as const));

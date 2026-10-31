@@ -8,7 +8,7 @@ const greeting = () => {
 };
 
 export default async function Overview() {
-  const z = api();
+  const z = await api();
   const [intents, refunds, cases, ageing, promises, disputes, cash, anomalies] = await Promise.all([
     z.intents.list({ limit: 50 }),
     z.refunds.list({ status: "pending_approval", limit: 50 }),

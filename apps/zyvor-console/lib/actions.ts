@@ -5,10 +5,39 @@ import { revalidatePath } from "next/cache";
 import { ZyvorError, type Zyvor } from "@zyvor/node";
 import { currentSession } from "@/lib/auth";
 import { parseBulk } from "@/lib/bulk";
-import { COOKIE, SESSION_TTL_SECONDS, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
+import { publicPost, type EmailLogin } from "@/lib/public";
+import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
 import { api, authConfig } from "@/lib/zyvor";
 
 export type FormState = { ok?: string; error?: string; otp?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
+
+async function startWithKey(who: Omit<Session, "exp">, key: string) {
+  await start(who);
+  (await cookies()).set(KEY_COOKIE, await sealText(authConfig().secret, key), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  });
+}
+
+/** Sign in by email as a member of the organisation that signed up with it. */
+async function emailSignIn(email: string, password: string, otp: string): Promise<{ who: Omit<Session, "exp">; key: string } | NonNullable<FormState>> {
+  const r = await publicPost<EmailLogin>("/v1/console/login", { email, password, otp: otp || undefined });
+  if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
+  if (r.code === "otp_required") return { otp: true };
+  if (r.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes." };
+  if (r.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
+  await new Promise((x) => setTimeout(x, 500)); // slow down guessing
+  return { error: "Incorrect email, password or code." };
+}
+
+function safeNext(form: FormData): string {
+  const next = String(form.get("next") ?? "/");
+  // Only same-site relative paths; never an open redirect.
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
 
 async function start(who: Omit<Session, "exp">) {
   (await cookies()).set(COOKIE, await createSession(authConfig().secret, who), {
@@ -26,8 +55,17 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
   const p = String(form.get("password") ?? "");
   const otp = String(form.get("otp") ?? "").trim();
   let signedIn: Omit<Session, "exp"> | null = null;
+  if (u.includes("@")) {
+    const r = await emailSignIn(u, p, otp);
+    if ("who" in r) {
+      await startWithKey(r.who, r.key);
+      redirect(safeNext(form));
+    }
+    // not an organisation's email: fall through to the deployment's own users
+    if (r.otp || (r.error && !r.error.startsWith("Incorrect"))) return r;
+  }
   try {
-    const r = await api().consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
+    const r = await (await api()).consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
     signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled, ...(r.user.branch_id ? { b: r.user.branch_id } : {}) };
   } catch (e) {
     if (!(e instanceof ZyvorError)) return { error: "Sign-in is unavailable right now. Try again in a moment." };
@@ -43,7 +81,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     let noUsers = false;
     if (userOk && passOk) {
       try {
-        noUsers = (await api().consoleUsers.list()).data.length === 0;
+        noUsers = (await (await api()).consoleUsers.list()).data.length === 0;
       } catch {
         noUsers = false;
       }
@@ -55,13 +93,28 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     return { error: "Incorrect username, password or code." };
   }
   await start(signedIn);
-  const next = String(form.get("next") ?? "/");
-  // Only same-site relative paths; never an open redirect.
-  redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
+  redirect(safeNext(form));
+}
+
+export async function signup(_: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+  const r = await publicPost("/v1/signup", { organisation_name: String(form.get("organisation") ?? ""), email, password });
+  if (!r.ok) {
+    if (r.status === 409) return { error: "An account already exists for that email. Sign in instead." };
+    if (r.status === 422) return { error: r.message ? `${r.message[0].toUpperCase()}${r.message.slice(1)}.` : "Check the details and try again." };
+    if (r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+    return { error: "Signup is unavailable right now. Try again in a moment." };
+  }
+  const si = await emailSignIn(email, password, "");
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/onboarding");
 }
 
 export async function logout() {
   (await cookies()).delete(COOKIE);
+  (await cookies()).delete(KEY_COOKIE);
   redirect("/login");
 }
 
@@ -72,7 +125,7 @@ async function run(paths: string[], fn: (z: Zyvor, s: Session) => Promise<unknow
   const s = await currentSession();
   if (!s || !allows(s.r, need)) return DENIED;
   try {
-    await fn(api(s.u), s);
+    await fn(await api(s.u), s);
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
     throw e;
@@ -149,7 +202,7 @@ export async function beginMfa(): Promise<FormState> {
   const s = await currentSession();
   if (!s || s.i === "bootstrap") return { error: "Create a named user first; the deployment admin cannot enrol a device." };
   try {
-    const r = await api(s.u).consoleUsers.mfaBegin(s.i);
+    const r = await (await api(s.u)).consoleUsers.mfaBegin(s.i);
     return { secret: r.secret, uri: r.otpauth_uri };
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
@@ -161,7 +214,7 @@ export async function confirmMfa(_: FormState, f: FormData): Promise<FormState> 
   const s = await currentSession();
   if (!s || s.i === "bootstrap") return DENIED;
   try {
-    const r = await api(s.u).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
+    const r = await (await api(s.u)).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
     await start({ i: s.i, u: s.u, r: s.r, m: true });
     return { codes: r.recovery_codes };
   } catch (e) {

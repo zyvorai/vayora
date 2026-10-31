@@ -411,9 +411,9 @@ pub async fn mfa_confirm(
 
 #[derive(Deserialize)]
 pub struct Login {
-    username: String,
-    password: String,
-    otp: Option<String>,
+    pub(crate) username: String,
+    pub(crate) password: String,
+    pub(crate) otp: Option<String>,
 }
 
 enum Outcome {
@@ -431,8 +431,17 @@ pub async fn authenticate(
     Json(b): Json<Login>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
+    authenticate_in(&s, &auth.tenant_id, b).await.map(Json)
+}
+
+/// The sign-in check for one tenant, shared by the admin-keyed route and the public email login.
+pub(crate) async fn authenticate_in(
+    s: &AppState,
+    tenant_id: &str,
+    b: Login,
+) -> Result<Value, ApiError> {
     let username = b.username.trim().to_lowercase();
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     type Row = (
         String,
         String,
@@ -515,7 +524,7 @@ pub async fn authenticate(
                         .bind(&id).bind(locked).bind(LOCK_MINUTES).execute(&mut *tx).await?;
                     tenant::audit(
                         &mut tx,
-                        &auth.tenant_id,
+                        tenant_id,
                         "system:console",
                         if locked {
                             "console_user.locked"
@@ -533,7 +542,7 @@ pub async fn authenticate(
                         .bind(&id).bind(new_step).bind(&new_recovery).execute(&mut *tx).await?;
                     tenant::audit(
                         &mut tx,
-                        &auth.tenant_id,
+                        tenant_id,
                         "system:console",
                         "console_user.login",
                         Some(&id),
@@ -555,7 +564,7 @@ pub async fn authenticate(
     };
     tx.commit().await?;
     match outcome {
-        Outcome::Ok(v) => Ok(Json(v)),
+        Outcome::Ok(v) => Ok(v),
         Outcome::Bad => Err(ApiError::unauthorized(
             "incorrect username, password or code",
         )),

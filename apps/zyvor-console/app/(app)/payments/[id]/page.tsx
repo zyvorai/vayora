@@ -11,7 +11,7 @@ export default async function Payment({ params }: { params: Promise<{ id: string
   const { id } = await params;
   let t;
   try {
-    t = await api().intents.timeline(id);
+    t = await (await api()).intents.timeline(id);
   } catch (e) {
     if (e instanceof ZyvorError && e.status === 404) notFound();
     throw e;

@@ -27,3 +27,15 @@ describe("session", () => {
     expect(await passwordMatches("k", "hunter2", "hunter")).toBe(false);
   });
 });
+
+describe("sealed key cookie", () => {
+  it("round-trips, and a wrong secret or tampered value opens to null", async () => {
+    const { sealText, openText } = await import("./session");
+    const sealed = await sealText("s1", "zk_test_abc");
+    expect(sealed).not.toContain("zk_test");
+    expect(await openText("s1", sealed)).toBe("zk_test_abc");
+    expect(await openText("s2", sealed)).toBeNull();
+    expect(await openText("s1", sealed.slice(0, -2) + "AA")).toBeNull();
+    expect(await openText("s1", undefined)).toBeNull();
+  });
+});

@@ -54,3 +54,32 @@ export const SESSION_TTL_SECONDS = TTL_SECONDS;
 export const passwordMatches = async (secret: string, a: string, b: string) =>
   // Compare MACs so length differences don't leak through early return.
   safeEqual(await mac(secret, a), await mac(secret, b));
+
+/** Holds the per-person API key the API issued at sign-in. Encrypted, so the browser never sees it. */
+export const KEY_COOKIE = "zyvor_console_key";
+
+async function aesKey(secret: string, usage: KeyUsage): Promise<CryptoKey> {
+  const raw = await crypto.subtle.digest("SHA-256", enc.encode(`key-cookie:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, [usage]);
+}
+
+/** AES-GCM with a random nonce, base64url of `nonce || ciphertext`. */
+export async function sealText(secret: string, text: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(secret, "encrypt"), enc.encode(text)));
+  const all = new Uint8Array(iv.length + ct.length);
+  all.set(iv);
+  all.set(ct, iv.length);
+  return btoa(String.fromCharCode(...all)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export async function openText(secret: string, sealed: string | undefined): Promise<string | null> {
+  if (!sealed || !secret) return null;
+  try {
+    const all = Uint8Array.from(atob(sealed.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, await aesKey(secret, "decrypt"), all.slice(12));
+    return new TextDecoder().decode(pt);
+  } catch {
+    return null;
+  }
+}

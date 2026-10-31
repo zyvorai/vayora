@@ -5,7 +5,7 @@ import { istDateTime } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Keys() {
-  const z = api();
+  const z = await api();
   const [keys, branches] = await Promise.all([z.keys.list(), z.branches.list()]);
   const branch = new Map(branches.data.map((b) => [b.id, b.name]));
   return (

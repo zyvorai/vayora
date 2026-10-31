@@ -7904,3 +7904,60 @@ async fn signup_creates_org_with_working_test_key_and_admin_user(pool: PgPool) {
         .await;
     assert_ne!(s, StatusCode::OK);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Beta Foods", "email": "cfo@beta.in", "password": "correct horse battery" })).await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "CFO@beta.in", "password": "correct horse battery" }),
+        )
+        .await;
+    assert_eq!(login["user"]["role"], "admin");
+    assert_eq!(login["tenant_id"], r["test_tenant"]);
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
+    // live mode is a different tenant
+    let live = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "cfo@beta.in", "password": "correct horse battery", "env": "live" }),
+        )
+        .await;
+    assert_ne!(live["tenant_id"], login["tenant_id"]);
+    // wrong password and unknown email look the same
+    let (s1, b1) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "cfo@beta.in", "password": "wrong password here" }),
+        )
+        .await;
+    let (s2, b2) = t
+        .public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "nobody@beta.in", "password": "wrong password here" }),
+        )
+        .await;
+    assert_eq!((s1, &b1["error"]["message"]), (s2, &b2["error"]["message"]));
+    assert_eq!(s1, StatusCode::UNAUTHORIZED);
+    // the session key expires in the future, not never
+    assert_eq!(
+        t.count(
+            "SELECT count(*) FROM api_keys WHERE name = 'console session' AND expires_at > now()"
+        )
+        .await,
+        2
+    );
+}
