@@ -8,3 +8,6 @@ dist
 *.tsbuildinfo
 .env.local
 .env*.local
+
+__pycache__/
+*.pyc
