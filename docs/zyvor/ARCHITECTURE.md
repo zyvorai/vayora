@@ -1,12 +1,25 @@
 # Zyvor Payments architecture
 
+```mermaid
+flowchart LR
+  BR([Customer's browser]) --> CO[Checkout<br/>Next.js]
+  CO -- "/v1/checkout/*" --> API
+  MS([Merchant systems and console]) -- "/v1/* with API key" --> API
+  PR[Razorpay or Cashfree] -- "signed webhooks<br/>/v1/webhooks/*" --> API
+
+  subgraph SVC[Zyvor services]
+    API[zyvor-api<br/>axum, one transaction per request]
+    WK[zyvor-worker<br/>resolve unknowns, deliver outbox,<br/>scan for missing settlements]
+  end
+
+  API <--> DB[(PostgreSQL<br/>source of truth, row-level security)]
+  WK <--> DB
+  API -- "create payment" --> PR
+  WK -- "ask, never re-send" --> PR
+  WK -- "signed events" --> MS
 ```
- browser ──► checkout (Next.js) ──► /v1/checkout/*  ─┐
- merchant systems ───────────────► /v1/* (API key) ──┤  zyvor-api (axum)         zyvor-worker
- Razorpay / Cashfree ──webhooks──► /v1/webhooks/* ───┤    │  tenant-scoped tx        │ resolve unknown outcomes
-                                                      │    ▼                          │ deliver outbox (signed)
-                                                      └─► PostgreSQL (source of truth, RLS) ◄─┘ scan missing settlements
-```
+
+New to the system? Start with [HOW_IT_WORKS.md](HOW_IT_WORKS.md): the customer's journey, the server's rules and the worker's loop, each with a diagram.
 
 ## Money-flow model (read this first)
 Zyvor **does not hold funds**. The merchant's own provider accounts collect and settle; Zyvor records, routes, reconciles and explains. The ledger is an accounting record: `provider_receivable:<provider>` is what a provider owes the merchant, never a claim that Zyvor holds money. See [REGULATORY.md](REGULATORY.md).
