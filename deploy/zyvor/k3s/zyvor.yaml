@@ -205,6 +205,7 @@ spec:
             - { name: ZYVOR_API_KEY, valueFrom: { secretKeyRef: { name: zyvor-console, key: api-key } } }
             - { name: CONSOLE_USERNAME, valueFrom: { secretKeyRef: { name: zyvor-console, key: username } } }
             - { name: CHECKOUT_PUBLIC_URL, value: "https://pay.80-79-5-173.sslip.io" }
+            - { name: API_PUBLIC_URL, value: "https://api.80-79-5-173.sslip.io" }
             - { name: CONSOLE_PASSWORD, valueFrom: { secretKeyRef: { name: zyvor-console, key: password } } }
             - { name: CONSOLE_SESSION_SECRET, valueFrom: { secretKeyRef: { name: zyvor-console, key: session-secret } } }
             - { name: ZYVOR_ACTOR_SECRET, valueFrom: { secretKeyRef: { name: zyvor-actor, key: secret, optional: true } } }

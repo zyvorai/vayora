@@ -435,9 +435,9 @@ export class Zyvor {
     list: () => this.req<Page<{ id: string; provider: string; enabled: boolean; label: string; base_url: string | null; webhook_url: string; capabilities: { methods?: string[] } | null }>>("GET", "/v1/provider_accounts"),
     /** Test environments only: an in-process provider whose outcome the payer's UPI handle chooses. */
     enableSimulator: () => this.req<{ id: string }>("POST", "/v1/provider_accounts", { provider: "sim", credentials: {}, webhook_secret: "sim-unused" }),
-    /** Save a provider account. A Razorpay key must match the environment (rzp_test_ in test, rzp_live_ in live). */
-    connect: (p: { provider: "razorpay" | "cashfree"; credentials: Record<string, string | boolean>; webhookSecret: string; baseUrl?: string }) =>
-      this.req<{ id: string; webhook_url: string }>("POST", "/v1/provider_accounts", { provider: p.provider, credentials: p.credentials, webhook_secret: p.webhookSecret, base_url: p.baseUrl }),
+    /** Store these credentials for the provider, replacing its account if there is one, and turn it on. Leave `baseUrl` out for the provider's own test or live address. A Razorpay key must match the environment (rzp_test_ in test, rzp_live_ in live). */
+    connect: (provider: "razorpay" | "cashfree" | "custom", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
+      this.req<{ id: string; provider: string; enabled: boolean; replaced: boolean }>("PUT", `/v1/provider_accounts/${provider}`, { credentials: p.credentials, webhook_secret: p.webhookSecret, label: p.label, base_url: p.baseUrl }),
     /** Ask the provider whether it accepts the credentials. Read-only; a refusal comes back as `ok: false`. */
     check: (provider: string) => this.req<{ provider: string; ok: boolean; detail: string; env: string }>("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/check`),
     setEnabled: (provider: string, enabled: boolean) => this.req("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/enabled`, { enabled }),

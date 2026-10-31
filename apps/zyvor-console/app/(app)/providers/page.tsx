@@ -10,7 +10,7 @@ export default async function Providers() {
   await requireRole("admin");
   const z = await api();
   const [s, accounts] = await Promise.all([z.settings.get(), z.providers.list()]);
-  const publicBase = (process.env.ZYVOR_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+  const publicBase = (process.env.ZYVOR_PUBLIC_API_URL ?? process.env.API_PUBLIC_URL ?? "").replace(/\/$/, "");
   const onLocalhost = !publicBase || /localhost|127\.0\.0\.1|\.svc|provider-mock/.test(publicBase);
   return (
     <>

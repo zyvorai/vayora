@@ -11,6 +11,7 @@ export function ProviderForm({ env }: { env: string }) {
       <label className="field" style={{ flex: "0 1 150px" }}>Provider
         <select name="provider" value={provider} onChange={(e) => setProvider(e.target.value)}><option value="razorpay">Razorpay</option><option value="cashfree">Cashfree</option></select>
       </label>
+      <label className="field" style={{ flex: "1 1 160px" }}>Label (optional)<input name="label" maxLength={60} placeholder={`${razor ? "Razorpay" : "Cashfree"} ${env}`} /></label>
       <label className="field" style={{ flex: "1 1 200px" }}>{razor ? "Key id" : "App id (client id)"}<input name="id" autoComplete="off" spellCheck={false} placeholder={razor ? `rzp_${env}_…` : env === "test" ? "TEST…" : ""} required /></label>
       <label className="field" style={{ flex: "1 1 200px" }}>{razor ? "Key secret" : "Secret key"}<input name="secret" type="password" autoComplete="new-password" required /></label>
       {razor && <label className="field" style={{ flex: "1 1 200px" }}>Webhook secret<input name="webhook_secret" type="password" autoComplete="new-password" required /></label>}

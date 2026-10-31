@@ -38,6 +38,7 @@ pub mod refunds;
 pub mod registry;
 pub mod reminders;
 pub mod signup;
+pub mod sim_pay;
 pub mod state_machine;
 pub mod suggestions;
 pub mod telemetry;
@@ -50,7 +51,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use sqlx::PgPool;
 use zyvor_providers::sim::SimProvider;
@@ -86,6 +87,8 @@ pub struct AppState {
     pub mailer: mail::Mailer,
     /// Where the console is reached, for links in emails (`ZYVOR_CONSOLE_PUBLIC_URL`).
     pub console_url: String,
+    /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
+    pub sim_payer: bool,
 }
 
 pub use crypto::Crypto;
@@ -111,6 +114,7 @@ impl AppState {
             kyc: None,
             mailer: mail::Mailer::Log,
             console_url: "http://localhost:3000".to_string(),
+            sim_payer: false,
         }
     }
 }
@@ -187,6 +191,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/provider_accounts/{provider}/check",
             post(admin::check_provider_account),
+        )
+        .route(
+            "/provider_accounts/{provider}",
+            put(replace_provider_account),
         )
         .route(
             "/provider_accounts/{provider}/enabled",
@@ -434,6 +442,8 @@ pub fn app(state: AppState) -> Router {
             "/checkout/{tenant_id}/{intent_id}/upi-qr.svg",
             get(checkout::upi_qr),
         )
+        // simulated payer (test builds only; 404 unless ZYVOR_SIM_PAYER=1)
+        .route("/sim/pay", post(sim_pay::pay))
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

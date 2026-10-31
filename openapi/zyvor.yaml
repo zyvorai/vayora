@@ -1178,6 +1178,17 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/sim/pay:
+    post:
+      summary: A simulated payer approves or declines a sandbox UPI payload (test environments, off unless ZYVOR_SIM_PAYER=1; only the in-process simulator)
+      tags:
+      - sandbox
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN

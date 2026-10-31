@@ -238,7 +238,7 @@ export const connectProvider = async (_: FormState, f: FormData) => {
   // Cashfree signs its webhooks with the account's secret key, so that is the webhook secret; Razorpay has its own.
   const webhookSecret = provider === "cashfree" ? text(f, "secret") : text(f, "webhook_secret");
   if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: provider === "cashfree" ? "Fill in the app id and its secret key." : "Fill in the key, its secret and the webhook secret." };
-  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect({ provider, credentials, webhookSecret }), "admin");
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect(provider, { credentials, webhookSecret, label: text(f, "label") || undefined }), "admin");
   return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
 };
 /** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */
@@ -502,3 +502,4 @@ export const createKey = async (_: FormState, f: FormData): Promise<FormState> =
   return r?.error ? r : { ok: secret };
 };
 export const revokeKey = async (_: FormState, f: FormData) => run(["/keys"], (z) => z.keys.revoke(id(f)), "admin");
+
