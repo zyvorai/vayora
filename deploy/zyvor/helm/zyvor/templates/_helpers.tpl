@@ -10,6 +10,14 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 - name: ZYVOR_MASTER_KEY
   valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: master-key } }
 {{- end -}}
+{{- define "zyvor.mailEnv" -}}
+{{- if .Values.mail.enabled }}
+- name: ZYVOR_SMTP_URL
+  valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: smtp-url } }
+- name: ZYVOR_MAIL_FROM
+  valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: from } }
+{{- end }}
+{{- end -}}
 {{- define "zyvor.podSecurity" -}}
 securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
 {{- end -}}
