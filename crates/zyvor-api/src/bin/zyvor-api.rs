@@ -163,6 +163,20 @@ async fn main() {
         .filter(|u| u.starts_with("http"));
     state.sim_payer = env::var("ZYVOR_SIM_PAYER").as_deref() == Ok("1");
     state.sim.set_manual_payer(state.sim_payer);
+    if let Some(v) = env::var("ZYVOR_MANDATE_MAX_MINOR")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+    {
+        state.mandate_max_minor = v;
+    }
+    if let Some(v) = env::var("ZYVOR_MANDATE_NOTICE_HOURS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v >= 0)
+    {
+        state.mandate_notice_hours = v;
+    }
     state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
     state.actor_secret = env::var("ZYVOR_ACTOR_SECRET")
         .ok()

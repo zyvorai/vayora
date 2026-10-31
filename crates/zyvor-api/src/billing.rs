@@ -294,6 +294,7 @@ pub async fn run_billing(
     conn: &mut PgConnection,
     tenant_id: &str,
     today: NaiveDate,
+    mandate_notice_hours: i64,
 ) -> Result<usize, sqlx::Error> {
     let mut created = 0;
     let due: Vec<(String, String, i32, NaiveDate)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
@@ -322,6 +323,17 @@ pub async fn run_billing(
                     sqlx::query("UPDATE usage_records SET billed_invoice_id = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL").bind(&sub_id).bind(&inv).execute(&mut *conn).await?;
                     tenant::emit(&mut *conn, tenant_id, "invoice.created", json!({ "id": inv, "subscription_id": sub_id, "amount_minor": total, "period_start": date })).await?;
                     created += 1;
+                    // a subscription with an active mandate collects its own invoices
+                    crate::mandates::auto_collect(
+                        &mut *conn,
+                        tenant_id,
+                        mandate_notice_hours,
+                        &sub_id,
+                        &inv,
+                        total,
+                        date.checked_add_days(Days::new(due_days as u64)),
+                    )
+                    .await;
                 }
             }
             date = advance(date, &unit, count as u32);
@@ -338,7 +350,13 @@ pub async fn run_billing(
 pub async fn billing_run(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let n = run_billing(&mut tx, &auth.tenant_id, crate::ist_today()).await?;
+    let n = run_billing(
+        &mut tx,
+        &auth.tenant_id,
+        crate::ist_today(),
+        s.mandate_notice_hours,
+    )
+    .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,

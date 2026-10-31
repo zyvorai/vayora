@@ -1188,6 +1188,177 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/mandates:
+    post:
+      summary: Create a UPI AutoPay mandate for the payer to approve
+      description: 'Body: customer_id, max_amount_minor (per debit), frequency (daily, weekly, fortnightly, monthly, bimonthly, quarterly, half_yearly, yearly or as_presented), start_date, end_date, optional provider and external_ref. Needs a connected provider that supports mandates (today only the simulator); otherwise 422 no_route. Requires an Idempotency-Key. The response carries the authorization link the payer approves. The limit and notice rules are configurable (ZYVOR_MANDATE_MAX_MINOR, ZYVOR_MANDATE_NOTICE_HOURS) and must be checked against the current NPCI circular and your provider before live use.'
+      tags:
+      - mandates
+      parameters:
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        '201':
+          description: The mandate, pending the payer's approval
+        '422':
+          description: Invalid limit, dates, currency or no provider supports mandates
+    get:
+      summary: List mandates
+      description: 'Filter by status or customer_id.'
+      tags:
+      - mandates
+      responses:
+        '200':
+          description: OK
+  /v1/mandates/run:
+    post:
+      summary: Run the mandate pass for this tenant now
+      description: 'Expires ended mandates, emits due pre-debit notices, sends the debits that are due and settles those in flight. The worker does this on its own; this is a sandbox and test aid. The in-process simulator only works when the API itself runs the pass.'
+      tags:
+      - mandates
+      responses:
+        '200':
+          description: OK
+  /v1/mandates/{id}:
+    get:
+      summary: Get a mandate with its recent debits
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not found
+  /v1/mandates/{id}/refresh:
+    post:
+      summary: Ask the provider where the mandate stands
+      description: 'Moves our record to what the provider reports (approved, declined, revoked by the payer). Never undoes a merchant pause.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The mandate
+        '409':
+          description: The mandate is not in a state that allows this
+        '404':
+          description: Not found
+  /v1/mandates/{id}/pause:
+    post:
+      summary: Pause a mandate (a merchant hold)
+      description: 'No debit goes out while paused. The provider and the payer''s mandate are unchanged.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The mandate
+        '409':
+          description: The mandate is not in a state that allows this
+        '404':
+          description: Not found
+  /v1/mandates/{id}/resume:
+    post:
+      summary: Resume a paused mandate
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The mandate
+        '409':
+          description: The mandate is not in a state that allows this
+        '404':
+          description: Not found
+  /v1/mandates/{id}/revoke:
+    post:
+      summary: Revoke a mandate
+      description: 'Stops debiting first, cancels debits not yet sent, then asks the provider; a provider failure is recorded on the mandate, not hidden.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The mandate
+        '409':
+          description: The mandate is not in a state that allows this
+        '404':
+          description: Not found
+  /v1/mandates/{id}/debits:
+    post:
+      summary: Schedule a debit on a mandate
+      description: 'Body: amount_minor, due_date (India time), optional invoice_id. Refused with 422 exceeds_mandate_limit, outside_mandate_dates or notice_too_short (the payer must be told at least the notice window ahead), and 409 period_already_debited or debit_exists. A mandate is never debited twice for one day. Requires an Idempotency-Key.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      responses:
+        '201':
+          description: The scheduled debit
+        '409':
+          description: Not active, or a debit already exists in that period
+        '422':
+          description: Over the limit, outside the dates, or too soon
+    get:
+      summary: List a mandate's debits
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Not found
+  /v1/subscriptions/{id}/mandate:
+    post:
+      summary: Link a mandate to a subscription so its invoices are collected automatically
+      description: 'Body: mandate_id, or null to unlink. When the mandate is active, each invoice the subscription raises is scheduled as a debit on its due date (or the earliest date the notice allows) and marked paid when the debit is captured. Otherwise the invoice stays open for the usual reminders.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+        '422':
+          description: The mandate belongs to a different customer
+        '404':
+          description: Not found
+  /v1/sim/mandate:
+    post:
+      summary: Approve or decline the simulator's UPI mandate (test mode only)
+      description: 'Body: upi_uri (the upi://mandate link from the mandate authorization) and approve. Answers 404 unless the server was started with ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
+      tags:
+      - mandates
+      responses:
+        '200':
+          description: The mandate status the payer chose
+        '404':
+          description: Not enabled on this server
+        '409':
+          description: Nothing pending for this link
+        '422':
+          description: Not a simulator mandate link
+  /v1/sim/mandate/revoke:
+    post:
+      summary: Revoke a simulated mandate as the payer would from their UPI app (test mode only)
+      description: 'Body: mandate_id. Answers 404 unless ZYVOR_SIM_PAYER=1. Zyvor learns of it when the mandate is refreshed.'
+      tags:
+      - mandates
+      responses:
+        '200':
+          description: Revoked
+        '404':
+          description: Not enabled on this server
+        '409':
+          description: No live mandate with that id
   /v1/sim/pay:
     post:
       summary: A simulated payer approves or declines a sandbox UPI payload (test environments, off unless ZYVOR_SIM_PAYER=1; only the in-process simulator)

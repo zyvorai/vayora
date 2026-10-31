@@ -174,4 +174,6 @@ translations for the new pages (`apps/zyvor-checkout` shows the approach).
 | `ZYVOR_PUBLIC_API_URL` / `API_PUBLIC_URL` | Console | Public API address shown on the Providers page |
 | `ZYVOR_TRUST_PROXY_HOPS` | API | How many proxies vouch for `X-Forwarded-For` |
 | `CONSOLE_TRUST_PROXY_HOPS` | Console | How many proxies sit in front of the console; its visitors' addresses are only forwarded (signed) when this is 1 or more. Needs `ZYVOR_ACTOR_SECRET` on both sides |
-| `ZYVOR_SIM_PAYER=1` | API | Lets the iPhone payer app approve simulated QR payments (test only) |
+| `ZYVOR_SIM_PAYER=1` | API | Lets the iPhone payer app approve simulated QR payments and mandates (test only) |
+| `ZYVOR_MANDATE_MAX_MINOR` | API | The highest per-debit limit a UPI AutoPay mandate may be created with, in paise (default 1500000 = ₹15,000). Verify against the current NPCI circular before live use |
+| `ZYVOR_MANDATE_NOTICE_HOURS` | API, Worker | How long before a debit the payer must be told (default 24). The worker also uses it, so set it on both |

@@ -26,6 +26,11 @@ API keys, customer contact data, the audit trail.
   `ZYVOR_TRUST_PROXY_HOPS`; client-supplied leftmost entries are never trusted.
 - **Cross-tenant access**: row-level security is forced on every tenant table; the app connects as a
   non-superuser; the API never accepts a tenant id from the caller for authenticated routes.
+- **Over-debit, early debit or debit after revoke (AutoPay mandates)**: a debit above the mandate's cap, outside its
+  dates, in another currency, or inside the notice window is refused when scheduled and again when sent; two debits
+  never share a day (a unique constraint) or a frequency period; a paused, revoked or expired mandate never sends;
+  a payer's revoke is learned on refresh and cancels debits not yet sent; the provider is called outside any
+  transaction after the attempt is saved, and a lost answer stays `unknown` and is resolved by asking.
 - **Double charge / double refund / replay**: idempotency keys, unique constraints per attempt/period, state
   machine guards, unknown outcomes block new attempts until resolved.
 - **Tampering with the audit trail**: events are append-only (trigger), and the worker seals them into a hash chain
@@ -56,4 +61,5 @@ API keys, customer contact data, the audit trail.
 - Rate limiter is per replica, in memory.
 - **Second-person rules trust the `Zyvor-Actor` header unless `ZYVOR_ACTOR_SECRET` is set.** Refund, payout, onboarding and closing approvals compare the person who asked with the person who approved, and the API takes that name from a header. With no actor secret, any holder of one key that has both the write and the approve scope can name two different people and approve their own request. With `ZYVOR_ACTOR_SECRET` set on the API (and the same value on the console, which then signs each name with a timestamp), the API believes a name only when it carries a valid, fresh signature; anything else is recorded as the key itself, so an integration key cannot pose as a person. The k3s deploy script creates this secret and wires both sides. Still keep approve scopes (`refunds:approve`, `payouts:approve`, `closings:approve`, `onboarding:review`) on the console's key only: whoever holds the actor secret can name anyone, and a signature stays valid for five minutes.
 - A branch-limited key is closed to every endpoint that does not enforce its branch, but the scopes it holds still apply on the ones that do; give it only what a till needs.
+- **AutoPay mandates are simulator-only.** No real provider supports them yet. A debit already in flight when the payer revokes is left to the provider to decide. Zyvor emits the pre-debit notice but does not deliver it; a merchant who ignores `mandate.debit_notified` debits without telling the payer. The notice window and ceiling are defaults, not verified against NPCI's circular.
 - Rails are simulated; this is not a licensed payment service (see REGULATORY.md).

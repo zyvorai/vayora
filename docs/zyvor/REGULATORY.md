@@ -20,3 +20,17 @@ the party that verifies identity for a regulator: it uses a vendor, and a Zyvor 
 Before turning it on for real merchants: agree the vendor terms with Cashfree, decide how consent to the check is
 captured and shown to the merchant (the Onboarding page says the details are checked with a verification partner),
 and set a retention rule for the check records. The simulator is for test environments only.
+
+## UPI AutoPay mandates: assumptions to verify before any live use
+Zyvor's mandate code (simulator only today) enforces rules that came from provider documents and articles, **not from NPCI's circulars**, and those sources disagree on details. Treat each as an assumption to confirm with your provider and the current NPCI and RBI circulars.
+
+| Assumption | What the sources say | How the code treats it |
+|---|---|---|
+| The payer is told before each debit | Vendor documents describe a notice at least 24 hours ahead (some providers send it earlier); auto-replenishment for FASTag and RuPay NCMC is reported as exempt | `ZYVOR_MANDATE_NOTICE_HOURS`, default 24. Zyvor emits `mandate.debit_notified` and refuses a debit whose notice is younger than the window. **Zyvor does not message the payer**; the merchant or the provider must |
+| An authentication step at registration | One source says registration needs extra authentication; NPCI's RuPay AutoPay circular covers RuPay, not all UPI | The provider performs it; Zyvor records the mandate only once the provider reports it active |
+| A per-debit ceiling | Cashfree's documents give ₹15,000 up to ₹1,00,000 depending on authentication; other articles give ₹15,000 or ₹1,00,000 for some categories | `ZYVOR_MANDATE_MAX_MINOR`, default ₹15,000 (1,500,000 paise); a mandate above it is refused at creation |
+| The payer can revoke at any time | Stated consistently | A payer's revoke is learned on refresh and stops every debit not yet sent; a debit already in flight is left to the provider |
+| Frequency limits | Not confirmed by the sources | Zyvor allows at most one debit per period of the mandate's frequency and never two on one day |
+
+Zyvor still never holds the money: the provider debits and settles. Consent records, the notice itself and any licence the merchant needs remain the merchant's and the provider's responsibility. Sources read: Cashfree Subscriptions documentation, Razorpay recurring-payments documentation, vendor explainers on UPI AutoPay.
+

@@ -154,6 +154,7 @@ impl Provider for Cashfree {
             server_initiated_upi: true,
             // Verified against the sandbox only, and needs the account to have it enabled: opt in per account.
             upi_intent: self.upi_intent,
+            mandates: false,
             refund_window_days: Some(365),
         }
     }

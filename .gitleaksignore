@@ -4,3 +4,6 @@
 1d4f3ae9ed377fd58c520043b29a40302e643896:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:8
 c73ad525d994cde0dbd4aef46cdbd5db8272a991:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:6
 c73ad525d994cde0dbd4aef46cdbd5db8272a991:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:8
+# Test fixture, not a secret: mandates.rs connected the simulator with a made-up placeholder webhook secret in its first
+# commit; the file now uses an obviously non-secret value. The generic-api-key rule matched the `webhook_secret` shape.
+910c656f9328613cd787f5e41471a9eb4e7ac19a:crates/zyvor-api/tests/mandates.rs:generic-api-key:33

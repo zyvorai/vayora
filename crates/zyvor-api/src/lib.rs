@@ -29,6 +29,7 @@ pub mod installments;
 pub mod kyc;
 pub mod kyc_cashfree;
 pub mod mail;
+pub mod mandates;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -40,6 +41,7 @@ pub mod refunds;
 pub mod registry;
 pub mod reminders;
 pub mod signup;
+pub mod sim_mandate;
 pub mod sim_pay;
 pub mod state_machine;
 pub mod suggestions;
@@ -91,6 +93,12 @@ pub struct AppState {
     pub console_url: String,
     /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
     pub sim_payer: bool,
+    /// The highest per-debit limit a mandate may be created with, in minor units (`ZYVOR_MANDATE_MAX_MINOR`).
+    /// The default is the strict reading of the no-extra-authentication limit; check it against the current
+    /// NPCI circular and your provider before any live use.
+    pub mandate_max_minor: i64,
+    /// How long before a debit the payer must be told, in hours (`ZYVOR_MANDATE_NOTICE_HOURS`).
+    pub mandate_notice_hours: i64,
 }
 
 pub use crypto::Crypto;
@@ -117,6 +125,8 @@ impl AppState {
             mailer: mail::Mailer::Log,
             console_url: "http://localhost:3000".to_string(),
             sim_payer: false,
+            mandate_max_minor: 1_500_000,
+            mandate_notice_hours: 24,
         }
     }
 }
@@ -254,6 +264,24 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/milestones/{id}/cancel", post(billing::cancel_milestone))
         .route("/billing/run", post(billing::billing_run))
+        .route(
+            "/mandates",
+            post(mandates::create_mandate).get(mandates::list_mandates),
+        )
+        .route("/mandates/run", post(mandates::run_now))
+        .route("/mandates/{id}", get(mandates::get_mandate))
+        .route("/mandates/{id}/refresh", post(mandates::refresh_mandate))
+        .route("/mandates/{id}/pause", post(mandates::pause_mandate))
+        .route("/mandates/{id}/resume", post(mandates::resume_mandate))
+        .route("/mandates/{id}/revoke", post(mandates::revoke_mandate))
+        .route(
+            "/mandates/{id}/debits",
+            post(mandates::create_debit).get(mandates::list_debits),
+        )
+        .route(
+            "/subscriptions/{id}/mandate",
+            post(mandates::link_subscription),
+        )
         .route(
             "/invoices/{id}/credit_notes",
             post(billing::create_credit_note),
@@ -462,6 +490,8 @@ pub fn app(state: AppState) -> Router {
         )
         // simulated payer (test builds only; 404 unless ZYVOR_SIM_PAYER=1)
         .route("/sim/pay", post(sim_pay::pay))
+        .route("/sim/mandate", post(sim_mandate::decide))
+        .route("/sim/mandate/revoke", post(sim_mandate::revoke))
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

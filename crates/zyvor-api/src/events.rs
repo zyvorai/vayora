@@ -25,6 +25,43 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "payment.unresolved",
         "The provider's answer is unknown; no new attempt can start until it resolves.",
     ),
+    (
+        "mandate.created",
+        "A UPI AutoPay mandate was created and is waiting for the payer to approve it.",
+    ),
+    (
+        "mandate.activated",
+        "The payer approved a mandate; debits can now be scheduled.",
+    ),
+    (
+        "mandate.failed",
+        "A mandate was declined by the payer or refused by the provider.",
+    ),
+    (
+        "mandate.paused",
+        "A mandate was paused; no debit goes out until it resumes.",
+    ),
+    ("mandate.resumed", "A paused mandate was resumed."),
+    (
+        "mandate.revoked",
+        "A mandate was revoked (by you or the payer); scheduled debits are cancelled.",
+    ),
+    (
+        "mandate.expired",
+        "A mandate passed its end date; scheduled debits are cancelled.",
+    ),
+    (
+        "mandate.debit_scheduled",
+        "A debit was scheduled on a mandate.",
+    ),
+    (
+        "mandate.debit_notified",
+        "The pre-debit notice is due: tell the payer about the upcoming debit (Zyvor does not message them).",
+    ),
+    (
+        "mandate.debit_failed",
+        "A mandate debit failed after its retry; the invoice, if any, stays open.",
+    ),
     ("refund.processed", "A refund was completed."),
     ("refund.failed", "A refund failed and needs attention."),
     (

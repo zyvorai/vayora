@@ -32,7 +32,8 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 |---|---|
 | Per-merchant return-URL allowlist | Not built (basic validation only) |
 | OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
-| UPI AutoPay / mandates, vendor payouts through a partner | Not built (payouts are bookkeeping only) |
+| UPI AutoPay mandates | Built at level 1 with the simulator (see "UPI AutoPay mandates" below). No real provider adapter yet |
+| Vendor payouts through a partner | Not built (payouts are bookkeeping only) |
 | Object storage with malware scanning for documents | Not built |
 | Authenticated SSE status stream | Not built (the checkout polls) |
 | Amounts as decimal strings in the API | Not done: integer minor units are used |
@@ -80,4 +81,28 @@ Run on 31 October 2026 against Cashfree's real **sandbox**, with the whole local
 **Person-to-person features (Pay only, phone-local).** Payees, send, split a bill (`vayora://request` QR), small payments without a PIN (up to ₹200 a payment and ₹1,000 a day, off by default) and bill reminders are recorded on the phone. The simulator knows only merchant payments, so none of this reaches Zyvor's ledger. The screens say so.
 
 **Not verified.** No simulator run (CoreSimulator was out of date on the build Macs), no XCUITest, no TestFlight, no CI job for iOS. Dynamic Type, VoiceOver, the iOS 26 glass cards, haptics, the no-PIN path and reminder notifications have not been checked on a device. Row-level security was not exercised in the phone runs (a superuser database role was used).
+
+## UPI AutoPay mandates (level 1: implemented with the simulator)
+A mandate is the payer's one-time approval ("this merchant may debit up to ₹X, this often, until this date"); after it, the merchant schedules debits and each is announced in advance. Zyvor holds the agreement and the schedule; the provider (here the simulator) holds the mandate; a debit is an ordinary payment attempt.
+
+| Behaviour | Evidence (`crates/zyvor-api/tests/mandates.rs` unless noted) |
+|---|---|
+| Create, payer approves, refresh to active; the first lookup does not approve it | `approved_then_debited_once_with_one_balanced_ledger_pair`; `sim.rs` `mandate_tests` |
+| A debit is captured with **one balanced ledger pair** and one `payment.captured`; a second pass does not debit again | `approved_then_debited_once_with_one_balanced_ledger_pair` |
+| Over the cap, zero, outside the dates, inside the notice window, a second debit in the same period or on the same day: refused | `the_rules_that_keep_a_payer_safe_are_enforced` |
+| Limit ceiling, currency, frequency and date validation at creation; the same key twice is one mandate; no key, no mandate | same test; `creating_the_same_mandate_twice_with_one_key_makes_one` |
+| A paused mandate never debits; a revoked one cancels unsent debits and refuses new ones | `a_paused_or_revoked_mandate_never_debits` |
+| A payer's revoke in their own app is learned on refresh and cancels scheduled debits | `a_payer_revoke_is_learned_on_refresh_and_cancels_scheduled_debits` |
+| A debit with an unknown outcome stays `unknown`, is never sent again, opens a case, and is resolved by asking the provider with our own reference | `an_unknown_debit_is_resolved_by_asking_never_by_sending_again` |
+| A declined debit retries once the next day, then fails with an event; a failed day can be scheduled again | `a_declined_debit_retries_once_then_fails_and_says_so` |
+| A subscription with an active mandate collects its own invoice and the invoice is marked paid; without one billing is unchanged | `a_subscription_with_a_mandate_collects_its_own_invoice`; `a_mandate_without_an_active_mandate_leaves_the_invoice_to_the_usual_reminders` |
+| Tenant isolation as the non-superuser role; scopes `mandates:read` and `mandates:write`; the simulated payer is off by default | `mandates_are_private_to_their_tenant_scoped_and_the_sim_payer_is_gated` |
+| Every route is in the OpenAPI spec and every event is in the catalogue | `openapi_documents_every_route`; the debug assertion in `tenant::emit` |
+
+**Limits.**
+- The in-process simulator lives in one process, so mandates work against it only when the API itself runs the pass (`POST /v1/mandates/run`) or API and worker are one process. A separate worker process has its own, empty simulator. Real providers do not have this limit.
+- No Cashfree Subscriptions or Razorpay recurring adapter; their `mandates` capability is false. Their documents describe the same shape (one approval, then server-side debits, lifecycle webhooks); the endpoint names and their pre-debit handling are not confirmed.
+- The notice window (default 24 hours) and the per-debit ceiling (default ₹15,000) come from vendor documents and articles that disagree on details. They are configurable, strict by default and **not verified against NPCI's current circular**. Zyvor emits the pre-debit notice event; it does not message the payer.
+- A debit in flight when the payer revokes is left to the provider to decide; the ledger follows its answer.
+- No change of amount or frequency after approval, no iOS screens.
 
