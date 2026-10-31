@@ -1776,6 +1776,7 @@ components:
           enum:
           - razorpay
           - cashfree
+          - custom
           - sim
         method:
           type: string

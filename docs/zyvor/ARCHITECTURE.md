@@ -41,6 +41,7 @@ Zyvor **does not hold funds**. The merchant's own provider accounts collect and 
 Persist → call provider → record result in a second transaction. A crash in between leaves an attempt in `created`; the worker asks the provider (by our attempt id) and adopts the truth, or marks it failed if the provider never saw it.
 
 ## Operating notes
+- Providers are adapters behind the `Provider` trait (`crates/zyvor-providers`). To use your own gateway instead of Razorpay or Cashfree, see [BRING_YOUR_OWN_PROVIDER.md](BRING_YOUR_OWN_PROVIDER.md) and the [HTTP contract](PROVIDER_CONTRACT.md).
 - Run migrations with the schema owner (`ZYVOR_MIGRATE_DATABASE_URL`) and serve as `zyvor_app`, a non-superuser role (`deploy/zyvor/sql/roles.sql`). A superuser bypasses row-level security.
 - Webhook endpoints are per tenant and provider: `/v1/webhooks/{provider}/{tenant_id}`.
 - Workers can be scaled out: delivery uses `FOR UPDATE SKIP LOCKED`.

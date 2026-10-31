@@ -259,14 +259,23 @@ pub async fn create_provider_account(
     let required: &[&str] = match b.provider.as_str() {
         "razorpay" => &["key_id", "key_secret"],
         "cashfree" => &["client_id", "client_secret"],
+        "custom" => &["api_key"],
         "sim" => &[],
         _ => {
             return Err(ApiError::invalid(
                 "unknown_provider",
-                "provider must be razorpay, cashfree or sim",
+                "provider must be razorpay, cashfree, custom or sim",
             ));
         }
     };
+    if b.provider == "custom" {
+        // Your own gateway: it has no default URL, and it must be a public https endpoint.
+        let url = b.base_url.as_deref().ok_or_else(|| {
+            ApiError::invalid("missing_base_url", "the custom provider needs a base_url")
+        })?;
+        crate::ssrf::check_url(url, s.allow_private_targets)
+            .map_err(|e| ApiError::invalid("bad_base_url", e))?;
+    }
     if auth.env == "live" && b.provider == "sim" {
         return Err(ApiError::invalid(
             "sim_in_live",

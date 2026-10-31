@@ -13,7 +13,7 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
 ![Status](https://img.shields.io/badge/status-release%203%20%C2%B7%20sandbox-ff9f0a)
 
-[How it works](docs/zyvor/HOW_IT_WORKS.md) · [Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
+[How it works](docs/zyvor/HOW_IT_WORKS.md) · [Bring your own provider](docs/zyvor/BRING_YOUR_OWN_PROVIDER.md) · [Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
 
 </div>
 
@@ -64,6 +64,11 @@ stateDiagram-v2
   created --> failed
   pending --> failed
 ```
+
+### Why a provider, and bring your own
+Zyvor never holds money, so a payment provider has to collect and settle it. Razorpay and Cashfree are two adapters behind one `Provider` trait; a third, `custom`, lets you point Zyvor at **your own gateway or bank API** over a small JSON contract, with no fork. Routing, the state machine, the ledger and reconciliation are unchanged. Swapping the provider does not make a deployment licensed: whoever collects the money must be authorised to.
+
+[Why and how to swap](docs/zyvor/BRING_YOUR_OWN_PROVIDER.md) · [HTTP contract](docs/zyvor/PROVIDER_CONTRACT.md) · [template adapter](crates/zyvor-providers/src/custom.rs)
 
 Full walkthrough with a diagram for each part (the customer's journey, the server's rules, the worker loop and reconciliation): **[docs/zyvor/HOW_IT_WORKS.md](docs/zyvor/HOW_IT_WORKS.md)**. Component map and invariants: [ARCHITECTURE.md](docs/zyvor/ARCHITECTURE.md).
 

@@ -4,7 +4,7 @@ Three views of the same system: what a **customer** sees when they pay, what the
 
 ## The one idea to hold on to
 
-Zyvor **does not hold money**. Your own Razorpay or Cashfree account collects the payment and settles it to your bank. Zyvor decides where a payment goes, records every step in an append-only ledger, and checks that what the provider settled matches what was paid. See [REGULATORY.md](REGULATORY.md).
+Zyvor **does not hold money**. Your own Razorpay or Cashfree account collects the payment and settles it to your bank. Razorpay and Cashfree are just two adapters; you can bring your own gateway instead ([BRING_YOUR_OWN_PROVIDER.md](BRING_YOUR_OWN_PROVIDER.md)). Zyvor decides where a payment goes, records every step in an append-only ledger, and checks that what the provider settled matches what was paid. See [REGULATORY.md](REGULATORY.md).
 
 ```mermaid
 flowchart LR
