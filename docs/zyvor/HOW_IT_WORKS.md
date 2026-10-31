@@ -1,6 +1,6 @@
 # How Zyvor Payments works
 
-Three views of the same system: what a **customer** sees when they pay, what the **server** does behind that tap, and how the **books** stay right afterwards. Every diagram below is drawn from the code in this repository, and every claim links to where it is enforced. Providers are verified only against local simulators; see [STATUS.md](STATUS.md).
+Three views of the same system: what a **customer** sees when they pay, what the **server** does behind that tap, and how the **books** stay right afterwards. Every diagram below is drawn from the code in this repository, and every claim links to where it is enforced. Providers are verified against local simulators, and Cashfree UPI intent and QR also against Cashfree's sandbox; see [STATUS.md](STATUS.md).
 
 ## The one idea to hold on to
 

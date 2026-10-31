@@ -93,4 +93,4 @@ You inherit: routing and its recorded reasons, exactly-once payments, the `unkno
 
 Still yours: the licence for whatever collects the money, PCI scope for any page that embeds provider fields, KYC with your provider, data-localisation and DPDP obligations, and the provider's own terms.
 
-Adapters here are verified only against local simulators and stubs, never a live gateway ([STATUS.md](STATUS.md)). Test yours against your provider's sandbox before you trust it.
+Adapters here are verified against local simulators and stubs (and the Cashfree UPI intent and QR path against Cashfree's sandbox), never a live gateway ([STATUS.md](STATUS.md)). Test yours against your provider's sandbox before you trust it.

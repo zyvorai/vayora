@@ -66,3 +66,18 @@ Run on 31 October 2026 against Cashfree's real **sandbox**, with the whole local
 - **Production is opt-in per account.** Set `"upi_intent": true` in the account's credentials only after Cashfree has enabled native intent / QR (its S2S flag). The sandbox did not require the flag; production behaviour is unconfirmed.
 - The adapter uses Order Pay API version `2026-01-01` for this call (verified in the sandbox) and `2023-08-01` for the rest.
 
+## iOS test apps (level 1: implemented with the simulator)
+`apps/ios` holds **Vayora Pay** (payer) and **Vayora Merchant** (counter). They exercise the platform end to end on a phone against the in-process simulator; they do not move real money and are not bank-linked UPI apps (that needs NPCI TPAP approval and a sponsor bank).
+
+| What was shown | Evidence |
+|---|---|
+| A payment created in Merchant's Collect screen, paid from Pay (`POST /v1/sim/pay`), polled to captured by Merchant, on two physical iPhones | observed on a local API with a temporary Postgres; one balanced ledger pair (`capture:<attempt>`) and one `payment.captured` event per payment |
+| Full refunds from Merchant are `processed`, the reversal is balanced, and a repeat refund is refused (`422 refund_exceeds_refundable`) | observed; ledger totals equal |
+| `POST /v1/sim/pay` is off unless `ZYVOR_SIM_PAYER=1` (404), accepts only the simulator's payee (`422 not_a_sim_payment`), and a second pay is `409 nothing_to_pay` | `crates/zyvor-api/src/sim_pay.rs` unit tests; observed |
+| Setup QRs carry a server address and a **test** key; live keys are refused | `SetupPayloadTests` |
+| Money is integer paise end to end; the keypad builds amounts from text, never floats | `AmountEntryTests`, `MoneyTests` |
+
+**Person-to-person features (Pay only, phone-local).** Payees, send, split a bill (`vayora://request` QR), small payments without a PIN (up to ₹200 a payment and ₹1,000 a day, off by default) and bill reminders are recorded on the phone. The simulator knows only merchant payments, so none of this reaches Zyvor's ledger. The screens say so.
+
+**Not verified.** No simulator run (CoreSimulator was out of date on the build Macs), no XCUITest, no TestFlight, no CI job for iOS. Dynamic Type, VoiceOver, the iOS 26 glass cards, haptics, the no-PIN path and reminder notifications have not been checked on a device. Row-level security was not exercised in the phone runs (a superuser database role was used).
+

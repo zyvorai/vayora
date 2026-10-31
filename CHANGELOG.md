@@ -1,10 +1,27 @@
 # Changelog
 
-What shipped, newest first. Everything here is verified against local simulators and a k3s sandbox, never against
-live Razorpay or Cashfree. See [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
+What shipped, newest first. Everything here is verified against local simulators and a k3s sandbox, except Cashfree UPI
+intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
+[docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
-## Release 2 (current)
-**Merchant operations (Release 3, in progress)**
+## 31 October 2026
+**iOS test apps**
+- `apps/ios`: **Vayora Pay** (a payer: scan, slide to pay, PIN, receipt, History, Settings) and **Vayora Merchant** (counter keypad, payment QR with Customer view, Today dashboard, refunds, setup by QR), on a shared `VayoraKit` and `VayoraUI` design system. Run on two physical iPhones against the simulator; no real money. A `VayoraGallery` tool renders the screens to PNG for review without a simulator.
+- `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
+- Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
+
+**Providers and checkout**
+- Cashfree native UPI intent and QR through Order Pay, opt-in per account, **verified against Cashfree's sandbox** (the first capability at level 2). Partner setup and the end-to-end test plan are in `docs/zyvor/PARTNER_SETUP.md`.
+- UPI QR and intent checkout: no UPI ID to type when a provider can issue a payload; a QR is only a way to present it, never proof of payment.
+- Bring your own provider: a generic `custom` adapter over a small JSON contract (`docs/zyvor/PROVIDER_CONTRACT.md`), with a stub-gateway test suite.
+- A support reference on every checkout state.
+
+**Repository**
+- Removed the legacy single-merchant prototype (`vayora-*` crates, `apps/dashboard`, `apps/checkout`, `@vayora/node`, `scripts/seed.mjs`, the old Compose file). Nothing current depended on them; ADR 0002 is marked superseded.
+- Fixed the OpenAPI spec (`POST /v1/sim/pay` was undocumented, which failed `ci`) and the secrets scan (four false positives in test fixtures).
+- Rewrote the README and refreshed the status docs; added `docs/README.md` as an index.
+
+## Release 3: merchant operations
 - Providers page (admin): connect or replace a Cashfree or Razorpay account from the console (`PUT /v1/provider_accounts/{provider}`, secrets typed once and never shown), turn accounts on or off, see the webhook address to paste into the provider.
 - Correct a customer (`PATCH /v1/customers/{id}`, console Customers page, all three SDKs): left-out fields stay, an empty string clears, audited; issued invoices keep the GSTIN they were issued with.
 - Printable invoice page (`/invoice/{id}` in the console; browser print gives a PDF), laid out as a GST tax invoice when it has tax lines; invoice and customer reads now return the buyer, place of supply and address.
@@ -25,6 +42,8 @@ live Razorpay or Cashfree. See [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for 
 - Console pages for Branches and counters (30-day collected per counter, switch a counter off) and Daily closing (record cash, close the day, second-person sign-off); Node SDK `branches`, `cash` and `closings`.
 - Daily closing: cash entries (never edited), a per-branch IST-day closing comparing expected cash and captured digital totals with the counted cash, second-person sign-off. Records only: cash is not posted to the ledger.
 - Fix: a payment link, an invoice, a counter or a cash entry could name another tenant's customer or branch id, because foreign keys are checked without row-level security. They now check the id belongs to the caller; a regression test covers every create path that takes a customer, invoice, vendor or branch id.
+## Release 2
+
 **Console**
 - CSV export of payments (with the status filter) and invoices, with spreadsheet-formula defusing for customer-supplied text. Built and unit-tested; not yet clicked through in a browser.
 **Security**
