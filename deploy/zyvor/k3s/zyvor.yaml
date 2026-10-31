@@ -110,8 +110,15 @@ spec:
             - { name: ZYVOR_SMTP_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: smtp-url, optional: true } } }
             - { name: ZYVOR_MAIL_FROM, valueFrom: { secretKeyRef: { name: zyvor-mail, key: from, optional: true } } }
             - { name: ZYVOR_CONSOLE_PUBLIC_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: console-url, optional: true } } }
-            # Test clusters only, never for real merchants (it verifies nothing):
-            # - { name: ZYVOR_KYC_PROVIDER, value: simulator }
+            # Identity and bank checks (docs/zyvor/KYC_CASHFREE.md): all optional; with no secret `zyvor-kyc` nothing is checked
+            # and a person reviews every submission. Secret keys: provider (`cashfree`), env (`sandbox` or `production`),
+            # client-id, client-secret.
+            - { name: ZYVOR_KYC_PROVIDER, valueFrom: { secretKeyRef: { name: zyvor-kyc, key: provider, optional: true } } }
+            - { name: ZYVOR_KYC_CASHFREE_ENV, valueFrom: { secretKeyRef: { name: zyvor-kyc, key: env, optional: true } } }
+            - { name: ZYVOR_KYC_CASHFREE_CLIENT_ID, valueFrom: { secretKeyRef: { name: zyvor-kyc, key: client-id, optional: true } } }
+            - { name: ZYVOR_KYC_CASHFREE_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: zyvor-kyc, key: client-secret, optional: true } } }
+            # The simulator (test clusters only, never for real merchants; it verifies nothing):
+            # set the `provider` key of that secret to `simulator`.
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10 }
           resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }

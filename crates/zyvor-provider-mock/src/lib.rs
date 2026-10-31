@@ -43,6 +43,8 @@ struct Inner {
     /// One-shot misbehaviour per operation, e.g. "cashfree.pay" -> "hang_after_accept".
     behaviours: BTreeMap<String, String>,
     charges: BTreeMap<String, i64>,
+    /// calls received by the Secure ID (verification) endpoints, by path
+    kyc_calls: BTreeMap<String, u64>,
 }
 
 #[derive(Clone)]
@@ -89,6 +91,10 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/v1/settlements/recon/combined", get(settlement_recon_rz))
         // ---- cashfree ----
         .route("/pg/orders/{id}", get(cf_get_order))
+        // Cashfree Secure ID (verification), following its API reference and sandbox test data
+        .route("/verification/pan", post(kyc_pan))
+        .route("/verification/bank-account/sync", post(kyc_bank))
+        .route("/verification/gstin", post(kyc_gstin))
         .route("/pg/orders", post(cf_create_order))
         .route("/pg/orders/sessions", post(cf_pay))
         .route("/pg/orders/{id}/payments", get(cf_order_payments))
@@ -674,8 +680,212 @@ async fn sim_stats(State(m): State<Mock>) -> Resp {
         });
     Ok(Json(json!({
         "charges": g.charges,
+        "kyc_calls": g.kyc_calls,
         "cashfree_successful_payments_by_order": cf_orders,
         "cashfree_payments": g.cf_payments.len(),
         "razorpay_payments": g.rz_payments.len(),
     })))
+}
+
+// ---------- Cashfree Secure ID (verification) ----------
+//
+// Credentials act as switches: a client id `BADID` is refused (401), `NOBAL` has no balance (422), `DOWN` is an outage
+// (502). Test data is Cashfree's documented sandbox set (PANs, accounts, IFSCs, GSTINs); anything not listed as invalid is
+// treated as valid and echoes the name it was given, except where noted.
+
+type KycResp = (StatusCode, Json<Value>);
+
+fn kyc_gate(m: &Mock, h: &axum::http::HeaderMap, path: &str) -> Option<KycResp> {
+    *m.inner
+        .lock()
+        .unwrap()
+        .kyc_calls
+        .entry(path.to_string())
+        .or_default() += 1;
+    let id = h
+        .get("x-client-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let (st, ty, code, msg) = match id {
+        "" => (
+            400,
+            "validation_error",
+            "x-client-id_missing",
+            "x-client-id is missing in the request.",
+        ),
+        "BADID" => (
+            401,
+            "authentication_error",
+            "authentication_failed",
+            "Invalid clientId and clientSecret combination",
+        ),
+        "NOBAL" => (
+            422,
+            "validation_error",
+            "insufficient_balance",
+            "Insufficient balance to process this request",
+        ),
+        "DOWN" => (
+            502,
+            "internal_error",
+            "verification_failed",
+            "Authorised source is temporarily unavailable, please try again shortly",
+        ),
+        _ => return None,
+    };
+    Some((
+        StatusCode::from_u16(st).unwrap(),
+        Json(json!({ "type": ty, "code": code, "message": msg })),
+    ))
+}
+
+/// Cashfree's name-match bands: exact 100, all words of one name in the other 85, some words in common 61, none 14.
+fn kyc_name_match(a: &str, b: &str) -> (&'static str, &'static str) {
+    let words = |s: &str| -> std::collections::BTreeSet<String> {
+        s.to_uppercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let (x, y) = (words(a), words(b));
+    if x == y {
+        ("100.00", "DIRECT_MATCH")
+    } else if x.is_subset(&y) || y.is_subset(&x) {
+        ("85.00", "GOOD_PARTIAL_MATCH")
+    } else if x.intersection(&y).next().is_some() {
+        ("61.00", "MODERATE_PARTIAL_MATCH")
+    } else {
+        ("14.00", "NO_MATCH")
+    }
+}
+
+async fn kyc_pan(State(m): State<Mock>, h: axum::http::HeaderMap, Json(b): Json<Value>) -> KycResp {
+    if let Some(r) = kyc_gate(&m, &h, "pan") {
+        return r;
+    }
+    let pan = b["pan"].as_str().unwrap_or_default();
+    if pan.len() != 10 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                json!({ "type": "validation_error", "code": "pan_length_short", "message": "Enter valid PAN." }),
+            ),
+        );
+    }
+    if ["DEFPV0126D", "TUVPP5678W", "LMNCD8010T", "EFGHH2020L"].contains(&pan) {
+        return (
+            StatusCode::OK,
+            Json(
+                json!({ "pan": pan, "reference_id": 17974435, "name_provided": b["name"], "valid": false, "message": "Invalid PAN", "name_match_score": 0, "name_match_result": "-", "pan_status_code": "N", "pan_status_desc": "Not found in ITD database or Invalid PAN" }),
+            ),
+        );
+    }
+    let given = b["name"].as_str().unwrap_or_default();
+    // one test PAN is registered to someone else; another has the name-match add-on switched off
+    let registered = if pan == "XYZPP4321W" {
+        "SOMEONE ELSE ENTIRELY"
+    } else {
+        given
+    };
+    let mut out = json!({ "pan": pan, "type": "Individual", "reference_id": 161, "name_provided": given, "registered_name": registered.to_uppercase(), "valid": true, "message": "PAN verified successfully", "pan_status": "VALID", "pan_status_code": "E", "pan_status_desc": "Existing and Valid" });
+    if pan != "AAAHU4383C" && !given.is_empty() {
+        let (score, result) = kyc_name_match(given, registered);
+        out["name_match_score"] = json!(score);
+        out["name_match_result"] = json!(result);
+    }
+    (StatusCode::OK, Json(out))
+}
+
+async fn kyc_bank(
+    State(m): State<Mock>,
+    h: axum::http::HeaderMap,
+    Json(b): Json<Value>,
+) -> KycResp {
+    if let Some(r) = kyc_gate(&m, &h, "bank") {
+        return r;
+    }
+    let (acct, ifsc, given) = (
+        b["bank_account"].as_str().unwrap_or_default(),
+        b["ifsc"].as_str().unwrap_or_default(),
+        b["name"].as_str().unwrap_or_default(),
+    );
+    let ifsc_ok = ifsc.len() == 11
+        && ifsc[..4].chars().all(|c| c.is_ascii_alphabetic())
+        && ifsc.as_bytes()[4] == b'0';
+    if !ifsc_ok {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                json!({ "type": "validation_error", "code": "ifsc_value_invalid", "message": "ifsc should be of 11 characters and 5th character should be 0." }),
+            ),
+        );
+    }
+    let invalid = |code: &str| {
+        (
+            StatusCode::OK,
+            Json(
+                json!({ "reference_id": 35, "name_at_bank": null, "bank_name": null, "name_match_score": null, "name_match_result": null, "account_status": "INVALID", "account_status_code": code, "utr": null }),
+            ),
+        )
+    };
+    if ifsc == "CNRR0002640" {
+        return invalid("INVALID_IFSC_FAIL");
+    }
+    if acct == "026291800001190" {
+        return invalid("INVALID_ACCOUNT_FAIL");
+    }
+    let at_bank = match acct {
+        "1233943142" => "TOM WELLS".to_string(),
+        "388108022658" => "BOB HOPE".to_string(),
+        _ if given.is_empty() => "ACCOUNT HOLDER".to_string(),
+        _ => given.to_uppercase(),
+    };
+    let mut out = json!({ "reference_id": 34, "name_at_bank": at_bank, "bank_name": "YES BANK", "city": "MUMBAI", "branch": "SANTACRUZ, MUMBAI", "account_status": "VALID", "account_status_code": "ACCOUNT_IS_VALID", "utr": "404223241811" });
+    if !given.is_empty() {
+        let (score, result) = kyc_name_match(given, &at_bank);
+        out["name_match_score"] = json!(score);
+        out["name_match_result"] = json!(result);
+    }
+    (StatusCode::OK, Json(out))
+}
+
+async fn kyc_gstin(
+    State(m): State<Mock>,
+    h: axum::http::HeaderMap,
+    Json(b): Json<Value>,
+) -> KycResp {
+    if let Some(r) = kyc_gate(&m, &h, "gstin") {
+        return r;
+    }
+    let g = b["GSTIN"].as_str().unwrap_or_default();
+    if g.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                json!({ "type": "validation_error", "code": "GSTIN_missing", "message": "GSTIN is missing in the request." }),
+            ),
+        );
+    }
+    // the documented non-existent test numbers fail the checksum here, so "does not exist" goes by the PAN inside
+    if ["29AAIZP2912R1ZR", "05BBICA2912R1ZR"].contains(&g)
+        || matches!(g.get(2..12), Some("AAIZP2912R" | "BBICA2912R"))
+    {
+        return (
+            StatusCode::OK,
+            Json(json!({ "reference_id": 20, "GSTIN": g, "message": "GSTIN Doesn't Exist" })),
+        );
+    }
+    // a GSTIN whose entity character (13th) is 9 is a registration that has been cancelled
+    let status = if g.as_bytes().get(12) == Some(&b'9') {
+        "Cancelled"
+    } else {
+        "Active"
+    };
+    (
+        StatusCode::OK,
+        Json(
+            json!({ "reference_id": 19, "GSTIN": g, "legal_name_of_business": "KIRAN TRADERS PRIVATE LIMITED", "trade_name_of_business": "KIRAN TRADERS", "gst_in_status": status, "taxpayer_type": "Regular", "valid": true, "message": "GSTIN Exists" }),
+        ),
+    )
 }
