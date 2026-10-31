@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
-import { DecisionForm, EscalateForm, LiveAccessForm } from "@/components/ReviewerForms";
+import { AssignForm, DecisionForm, EscalateForm, LiveAccessForm } from "@/components/ReviewerForms";
 import { dueLabel } from "@/lib/due";
 import { outcomeTone, platform, requireReviewerSurface, reviewerKey, type ReviewDetail } from "@/lib/reviewer";
 
@@ -31,6 +31,7 @@ export default async function Review({ params }: { params: Promise<{ org: string
           {d.status === "approved" ? "Approved" : d.status === "revoked" ? "Live mode taken away" : "Rejected"} by {d.reviewed_by ?? "a reviewer"}.{d.note ? ` Note: ${d.note}` : ""}
         </div>
       )}
+      {pending && <div style={{ marginBottom: 16 }}><AssignForm org={d.organisation_id} holder={d.assigned_to_name} mine={d.assigned_to_me} /></div>}
       {pending && (
         <div className={`note ${dueLabel(d.due_at).late ? "bad" : "info"}`} role="status" style={{ marginBottom: 16 }}>
           Target {d.sla_hours}h: {dueLabel(d.due_at).text}.

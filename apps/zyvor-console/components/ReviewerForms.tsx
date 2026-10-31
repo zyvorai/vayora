@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { changeLiveAccess, decideChange, decideReview, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
+import { assignReview, changeLiveAccess, decideChange, decideReview, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
 
 export function ReviewerSignIn() {
   const [state, action, pending] = useActionState(reviewerSignIn, undefined);
@@ -92,6 +92,22 @@ export function EscalateForm({ org }: { org: string }) {
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
       <div><button className="btn small" disabled={pending}>{pending ? "…" : "Ask for a second reviewer"}</button></div>
+    </form>
+  );
+}
+
+/** Who has this review. Holding it keeps two people from reading the same file; a held review can be taken over on purpose. */
+export function AssignForm({ org, holder, mine }: { org: string; holder: string | null; mine: boolean }) {
+  const [state, action, pending] = useActionState(assignReview, undefined);
+  return (
+    <form action={action} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <input type="hidden" name="org" value={org} />
+      <span className="fine">{mine ? "You have this review." : holder ? `${holder} has this review.` : "Nobody has this review."}</span>
+      {!holder && <button className="btn small" name="how" value="claim" disabled={pending}>{pending ? "…" : "Take this review"}</button>}
+      {mine && <button className="btn small" name="how" value="release" disabled={pending}>{pending ? "…" : "Hand it back"}</button>}
+      {holder && !mine && <button className="btn small" name="how" value="take_over" disabled={pending}>{pending ? "…" : `Take it from ${holder}`}</button>}
+      {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+      {state?.ok && <span className="note ok" role="status">{state.ok}</span>}
     </form>
   );
 }

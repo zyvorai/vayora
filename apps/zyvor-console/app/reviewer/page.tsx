@@ -16,7 +16,7 @@ const DONE: Record<string, string> = {
   change_reject: "Change rejected. The account was removed and the merchant has been emailed your reason.",
 };
 
-export default async function Queue({ searchParams }: { searchParams: Promise<{ status?: string; done?: string }> }) {
+export default async function Queue({ searchParams }: { searchParams: Promise<{ status?: string; done?: string; assigned?: string }> }) {
   requireReviewerSurface();
   const key = await reviewerKey();
   if (!key) {
@@ -32,7 +32,8 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
   }
   const q = await searchParams;
   const status = (FILTERS as readonly string[]).includes(q.status ?? "") ? (q.status as (typeof FILTERS)[number]) : "pending";
-  const r = await platform<{ data: ReviewRow[] }>(key, "GET", `/reviews?status=${status}`);
+  const assigned = q.assigned === "me" || q.assigned === "none" ? q.assigned : "";
+  const r = await platform<{ data: ReviewRow[] }>(key, "GET", `/reviews?status=${status}${assigned ? `&assigned=${assigned}` : ""}`);
   if (!r.ok && r.status === 401) redirect("/reviewer?expired=1");
   const rows = r.ok ? r.body.data : [];
   const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", "/changes?status=pending") : null;
@@ -59,6 +60,11 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
       <nav className="tabs" aria-label="Status" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {FILTERS.map((f) => <a key={f} className={`btn small${f === status ? " primary" : ""}`} href={`/reviewer?status=${f}`} aria-current={f === status ? "page" : undefined}>{f[0].toUpperCase() + f.slice(1)}</a>)}
       </nav>
+      {status === "pending" && (
+        <nav aria-label="Who has it" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {([["", "Everyone's"], ["me", "Mine"], ["none", "Nobody's"]] as const).map(([v, label]) => <a key={v} className={`btn small${v === assigned ? " primary" : ""}`} href={`/reviewer?status=pending${v ? `&assigned=${v}` : ""}`} aria-current={v === assigned ? "page" : undefined}>{label}</a>)}
+        </nav>
+      )}
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table>
           <thead><tr><th>Business</th><th>Asked</th><th>Round</th><th>Checks not passed</th><th>Status</th></tr></thead>
@@ -72,6 +78,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
                 <td>
                   <Chip status={x.status} />
                   {x.status === "pending" && <div className={`fine${dueLabel(x.due_at).late ? " late" : ""}`} style={dueLabel(x.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(x.due_at).text}</div>}
+                  {x.status === "pending" && <div className="fine">{x.assigned_to_me ? "yours" : x.assigned_to_name ? `held by ${x.assigned_to_name}` : "nobody has it"}</div>}
                   {x.stage === "awaiting_second" && <div className="fine">{x.first_approved_by} approved; needs a different reviewer</div>}
                   {x.status === "pending" && x.stage !== "awaiting_second" && x.needs_second_because.length > 0 && <div className="fine">needs two reviewers</div>}
                 </td>

@@ -102,3 +102,22 @@ export async function escalateReview(_: State, form: FormData): Promise<State> {
   revalidatePath(`/reviewer/review/${org}`);
   return { ok: "Done. A different reviewer must now approve it too." };
 }
+
+/** Take a review so only you decide it, hand it back, or take it from whoever holds it (on purpose, and audited). */
+export async function assignReview(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const org = String(form.get("org") ?? "");
+  const how = String(form.get("how") ?? "");
+  if (!["claim", "release", "take_over"].includes(how)) return { error: "Choose what to do with this review." };
+  const body = how === "release" ? {} : { to: "me", take_over: how === "take_over" };
+  const r = await platform(key, "POST", `/reviews/${encodeURIComponent(org)}/assign`, body);
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath(`/reviewer/review/${org}`);
+  revalidatePath("/reviewer");
+  return { ok: how === "release" ? "Handed back to the queue." : "This review is yours. Nobody else can decide it until you hand it back." };
+}

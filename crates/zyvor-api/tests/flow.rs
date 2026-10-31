@@ -11743,3 +11743,238 @@ async fn a_short_simulated_bank_credit_opens_a_case_for_the_difference(pool: PgP
         "a shortfall must open a case: {cases}"
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_review_is_held_by_one_reviewer_until_it_is_released_or_taken_over(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st);
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (c_id, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (_, org) = asks_for_live(&t, &app, "Held Ltd", "h@held.in").await;
+    let assign = format!("/v1/platform/reviews/{org}/assign");
+    let decision = format!("/v1/platform/reviews/{org}/decision");
+
+    // nobody has it: it shows in the "none" queue and anyone may decide
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/reviews?assigned=none".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"].as_array().unwrap().len(), 1);
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/reviews?assigned=me".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"].as_array().unwrap().len(), 0);
+
+    // Asha claims it; it moves queues and shows her name
+    let (s1, b1) = rv(&a_key, "POST", assign.clone(), json!({ "to": "me" })).await;
+    assert_eq!(
+        (s1, b1["assigned_to_name"].clone()),
+        (StatusCode::OK, json!("Asha")),
+        "{b1}"
+    );
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/reviews?assigned=me".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"][0]["assigned_to_name"], "Asha");
+    let (_, l) = rv(
+        &b_key,
+        "GET",
+        "/v1/platform/reviews?assigned=none".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"].as_array().unwrap().len(), 0);
+    let (_, d) = rv(
+        &b_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (d["assigned_to_name"].clone(), d["assigned_to_me"].clone()),
+        (json!("Asha"), json!(false))
+    );
+
+    // Bala can neither decide it nor claim it from her without saying so
+    let (s2, b2) = rv(
+        &b_key,
+        "POST",
+        decision.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s2, b2["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("assigned_to_other")),
+        "{b2}"
+    );
+    let (s3, b3) = rv(&b_key, "POST", assign.clone(), json!({ "to": "me" })).await;
+    assert_eq!(
+        (s3, b3["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("assigned_to_other"))
+    );
+    // she can hand it to a named, active reviewer, but not to someone who is not one
+    let (s4, b4) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": "rev_nobody" }),
+    )
+    .await;
+    assert_eq!(
+        (s4, b4["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("unknown_reviewer")),
+        "{b4}"
+    );
+    let (s5, _) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": b_id.clone() }),
+    )
+    .await;
+    assert_eq!(s5, StatusCode::OK);
+
+    // Bala now holds it; his first approval (no check ran, so two people are needed) releases it
+    let (s6, b6) = rv(
+        &b_key,
+        "POST",
+        decision.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s6, b6["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b6}"
+    );
+    let (_, d) = rv(
+        &c_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(d["assigned_to"], Value::Null);
+    // the first approver cannot be handed the second look
+    let (s7, b7) = rv(
+        &c_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": b_id.clone() }),
+    )
+    .await;
+    assert_eq!(
+        (s7, b7["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("first_reviewer_cannot_second"))
+    );
+
+    // Chitra takes it, Asha cannot finish it, and taking it over from Chitra is on purpose and on the record
+    rv(
+        &c_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": c_id.clone() }),
+    )
+    .await;
+    let (s8, _) = rv(
+        &a_key,
+        "POST",
+        decision.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(s8, StatusCode::CONFLICT);
+    let (s9, b9) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": "me", "take_over": true }),
+    )
+    .await;
+    assert_eq!(
+        (s9, b9["assigned_to_name"].clone()),
+        (StatusCode::OK, json!("Asha")),
+        "{b9}"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.assigned' AND detail->>'took_over' = 'true' AND actor = 'zyvor:Asha'").await, 1);
+
+    // a disabled reviewer's reviews go back to the queue, and nothing can be handed to them
+    let (s10, _) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": c_id.clone() }),
+    )
+    .await;
+    assert_eq!(s10, StatusCode::OK);
+    assert!(
+        zyvor_api::platform::disable_reviewer(&t.state.pool, &c_id)
+            .await
+            .unwrap()
+    );
+    let (_, d) = rv(
+        &b_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(d["assigned_to"], Value::Null);
+    let (s11, b11) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": c_id.clone() }),
+    )
+    .await;
+    assert_eq!(
+        (s11, b11["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("unknown_reviewer"))
+    );
+
+    // a finished review has no holder, and cannot be assigned
+    let (s11, b11) = rv(
+        &a_key,
+        "POST",
+        decision.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s11, b11["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b11}"
+    );
+    let (s12, b12) = rv(&a_key, "POST", assign.clone(), json!({ "to": "me" })).await;
+    assert_eq!(
+        (s12, b12["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("not_pending"))
+    );
+}
