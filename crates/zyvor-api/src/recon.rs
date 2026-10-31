@@ -448,6 +448,9 @@ pub async fn sync_settlements(
     Json(b): Json<SyncRequest>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("recon:write")?;
+    if b.provider == "sim" {
+        return sync_simulated(&s, &auth, b.date).await;
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let provider = registry::load(&s, &mut tx, &auth.tenant_id, &auth.env, &b.provider).await?;
     tx.commit().await?;
@@ -465,6 +468,73 @@ pub async fn sync_settlements(
     }
     tx.commit().await?;
     Ok(Json(json!({ "imported": ids })))
+}
+
+/// The simulator has no settlement file, so build one from this organisation's own simulated payments: the payments
+/// captured that day (IST), less a flat 2% fee on each, less the refunds processed that day. One settlement per day,
+/// stored once; payments captured after it was synced are not added to it. The fee is invented, not a real tariff.
+async fn sync_simulated(
+    s: &AppState,
+    auth: &Auth,
+    date: NaiveDate,
+) -> Result<Json<Value>, ApiError> {
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let paid: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT a.id, a.amount_minor FROM payment_attempts a
+         JOIN ledger_transactions l ON l.reference = 'capture:' || a.id
+         WHERE a.provider = 'sim' AND a.status = 'captured' AND a.currency = 'INR'
+           AND (l.created_at AT TIME ZONE 'Asia/Kolkata')::date = $1 ORDER BY a.id",
+    )
+    .bind(date)
+    .fetch_all(&mut *tx)
+    .await?;
+    let refunded: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT r.id, r.amount_minor FROM refunds r JOIN payment_attempts a ON a.id = r.attempt_id
+         WHERE a.provider = 'sim' AND r.status = 'processed' AND r.currency = 'INR'
+           AND (r.updated_at AT TIME ZONE 'Asia/Kolkata')::date = $1 ORDER BY r.id",
+    )
+    .bind(date)
+    .fetch_all(&mut *tx)
+    .await?;
+    if paid.is_empty() && refunded.is_empty() {
+        tx.commit().await?;
+        return Ok(Json(json!({ "imported": [] })));
+    }
+    let mut items = Vec::new();
+    for (id, amount) in &paid {
+        items.push(SettlementItem {
+            kind: SettlementItemKind::Payment,
+            provider_ref: Some(id.clone()),
+            amount_minor: *amount,
+            description: "simulated payment".into(),
+        });
+        items.push(SettlementItem {
+            kind: SettlementItemKind::Fee,
+            provider_ref: Some(id.clone()),
+            amount_minor: -(amount * 2 / 100),
+            description: "simulated fee (2%)".into(),
+        });
+    }
+    for (id, amount) in &refunded {
+        items.push(SettlementItem {
+            kind: SettlementItemKind::Refund,
+            provider_ref: Some(id.clone()),
+            amount_minor: -amount,
+            description: "simulated refund".into(),
+        });
+    }
+    let day = date.format("%Y%m%d");
+    let rec = SettlementRecord {
+        provider_ref: format!("simstl_{day}"),
+        utr: Some(format!("SIMUTR{day}")),
+        currency: Currency::Inr,
+        settled_on: date,
+        net_minor: items.iter().map(|i| i.amount_minor).sum(),
+        items,
+    };
+    let id = ingest(&mut tx, &auth.tenant_id, "sim", &rec).await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "imported": [id] })))
 }
 
 pub async fn list_settlements(

@@ -9,6 +9,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `GET /v1/console/branches` lists the branches a person can be tied to, read from the home environment that `invite` checks. The People page uses it, so a cashier can be invited with a branch while looking at live.
 - Payments can be searched: `q=` on `GET /v1/payment_intents` matches a payment ID exactly or part of its reference or description (case-insensitive, `%` and `_` are plain text), with a search box on the Payments page and in its CSV export. Python (`list_payments`) and Go (`ListPayments`) can list and search payments too; Node already could.
 - The Sandbox page can pay by UPI, card, net banking or wallet. The simulator still decides the outcome from the handle (no card number is asked for); a flow test covers all three non-UPI methods.
+- Settlement simulation: `POST /v1/settlements/sync` with provider `sim` builds a day's settlement from the organisation's own simulated payments (gross, an invented 2% fee, refunds), once per day, tied to those payments so it can explain itself. Reconciliation has a button for it in test mode.
 - `/v1/fx/exposure` reports `complete: true` when no open dollar invoice lacks a rate (it said false with no dollar invoices).
 
 **iOS test apps**

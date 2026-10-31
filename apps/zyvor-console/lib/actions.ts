@@ -240,6 +240,22 @@ export async function createTestPayment(_: FormState, f: FormData): Promise<Form
   revalidatePath("/payments");
   redirect(`/payments/${intentId}`);
 }
+/** Test mode only: settle today's simulated payments (2% invented fee) so Reconciliation has something to show. */
+export async function simulateSettlement(_: FormState, __: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  try {
+    const z = await api(s.u);
+    if ((await z.settings.get()).env !== "test") return { error: "Simulated settlements are only available in test mode." };
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const r = await z.settlements.sync("sim", today);
+    revalidatePath("/reconciliation");
+    return { ok: r.imported.length ? "Settled today's simulated payments." : "No simulated payments were captured today." };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
 /** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
 export const connectProvider = async (_: FormState, f: FormData) => {
   const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";

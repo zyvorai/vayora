@@ -1,12 +1,12 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { assignCase } from "@/lib/actions";
+import { assignCase, simulateSettlement } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Reconciliation() {
   const z = await api();
-  const [cases, settlements] = await Promise.all([z.cases.list({}), z.settlements.list()]);
+  const [cases, settlements, settings] = await Promise.all([z.cases.list({}), z.settlements.list(), z.settings.get()]);
   const open = cases.data.filter((c) => c.status !== "resolved");
   // a likeliest explanation for the first few open cases; failures just leave the row without a hint
   const hints = new Map(
@@ -37,6 +37,7 @@ export default async function Reconciliation() {
         </table>
       </div>
       <h2>Settlements</h2>
+      {settings.env === "test" && <p className="muted" style={{ marginTop: 0 }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</p>}
       <div className="tablewrap">
         <table>
           <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th></tr></thead>

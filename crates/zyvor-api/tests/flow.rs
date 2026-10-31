@@ -10884,3 +10884,101 @@ async fn the_simulator_follows_the_outcome_handle_for_card_netbanking_and_wallet
         }
     }
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_test_organisation_can_settle_its_simulated_payments_without_a_provider(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Settle Ltd", "email": "s@settle.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let today = zyvor_api::ist_today().to_string();
+    // nothing captured yet: nothing to settle
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    assert!(r["imported"].as_array().unwrap().is_empty());
+
+    for (n, amount, handle) in [
+        (1, 50_000, "ok@bank"),
+        (2, 30_000, "ok@bank"),
+        (3, 99_000, "fail@bank"),
+    ] {
+        let i = t
+            .ok(
+                &tn,
+                "POST",
+                "/v1/payment_intents",
+                Some(&format!("si-{n}")),
+                json!({ "amount_minor": amount, "currency": "INR" }),
+            )
+            .await;
+        t.ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{}/attempts", i["id"].as_str().unwrap()),
+            Some(&format!("sa-{n}")),
+            json!({ "method": "upi", "vpa": handle }),
+        )
+        .await;
+    }
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    let ids = r["imported"].as_array().unwrap();
+    assert_eq!(ids.len(), 1, "{r}");
+    // syncing again is the same settlement, not a second one
+    let again = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    assert_eq!(again["imported"][0], ids[0]);
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    let rows = list["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    // only the two captured payments: 80,000 gross, 2% fee 1,600, nothing for the declined one
+    assert_eq!(rows[0]["gross_minor"], 80_000);
+    assert_eq!(rows[0]["fee_minor"], 1_600);
+    assert_eq!(rows[0]["net_minor"], 78_400);
+    assert_eq!(rows[0]["provider"], "sim");
+    // it explains itself
+    let e = t
+        .ok(
+            &tn,
+            "GET",
+            &format!("/v1/settlements/{}/explain", ids[0].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert!(e["narrative"].as_str().is_some(), "{e}");
+    // another organisation sees nothing of it
+    let other = t
+        .ok(&t.a, "GET", "/v1/settlements", None, Value::Null)
+        .await;
+    assert!(
+        other["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["provider"] != "sim")
+    );
+}
