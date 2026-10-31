@@ -33,3 +33,19 @@ Run long jobs detached inside the VM and poll; an SSH drop kills foreground work
 appears in your own command line.
 
 Not verified: a repeatable one-command script, HTTPS in front of the VM, or any use beyond one Mac.
+
+## Running it as the sandbox (what was done, and what is not proven)
+
+Done once by hand in the VM: release binaries copied to `/opt/zyvor/bin`; one systemd unit each for the API, worker,
+provider mock, console and checkout (env files in `/etc/zyvor`, mode 600; the console and checkout bind loopback);
+Caddy 2.6 in front with `tls internal` for `console.<ip-with-dashes>.sslip.io` and `pay.<ip-with-dashes>.sslip.io`.
+Verified while it was up: all units active, console 307 to login and `/keys` 307 when signed out, pay 200.
+
+Limits you should know:
+- The certificate comes from Caddy's own CA, so browsers warn and `curl` needs `-k`. A public certificate needs a
+  public address. This is reachable only from the Mac that hosts the VM (a private 192.168.64.x address).
+- A reboot of the VM was **not** shown to bring the services back: after I restarted it, it never got a DHCP address
+  (another VM on the same Mac lost its address at the same time, which points at the Mac's vmnet DHCP, not the guest).
+  Fixing that needs root on the Mac, so it was left alone.
+- Stopping a leftover hand-started process by name misses long names: `pgrep -x` compares the first 15 characters, so
+  `zyvor-provider-mock` was not matched. Stop by port instead.
