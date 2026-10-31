@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LangPicker, useI18n } from "@/components/useI18n";
-import { METHOD_KEY, VPA, failureKey, money, pollDelay, type Session } from "@/lib/checkout";
+import { METHOD_KEY, VPA, failureKey, money, pollDelay, supportLink, supportRef, type Session } from "@/lib/checkout";
+import type { Key } from "@/lib/i18n";
 
 type Method = Session["methods"][number];
 
@@ -25,6 +26,18 @@ function loadScript(src: string): Promise<void> {
     s.onerror = () => rej(new Error("script"));
     document.head.appendChild(s);
   });
+}
+
+/** The support reference and, if the operator configured one, a report-a-problem link. */
+function Help({ t, intent }: { t: (k: Key, v?: Record<string, string>) => string; intent: string }) {
+  const ref = supportRef(intent);
+  const href = supportLink(process.env.NEXT_PUBLIC_ZYVOR_SUPPORT_URL, ref);
+  return (
+    <p className="foot help">
+      {t("supportRef", { ref })}
+      {href && <> · <a href={href} rel="noopener noreferrer">{t("reportProblem")}</a></>}
+    </p>
+  );
 }
 
 export function Checkout({ tenant, intent }: { tenant: string; intent: string }) {
@@ -144,6 +157,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
           <h2>{t("paidTitle")}</h2>
           <p>{session.merchant ? t("paidTo", { amount, merchant: session.merchant }) : t("paidPlain", { amount })}</p>
         </div>
+        <Help t={t} intent={intent} />
       </div>
     );
   }
@@ -156,6 +170,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
           <h2>{t("confirmTitle")}</h2>
           <p>{t("confirmBody")}</p>
         </div>
+        <Help t={t} intent={intent} />
       </div>
     );
   }
@@ -177,6 +192,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
             {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
             <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
           </div>
+          <Help t={t} intent={intent} />
         </div>
       );
     }
@@ -190,6 +206,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
           {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
           <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
         </div>
+        <Help t={t} intent={intent} />
       </div>
     );
   }
@@ -233,6 +250,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       )}
       {failed && <button className="pay" type="button" onClick={() => { setRetrying(true); setError(null); }}>{t("tryAgain")}</button>}
       <p className="foot">{t("secured")}</p>
+      <Help t={t} intent={intent} />
       <LangPicker lang={lang} setLang={setLang} label={t("language")} />
     </form>
   );
