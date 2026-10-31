@@ -322,31 +322,42 @@ pub async fn create_provider_account(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let id = new_id("pa");
-    sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-        .bind(&id)
+    // Connecting a provider that is already connected replaces its credentials in place (and keeps its
+    // webhook address and on/off state), so a wrong secret can be fixed without starting over.
+    let (id, inserted): (String, bool) = sqlx::query_as("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (tenant_id, provider) DO UPDATE SET label = EXCLUDED.label, base_url = EXCLUDED.base_url, credentials_enc = EXCLUDED.credentials_enc, webhook_secret_enc = EXCLUDED.webhook_secret_enc
+         RETURNING id, (xmax = 0)")
+        .bind(new_id("pa"))
         .bind(&auth.tenant_id)
         .bind(&b.provider)
         .bind(b.label.as_deref().unwrap_or(""))
         .bind(&b.base_url)
         .bind(s.crypto.encrypt(b.credentials.to_string().as_bytes()))
         .bind(s.crypto.encrypt(b.webhook_secret.as_bytes()))
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
-        "provider_account.created",
+        if inserted {
+            "provider_account.created"
+        } else {
+            "provider_account.updated"
+        },
         Some(&id),
         json!({ "provider": b.provider }),
     )
     .await?;
     tx.commit().await?;
     Ok((
-        StatusCode::CREATED,
+        if inserted {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(
-            json!({ "id": id, "provider": b.provider, "webhook_url": format!("/v1/webhooks/{}/{}", b.provider, auth.tenant_id) }),
+            json!({ "id": id, "provider": b.provider, "updated": !inserted, "webhook_url": format!("/v1/webhooks/{}/{}", b.provider, auth.tenant_id) }),
         ),
     ))
 }

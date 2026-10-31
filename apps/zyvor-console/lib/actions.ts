@@ -235,8 +235,10 @@ export async function createTestPayment(_: FormState, f: FormData): Promise<Form
 export const connectProvider = async (_: FormState, f: FormData) => {
   const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";
   const credentials: Record<string, string | boolean> = provider === "razorpay" ? { key_id: text(f, "id"), key_secret: text(f, "secret") } : { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
-  if (!text(f, "id") || !text(f, "secret") || !text(f, "webhook_secret")) return { error: "Fill in the key, its secret and the webhook secret." };
-  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect({ provider, credentials, webhookSecret: text(f, "webhook_secret") }), "admin");
+  // Cashfree signs its webhooks with the account's secret key, so that is the webhook secret; Razorpay has its own.
+  const webhookSecret = provider === "cashfree" ? text(f, "secret") : text(f, "webhook_secret");
+  if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: provider === "cashfree" ? "Fill in the app id and its secret key." : "Fill in the key, its secret and the webhook secret." };
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect({ provider, credentials, webhookSecret }), "admin");
   return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
 };
 /** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */

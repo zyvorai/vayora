@@ -9437,6 +9437,34 @@ async fn provider_connection_check_says_whether_credentials_are_accepted_and_key
         .await["ok"],
         false
     );
+    // connecting a provider again replaces its credentials in place: same account, same webhook address
+    let before = t
+        .ok(&tn, "GET", "/v1/provider_accounts", None, Value::Null)
+        .await;
+    let id_before = before["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["provider"] == "cashfree")
+        .unwrap()["id"]
+        .clone();
+    let (st, upd) = t.call(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "GOODID", "client_secret": "y" }, "webhook_secret": "y", "base_url": t.mock })).await;
+    assert_eq!(
+        (st, upd["updated"].clone(), upd["id"].clone()),
+        (StatusCode::OK, json!(true), id_before)
+    );
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/cashfree/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        true
+    );
+    assert_eq!(t.count(&format!("SELECT count(*) FROM provider_accounts WHERE tenant_id = '{}' AND provider = 'cashfree'", tn.id)).await, 1);
     let (st, _) = t
         .call(
             &tn,
