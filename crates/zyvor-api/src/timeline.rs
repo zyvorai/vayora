@@ -78,14 +78,25 @@ pub async fn payment_timeline(
             format!("Attempt started on {provider} ({method})"),
             json!({ "attempt_id": aid }),
         ));
-        if u > c {
+        // The attempt's own updated_at moves again when a refund is booked against it, so a capture is dated by its
+        // ledger posting (written once, when the money was recorded) and the attempt's time is only the fallback.
+        let captured_at: Option<At> = if st == "captured" {
+            sqlx::query_scalar("SELECT created_at FROM ledger_transactions WHERE reference = $1")
+                .bind(format!("capture:{aid}"))
+                .fetch_optional(&mut *tx)
+                .await?
+        } else {
+            None
+        };
+        let settled_at = captured_at.unwrap_or(*u);
+        if settled_at > *c {
             let title = match st.as_str() {
                 "captured" => "Payment captured".to_string(),
                 "failed" => "Attempt failed".to_string(),
                 other => format!("Attempt is now {other}"),
             };
             out.push(ev(
-                *u,
+                settled_at,
                 "attempt",
                 title,
                 json!({ "attempt_id": aid, "status": st, "failure_reason": fail }),

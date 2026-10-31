@@ -1,0 +1,25 @@
+# Alert rules for the gauges the API exposes at /metrics. Load with `rule_files` in prometheus.yml.
+# Thresholds are starting points: a dead item is something Zyvor gave up on, so any is worth a look.
+groups:
+  - name: zyvor
+    rules:
+      - alert: ZyvorMailDead
+        expr: zyvor_mail_dead > 0
+        for: 5m
+        annotations: { summary: "Email could not be delivered after retries (mail_queue.status = 'dead'). Check the SMTP settings and last_error." }
+      - alert: ZyvorMailBacklog
+        expr: zyvor_mail_pending > 50
+        for: 15m
+        annotations: { summary: "More than 50 emails have been waiting for 15 minutes: is the worker running with SMTP settings?" }
+      - alert: ZyvorOutboxDead
+        expr: zyvor_outbox_dead > 0
+        for: 5m
+        annotations: { summary: "A webhook event to a merchant was given up on after its retries." }
+      - alert: ZyvorLiveAccessWaiting
+        expr: zyvor_live_access_pending > 0
+        for: 1d
+        annotations: { summary: "A merchant has waited a day for live access review." }
+      - alert: ZyvorMetricsUnavailable
+        expr: zyvor_outbox_pending < 0 or zyvor_mail_dead < 0
+        for: 5m
+        annotations: { summary: "The API could not count its queues (the gauge reports -1)." }

@@ -112,6 +112,14 @@ const MAX_ATTEMPTS: i32 = 8;
 
 /// Send what is due. Returns how many were sent. A message that keeps failing is marked dead after
 /// eight tries, and the failure stays in `last_error`.
+/// Messages waiting to go out, and messages given up on (`dead`), for the metrics page. -1 when the count fails.
+pub async fn counts(pool: &PgPool) -> (i64, i64) {
+    sqlx::query_as("SELECT COUNT(*) FILTER (WHERE status = 'pending'), COUNT(*) FILTER (WHERE status = 'dead') FROM mail_queue")
+        .fetch_one(pool)
+        .await
+        .unwrap_or((-1, -1))
+}
+
 pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..10 {

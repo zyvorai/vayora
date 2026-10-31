@@ -7107,6 +7107,14 @@ async fn a_payment_timeline_tells_the_story_in_order_and_stays_inside_the_tenant
         assert!(kinds.contains(&k), "missing {k} in {kinds:?}");
     }
     assert_eq!(kinds[0], "intent");
+    // a refund booked later must not drag "Payment captured" past itself (the attempt's updated_at moves on a refund)
+    let pos = |pred: &dyn Fn(&Value) -> bool| events.iter().position(pred).unwrap();
+    let captured = pos(&|e| e["title"] == "Payment captured");
+    let refund = pos(&|e| e["kind"] == "refund");
+    assert!(
+        captured < refund,
+        "captured at {captured}, refund at {refund}: {events:?}"
+    );
     let ats: Vec<&str> = events.iter().map(|e| e["at"].as_str().unwrap()).collect();
     assert!(
         ats.windows(2).all(|w| w[0] <= w[1]),
@@ -10166,4 +10174,26 @@ async fn live_mode_opens_only_when_a_zyvor_reviewer_approves(pool: PgPool) {
     );
     // the metrics gauge counts waiting requests
     assert_eq!(zyvor_api::platform::pending_count(&t.state.pool).await, 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_metrics_page_counts_waiting_and_dead_email(pool: PgPool) {
+    let t = setup(pool).await;
+    let pool = &t.state.pool;
+    assert_eq!(zyvor_api::mail::counts(pool).await, (0, 0));
+    for to in ["a@example.com", "b@example.com", "c@example.com"] {
+        zyvor_api::mail::enqueue(pool, to, "Hello", "body")
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE mail_queue SET status = 'dead' WHERE to_email = 'c@example.com'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(zyvor_api::mail::counts(pool).await, (2, 1));
+    let text = t.text("/metrics").await;
+    assert!(
+        text.contains("zyvor_mail_pending 2\n") && text.contains("zyvor_mail_dead 1\n"),
+        "{text}"
+    );
 }

@@ -106,8 +106,8 @@ reset. Verified only against a plain local SMTP server.
   - Both the API (which checks "is mail delivered?") and the **worker** (which sends) need the SMTP settings.
 - **Verify for real:** with TLS and a username and password, send to a mailbox you can read; check it arrives and is
   not in spam. Needs SPF, DKIM and DMARC on the sending domain (done at your DNS and mail provider, not in this repo).
-- **Watch it:** dead messages (`mail_queue.status = 'dead'`) are only visible in the database. Add a gauge
-  `zyvor_mail_dead` beside the others in `crates/zyvor-api/src/lib.rs::metrics` and an alert.
+- **Watch it:** **Done:** `/metrics` now carries `zyvor_mail_pending` and `zyvor_mail_dead`, and `deploy/zyvor/alerts.yml`
+  has alert rules for them (and the other gauges). The rules are valid YAML but have **not** been run through `promtool`.
 - **Later:** HTML templates, a per-organisation sender, payment receipts and reminder emails (the events exist; add
   consumers that enqueue mail), unsubscribe handling for anything that is not transactional.
 
@@ -121,8 +121,8 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
   `apps/zyvor-console/lib/sandbox.ts` and `components/SandboxForm.tsx`.
 - Settlement and webhook-delivery simulation (so Reconciliation and your endpoint can be tried without a provider).
 - Test clocks for subscriptions and dunning; a "reset test data" button (delete everything for a test tenant, never live).
-- A payment's timeline can show "Payment captured" after a later refund: it uses the attempt's last-updated time;
-  use the capture time in `crates/zyvor-api/src/timeline.rs`.
+- ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
+  posting (`crates/zyvor-api/src/timeline.rs`); the test fails without the fix.
 
 ---
 

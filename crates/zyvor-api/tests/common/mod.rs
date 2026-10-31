@@ -196,6 +196,16 @@ impl T {
     ) -> (StatusCode, Value) {
         raw(&self.app, "", None, method, path, idem, body).await
     }
+    /// The plain-text body of a public GET (for `/metrics`).
+    pub async fn text(&self, path: &str) -> String {
+        let res = self
+            .app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
+    }
     /// A public (no API key) call that must succeed.
     pub async fn ok_public(&self, method: &str, path: &str, body: Value) -> Value {
         let (s, b) = self.public(method, path, None, body).await;
