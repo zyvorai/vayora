@@ -13,6 +13,32 @@ async fn main() {
     // Migrations need the schema owner; the running service should connect as a restricted, non-superuser
     // role so row-level security binds it. Set ZYVOR_MIGRATE_DATABASE_URL to migrate with a different login.
     let args: Vec<String> = env::args().collect();
+    // `zyvor-api kyc-selftest`: prove the identity-check credentials by running Cashfree's documented sandbox test inputs
+    // (valid and invalid PAN, account, IFSC and GSTIN) through the configured provider. Sandbox only: it refuses the
+    // production address, because those inputs are not real people and production calls cost money.
+    if args.get(1).map(String::as_str) == Some("kyc-selftest") {
+        let name = env::var("ZYVOR_KYC_PROVIDER").unwrap_or_else(|_| "cashfree".into());
+        let kyc = zyvor_api::kyc::Kyc::from_env(&name).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2)
+        });
+        if let zyvor_api::kyc::Kyc::Cashfree(c) = &kyc
+            && c.is_production()
+        {
+            eprintln!(
+                "refusing: set ZYVOR_KYC_CASHFREE_ENV=sandbox (the test inputs are Cashfree's sandbox data)"
+            );
+            std::process::exit(2);
+        }
+        let rows = zyvor_api::kyc::selftest(&kyc).await;
+        let failed = rows.iter().filter(|r| !r.1).count();
+        for (what, ok, got) in &rows {
+            println!("{}  {what}\n      {got}", if *ok { "ok  " } else { "FAIL" });
+        }
+        println!("\n{} of {} as expected", rows.len() - failed, rows.len());
+        std::process::exit(i32::from(failed > 0));
+    }
+
     let migrate_url = env::var("ZYVOR_MIGRATE_DATABASE_URL").ok();
     if let Some(url) = &migrate_url {
         let owner = PgPoolOptions::new()
@@ -156,16 +182,21 @@ async fn main() {
         .ok()
         .filter(|s| s.len() >= 16)
         .map(String::into_bytes);
-    if let Ok(name) = env::var("ZYVOR_KYC_PROVIDER") {
-        state.kyc = zyvor_api::kyc::Kyc::from_name(&name);
-        match state.kyc {
-            Some(_) => tracing::warn!(
+    // empty (a secret created with no value) means no checks, like unset
+    if let Some(name) = env::var("ZYVOR_KYC_PROVIDER")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        let kyc = zyvor_api::kyc::Kyc::from_env(&name).unwrap_or_else(|e| panic!("{e}"));
+        match &kyc {
+            zyvor_api::kyc::Kyc::Simulator => tracing::warn!(
                 "KYC simulator is on: onboarding approvals are NOT real verification. Never use this for live merchants."
             ),
-            None => panic!(
-                "ZYVOR_KYC_PROVIDER={name} is not a known provider (only `simulator` exists)"
+            zyvor_api::kyc::Kyc::Cashfree(_) => tracing::info!(
+                "KYC: Cashfree Secure ID (each check is a paid call, capped per business per day)"
             ),
         }
+        state.kyc = Some(kyc);
     }
     state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
     if let Ok(u) = env::var("ZYVOR_CONSOLE_PUBLIC_URL") {

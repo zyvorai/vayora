@@ -12,6 +12,15 @@ Things this repository deliberately does not do: hold or move money, operate an 
 
 Zyvor still does not perform KYC. Before any real provider is added: choose a licensed verification vendor, agree what the contract and your own regulator require you to keep, update this document, and have a person review the auto-approve rules in `crates/zyvor-api/src/kyc.rs` (`decide`). The checks store only an outcome and a short reason; the full PAN and account number are not kept.
 
+## Cashfree Secure ID as the verification partner
+
+`ZYVOR_KYC_PROVIDER=cashfree` sends a merchant's PAN, name, bank account number, IFSC and GSTIN to Cashfree Secure ID to
+check them (`docs/zyvor/KYC_CASHFREE.md`). Zyvor keeps only each check's outcome and a short reason. Zyvor is still not
+the party that verifies identity for a regulator: it uses a vendor, and a Zyvor reviewer makes the live-mode decision.
+Before turning it on for real merchants: agree the vendor terms with Cashfree, decide how consent to the check is
+captured and shown to the merchant (the Onboarding page says the details are checked with a verification partner),
+and set a retention rule for the check records. The simulator is for test environments only.
+
 ## UPI AutoPay mandates: assumptions to verify before any live use
 Zyvor's mandate code (simulator only today) enforces rules that came from provider documents and articles, **not from NPCI's circulars**, and those sources disagree on details. Treat each as an assumption to confirm with your provider and the current NPCI and RBI circulars.
 

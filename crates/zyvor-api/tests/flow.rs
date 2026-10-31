@@ -5439,6 +5439,10 @@ async fn fx_exposure_values_open_dollar_invoices_then_and_now_without_posting_an
     assert_eq!(r["complete"], false);
     assert!(r["unrealised_inr_minor"].is_null());
     assert!(r["data"][0]["booked_inr_minor"].is_null());
+    // another organisation with no dollar invoices has nothing missing
+    let r = t.ok(b, "GET", "/v1/fx/exposure", None, Value::Null).await;
+    assert_eq!(r["complete"], true);
+    assert_eq!(r["outstanding_usd_minor"], 0);
 
     for (rate, day) in [("82.50", Some(old.as_str())), ("83.215", None)] {
         let mut body = json!({ "currency": "USD", "rate": rate });
@@ -10195,5 +10199,267 @@ async fn the_metrics_page_counts_waiting_and_dead_email(pool: PgPool) {
     assert!(
         text.contains("zyvor_mail_pending 2\n") && text.contains("zyvor_mail_dead 1\n"),
         "{text}"
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+/// An organisation with a test key, for onboarding through an app that has a KYC provider.
+async fn kyc_org(t: &T, name: &str) -> String {
+    let email = format!("{}@kyc.test", name.to_lowercase().replace(' ', "."));
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": name, "email": email, "password": "correct horse battery" }),
+    )
+    .await["test_key"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn gstin_for(pan: &str, entity: char) -> String {
+    let base = format!("29{pan}{entity}Z");
+    format!("{base}{}", zyvor_api::gst::gstin_check_char(&base))
+}
+
+fn app_with_cashfree(t: &T, base: &str, client_id: &str) -> axum::Router {
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::cashfree(
+        format!("{base}/verification"),
+        client_id,
+        "secret",
+    ));
+    zyvor_api::app(st)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn cashfree_checks_approve_a_clean_business_and_send_everything_else_to_a_person(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let app = app_with_cashfree(&t, &t.mock, "good-id");
+    let reasons = |sub: &Value| sub["reasons"].to_string();
+
+    // every check clean: approved without a person, with a real lookup behind each one
+    let k = kyc_org(&t, "Clean Co").await;
+    let (sub, view) = kyc_onboard(
+        &app,
+        &k,
+        "AAICP2912R",
+        "private_limited",
+        Some(&gstin_for("AAICP2912R", '1')),
+        "123456789012",
+    )
+    .await;
+    assert_eq!(
+        (sub["status"].clone(), sub["automatic"].clone()),
+        (json!("approved"), json!(true)),
+        "{sub}"
+    );
+    assert_eq!(view["checks"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        t.mock_stats().await["kyc_calls"],
+        json!({ "pan": 1, "gstin": 1, "bank": 1 })
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM kyc_checks WHERE provider = 'cashfree_secure_id'")
+            .await,
+        3
+    );
+    // the PAN, the account number and the names are not kept anywhere
+    assert_eq!(t.count("SELECT count(*) FROM kyc_checks WHERE detail ILIKE '%AAICP2912R%' OR detail LIKE '%123456789012%' OR detail ILIKE '%kiran%'").await, 0);
+
+    // the provider's name-match add-on is off for this PAN: we compare the registered name ourselves
+    let k = kyc_org(&t, "No Addon Co").await;
+    let (sub, _) = kyc_onboard(&app, &k, "AAAHU4383C", "llp", None, "123456789012").await;
+    assert_eq!(sub["status"], "approved", "{sub}");
+
+    // an invalid PAN is a failure
+    let k = kyc_org(&t, "Bad Pan Co").await;
+    let (sub, _) = kyc_onboard(
+        &app,
+        &k,
+        "DEFPV0126D",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(reasons(&sub).contains("PAN check failed"), "{sub}");
+
+    // a valid PAN registered to someone else, or an account held by someone else: a person decides
+    let k = kyc_org(&t, "Other Name Co").await;
+    let (sub, _) = kyc_onboard(
+        &app,
+        &k,
+        "XYZPP4321W",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(reasons(&sub).contains("inconclusive"), "{sub}");
+    let k = kyc_org(&t, "Other Account Co").await;
+    let (sub, view) = kyc_onboard(
+        &app,
+        &k,
+        "AAICP2912R",
+        "private_limited",
+        None,
+        "1233943142",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(
+        view["checks"].to_string().contains("does not match"),
+        "{view}"
+    );
+
+    // an account that does not exist, a GSTIN that does not exist, and one that was cancelled
+    let k = kyc_org(&t, "No Account Co").await;
+    let (sub, _) = kyc_onboard(
+        &app,
+        &k,
+        "AAICP2912R",
+        "private_limited",
+        None,
+        "026291800001190",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(reasons(&sub).contains("bank"), "{sub}");
+    for (name, pan, gstin) in [
+        ("Missing Gst Co", "AAIZP2912R", gstin_for("AAIZP2912R", '1')),
+        (
+            "Cancelled Gst Co",
+            "AAICP2912R",
+            gstin_for("AAICP2912R", '9'),
+        ),
+    ] {
+        let k = kyc_org(&t, name).await;
+        let (sub, view) = kyc_onboard(&app, &k, pan, "llp", Some(&gstin), "123456789012").await;
+        assert_eq!(sub["status"], "in_review", "{name}: {sub}");
+        assert!(reasons(&sub).contains("GSTIN"), "{name}: {sub}");
+        let g = view["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["kind"] == "gstin")
+            .unwrap();
+        assert_eq!(g["outcome"], "fail", "{name}: {g}");
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_provider_that_cannot_answer_never_approves_anyone(pool: PgPool) {
+    let t = setup(pool).await;
+    for (what, base, client_id) in [
+        ("credentials refused", t.mock.clone(), "BADID"),
+        ("no balance", t.mock.clone(), "NOBAL"),
+        ("provider outage", t.mock.clone(), "DOWN"),
+        (
+            "provider unreachable",
+            "http://127.0.0.1:9".to_string(),
+            "good-id",
+        ),
+    ] {
+        let app = app_with_cashfree(&t, &base, client_id);
+        let k = kyc_org(&t, what).await;
+        // a business that would otherwise be approved at once
+        let (sub, view) = kyc_onboard(
+            &app,
+            &k,
+            "AAICP2912R",
+            "private_limited",
+            Some(&gstin_for("AAICP2912R", '1')),
+            "123456789012",
+        )
+        .await;
+        assert_eq!(sub["status"], "in_review", "{what}: {sub}");
+        assert_eq!(sub["automatic"], false, "{what}");
+        let checks = view["checks"].as_array().unwrap();
+        assert_eq!(checks.len(), 3, "{what}");
+        assert!(
+            checks.iter().all(|c| c["outcome"] == "inconclusive"),
+            "{what}: {checks:?}"
+        );
+        assert!(
+            checks.iter().all(|c| c["detail"]
+                .as_str()
+                .unwrap()
+                .contains("a person will review")),
+            "{what}: {checks:?}"
+        );
+        // and the bank account was not marked verified by a check that never happened
+        assert!(
+            view["bank_accounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|b| b["verified"] == false),
+            "{what}"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn paid_checks_are_capped_per_business_per_day(pool: PgPool) {
+    let t = setup(pool).await;
+    let app = app_with_cashfree(&t, &t.mock, "good-id");
+    let k = kyc_org(&t, "Spender Co").await;
+    let put = || {
+        let (app, k) = (app.clone(), k.clone());
+        async move {
+            common::raw(&app, &k, None, "PUT", "/v1/onboarding", None, json!({ "legal_name": "Kiran Traders", "business_type": "private_limited", "pan": "AAICP2912R", "gstin": gstin_for("AAICP2912R", '1'), "address": "12 MG Road, Pune 411001" })).await
+        }
+    };
+    // each save with a GSTIN is two paid calls; twelve a day, then the checks stop being made
+    for _ in 0..6 {
+        assert_eq!(put().await.0, StatusCode::OK);
+    }
+    assert_eq!(
+        t.mock_stats().await["kyc_calls"],
+        json!({ "pan": 6, "gstin": 6 })
+    );
+    assert_eq!(put().await.0, StatusCode::OK);
+    assert_eq!(
+        t.mock_stats().await["kyc_calls"],
+        json!({ "pan": 6, "gstin": 6 }),
+        "no more calls once the day's allowance is used"
+    );
+    let (_, view) = common::raw(&app, &k, None, "GET", "/v1/onboarding", None, Value::Null).await;
+    assert!(
+        view["checks"]
+            .to_string()
+            .contains("too many automatic checks"),
+        "{view}"
+    );
+    assert!(
+        view["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["outcome"] == "inconclusive")
+    );
+    // a bank account added now is not checked either, and is not auto-verified
+    let (st, b) = common::raw(&app, &k, None, "POST", "/v1/onboarding/bank_accounts", None, json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "123456789012" })).await;
+    assert_eq!(st, StatusCode::CREATED);
+    assert_eq!(b["check"]["outcome"], "inconclusive");
+    assert_eq!(
+        t.mock_stats().await["kyc_calls"],
+        json!({ "pan": 6, "gstin": 6 })
+    );
+    // another business has its own allowance
+    let other = kyc_org(&t, "Other Spender Co").await;
+    let (st, _) = common::raw(&app, &other, None, "PUT", "/v1/onboarding", None, json!({ "legal_name": "Kiran Traders", "business_type": "private_limited", "pan": "AAICP2912R", "address": "12 MG Road, Pune 411001" })).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(t.mock_stats().await["kyc_calls"]["pan"], 7);
+    // the simulator is free and never counted
+    assert_eq!(
+        t.count("SELECT count(*) FROM kyc_usage WHERE kind = 'simulator'")
+            .await,
+        0
     );
 }

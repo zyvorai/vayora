@@ -25,6 +25,13 @@ mail:
   existingSecret: zyvor-mail
   consoleUrl: ""
 
+# Identity and bank checks (docs/zyvor/KYC_CASHFREE.md). Off: nothing is checked and a person reviews every submission.
+# On: `existingSecret` needs `provider` (cashfree) and, for Cashfree, `env` (sandbox or production), `client-id`
+# and `client-secret`. Each check is a paid call; production needs the cluster's IP whitelisted at Cashfree.
+kyc:
+  enabled: false
+  existingSecret: zyvor-kyc
+
 # SANDBOX ONLY. Simulates Razorpay and Cashfree. Never enable in a live environment.
 sandbox:
   providerMock: { enabled: false }

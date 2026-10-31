@@ -27,6 +27,7 @@ pub mod idempotency;
 pub mod insights;
 pub mod installments;
 pub mod kyc;
+pub mod kyc_cashfree;
 pub mod mail;
 pub mod mandates;
 pub mod onboarding;

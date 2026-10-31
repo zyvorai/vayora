@@ -21,6 +21,7 @@ spec:
             - { name: ZYVOR_PROVIDER_TIMEOUT_SECS, value: {{ .Values.api.providerTimeoutSeconds | quote }} }
             - { name: RUST_LOG, value: info }
             {{- include "zyvor.mailEnv" . | nindent 12 }}
+            {{- include "zyvor.kycEnv" . | nindent 12 }}
             {{- if .Values.mail.consoleUrl }}
             - { name: ZYVOR_CONSOLE_PUBLIC_URL, value: {{ .Values.mail.consoleUrl | quote }} }
             {{- end }}

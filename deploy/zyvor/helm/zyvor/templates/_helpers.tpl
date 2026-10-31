@@ -18,6 +18,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
   valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: from } }
 {{- end }}
 {{- end -}}
+{{- define "zyvor.kycEnv" -}}
+{{- if .Values.kyc.enabled }}
+- name: ZYVOR_KYC_PROVIDER
+  valueFrom: { secretKeyRef: { name: {{ .Values.kyc.existingSecret }}, key: provider } }
+- name: ZYVOR_KYC_CASHFREE_ENV
+  valueFrom: { secretKeyRef: { name: {{ .Values.kyc.existingSecret }}, key: env, optional: true } }
+- name: ZYVOR_KYC_CASHFREE_CLIENT_ID
+  valueFrom: { secretKeyRef: { name: {{ .Values.kyc.existingSecret }}, key: client-id, optional: true } }
+- name: ZYVOR_KYC_CASHFREE_CLIENT_SECRET
+  valueFrom: { secretKeyRef: { name: {{ .Values.kyc.existingSecret }}, key: client-secret, optional: true } }
+{{- end }}
+{{- end -}}
 {{- define "zyvor.podSecurity" -}}
 securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
 {{- end -}}

@@ -1,8 +1,11 @@
 //! Identity and bank checks for onboarding, and the rule that decides whether a submission can be
-//! approved without a person. Only a simulator exists: it answers from fixed patterns so the whole flow
-//! can be exercised, and verifies nothing about a real business. A real provider is a separate piece of
-//! work that needs a licensed vendor; until then the simulator must be switched on explicitly
-//! (`ZYVOR_KYC_PROVIDER=simulator`) and every submission goes to a person.
+//! approved without a person. Two providers: a simulator, which answers from fixed patterns so the whole
+//! flow can be exercised and verifies nothing about a real business (`ZYVOR_KYC_PROVIDER=simulator`), and
+//! Cashfree Secure ID (`ZYVOR_KYC_PROVIDER=cashfree`, see `kyc_cashfree.rs`). With neither set, nothing is
+//! checked and every submission goes to a person. Anything a provider cannot answer clearly also goes to a
+//! person; it is never a pass.
+
+use crate::kyc_cashfree::SecureId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -38,29 +41,77 @@ fn check(outcome: Outcome, detail: &str) -> Check {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+/// Who answers the identity and bank questions. `Simulator` verifies nothing real; `Cashfree` asks Cashfree Secure ID
+/// (`kyc_cashfree.rs`) and costs a small fee per call.
+#[derive(Clone)]
 pub enum Kyc {
     Simulator,
+    Cashfree(std::sync::Arc<SecureId>),
 }
 
 impl Kyc {
-    pub fn from_name(name: &str) -> Option<Self> {
+    /// From `ZYVOR_KYC_PROVIDER`: `simulator`, or `cashfree` with `ZYVOR_KYC_CASHFREE_ENV` (`sandbox` or
+    /// `production`, required, so a real account is never used by accident), `ZYVOR_KYC_CASHFREE_CLIENT_ID` and
+    /// `ZYVOR_KYC_CASHFREE_CLIENT_SECRET`. `ZYVOR_KYC_CASHFREE_BASE_URL` overrides the address (for a test double).
+    pub fn from_env(name: &str) -> Result<Self, String> {
+        let var = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
         match name.trim().to_lowercase().as_str() {
-            "simulator" => Some(Kyc::Simulator),
-            _ => None,
+            "simulator" => Ok(Kyc::Simulator),
+            "cashfree" => {
+                let env = var("ZYVOR_KYC_CASHFREE_ENV")
+                    .ok_or("ZYVOR_KYC_CASHFREE_ENV must be `sandbox` or `production`")?;
+                let base = match (env.as_str(), var("ZYVOR_KYC_CASHFREE_BASE_URL")) {
+                    (_, Some(url)) => url,
+                    ("sandbox", None) => SecureId::SANDBOX.to_string(),
+                    ("production", None) => SecureId::PRODUCTION.to_string(),
+                    _ => {
+                        return Err(
+                            "ZYVOR_KYC_CASHFREE_ENV must be `sandbox` or `production`".into()
+                        );
+                    }
+                };
+                let id = var("ZYVOR_KYC_CASHFREE_CLIENT_ID")
+                    .ok_or("ZYVOR_KYC_CASHFREE_CLIENT_ID is required")?;
+                let secret = var("ZYVOR_KYC_CASHFREE_CLIENT_SECRET")
+                    .ok_or("ZYVOR_KYC_CASHFREE_CLIENT_SECRET is required")?;
+                Ok(Kyc::cashfree(base, id, secret))
+            }
+            other => Err(format!(
+                "ZYVOR_KYC_PROVIDER={other} is not a known provider (`simulator` or `cashfree`)"
+            )),
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub fn cashfree(
+        base: impl Into<String>,
+        id: impl Into<String>,
+        secret: impl Into<String>,
+    ) -> Self {
+        Kyc::Cashfree(std::sync::Arc::new(SecureId::new(base, id, secret)))
+    }
+
+    pub fn name(&self) -> &'static str {
         match self {
             Kyc::Simulator => "simulator",
+            Kyc::Cashfree(_) => "cashfree_secure_id",
         }
+    }
+
+    /// Whether each call costs money (so it is counted and capped per business).
+    pub fn is_metered(&self) -> bool {
+        matches!(self, Kyc::Cashfree(_))
     }
 
     /// Does this PAN exist, and does it belong to this name? The simulator: a PAN ending in `X` is not
     /// found, one ending in `Y` cannot be matched to the name, anything else passes.
-    pub async fn verify_pan(self, pan: &str, _legal_name: &str) -> Check {
+    pub async fn verify_pan(&self, pan: &str, legal_name: &str) -> Check {
         match (self, pan.chars().last()) {
+            (Kyc::Cashfree(c), _) => c.verify_pan(pan, legal_name).await,
             (Kyc::Simulator, Some('X')) => check(Outcome::Fail, "PAN not found"),
             (Kyc::Simulator, Some('Y')) => check(
                 Outcome::Inconclusive,
@@ -70,10 +121,11 @@ impl Kyc {
         }
     }
 
-    /// A penny-drop: does this account exist and is it held by this name? The simulator: an account
-    /// number ending `0000` does not exist, one ending `1111` has a different holder name.
-    pub async fn verify_bank(self, _ifsc: &str, account: &str, holder: &str) -> Check {
+    /// Does this account exist, and whose is it? The simulator: an account number ending `0000` does not
+    /// exist, one ending `1111` has a different holder name.
+    pub async fn verify_bank(&self, ifsc: &str, account: &str, holder: &str) -> Check {
         match self {
+            Kyc::Cashfree(c) => c.verify_bank(ifsc, account, holder).await,
             Kyc::Simulator if account.ends_with("0000") => {
                 check(Outcome::Fail, "account not found")
             }
@@ -88,6 +140,85 @@ impl Kyc {
             },
         }
     }
+
+    /// Is this GSTIN real and the business's own? Always checks locally that it carries the PAN; Cashfree also
+    /// looks it up (so a made-up but well-formed number cannot pass).
+    pub async fn verify_gstin(&self, gstin: &str, pan: &str, legal_name: &str) -> Check {
+        if !gstin_matches_pan(gstin, pan) {
+            return check(Outcome::Fail, "GSTIN carries a different PAN");
+        }
+        match self {
+            Kyc::Simulator => check(Outcome::Pass, "GSTIN carries this PAN"),
+            Kyc::Cashfree(c) => c.verify_gstin(gstin, legal_name).await,
+        }
+    }
+}
+
+/// Run Cashfree's documented sandbox test inputs through the configured provider, so new credentials can be
+/// proven in one go (`zyvor-api kyc-selftest`). Each line is `(what, passed, what came back)`.
+///
+/// The question is "does the provider answer correctly?", not "do the names match" (no name is given), so for a
+/// record that should exist, "found, but nothing to compare the name with" counts. A provider problem (refused
+/// credentials, no balance, an outage; all say "a person will review this") never counts.
+pub async fn selftest(k: &Kyc) -> Vec<(String, bool, String)> {
+    let exists = |c: &Check| {
+        c.outcome == Outcome::Pass
+            || (c.outcome == Outcome::Inconclusive
+                && c.detail.contains("name")
+                && !c.detail.contains("a person will review"))
+    };
+    let mut out = Vec::new();
+    let mut add = |what: &str, c: Check, want_found: bool| {
+        let ok = if want_found {
+            exists(&c)
+        } else {
+            c.outcome == Outcome::Fail
+        };
+        out.push((
+            what.to_string(),
+            ok,
+            format!("{}: {}", c.outcome.as_str(), c.detail),
+        ));
+    };
+    add(
+        "valid PAN (ABCPV1234D)",
+        k.verify_pan("ABCPV1234D", "").await,
+        true,
+    );
+    add(
+        "invalid PAN (DEFPV0126D)",
+        k.verify_pan("DEFPV0126D", "").await,
+        false,
+    );
+    add(
+        "valid account (026291800001191, YESB0000262)",
+        k.verify_bank("YESB0000262", "026291800001191", "JOHN DOE")
+            .await,
+        true,
+    );
+    add(
+        "invalid account (026291800001190, YESB0000262)",
+        k.verify_bank("YESB0000262", "026291800001190", "JOHN DOE")
+            .await,
+        false,
+    );
+    add(
+        "invalid IFSC (CNRR0002640)",
+        k.verify_bank("CNRR0002640", "2640101002729", "JOHN DOE")
+            .await,
+        false,
+    );
+    add(
+        "valid GSTIN (29AAICP2912R1ZR)",
+        k.verify_gstin("29AAICP2912R1ZR", "AAICP2912R", "").await,
+        true,
+    );
+    add(
+        "invalid GSTIN (29AAIZP2912R1ZR)",
+        k.verify_gstin("29AAIZP2912R1ZR", "AAIZP2912R", "").await,
+        false,
+    );
+    out
 }
 
 /// Do two account-holder names refer to the same party? Case, punctuation, honorifics and company suffixes

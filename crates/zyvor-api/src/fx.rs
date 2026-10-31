@@ -212,7 +212,8 @@ pub async fn exposure(
     .await?;
     let now = rate_on(&mut tx, "USD", as_of).await?;
     let mut data = Vec::new();
-    let (mut usd, mut booked, mut current, mut complete) = (0i64, 0i64, 0i64, now.is_some());
+    // complete means every open dollar invoice could be valued; with none open there is nothing missing
+    let (mut usd, mut booked, mut current, mut complete) = (0i64, 0i64, 0i64, true);
     for (id, number, outstanding, raised) in rows {
         if outstanding <= 0 {
             continue;

@@ -53,7 +53,7 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
   trust the header when the hop count is 0.
 - **Check:** two simulated visitors with different `X-Forwarded-For` values get separate buckets.
 
-### 1.5 Real identity and bank checks
+### 1.5 Real identity and bank checks — **BUILT, not yet run against Cashfree** (`docs/zyvor/KYC_CASHFREE.md`; needs Secure ID credentials, then `zyvor-api kyc-selftest`)
 - **Why:** `kyc.rs` only has a simulator. Zyvor does not do KYC (`docs/zyvor/REGULATORY.md`).
 - **How:** the Cashfree account in use has **Secure ID** activated (PAN, GSTIN and bank-account verification). Add
   `Kyc::CashfreeSecureId` beside `Kyc::Simulator` and implement `verify_pan`, `verify_bank` (penny drop or name
