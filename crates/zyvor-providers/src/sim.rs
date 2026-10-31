@@ -2,7 +2,13 @@
 //! `fail*` declines, `uncertain*` accepts the payment but answers with a timeout (outcome unknown),
 //! `pending*` stays pending, anything else captures.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use async_trait::async_trait;
 use serde_json::json;
@@ -14,11 +20,35 @@ use crate::*;
 pub struct SimProvider {
     payments: Mutex<HashMap<String, PaymentState>>,
     refunds: Mutex<HashMap<String, RefundState>>,
+    /// When set, a pending QR / intent payment waits for `payer_decide` instead of being approved by the
+    /// first lookup. This is what lets a payer app (or a test) play the payer.
+    manual_payer: AtomicBool,
 }
 
 impl SimProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_manual_payer(&self, on: bool) {
+        self.manual_payer.store(on, Ordering::Relaxed);
+    }
+
+    /// The simulated payer approves or declines a pending QR / intent payment. `None` when there is no
+    /// such payment waiting (unknown, already decided, or not an intent flow).
+    pub fn payer_decide(&self, attempt_id: &str, approve: bool) -> Option<PaymentStatus> {
+        let mut m = self.payments.lock().unwrap();
+        let s = m.get_mut(attempt_id)?;
+        if s.status != PaymentStatus::Pending || s.raw["flow"] != "upi_intent" {
+            return None;
+        }
+        if approve {
+            s.status = PaymentStatus::Captured;
+        } else {
+            s.status = PaymentStatus::Failed;
+            s.failure_reason = Some("declined_by_payer".into());
+        }
+        Some(s.status.clone())
     }
 }
 
@@ -137,7 +167,10 @@ impl Provider for SimProvider {
             .ok_or_else(|| ProviderError::Rejected("not found".into()))?;
         // A pending QR / intent payment is approved by the simulated payer on the first lookup, so a
         // sandbox run can complete without a real UPI app. A real adapter reports only what the partner says.
-        if s.status == PaymentStatus::Pending && s.raw["flow"] == "upi_intent" {
+        if s.status == PaymentStatus::Pending
+            && s.raw["flow"] == "upi_intent"
+            && !self.manual_payer.load(Ordering::Relaxed)
+        {
             s.status = PaymentStatus::Captured;
         }
         Ok(s.clone())
@@ -188,5 +221,72 @@ impl Provider for SimProvider {
         Err(WebhookError::Malformed(
             "the simulator does not send webhooks".into(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod payer_tests {
+    use super::*;
+
+    fn intent_payment(id: &str) -> CreatePayment {
+        CreatePayment {
+            attempt_id: id.into(),
+            amount_minor: 49900,
+            currency: Currency::Inr,
+            method: Method::Upi,
+            vpa: None,
+            customer_id: None,
+            customer_phone: None,
+            capture_automatic: true,
+            return_url: None,
+            upi_intent: true,
+            client: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_manual_payer_decides_and_a_lookup_does_not() {
+        let sim = SimProvider::new();
+        sim.set_manual_payer(true);
+        sim.initiate(&intent_payment("att_a")).await.unwrap();
+        assert_eq!(
+            sim.fetch_payment("att_a").await.unwrap().status,
+            PaymentStatus::Pending,
+            "waiting for the payer, not approved by looking"
+        );
+        assert_eq!(
+            sim.payer_decide("att_a", true),
+            Some(PaymentStatus::Captured)
+        );
+        assert_eq!(sim.payer_decide("att_a", true), None, "decided once");
+        assert_eq!(
+            sim.fetch_payment("att_a").await.unwrap().status,
+            PaymentStatus::Captured
+        );
+
+        sim.initiate(&intent_payment("att_b")).await.unwrap();
+        assert_eq!(
+            sim.payer_decide("att_b", false),
+            Some(PaymentStatus::Failed)
+        );
+        assert_eq!(
+            sim.fetch_payment("att_b")
+                .await
+                .unwrap()
+                .failure_reason
+                .as_deref(),
+            Some("declined_by_payer")
+        );
+        assert_eq!(sim.payer_decide("att_nope", true), None);
+    }
+
+    #[tokio::test]
+    async fn without_a_manual_payer_the_first_lookup_approves_as_before() {
+        let sim = SimProvider::new();
+        sim.initiate(&intent_payment("att_c")).await.unwrap();
+        assert_eq!(
+            sim.fetch_payment("att_c").await.unwrap().status,
+            PaymentStatus::Captured
+        );
     }
 }
