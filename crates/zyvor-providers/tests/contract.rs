@@ -49,6 +49,8 @@ fn pay_req(id: &str, method: Method, vpa: Option<&str>) -> CreatePayment {
         customer_phone: None,
         capture_automatic: true,
         return_url: None,
+        upi_intent: false,
+        client: None,
     }
 }
 

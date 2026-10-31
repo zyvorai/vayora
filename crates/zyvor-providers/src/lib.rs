@@ -89,6 +89,20 @@ pub enum PaymentStatus {
     Failed,
 }
 
+/// Where the payer is, in the words partners ask for (Cashfree wants these on every UPI call, and assumes
+/// the strictest flow when they are missing). Derived from the payer's own request, never typed by them.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClientEnv {
+    /// `mobile`, `tablet` or `desktop`
+    pub device: String,
+    /// `android`, `ios`, `windows`, `macos`, `linux` or `others`
+    pub os: String,
+    /// `mweb`, `webview` or `native` (meaningful on mobile)
+    pub rendering: String,
+    /// `chrome`, `safari`, `firefox`, `edge` or `others`
+    pub browser: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CreatePayment {
     pub attempt_id: String,
@@ -100,6 +114,9 @@ pub struct CreatePayment {
     pub customer_phone: Option<String>,
     pub capture_automatic: bool,
     pub return_url: Option<String>,
+    /// Ask for a UPI QR / intent instead of a hosted or collect flow (only sent to a provider that has `upi_intent`).
+    pub upi_intent: bool,
+    pub client: Option<ClientEnv>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,7 +147,14 @@ pub enum ClientAction {
     /// payment; only a verified provider result is.
     UpiIntent {
         uri: String,
+        /// Per-app links when the partner supplies them (for example `gpay`, `phonepe`, `bhim`, `paytm`).
+        #[serde(default)]
+        apps: BTreeMap<String, String>,
         expires_at: Option<String>,
+    },
+    /// A partner-rendered QR image (a `data:image/png;base64,...` URL) for desktop and counter screens.
+    UpiQr {
+        image: String,
     },
 }
 

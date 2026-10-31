@@ -577,6 +577,10 @@ pub async fn start_attempt(
         customer_phone: phone,
         capture_automatic: capture == "automatic",
         return_url: b.return_url.clone(),
+        upi_intent: method == Method::Upi
+            && b.vpa.is_none()
+            && b.upi_flow.as_deref() == Some("intent"),
+        client: Some(crate::clientenv::from_headers(headers)),
     };
     let result = provider.initiate(&req).await;
 

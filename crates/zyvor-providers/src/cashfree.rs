@@ -18,7 +18,13 @@ pub struct Cashfree {
     client_id: String,
     client_secret: String,
     http: reqwest::Client,
+    /// Native UPI intent / QR through Order Pay. Off until the account has it enabled (Cashfree's S2S flag).
+    upi_intent: bool,
 }
+
+/// The Order Pay API version the UPI intent / QR calls are made with (the order itself uses the version
+/// below). Verified against Cashfree's sandbox on 31 October 2026.
+const ORDER_PAY_VERSION: &str = "2026-01-01";
 
 impl Cashfree {
     pub fn new(
@@ -37,16 +43,60 @@ impl Cashfree {
             client_id: client_id.into(),
             client_secret: client_secret.into(),
             http,
+            upi_intent: false,
         }
     }
 
-    fn req(&self, m: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+    /// Turn on native UPI intent / QR for this account. Only do so once Cashfree has enabled it.
+    pub fn with_upi_intent(mut self, on: bool) -> Self {
+        self.upi_intent = on;
+        self
+    }
+
+    fn req_v(&self, m: reqwest::Method, path: &str, version: &str) -> reqwest::RequestBuilder {
         self.http
             .request(m, format!("{}{path}", self.base))
             .header("x-client-id", &self.client_id)
             .header("x-client-secret", &self.client_secret)
-            .header("x-api-version", "2023-08-01")
+            .header("x-api-version", version)
     }
+
+    fn req(&self, m: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        self.req_v(m, path, "2023-08-01")
+    }
+}
+
+/// The partner's UPI intent response (`channel: link`): per-app links under `data.payload`.
+/// `default` is the one to open when the payer has not chosen an app.
+fn intent_action(p: &Value) -> Result<ClientAction, ProviderError> {
+    let payload = p["data"]["payload"].as_object();
+    let uri = payload
+        .and_then(|m| m.get("default"))
+        .and_then(Value::as_str)
+        .filter(|u| !u.is_empty())
+        .ok_or_else(|| ProviderError::Uncertain("intent response had no default link".into()))?;
+    let apps = payload
+        .into_iter()
+        .flatten()
+        .filter(|(k, _)| !matches!(k.as_str(), "default" | "web"))
+        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+        .collect();
+    Ok(ClientAction::UpiIntent {
+        uri: uri.to_string(),
+        apps,
+        expires_at: None,
+    })
+}
+
+/// The partner's UPI QR response (`channel: qrcode`): a PNG as a data URL under `data.payload.qrcode`.
+fn qr_action(p: &Value) -> Result<ClientAction, ProviderError> {
+    let image = p["data"]["payload"]["qrcode"]
+        .as_str()
+        .filter(|i| i.starts_with("data:image/png;base64,"))
+        .ok_or_else(|| ProviderError::Uncertain("QR response had no PNG image".into()))?;
+    Ok(ClientAction::UpiQr {
+        image: image.to_string(),
+    })
 }
 
 /// Decimal rupees as a JSON number, built without going through float arithmetic.
@@ -102,8 +152,8 @@ impl Provider for Cashfree {
             partial_refund: true,
             manual_capture: true,
             server_initiated_upi: true,
-            // Hosted flows exist, but no QR/intent payload is verified with this partner yet.
-            upi_intent: false,
+            // Verified against the sandbox only, and needs the account to have it enabled: opt in per account.
+            upi_intent: self.upi_intent,
             refund_window_days: Some(365),
         }
     }
@@ -159,6 +209,48 @@ impl Provider for Cashfree {
                 state,
                 action: ClientAction::UpiCollect { vpa: vpa.clone() },
             });
+        }
+        // Both must hold: the request asked for it, and this account is opted in. The router already refuses to
+        // send it elsewhere; the adapter does not rely on that.
+        if req.method == Method::Upi && req.upi_intent && self.upi_intent {
+            // Native intent (phones) or QR (desktop and counter screens). Cashfree wants the payer's device
+            // on this call and assumes the strictest flow when it is missing.
+            let env = req.client.clone().unwrap_or_default();
+            let channel = if env.device == "desktop" {
+                "qrcode"
+            } else {
+                "link"
+            };
+            let body = json!({ "payment_session_id": session, "payment_method": { "upi": { "channel": channel } } });
+            let mut call = self
+                .req_v(
+                    reqwest::Method::POST,
+                    "/pg/orders/sessions",
+                    ORDER_PAY_VERSION,
+                )
+                .header("x-idempotency-key", req.attempt_id.as_str());
+            for (name, value) in [
+                ("x-client-device", env.device.as_str()),
+                ("x-client-os", env.os.as_str()),
+                ("x-client-rendering-type", env.rendering.as_str()),
+                ("x-client-browser", env.browser.as_str()),
+            ] {
+                if !value.is_empty() {
+                    call = call.header(name, value);
+                }
+            }
+            let p = read_json(call.json(&body).send().await.map_err(classify)?).await?;
+            let action = if channel == "qrcode" {
+                qr_action(&p)?
+            } else {
+                intent_action(&p)?
+            };
+            state.provider_payment_ref = p["cf_payment_id"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| p["cf_payment_id"].as_i64().map(|i| i.to_string()));
+            state.raw = p;
+            return Ok(Initiated { state, action });
         }
         Ok(Initiated {
             state,
@@ -438,5 +530,66 @@ impl Provider for Cashfree {
                 .map(str::to_string),
             raw: v,
         })
+    }
+}
+
+#[cfg(test)]
+mod upi_tests {
+    use super::*;
+
+    // Shapes captured from Cashfree's sandbox on 31 October 2026 (values shortened).
+    #[test]
+    fn reads_the_intent_response_and_keeps_per_app_links() {
+        let p = json!({
+            "action": "custom", "channel": "link", "cf_payment_id": "1469871650921752576",
+            "data": { "url": null, "payload": {
+                "default": "https://payments-test.cashfree.com/sim/1", "bhim": "https://payments-test.cashfree.com/sim/1?a=bhim",
+                "gpay": "https://payments-test.cashfree.com/sim/1?a=gpay", "paytm": "https://payments-test.cashfree.com/sim/1?a=paytm",
+                "phonepe": "https://payments-test.cashfree.com/sim/1?a=phonepe", "web": "https://sandbox.cashfree.com/pg/view/upi/x" } },
+        });
+        match intent_action(&p).unwrap() {
+            ClientAction::UpiIntent { uri, apps, .. } => {
+                assert_eq!(uri, "https://payments-test.cashfree.com/sim/1");
+                assert_eq!(
+                    apps.keys().map(String::as_str).collect::<Vec<_>>(),
+                    ["bhim", "gpay", "paytm", "phonepe"],
+                    "per-app links are kept; default and the web page are not apps"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn reads_the_qr_response_and_refuses_anything_that_is_not_a_png() {
+        let ok =
+            json!({ "data": { "payload": { "qrcode": "data:image/png;base64,iVBORw0KGgo=" } } });
+        assert!(
+            matches!(qr_action(&ok).unwrap(), ClientAction::UpiQr { image } if image.starts_with("data:image/png;base64,"))
+        );
+        for bad in [
+            json!({ "data": { "payload": {} } }),
+            json!({ "data": { "payload": { "qrcode": "https://evil.example/q.png" } } }),
+            json!({ "data": { "payload": { "qrcode": "javascript:alert(1)" } } }),
+        ] {
+            assert!(
+                matches!(qr_action(&bad), Err(ProviderError::Uncertain(_))),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_intent_answer_without_a_link_is_unknown_not_a_failure() {
+        for bad in [
+            json!({ "data": { "payload": {} } }),
+            json!({ "data": { "payload": { "default": "" } } }),
+            json!({ "data": null }),
+        ] {
+            assert!(
+                matches!(intent_action(&bad), Err(ProviderError::Uncertain(_))),
+                "{bad}"
+            );
+        }
     }
 }

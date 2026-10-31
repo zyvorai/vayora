@@ -10,6 +10,7 @@ pub mod bankcsv;
 pub mod billing;
 pub mod cases;
 pub mod checkout;
+pub mod clientenv;
 pub mod closing;
 pub mod collections;
 pub mod console_users;

@@ -7,7 +7,7 @@ The specification asks for four explicit completion levels. They are different s
 3. **Tested in partner UAT**: passed the partner's acceptance tests, including physical-device checks.
 4. **Approved and enabled live.**
 
-**Nothing in this repository is above level 1.** Providers are verified only against simulators and local stubs, never a live gateway. No NPCI approval, bank agreement or partner credentials are claimed. See [STATUS.md](STATUS.md) for the product-level view and [ADR 0003](../adr/0003-extend-rust-and-upi-qr-intent.md) for why this extends the Rust codebase instead of rewriting it in Go.
+**One capability has reached level 2** (Cashfree UPI intent and QR, below). Everything else is level 1. Nothing is at level 3 or 4, and no live gateway has been used. No NPCI approval, bank agreement or partner credentials are claimed. See [STATUS.md](STATUS.md) for the product-level view and [ADR 0003](../adr/0003-extend-rust-and-upi-qr-intent.md) for why this extends the Rust codebase instead of rewriting it in Go.
 
 ## Repository state and stack
 Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkout and console, Compose, Helm, k3s and Envoy assets, OpenAPI, Node/Python/Go SDKs. The spec's proposed Go/Vite stack is **not** used; the reason is recorded in ADR 0003.
@@ -46,4 +46,23 @@ Every checkout state shows a short **support reference** derived from the paymen
 
 ## Payer apps to test on physical devices
 UPI payers use many apps and the checkout must work with all of them, not one. Before any live claim, test the QR scan and the intent launch on real devices with each of the common UPI apps (BHIM, PhonePe, Google Pay, Paytm and other bank and fintech UPI apps), on Android and on iOS, including launch failure and backgrounding. None of this has been done.
+
+## Cashfree UPI intent and QR (level 2: integrated with a partner sandbox)
+Run on 31 October 2026 against Cashfree's real **sandbox**, with the whole local stack (API, worker, checkout) and a real sandbox account.
+
+| What was shown | Evidence |
+|---|---|
+| A phone request gets a real intent response with per-app links (`bhim`, `gpay`, `paytm`, `phonepe`) | `tests/cashfree_sandbox.rs` (run with `--ignored` and sandbox keys); also through the API with an Android user agent |
+| A desktop request gets Cashfree's own PNG QR, shown in the checkout | same test; checked in a browser |
+| The payer's device is derived from their own request and sent to Cashfree (`x-client-*`) | `clientenv.rs` unit tests |
+| Without the account opt-in the adapter keeps the hosted flow | `without_the_opt_in_the_hosted_flow_is_still_used` (this test caught a bug: the adapter had relied only on the router) |
+| Paying in Cashfree's sandbox simulator does **not** mark anything paid by itself; the page stayed `awaiting_payment` | observed |
+| The server asks Cashfree (`refresh`), sees the capture, and the page becomes `paid`, one balanced ledger pair is posted once (`capture:<attempt>`), and a `payment.captured` event is queued | observed; ledger and outbox read from the database |
+
+**Limits, plainly.**
+- **No money moved.** The sandbox simulator is not a UPI app. In the sandbox the intent links are Cashfree simulator HTTPS URLs, not `upi://`; the real production link format is **not known** and was not tested.
+- **Real apps are untested.** BHIM, PhonePe, Google Pay and others, on Android and iOS, need small-value live payments on physical devices (see [PARTNER_SETUP.md](PARTNER_SETUP.md)).
+- **Webhooks were not tested.** Sandbox webhooks need a public HTTPS URL; this run resolved the payment by asking Cashfree instead.
+- **Production is opt-in per account.** Set `"upi_intent": true` in the account's credentials only after Cashfree has enabled native intent / QR (its S2S flag). The sandbox did not require the flag; production behaviour is unconfirmed.
+- The adapter uses Order Pay API version `2026-01-01` for this call (verified in the sandbox) and `2023-08-01` for the rest.
 
