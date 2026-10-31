@@ -1162,6 +1162,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/provider_accounts/{provider}/check:
+    post:
+      summary: Ask the provider whether it accepts this account's credentials (read-only; a refusal is `ok: false`)
+      tags:
+      - providers
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN

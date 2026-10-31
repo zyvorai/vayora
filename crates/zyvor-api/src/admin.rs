@@ -276,6 +276,36 @@ pub async fn create_provider_account(
         crate::ssrf::check_url(url, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("bad_base_url", e))?;
     }
+    // Pointing at the real provider (no custom address): the key must belong to this environment, so a live
+    // key can never sit in a test environment (or the reverse). Custom addresses are for simulators.
+    if b.base_url.is_none() {
+        let id = |k: &str| b.credentials[k].as_str().unwrap_or_default();
+        let mismatch = match (b.provider.as_str(), auth.env.as_str()) {
+            ("razorpay", "test") if !id("key_id").starts_with("rzp_test_") => {
+                Some("a Razorpay key for a test environment starts with rzp_test_")
+            }
+            ("razorpay", "live") if !id("key_id").starts_with("rzp_live_") => {
+                Some("a Razorpay key for a live environment starts with rzp_live_")
+            }
+            ("cashfree", "live") if id("client_id").to_uppercase().starts_with("TEST") => {
+                Some("this looks like a Cashfree sandbox app id; live needs a production one")
+            }
+            _ => None,
+        };
+        if let Some(m) = mismatch {
+            return Err(ApiError::invalid("wrong_mode_credentials", m));
+        }
+    }
+    if let Some(u) = b.base_url.as_deref()
+        && b.provider == "cashfree"
+        && auth.env == "test"
+        && u.contains("://api.cashfree.com")
+    {
+        return Err(ApiError::invalid(
+            "wrong_mode_credentials",
+            "api.cashfree.com is Cashfree's production address; use sandbox.cashfree.com in a test environment",
+        ));
+    }
     if auth.env == "live" && b.provider == "sim" {
         return Err(ApiError::invalid(
             "sim_in_live",
@@ -318,6 +348,33 @@ pub async fn create_provider_account(
         Json(
             json!({ "id": id, "provider": b.provider, "webhook_url": format!("/v1/webhooks/{}/{}", b.provider, auth.tenant_id) }),
         ),
+    ))
+}
+
+/// `POST /v1/provider_accounts/{provider}/check`: ask the provider whether it accepts this account's
+/// credentials. Read-only. A failure is an answer (`ok: false`), not an error, so the page can show why.
+pub async fn check_provider_account(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(provider): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let p = crate::registry::load(&s, &mut tx, &auth.tenant_id, &auth.env, &provider).await?;
+    tx.commit().await?;
+    let (ok, detail) = if provider == "sim" {
+        (
+            true,
+            "the built-in simulator needs no credentials".to_string(),
+        )
+    } else {
+        match p.check().await {
+            Ok(d) => (true, d),
+            Err(e) => (false, e.to_string()),
+        }
+    };
+    Ok(Json(
+        json!({ "provider": provider, "ok": ok, "detail": detail, "env": auth.env }),
     ))
 }
 

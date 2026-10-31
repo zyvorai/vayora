@@ -298,6 +298,12 @@ pub trait Provider: Send + Sync {
         on: chrono::NaiveDate,
     ) -> Result<Vec<SettlementRecord>, ProviderError>;
 
+    /// Is the account reachable, and are its credentials accepted? Read-only: nothing is created. The
+    /// string says what was found, for a person to read.
+    async fn check(&self) -> Result<String, ProviderError> {
+        Err(ProviderError::Unsupported("a connection check".into()))
+    }
+
     /// Verify the signature and normalise. `headers` keys are lower-cased.
     fn verify_webhook(
         &self,
@@ -316,6 +322,27 @@ pub(crate) fn classify(e: reqwest::Error) -> ProviderError {
         ProviderError::Rejected(format!("connection failed: {e}"))
     } else {
         ProviderError::Uncertain(e.to_string())
+    }
+}
+
+/// The outcome of a connection check from the status the provider answered with. `authenticated` lists the
+/// statuses that mean "we got past authentication" (an expected "not found" counts).
+pub(crate) fn check_status(
+    status: reqwest::StatusCode,
+    authenticated: &[u16],
+) -> Result<String, ProviderError> {
+    if authenticated.contains(&status.as_u16()) {
+        Ok("the provider accepted the credentials".into())
+    } else if status == reqwest::StatusCode::UNAUTHORIZED
+        || status == reqwest::StatusCode::FORBIDDEN
+    {
+        Err(ProviderError::Rejected(format!(
+            "the provider did not accept the credentials (HTTP {status})"
+        )))
+    } else {
+        Err(ProviderError::Uncertain(format!(
+            "unexpected answer from the provider (HTTP {status})"
+        )))
     }
 }
 

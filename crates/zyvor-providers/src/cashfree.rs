@@ -288,6 +288,16 @@ impl Provider for Cashfree {
         })
     }
 
+    async fn check(&self) -> Result<String, ProviderError> {
+        // an order that cannot exist: a 404 means the credentials got us past authentication
+        let res = self
+            .req(reqwest::Method::GET, "/pg/orders/zyvor_connection_check")
+            .send()
+            .await
+            .map_err(classify)?;
+        check_status(res.status(), &[200, 404, 422])
+    }
+
     async fn fetch_payment(&self, attempt_id: &str) -> Result<PaymentState, ProviderError> {
         let res = self
             .req(

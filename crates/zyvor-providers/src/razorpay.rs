@@ -158,6 +158,15 @@ impl Provider for Razorpay {
         Ok(payment_state(&p, None))
     }
 
+    async fn check(&self) -> Result<String, ProviderError> {
+        let res = self
+            .get("/v1/payments?count=1")
+            .send()
+            .await
+            .map_err(classify)?;
+        check_status(res.status(), &[200])
+    }
+
     async fn fetch_payment(&self, attempt_id: &str) -> Result<PaymentState, ProviderError> {
         let orders = read_json(
             self.get(&format!("/v1/orders?receipt={attempt_id}"))

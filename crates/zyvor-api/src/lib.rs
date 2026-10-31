@@ -185,6 +185,10 @@ pub fn app(state: AppState) -> Router {
             post(create_provider_account).get(list_provider_accounts),
         )
         .route(
+            "/provider_accounts/{provider}/check",
+            post(admin::check_provider_account),
+        )
+        .route(
             "/provider_accounts/{provider}/enabled",
             post(set_provider_enabled),
         )

@@ -231,6 +231,29 @@ export async function createTestPayment(_: FormState, f: FormData): Promise<Form
   revalidatePath("/payments");
   redirect(`/payments/${intentId}`);
 }
+/** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
+export const connectProvider = async (_: FormState, f: FormData) => {
+  const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";
+  const credentials: Record<string, string | boolean> = provider === "razorpay" ? { key_id: text(f, "id"), key_secret: text(f, "secret") } : { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
+  if (!text(f, "id") || !text(f, "secret") || !text(f, "webhook_secret")) return { error: "Fill in the key, its secret and the webhook secret." };
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect({ provider, credentials, webhookSecret: text(f, "webhook_secret") }), "admin");
+  return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
+};
+/** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */
+export async function checkProvider(provider: string): Promise<{ ok: boolean; detail: string }> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "admin")) return { ok: false, detail: DENIED.error };
+  try {
+    const r = await (await api(s.u)).providers.check(provider);
+    return { ok: r.ok, detail: r.detail };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { ok: false, detail: e.message };
+    throw e;
+  }
+}
+export async function setProviderEnabled(provider: string, enabled: boolean): Promise<FormState> {
+  return run(["/providers"], (z) => z.providers.setEnabled(provider, enabled), "admin");
+}
 export const enableSandbox = async (_: FormState) => run(["/sandbox"], (z) => z.providers.enableSimulator(), "admin");
 export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
 export const resolveCase = async (_: FormState, f: FormData) => {

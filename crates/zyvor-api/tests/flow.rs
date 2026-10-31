@@ -9373,3 +9373,104 @@ async fn a_new_organisation_can_complete_and_refund_a_test_payment_with_no_setup
     );
     assert_eq!(t.count("SELECT count(*) FROM provider_accounts p JOIN tenants x ON x.id = p.tenant_id WHERE p.provider = 'sim' AND x.env = 'live'").await, 0);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn provider_connection_check_says_whether_credentials_are_accepted_and_keys_stay_in_their_mode(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    // the accounts `setup` made talk to the mock, which accepts them
+    for p in ["razorpay", "cashfree"] {
+        let r = t
+            .ok(
+                &t.a,
+                "POST",
+                &format!("/v1/provider_accounts/{p}/check"),
+                None,
+                json!({}),
+            )
+            .await;
+        assert_eq!(r["ok"], true, "{p}: {r}");
+    }
+    // a fresh organisation: the simulator checks out, and a rejected key is an answer, not an error
+    let su = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Check Ltd", "email": "c@check.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: su["test_tenant"].as_str().unwrap().into(),
+        key: su["test_key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/sim/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        true
+    );
+    t.ok(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_test_bad", "key_secret": "x" }, "webhook_secret": "w", "base_url": t.mock })).await;
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/razorpay/check",
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(r["ok"], false);
+    assert!(
+        r["detail"].as_str().unwrap().contains("did not accept"),
+        "{r}"
+    );
+    t.ok(&tn, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "BADID", "client_secret": "x" }, "webhook_secret": "w", "base_url": t.mock })).await;
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/cashfree/check",
+            None,
+            json!({})
+        )
+        .await["ok"],
+        false
+    );
+    let (st, _) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/provider_accounts/nope/check",
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    // a live key cannot be saved in a test environment; the sandbox address is required for Cashfree
+    let tn2 = {
+        let su = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Mode Ltd", "email": "m@mode.in", "password": "correct horse battery" })).await;
+        Tenant {
+            id: su["test_tenant"].as_str().unwrap().into(),
+            key: su["test_key"].as_str().unwrap().into(),
+        }
+    };
+    let (st, b) = t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_live_abc", "key_secret": "x" }, "webhook_secret": "w" })).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!("wrong_mode_credentials")
+        )
+    );
+    let (st, b) = t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "cashfree", "credentials": { "client_id": "TEST1", "client_secret": "x" }, "webhook_secret": "w", "base_url": "https://api.cashfree.com" })).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!("wrong_mode_credentials")
+        )
+    );
+    assert_eq!(t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_test_abc", "key_secret": "x" }, "webhook_secret": "w" })).await.0, StatusCode::CREATED);
+}
