@@ -49,7 +49,9 @@ async fn main() {
         MIGRATOR.run(&owner).await.expect("run migrations");
         if args.get(1).map(String::as_str) == Some("migrate") {
             println!("migrations applied");
-            return;
+            // close the connection and leave at once: a one-shot job must not wait on runtime teardown
+            owner.close().await;
+            std::process::exit(0);
         }
     }
     let pool = PgPoolOptions::new()
