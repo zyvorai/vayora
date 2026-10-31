@@ -1,0 +1,46 @@
+"use server";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { sealText } from "@/lib/session";
+import { REVIEWER_COOKIE, REVIEWER_TTL_SECONDS, platform, requireReviewerSurface, reviewerKey } from "@/lib/reviewer";
+
+type State = { error?: string; ok?: string } | undefined;
+
+/** Check the key against the API before keeping it; a wrong key is never stored. */
+export async function reviewerSignIn(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = String(form.get("key") ?? "").trim();
+  if (!key.startsWith("zp_")) return { error: "That is not a reviewer key. Reviewer keys start with zp_." };
+  const secret = process.env.CONSOLE_SESSION_SECRET ?? "";
+  if (!secret) return { error: "This console has no session secret set." };
+  const r = await platform(key, "GET", "/reviews?status=pending");
+  if (!r.ok) return { error: r.status === 401 ? "The API does not accept that key. It may be disabled." : r.message };
+  (await cookies()).set(REVIEWER_COOKIE, await sealText(secret, key), { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/reviewer", maxAge: REVIEWER_TTL_SECONDS });
+  redirect("/reviewer");
+}
+
+export async function reviewerSignOut() {
+  requireReviewerSurface();
+  (await cookies()).delete({ name: REVIEWER_COOKIE, path: "/reviewer" });
+  redirect("/reviewer");
+}
+
+/** Approve, or reject with the note the merchant will be shown. */
+export async function decideReview(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const org = String(form.get("org") ?? "");
+  const decision = String(form.get("decision") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+  if (decision !== "approve" && decision !== "reject") return { error: "Choose approve or reject." };
+  if (decision === "reject" && !note) return { error: "Say what the merchant should fix. They are shown this." };
+  const r = await platform(key, "POST", `/reviews/${encodeURIComponent(org)}/decision`, { decision, note: note || undefined });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer");
+  redirect(`/reviewer?status=pending&done=${decision}`);
+}

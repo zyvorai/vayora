@@ -35,7 +35,21 @@ k3s: `kubectl -n zyvor exec deploy/zyvor-api -- zyvor-api platform-reviewer add 
 Hand the key to that person over a channel you trust; do not put it in chat or a ticket. Make one per person and
 disable it when they leave. No key, no live mode: with no reviewer set up, every request stays pending.
 
-## Doing a review
+## Doing a review in the console
+
+Set `CONSOLE_REVIEWER=1` on the console that Zyvor's own people use (leave it off for any console merchants reach: it
+then answers 404 for `/reviewer`). Open `/reviewer`, paste your reviewer key (`zp_...`; it is checked against the API,
+kept encrypted in an httpOnly cookie for 8 hours, and never shown again), and you get:
+
+- the queue, oldest first, filtered by pending / approved / rejected, with how many checks did not pass;
+- a review page with the business, every check and its reason, bank accounts (last four digits only) and document
+  references, and a warning when no automatic check ran at all;
+- **Approve** (optional note) and **Reject** (a note is required: the merchant is shown it and emailed).
+
+A merchant sign-in does not work on this page, and a reviewer key does not work anywhere else in the console. Sign out
+ends it at once. Disabling the reviewer (`platform-reviewer disable`) makes the next click return to sign-in.
+
+## Doing a review from a script
 
 ```
 export ZYVOR_API_URL=https://api.example.com ZYVOR_PLATFORM_KEY=zp_...
@@ -64,7 +78,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- A reviewer **page** in the console; reviewers use the script or the API (`/v1/platform/reviews`).
 - A second reviewer for large or unusual merchants; assignment and an SLA clock.
 - Re-review when the business changes after approval (profiles are locked once approved, but a new bank account is
   only verified by a person, not re-reviewed by Zyvor).
