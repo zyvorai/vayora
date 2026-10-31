@@ -61,41 +61,22 @@ The checkout page never holds an API key. It can pay the one intent it was opene
 ## 2. The server (what happens behind the tap)
 
 ```mermaid
-flowchart TB
-  subgraph Edge[Public edge]
-    CK[Checkout and payment links<br/>client secret only]
-    KEYS[Merchant API<br/>API key, rate limited]
-    HK[Provider webhooks<br/>signature only]
-  end
-
-  subgraph API[zyvor-api]
-    MW[Rate limit and request tracing]
-    ID[Idempotency check]
-    RT[Router<br/>capability matrix, rules, fees]
-    SM[State machine<br/>only moves forward]
-    LG[Ledger<br/>double entry, append only]
-    OB[Outbox<br/>events to send]
-  end
-
-  DB[(PostgreSQL<br/>row-level security per tenant)]
-  PROV[Razorpay or Cashfree]
-  MERCH[Merchant webhook URL]
-
-  CK --> MW
-  KEYS --> MW
-  HK --> MW
-  MW --> ID --> RT
-  RT -- 1. save attempt first --> DB
-  RT -- 2. then call provider --> PROV
-  PROV -- result or webhook --> SM
-  SM --> LG
-  SM --> OB
+flowchart LR
+  IN["A request arrives<br/>checkout, merchant API<br/>or provider webhook"] --> MW["Rate limit<br/>and tracing"]
+  MW --> ID["Idempotency<br/>check"]
+  ID --> RT["Router<br/>capability matrix,<br/>rules, fees"]
+  RT -- "1. save the attempt first" --> DB[("PostgreSQL<br/>row-level security")]
+  RT -- "2. then call the provider" --> PROV["Razorpay<br/>or Cashfree"]
+  PROV -- "result or webhook" --> SM["State machine<br/>only moves forward"]
+  SM --> LG["Ledger<br/>double entry"]
+  SM --> OB["Outbox<br/>events to send"]
   LG --> DB
   OB --> DB
-  W[Worker] -- reads --> DB
-  W -- delivers, signed --> MERCH
-  W -- asks, never re-sends --> PROV
+  W["Worker"] -- "reads" --> DB
+  W -- "signed events" --> MERCH["Merchant<br/>webhook URL"]
+  W -- "asks, never re-sends" --> PROV
 ```
+
 
 ### The rules the server will not break
 
