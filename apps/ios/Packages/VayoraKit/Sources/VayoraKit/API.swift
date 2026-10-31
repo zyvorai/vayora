@@ -108,7 +108,8 @@ public struct VayoraClient: Sendable {
     }
 
     public func intent(id: String) async throws -> PaymentIntent {
-        try await send(request("GET", "/payment_intents/\(id)"), as: PaymentIntent.self)
+        struct Detail: Decodable { let intent: PaymentIntent }
+        return try await send(request("GET", "/payment_intents/\(id)"), as: Detail.self).intent
     }
 
     public func listIntents() async throws -> [PaymentIntent] {
