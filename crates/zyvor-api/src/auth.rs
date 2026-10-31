@@ -122,6 +122,29 @@ pub fn mint_key(env: &str) -> (String, String, String) {
     (key, prefix, hash)
 }
 
+/// The path as the client sent it (the router has already stripped the `/v1` it is nested under).
+fn original_path(parts: &Parts) -> &str {
+    parts
+        .extensions
+        .get::<axum::extract::OriginalUri>()
+        .map_or_else(|| parts.uri.path(), |u| u.0.path())
+}
+
+/// What a business whose live mode was taken away may still do: read, and refund its customers.
+fn frozen_may(method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return true;
+    }
+    let p = path.strip_prefix("/v1").unwrap_or(path);
+    *method == Method::POST
+        && ((p.starts_with("/payment_intents/") && p.ends_with("/refunds"))
+            || p.starts_with("/refunds/")
+            // settling what is already in flight
+            || (p.starts_with("/payment_attempts/")
+                && (p.ends_with("/refresh") || p.ends_with("/cancel"))))
+}
+
 impl FromRequestParts<AppState> for Auth {
     type Rejection = ApiError;
 
@@ -132,14 +155,17 @@ impl FromRequestParts<AppState> for Auth {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or_else(|| ApiError::unauthorized("missing bearer API key"))?;
-        let row: Option<(String, String, String, Vec<String>, Vec<String>, Option<String>)> = sqlx::query_as(
-            "SELECT k.id, k.tenant_id, t.env, k.scopes, k.allowed_cidrs, k.branch_id FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
+        #[allow(clippy::type_complexity)]
+        let row: Option<(String, String, String, Vec<String>, Vec<String>, Option<String>, bool)> = sqlx::query_as(
+            "SELECT k.id, k.tenant_id, t.env, k.scopes, k.allowed_cidrs, k.branch_id,
+                    (t.env = 'live' AND EXISTS (SELECT 1 FROM live_access l WHERE l.organisation_id = t.organisation_id AND l.status = 'revoked'))
+             FROM api_keys k JOIN tenants t ON t.id = k.tenant_id
              WHERE k.key_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > now())",
         )
         .bind(hash_key(key))
         .fetch_optional(&state.pool)
         .await?;
-        let (key_id, tenant_id, env, scopes, cidrs, branch_id) =
+        let (key_id, tenant_id, env, scopes, cidrs, branch_id, frozen) =
             row.ok_or_else(|| ApiError::unauthorized("invalid, expired or revoked API key"))?;
         if !cidrs.is_empty() {
             let ip =
@@ -149,6 +175,12 @@ impl FromRequestParts<AppState> for Auth {
                     "this API key is not allowed from this address",
                 ));
             }
+        }
+        // Live mode taken away: the merchant can still read everything and refund, nothing else.
+        if frozen && !frozen_may(&parts.method, original_path(parts)) {
+            return Err(ApiError::forbidden(
+                "Zyvor has taken live mode away from this business, so this is stopped; reading and refunds still work. See the Onboarding page.",
+            ));
         }
         // best effort and at most once a minute per key, so reads stay reads
         let _ = sqlx::query("UPDATE api_keys SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')")
@@ -206,6 +238,33 @@ mod tests {
         assert_eq!(hash_key(&k1), h1);
         assert_ne!(h1, h2);
         assert!(k1.starts_with(&p1) && p1.len() == 14);
+    }
+
+    #[test]
+    fn a_frozen_business_can_read_and_refund_and_nothing_else() {
+        use axum::http::Method;
+        assert!(frozen_may(&Method::GET, "/v1/payments"));
+        assert!(frozen_may(
+            &Method::POST,
+            "/v1/payment_intents/pi_1/refunds"
+        ));
+        assert!(frozen_may(&Method::POST, "/v1/refunds/rf_1/approve"));
+        assert!(!frozen_may(&Method::POST, "/v1/payment_intents"));
+        assert!(!frozen_may(
+            &Method::POST,
+            "/v1/payment_intents/pi_1/attempts"
+        ));
+        assert!(frozen_may(
+            &Method::POST,
+            "/v1/payment_attempts/pa_1/refresh"
+        ));
+        assert!(!frozen_may(
+            &Method::POST,
+            "/v1/payment_attempts/pa_1/capture"
+        ));
+        assert!(!frozen_may(&Method::POST, "/v1/payouts"));
+        assert!(!frozen_may(&Method::DELETE, "/v1/refunds/rf_1"));
+        assert!(!frozen_may(&Method::PUT, "/v1/onboarding"));
     }
 
     #[test]

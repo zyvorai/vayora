@@ -133,6 +133,14 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "live_access.rejected",
         "Zyvor did not open live mode yet; the note says what to fix.",
     ),
+    (
+        "live_access.revoked",
+        "Zyvor took live mode away: no new payments or payouts until it is restored; the note says why.",
+    ),
+    (
+        "live_access.restored",
+        "Zyvor opened live mode again after taking it away.",
+    ),
     ("onboarding.approved", "Onboarding was approved."),
     (
         "onboarding.rejected",

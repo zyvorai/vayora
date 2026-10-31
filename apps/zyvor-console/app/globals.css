@@ -232,6 +232,7 @@ label.field.checkbox input { width: auto; }
 .envseg button.on { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
 .envseg button.on.test { color: var(--warn); } .envseg button.on.live { color: var(--ok); }
 .envsw-err { position: absolute; right: 0; top: calc(100% + 8px); width: 280px; z-index: 30; box-shadow: var(--shadow); }
+.testbar.bad { background: var(--chip-bad); color: var(--bad); }
 .testbar { padding: 6px clamp(16px, 3vw, 40px); font-size: .8125rem; font-weight: 500; background: var(--chip-warn); color: var(--warn); border-bottom: 1px solid var(--line); }
 .menu { position: relative; }
 .menu summary { list-style: none; cursor: pointer; display: grid; place-items: center; border-radius: 50%; }

@@ -448,7 +448,7 @@ export class Zyvor {
 
   /** Zyvor reviews every business before live mode opens. Ask once your business details are approved. */
   readonly liveAccess = {
-    get: () => this.req<{ status: "not_requested" | "pending" | "approved" | "rejected"; note: string | null; requested_at?: string; reviewed_at?: string | null; round?: number; onboarding_approved: boolean }>("GET", "/v1/live_access"),
+    get: () => this.req<{ status: "not_requested" | "pending" | "approved" | "rejected" | "revoked"; note: string | null; requested_at?: string; reviewed_at?: string | null; round?: number; onboarding_approved: boolean }>("GET", "/v1/live_access"),
     request: () => this.req<{ status: "pending" | "approved" }>("POST", "/v1/live_access"),
   };
 
