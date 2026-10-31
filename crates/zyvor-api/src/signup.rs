@@ -69,11 +69,20 @@ pub async fn signup(
         uuid::Uuid::new_v4().simple()
     );
 
-    // one organisation per email; checked before creating anything
-    let taken: Option<String> = sqlx::query_scalar("SELECT id FROM signups WHERE email = $1")
+    // One organisation per email. The lock serialises two signups for the same address, and the check covers
+    // addresses that already belong to an organisation through an invitation or the People page, so nothing
+    // is created (and no orphan left) when the address is taken.
+    let mut guard = s.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
         .bind(&email)
-        .fetch_optional(&s.pool)
+        .execute(&mut *guard)
         .await?;
+    let taken: Option<i32> = sqlx::query_scalar(
+        "SELECT 1 FROM signups WHERE email = $1 UNION ALL SELECT 1 FROM login_directory WHERE email = $1 LIMIT 1",
+    )
+    .bind(&email)
+    .fetch_optional(&s.pool)
+    .await?;
     if taken.is_some() {
         return Err(ApiError::conflict(
             "email_taken",
@@ -103,6 +112,7 @@ pub async fn signup(
             e => e.into(),
         })?;
     send_verification(&s, &email, name, &token).await?;
+    guard.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({

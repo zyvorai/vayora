@@ -114,7 +114,7 @@ const MAX_ATTEMPTS: i32 = 8;
 /// eight tries, and the failure stays in `last_error`.
 pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
-    for _ in 0..20 {
+    for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
         let row: Option<(String, String, String, String, i32)> = sqlx::query_as(
             "SELECT id, to_email, subject, body, attempts FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()

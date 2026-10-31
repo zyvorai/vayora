@@ -9121,3 +9121,69 @@ async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPoo
     zyvor_api::mail::drain(&st).await.unwrap();
     assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'later@example.com' AND status = 'dead'").await, 1);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_with_a_taken_email_creates_nothing_even_when_two_arrive_together(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    // an address that belongs to someone through an invitation (it is not in `signups`)
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Host Ltd", "email": "host@host.in", "password": pw }),
+    )
+    .await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "host@host.in", "password": pw }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "guest@host.in", "role": "viewer" }),
+    )
+    .await;
+    let token = mailed_token(&t, "guest@host.in").await;
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": token, "password": "member password 1" }),
+    )
+    .await;
+    let orgs = t.count("SELECT count(*) FROM organisations").await;
+    let (s1, b1) = t.public("POST", "/v1/signup", None, json!({ "organisation_name": "Takeover Ltd", "email": "guest@host.in", "password": pw })).await;
+    assert_eq!(
+        (s1, b1["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("email_taken"))
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM organisations").await,
+        orgs,
+        "no organisation left behind"
+    );
+
+    // two signups for one new address at the same moment: one wins, the other is refused, one organisation exists
+    let body = json!({ "organisation_name": "Twin Ltd", "email": "twin@twin.in", "password": pw });
+    let (a, b) = tokio::join!(
+        t.public("POST", "/v1/signup", None, body.clone()),
+        t.public("POST", "/v1/signup", None, body.clone())
+    );
+    let mut codes = [a.0.as_u16(), b.0.as_u16()];
+    codes.sort();
+    assert_eq!(codes, [201, 409]);
+    assert_eq!(
+        t.count("SELECT count(*) FROM organisations WHERE name = 'Twin Ltd'")
+            .await,
+        1
+    );
+}

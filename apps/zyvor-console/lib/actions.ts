@@ -66,7 +66,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     if (r.otp || (r.error && !r.error.startsWith("Incorrect"))) return r;
   }
   try {
-    const r = await (await api()).consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
+    const r = await (await api(undefined, { deployment: true })).consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
     signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled, ...(r.user.branch_id ? { b: r.user.branch_id } : {}) };
   } catch (e) {
     if (!(e instanceof ZyvorError)) return { error: "Sign-in is unavailable right now. Try again in a moment." };
@@ -82,7 +82,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     let noUsers = false;
     if (userOk && passOk) {
       try {
-        noUsers = (await (await api()).consoleUsers.list()).data.length === 0;
+        noUsers = (await (await api(undefined, { deployment: true })).consoleUsers.list()).data.length === 0;
       } catch {
         noUsers = false;
       }
@@ -94,6 +94,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     return { error: "Incorrect username, password or code." };
   }
   await start(signedIn);
+  (await cookies()).delete(KEY_COOKIE); // an earlier organisation sign-in must not leave its key behind
   redirect(safeNext(form));
 }
 
@@ -283,7 +284,8 @@ export async function confirmMfa(_: FormState, f: FormData): Promise<FormState> 
   if (!s || s.i === "bootstrap") return DENIED;
   try {
     const r = await (await api(s.u)).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
-    await start({ i: s.i, u: s.u, r: s.r, m: true });
+    const { exp: _exp, ...who } = s; // keep everything else (environment, a cashier's branch)
+    await start({ ...who, m: true });
     return { codes: r.recovery_codes };
   } catch (e) {
     if (e instanceof ZyvorError) return { error: e.message };
