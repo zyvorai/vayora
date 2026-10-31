@@ -183,6 +183,63 @@ pub async fn convert(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct ExposureQuery {
+    as_of: Option<NaiveDate>,
+}
+
+/// `GET /v1/fx/exposure?as_of=2026-03-31`: open USD invoices valued at the rate on the day each was raised and at
+/// the rate on `as_of`, with the difference. Reporting only: nothing is posted and the ledger is not revalued.
+/// A figure is null (never a guess) when no rate covers that day.
+pub async fn exposure(
+    State(s): State<AppState>,
+    auth: Auth,
+    Query(q): Query<ExposureQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let as_of = q.as_of.unwrap_or_else(crate::ist_today);
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String, i64, NaiveDate)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT i.id, i.number, {out} AS outstanding, (i.created_at AT TIME ZONE 'Asia/Kolkata')::date
+         FROM invoices i
+         WHERE i.currency = 'USD' AND i.status IN ('open', 'partially_paid')
+           AND (i.created_at AT TIME ZONE 'Asia/Kolkata')::date <= $1
+         ORDER BY i.number LIMIT 500",
+        out = crate::collections::OUTSTANDING
+    )))
+    .bind(as_of)
+    .fetch_all(&mut *tx)
+    .await?;
+    let now = rate_on(&mut tx, "USD", as_of).await?;
+    let mut data = Vec::new();
+    let (mut usd, mut booked, mut current, mut complete) = (0i64, 0i64, 0i64, now.is_some());
+    for (id, number, outstanding, raised) in rows {
+        if outstanding <= 0 {
+            continue;
+        }
+        let then = rate_on(&mut tx, "USD", raised).await?;
+        let booked_inr = then.map(|(m, _)| usd_to_inr(outstanding, m));
+        let current_inr = now.map(|(m, _)| usd_to_inr(outstanding, m));
+        let diff = booked_inr.zip(current_inr).map(|(b, c)| c - b);
+        usd += outstanding;
+        match (booked_inr, current_inr) {
+            (Some(b), Some(c)) => {
+                booked += b;
+                current += c;
+            }
+            _ => complete = false,
+        }
+        data.push(json!({ "invoice_id": id, "number": number, "outstanding_usd_minor": outstanding, "raised_on": raised,
+            "booked_inr_minor": booked_inr, "current_inr_minor": current_inr, "unrealised_inr_minor": diff }));
+    }
+    Ok(Json(json!({
+        "as_of": as_of, "rate_date": now.map(|n| n.1), "outstanding_usd_minor": usd, "complete": complete,
+        "booked_inr_minor": complete.then_some(booked), "current_inr_minor": complete.then_some(current),
+        "unrealised_inr_minor": complete.then_some(current - booked),
+        "note": "reporting only: nothing is posted to the ledger", "data": data
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

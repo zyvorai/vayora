@@ -261,6 +261,7 @@ export class Zyvor {
     setRate: (p: { currency: "USD"; rate: string; asOf?: string; note?: string }) => this.req<{ id: string }>("POST", "/v1/fx/rates", { currency: p.currency, rate: p.rate, as_of: p.asOf, note: p.note }),
     rates: () => this.req<Page<{ id: string; currency: string; rate: string; as_of: string; note: string | null; set_by: string }>>("GET", "/v1/fx/rates"),
     convert: (p: { amountMinor: number; from: "INR" | "USD"; to: "INR" | "USD"; asOf?: string }) => this.req<{ amount_minor: number; currency: string; rate: string | null; rate_date?: string }>("GET", `/v1/fx/convert${this.qs({ amount_minor: p.amountMinor, from: p.from, to: p.to, as_of: p.asOf })}`),
+    exposure: (p: { asOf?: string } = {}) => this.req<{ as_of: string; rate_date: string | null; outstanding_usd_minor: number; complete: boolean; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null; data: Array<{ invoice_id: string; number: string; outstanding_usd_minor: number; raised_on: string; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null }> }>("GET", `/v1/fx/exposure${this.qs({ as_of: p.asOf })}`),
   };
 
   readonly settings = {

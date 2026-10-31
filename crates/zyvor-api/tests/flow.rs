@@ -5103,6 +5103,73 @@ async fn fx_rates_you_enter_convert_amounts_and_show_foreign_receivables_in_inr(
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn fx_exposure_values_open_dollar_invoices_then_and_now_without_posting_anything(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let today = zyvor_api::ist_today();
+    let old = (today - chrono::Duration::days(60)).to_string();
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "US-9", "currency": "USD", "amount_minor": 10_000 }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "IN-9", "amount_minor": 5_000 }),
+    )
+    .await;
+    // raised 60 days ago
+    let mut tx = zyvor_api::tenant::begin(&t.state.pool, &a.id)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE invoices SET created_at = created_at - interval '60 days' WHERE number = 'US-9'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    // no rate at all: figures are null, not guessed
+    let r = t.ok(a, "GET", "/v1/fx/exposure", None, Value::Null).await;
+    assert_eq!(r["outstanding_usd_minor"], 10_000);
+    assert_eq!(r["complete"], false);
+    assert!(r["unrealised_inr_minor"].is_null());
+    assert!(r["data"][0]["booked_inr_minor"].is_null());
+
+    for (rate, day) in [("82.50", Some(old.as_str())), ("83.215", None)] {
+        let mut body = json!({ "currency": "USD", "rate": rate });
+        if let Some(d) = day {
+            body["as_of"] = json!(d);
+        }
+        t.ok(a, "POST", "/v1/fx/rates", None, body).await;
+    }
+    let r = t.ok(a, "GET", "/v1/fx/exposure", None, Value::Null).await;
+    assert_eq!(r["complete"], true);
+    assert_eq!(
+        r["data"].as_array().unwrap().len(),
+        1,
+        "INR invoices are not exposure"
+    );
+    assert_eq!(r["booked_inr_minor"], 825_000);
+    assert_eq!(r["current_inr_minor"], 832_150);
+    assert_eq!(r["unrealised_inr_minor"], 7_150);
+    assert_eq!(r["data"][0]["unrealised_inr_minor"], 7_150);
+
+    // nothing was posted, and other tenants see nothing
+    let r = t.ok(b, "GET", "/v1/fx/exposure", None, Value::Null).await;
+    assert_eq!(r["outstanding_usd_minor"], 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn split_payments_accrue_to_vendors_reverse_on_refund_and_fund_payouts_from_the_balance(
     pool: PgPool,
 ) {

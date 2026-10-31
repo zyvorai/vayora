@@ -253,6 +253,7 @@ pub fn app(state: AppState) -> Router {
         .route("/installment_plans/{id}", get(installments::get_plan))
         .route("/fx/rates", post(fx::set_rate).get(fx::list_rates))
         .route("/fx/convert", get(fx::convert))
+        .route("/fx/exposure", get(fx::exposure))
         .route("/events/catalogue", get(events::catalogue))
         .route("/invoices/{id}/lines", get(gst::invoice_lines))
         .route("/gst/gstr1", get(gst::gstr1))

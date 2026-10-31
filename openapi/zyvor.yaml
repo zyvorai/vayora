@@ -1229,6 +1229,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/fx/exposure:
+    get:
+      summary: Open dollar invoices valued at the rate when raised and at the report date (reporting only)
+      tags:
+      - fx
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/vendors/{id}/balance:
     get:
       summary: What a vendor is owed from split payments, and what is free to pay out
