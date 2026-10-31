@@ -7,13 +7,17 @@ struct HomeView: View {
     @State private var scanning = false
     @State private var pasting = false
     @State private var payload: UPIPayload?
+    @State private var isTransfer = false
+    @State private var sending = false
+    @State private var splitting = false
     @State private var scanError: String?
     @State private var receipt: Txn?
 
     var body: some View {
         NavigationStack {
             PayHomeScreen(balance: store.balance, spentThisMonth: Money(minor: store.spentThisMonth), week: weekSeries, recent: store.history.prefix(4).map(row),
-                          onScan: { scanning = true }, onPaste: { pasting = true },
+                          summary: MonthSummary.byCategory(store.spendEntries, now: Date()),
+                          onScan: { scanning = true }, onPaste: { pasting = true }, onSend: { sending = true }, onSplit: { splitting = true },
                           onOpen: { r in receipt = store.history.first { $0.id.uuidString == r.id } })
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $receipt) { Receipt(txn: $0) }
@@ -24,8 +28,10 @@ struct HomeView: View {
                     } onCancel: { scanning = false }
                 }
                 .sheet(isPresented: $pasting) { PasteSheet { open($0) } }
-                .sheet(item: Binding(get: { payload.map(Box.init) }, set: { if $0 == nil { payload = nil } })) { b in
-                    PaySheet(payload: b.value).environmentObject(store)
+                .sheet(isPresented: $sending) { PayeesView().environmentObject(store) }
+                .sheet(isPresented: $splitting) { SplitView().environmentObject(store) }
+                .sheet(item: Binding(get: { payload.map { Box(value: $0, transfer: isTransfer) } }, set: { if $0 == nil { payload = nil } })) { b in
+                    PaySheet(payload: b.value, transfer: b.transfer).environmentObject(store)
                 }
                 .alert("Can't read that code", isPresented: Binding(get: { scanError != nil }, set: { _ in scanError = nil })) {
                     Button("OK", role: .cancel) {}
@@ -33,15 +39,18 @@ struct HomeView: View {
         }
     }
 
-    struct Box: Identifiable { let value: UPIPayload; var id: String { value.payee + value.note } }
+    struct Box: Identifiable { let value: UPIPayload; let transfer: Bool; var id: String { value.payee + value.note + (transfer ? "t" : "m") } }
 
+    /// A merchant UPI link goes through Vayora; a Vayora request QR (from Split) is a person-to-person test transfer.
     func open(_ text: String) {
-        do { payload = try UPIPayload.parse(text) } catch { scanError = "That is not a UPI payment code." }
+        if let p = try? UPIPayload.parse(text) { isTransfer = false; payload = p; return }
+        if let p = try? RequestPayload.parse(text) { isTransfer = true; payload = p; return }
+        scanError = "That is not a UPI payment code or a Vayora request."
     }
 
     func row(_ t: Txn) -> TxnRowModel {
         TxnRowModel(id: t.id.uuidString, name: t.name, payee: t.payee, amount: t.money,
-                    when: t.date.formatted(.relative(presentation: .named)), ok: t.status == .success)
+                    when: (t.isTransfer ? "Transfer · " : "") + t.date.formatted(.relative(presentation: .named)), ok: t.status == .success)
     }
 
     /// Spend per day for the last seven days, oldest first.

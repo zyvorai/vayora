@@ -22,9 +22,13 @@ public struct TestChip: View {
 /// The pay home: wallet on glass, one huge scan action, a week at a glance, recent payments.
 public struct PayHomeScreen: View {
     let balance: Money, spentThisMonth: Money, week: [Double], recent: [TxnRowModel]
-    let phase: Double?, scrolls: Bool, onScan: () -> Void, onPaste: () -> Void, onOpen: (TxnRowModel) -> Void
+    let phase: Double?, scrolls: Bool, summary: [(category: SpendCategory, minor: Int64)]
+    let onScan: () -> Void, onPaste: () -> Void, onSend: () -> Void, onSplit: () -> Void, onOpen: (TxnRowModel) -> Void
     public init(balance: Money, spentThisMonth: Money, week: [Double], recent: [TxnRowModel], phase: Double? = nil, scrolls: Bool = true,
-                onScan: @escaping () -> Void = {}, onPaste: @escaping () -> Void = {}, onOpen: @escaping (TxnRowModel) -> Void = { _ in }) {
+                summary: [(category: SpendCategory, minor: Int64)] = [],
+                onScan: @escaping () -> Void = {}, onPaste: @escaping () -> Void = {}, onSend: @escaping () -> Void = {}, onSplit: @escaping () -> Void = {},
+                onOpen: @escaping (TxnRowModel) -> Void = { _ in }) {
+        self.summary = summary; self.onSend = onSend; self.onSplit = onSplit
         self.balance = balance; self.spentThisMonth = spentThisMonth; self.week = week; self.recent = recent; self.phase = phase; self.scrolls = scrolls
         self.onScan = onScan; self.onPaste = onPaste; self.onOpen = onOpen
     }
@@ -40,11 +44,28 @@ public struct PayHomeScreen: View {
             HStack { Text("Vayora Pay").vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
             wallet
             scan
-            Button(action: onPaste) { Label("Paste a UPI link instead", systemImage: "link").vfont(15, .semibold).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity) }.buttonStyle(.plain)
+            HStack(spacing: 10) {
+                quick("Send", "paperplane.fill", onSend)
+                quick("Split", "divide.circle.fill", onSplit)
+                quick("Paste link", "link", onPaste)
+            }
+            if !summary.isEmpty { MonthSummaryCard(items: summary, total: spentThisMonth) }
             insights
             recents
         }
         .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 32)
+    }
+    func quick(_ title: String, _ icon: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: { Haptics.tap(); run() }) {
+            VStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundStyle(VUI.violet)
+                Text(title).vfont(13, .semibold).foregroundStyle(VUI.textPrimary)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(VUI.hairline))
+        }
+        .buttonStyle(PressScale())
     }
     var wallet: some View {
         GlassCard {

@@ -11,7 +11,12 @@ struct Txn: Codable, Identifiable, Equatable, Hashable {
     var note: String
     var status: Status
     var date = Date()
+    /// Added later, so older saved history (without these) still loads.
+    var kind: String? = nil          // "transfer" for a person-to-person test transfer, nil for a merchant payment
+    var category: String? = nil
+    var noPIN: Bool? = nil
     var money: Money { Money(minor: amountMinor) }
+    var isTransfer: Bool { kind == "transfer" }
 }
 
 /// The payer's local state. The wallet is **test money kept on this phone**: it is not a bank account.
@@ -23,6 +28,12 @@ final class Store: ObservableObject {
     @Published var balanceMinor: Int64 { didSet { UserDefaults.standard.set(balanceMinor, forKey: "balance") } }
     @Published var history: [Txn] { didSet { save() } }
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
+    @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
+    @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders) } } }
+    @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
+    @Published var myName: String { didSet { UserDefaults.standard.set(myName, forKey: "myName") } }
+    /// Where split requests ask to be paid. Made once per install; a test ID, not a bank account.
+    let myVPA: String
 
     static let startingBalance: Int64 = 10_000_00
 
@@ -35,6 +46,45 @@ final class Store: ObservableObject {
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []
+        payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()
+        reminders = (d.data(forKey: "reminders")).flatMap { try? JSONDecoder().decode([BillReminder].self, from: $0) } ?? []
+        smallPayments = d.bool(forKey: "smallPayments")
+        myName = d.string(forKey: "myName") ?? "Me"
+        if let v = d.string(forKey: "myVPA") { myVPA = v } else {
+            let v = "pay-" + String(UUID().uuidString.prefix(6)).lowercased() + "@" + PayeeInput.phoneDomain
+            d.set(v, forKey: "myVPA"); myVPA = v
+        }
+    }
+
+    static let smallPolicy = SmallPaymentPolicy()
+
+    /// What went out today without a PIN, so the daily limit holds.
+    var noPINSpentToday: Int64 {
+        let cal = Calendar.current
+        return history.filter { $0.status == .success && $0.noPIN == true && cal.isDateInToday($0.date) }.reduce(0) { $0 + $1.amountMinor }
+    }
+    func needsPIN(for amount: Money) -> Bool { Store.smallPolicy.needsPIN(amount: amount, noPINSpentTodayMinor: noPINSpentToday, enabled: smallPayments) }
+
+    var spendEntries: [SpendEntry] {
+        history.map { SpendEntry(amountMinor: $0.amountMinor, category: SpendCategory(rawValue: $0.category ?? "") ?? .other, date: $0.date, paid: $0.status == .success) }
+    }
+
+    /// A test transfer to a person. The money moves between **test wallets on this phone**; Vayora's server and ledger are not involved.
+    func transfer(_ p: UPIPayload, amount: Money) -> Outcome {
+        guard amount.minor > 0 else { return .declined("Enter an amount") }
+        guard amount.minor <= balanceMinor else { return .declined("Not enough test balance") }
+        return .paid
+    }
+
+    /// Records a finished payment: history, balance, the payee book and a category guess.
+    func settle(_ p: UPIPayload, amount: Money, outcome: Outcome, transfer: Bool, noPIN: Bool) {
+        // an unclear outcome (checking, server away) is never recorded: nothing is known yet
+        let ok: Bool
+        switch outcome { case .paid: ok = true; case .declined: ok = false; case .unknown, .notAvailable: return }
+        let cat = SpendCategory.guess(name: p.name, note: p.note, transfer: transfer)
+        record(Txn(payee: p.payee, name: p.name, amountMinor: amount.minor, note: p.note, status: ok ? .success : .failed,
+                   kind: transfer ? "transfer" : nil, category: cat.rawValue, noPIN: noPIN ? true : nil))
+        if ok { payees.save(name: p.name, input: p.payee, paidAt: Date()) }
     }
 
     private func save() {

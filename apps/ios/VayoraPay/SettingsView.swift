@@ -34,6 +34,21 @@ struct SettingsView: View {
                             }
                         }
                         GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Small payments", systemImage: "bolt.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Toggle("No PIN up to ₹200", isOn: $store.smallPayments).tint(VUI.violet).foregroundStyle(VUI.textPrimary)
+                                Text("Test limit: ₹200 a payment and ₹1,000 a day without a PIN. Above that, the PIN is still asked.").vfont(13).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("You", systemImage: "person.crop.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                TextField("Your name", text: $store.myName).foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                Text("Your test UPI ID: \(store.myVPA)").vfont(13).foregroundStyle(VUI.textSecondary).textSelection(.enabled)
+                                Text("Split requests ask to be paid here.").vfont(12).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("About", systemImage: "info.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 Text("Vayora Pay is a test payer. It cannot link a bank or move real money. A real UPI app needs NPCI approval and a sponsor bank.")

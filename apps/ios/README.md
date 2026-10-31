@@ -35,3 +35,11 @@ The PNGs in `docs/gallery` are its output. The screens live in the `VayoraUI` ta
 The server address and API key are remembered in the Keychain, so deleting and reinstalling an app keeps them. The Merchant app's Settings and Pay's first screen can fill them in by scanning a setup QR (`vayora://setup?server=…&key=zk_test_…`); live keys are refused.
 
 Text uses a Dynamic Type aware rounded font (`vfont`), capped at the second accessibility size at the app roots. macOS has no text-size setting, so the gallery cannot show large text, and it draws the fallback frosted card, not the iOS 26 Liquid Glass; check both on a phone.
+
+## Person-to-person features (test mode)
+Vayora's simulator only knows merchant payments, so these are kept on the phone and labelled as such:
+- **Send** to a saved payee (a UPI ID, or a 10-digit mobile number kept as `<number>@zyvor-test`). The money moves between test wallets on the paying phone; Vayora's server and ledger are not involved.
+- **Split a bill** shows a request QR (`vayora://request?pa=…&pn=…&am=…&tn=…`). Another phone's Pay scans it and pays; the amount is required and read with the same rules as a `upi://pay` link.
+- **Small payments** (off by default, in Settings): up to ₹200 a payment and ₹1,000 a day need only the slide, not the PIN.
+- **Bills** are monthly local notifications. They remind; they never pay.
+- UPI AutoPay mandates need server work and are not built (see `docs/zyvor/IMPLEMENTATION_STATUS.md`).
