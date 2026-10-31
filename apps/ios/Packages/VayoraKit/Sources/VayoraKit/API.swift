@@ -5,6 +5,7 @@ public struct APIError: Error, Equatable, Sendable, LocalizedError {
     public let code: String
     public let message: String
     public var errorDescription: String? { message }
+    public init(status: Int, code: String, message: String) { self.status = status; self.code = code; self.message = message }
 }
 
 public enum Attempt: String, Codable, Sendable {
@@ -183,4 +184,134 @@ public struct VayoraClient: Sendable {
         let data = try JSONSerialization.data(withJSONObject: ["upi_uri": upiURI, "approve": approve])
         return try await send(request("POST", "/sim/pay", body: data), as: SimPayResult.self)
     }
+
+    // AutoPay: payer side (simulator only)
+
+    public func simMandateDecide(upiURI: String, approve: Bool = true) async throws -> SimPayResult {
+        let data = try JSONSerialization.data(withJSONObject: ["upi_uri": upiURI, "approve": approve])
+        return try await send(request("POST", "/sim/mandate", body: data), as: SimPayResult.self)
+    }
+
+    /// What the payer's own bank shows: the mandate's state and the debits it took. `id` must already be a safe id
+    /// (`MandatePayload` guarantees it for a scanned link).
+    public func simMandateView(id: String) async throws -> PayerMandateView {
+        guard MandatePayload.isSafeID(id) else { throw APIError(status: 0, code: "bad_id", message: "Not a mandate id") }
+        return try await send(request("GET", "/sim/mandate/\(id)"), as: PayerMandateView.self)
+    }
+
+    public func simMandateRevoke(id: String) async throws -> SimPayResult {
+        let data = try JSONSerialization.data(withJSONObject: ["mandate_id": id])
+        return try await send(request("POST", "/sim/mandate/revoke", body: data), as: SimPayResult.self)
+    }
+
+    // AutoPay: merchant side
+
+    /// The customer with this name, created the first time. Matched by a reference made from the name, so the same
+    /// person is never created twice.
+    public func customer(named name: String) async throws -> CustomerInfo {
+        let ref = "autopay:" + name.trimmingCharacters(in: .whitespaces).lowercased()
+        struct List: Decodable { let data: [CustomerInfo] }
+        var comps = URLComponents(); comps.queryItems = [URLQueryItem(name: "external_ref", value: ref)]
+        let found = try await send(request("GET", "/customers?" + (comps.percentEncodedQuery ?? "")), as: List.self)
+        if let c = found.data.first { return c }
+        let data = try JSONSerialization.data(withJSONObject: ["name": name.trimmingCharacters(in: .whitespaces), "external_ref": ref])
+        return try await send(request("POST", "/customers", body: data), as: CustomerInfo.self)
+    }
+
+    public func customers() async throws -> [CustomerInfo] {
+        struct List: Decodable { let data: [CustomerInfo] }
+        return try await send(request("GET", "/customers"), as: List.self).data
+    }
+
+    public func createMandate(customerID: String, cap: Money, frequency: MandateFrequency, endDate: String, idempotencyKey: String = UUID().uuidString) async throws -> MandateInfo {
+        let body: [String: Any] = ["customer_id": customerID, "max_amount_minor": cap.minor, "frequency": frequency.rawValue, "end_date": endDate]
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try await send(request("POST", "/mandates", body: data, idempotencyKey: idempotencyKey), as: MandateInfo.self)
+    }
+
+    public func mandates() async throws -> [MandateInfo] {
+        struct List: Decodable { let data: [MandateInfo] }
+        return try await send(request("GET", "/mandates"), as: List.self).data
+    }
+
+    public func mandate(id: String) async throws -> (mandate: MandateInfo, debits: [MandateDebitInfo]) {
+        struct Detail: Decodable { let mandate: MandateInfo; let debits: [MandateDebitInfo] }
+        let d = try await send(request("GET", "/mandates/\(id)"), as: Detail.self)
+        return (d.mandate, d.debits)
+    }
+
+    public func refreshMandate(id: String) async throws -> MandateInfo {
+        try await send(request("POST", "/mandates/\(id)/refresh"), as: MandateInfo.self)
+    }
+
+    public func pauseMandate(id: String) async throws -> MandateInfo { try await send(request("POST", "/mandates/\(id)/pause"), as: MandateInfo.self) }
+    public func resumeMandate(id: String) async throws -> MandateInfo { try await send(request("POST", "/mandates/\(id)/resume"), as: MandateInfo.self) }
+    public func revokeMandate(id: String) async throws -> MandateInfo { try await send(request("POST", "/mandates/\(id)/revoke"), as: MandateInfo.self) }
+
+    public func scheduleDebit(mandateID: String, amount: Money, due: String, idempotencyKey: String = UUID().uuidString) async throws -> MandateDebitInfo {
+        let data = try JSONSerialization.data(withJSONObject: ["amount_minor": amount.minor, "due_date": due])
+        return try await send(request("POST", "/mandates/\(mandateID)/debits", body: data, idempotencyKey: idempotencyKey), as: MandateDebitInfo.self)
+    }
+
+    /// Run the mandate pass now (a sandbox aid: the in-process simulator only works when the API runs it).
+    public func runMandates() async throws -> MandateRunStats {
+        try await send(request("POST", "/mandates/run", body: Data("{}".utf8)), as: MandateRunStats.self)
+    }
+}
+
+public struct CustomerInfo: Codable, Equatable, Sendable, Identifiable { public let id: String; public let name: String }
+
+public struct MandateAuthorization: Codable, Equatable, Hashable, Sendable {
+    public let type: String?
+    public let uri: String?
+}
+
+public struct MandateInfo: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let customerID: String
+    public let currency: String
+    public let maxAmountMinor: Int64
+    public let frequency: String
+    public let startDate: String
+    public let endDate: String
+    public let status: String
+    public let authorization: MandateAuthorization?
+    public let failureReason: String?
+    public let revokedBy: String?
+    public let createdAt: String?
+    enum CodingKeys: String, CodingKey {
+        case id, currency, frequency, status, authorization
+        case customerID = "customer_id", maxAmountMinor = "max_amount_minor", startDate = "start_date", endDate = "end_date"
+        case failureReason = "failure_reason", revokedBy = "revoked_by", createdAt = "created_at"
+    }
+    public var cap: Money { Money(minor: maxAmountMinor, currency: currency) }
+    public var frequencyTitle: String { MandateFrequency(rawValue: frequency)?.title ?? frequency }
+    public var isLive: Bool { ["pending_authorization", "active", "paused"].contains(status) }
+}
+
+public struct MandateDebitInfo: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let mandateID: String
+    public let amountMinor: Int64
+    public let currency: String
+    public let dueDate: String
+    public let state: String
+    public let attemptID: String?
+    public let retryNo: Int
+    public let failureReason: String?
+    enum CodingKeys: String, CodingKey {
+        case id, currency, state
+        case mandateID = "mandate_id", amountMinor = "amount_minor", dueDate = "due_date", attemptID = "attempt_id", retryNo = "retry_no", failureReason = "failure_reason"
+    }
+    public var money: Money { Money(minor: amountMinor, currency: currency) }
+}
+
+public struct MandateRunStats: Codable, Equatable, Sendable { public let expired: Int; public let notified: Int; public let initiated: Int }
+
+public struct PayerMandateView: Codable, Equatable, Sendable {
+    public let mandateID: String
+    public let status: String
+    public let maxAmountMinor: Int64
+    public let debits: [PayerDebit]
+    enum CodingKeys: String, CodingKey { case mandateID = "mandate_id", status, maxAmountMinor = "max_amount_minor", debits }
 }

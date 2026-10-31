@@ -2,7 +2,10 @@
 //! revokes a mandate the in-process simulator issued. No bank, no real mandate. Off unless
 //! `ZYVOR_SIM_PAYER=1`, and it only ever touches the in-process simulator.
 
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -63,6 +66,21 @@ pub async fn decide(
         )
     })?;
     Ok(Json(json!({ "status": status })))
+}
+
+/// What the payer's own bank shows about a mandate: its state and the debits it took (the simulator plays the bank).
+pub async fn view(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    if !s.sim_payer {
+        return Err(ApiError::not_found("route"));
+    }
+    let v = s
+        .sim
+        .payer_view(&id)
+        .ok_or_else(|| ApiError::not_found("mandate"))?;
+    Ok(Json(json!(v)))
 }
 
 pub async fn revoke(

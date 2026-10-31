@@ -492,6 +492,7 @@ pub fn app(state: AppState) -> Router {
         .route("/sim/pay", post(sim_pay::pay))
         .route("/sim/mandate", post(sim_mandate::decide))
         .route("/sim/mandate/revoke", post(sim_mandate::revoke))
+        .route("/sim/mandate/{id}", get(sim_mandate::view))
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

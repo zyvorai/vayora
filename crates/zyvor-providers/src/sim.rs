@@ -15,6 +15,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::json;
 use zyvor_core::{Currency, new_id};
 
@@ -34,6 +35,27 @@ struct SimMandate {
     state: MandateState,
     max_amount_minor: i64,
     currency: Currency,
+    /// Debits this simulated bank actually took: what the payer's own bank would show them.
+    debits: Vec<PayerDebit>,
+}
+
+/// One debit the payer's bank took under a mandate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PayerDebit {
+    pub attempt_id: String,
+    pub amount_minor: i64,
+    /// RFC 3339.
+    pub at: String,
+}
+
+/// What a payer's UPI app can see of a mandate it approved. Note what is **not** here: upcoming debits. Zyvor
+/// emits the pre-debit notice to the merchant; delivering it to the payer is the merchant's or provider's job.
+#[derive(Debug, Clone, Serialize)]
+pub struct PayerMandateView {
+    pub mandate_id: String,
+    pub status: String,
+    pub max_amount_minor: i64,
+    pub debits: Vec<PayerDebit>,
 }
 
 impl SimProvider {
@@ -56,6 +78,19 @@ impl SimProvider {
             s.state.failure_reason = Some("declined_by_payer".into());
         }
         Some(s.state.status.clone())
+    }
+
+    /// What the payer's own bank would show about a mandate: its state and the debits it took. `None` when the
+    /// simulator has never heard of it.
+    pub fn payer_view(&self, mandate_id: &str) -> Option<PayerMandateView> {
+        let m = self.mandates.lock().unwrap();
+        let s = m.get(mandate_id)?;
+        Some(PayerMandateView {
+            mandate_id: mandate_id.to_string(),
+            status: s.state.status.as_str().to_string(),
+            max_amount_minor: s.max_amount_minor,
+            debits: s.debits.clone(),
+        })
     }
 
     /// The payer revokes a mandate from their own UPI app. `None` when there is nothing live to revoke.
@@ -210,11 +245,13 @@ impl Provider for SimProvider {
             authorization: Some(json!({
                 "type": "upi_mandate",
                 "uri": format!(
-                    "upi://mandate?pa=sandbox@zyvor-sim&pn=Zyvor%20Sandbox&am={}&cu={}&tn={}&recur={}",
+                    "upi://mandate?pa=sandbox@zyvor-sim&pn=Zyvor%20Sandbox&am={}&cu={}&tn={}&recur={}&start={}&end={}",
                     zyvor_core::minor_to_decimal(req.max_amount_minor, req.currency),
                     req.currency.code(),
                     req.mandate_id,
-                    req.frequency.as_str()
+                    req.frequency.as_str(),
+                    req.start_date,
+                    req.end_date
                 ),
                 "expires_at": null,
             })),
@@ -227,6 +264,7 @@ impl Provider for SimProvider {
                 state: state.clone(),
                 max_amount_minor: req.max_amount_minor,
                 currency: req.currency,
+                debits: Vec::new(),
             },
         );
         Ok(state)
@@ -289,6 +327,16 @@ impl Provider for SimProvider {
             .lock()
             .unwrap()
             .insert(req.attempt_id.clone(), state.clone());
+        if state.status == PaymentStatus::Captured
+            && let Some(m) = self.mandates.lock().unwrap().get_mut(&req.mandate_id)
+        {
+            // the bank took it, whether or not the answer reaches the merchant (an unknown outcome included)
+            m.debits.push(PayerDebit {
+                attempt_id: req.attempt_id.clone(),
+                amount_minor: req.amount_minor,
+                at: chrono::Utc::now().to_rfc3339(),
+            });
+        }
         if last == 7 {
             return Err(ProviderError::Uncertain(
                 "simulated timeout after acceptance".into(),
@@ -614,5 +662,45 @@ mod mandate_tests {
             Ok(Frequency::HalfYearly)
         );
         assert!("hourly".parse::<Frequency>().is_err());
+    }
+
+    #[tokio::test]
+    async fn the_payers_view_lists_only_the_debits_the_bank_took() {
+        let sim = SimProvider::new();
+        sim.set_manual_payer(true);
+        let pref = sim
+            .create_mandate(&new_mandate("mnd_5", 1_000_000))
+            .await
+            .unwrap()
+            .provider_mandate_ref
+            .unwrap();
+        assert_eq!(sim.payer_view("nope").map(|v| v.mandate_id), None);
+        assert_eq!(
+            sim.payer_view("mnd_5").unwrap().status,
+            "pending_authorization"
+        );
+        assert!(sim.payer_view("mnd_5").unwrap().debits.is_empty());
+        sim.mandate_decide("mnd_5", true);
+        sim.debit(&debit("c1", "mnd_5", &pref, 50_000))
+            .await
+            .unwrap();
+        let _ = sim.debit(&debit("c2", "mnd_5", &pref, 50_013)).await; // declined: the bank took nothing
+        let _ = sim.debit(&debit("c3", "mnd_5", &pref, 50_007)).await; // timed out for the merchant, but the bank took it
+        let v = sim.payer_view("mnd_5").unwrap();
+        assert_eq!(v.status, "active");
+        assert_eq!(
+            v.debits
+                .iter()
+                .map(|d| (d.attempt_id.as_str(), d.amount_minor))
+                .collect::<Vec<_>>(),
+            vec![("c1", 50_000), ("c3", 50_007)]
+        );
+        sim.payer_revoke("mnd_5");
+        assert_eq!(sim.payer_view("mnd_5").unwrap().status, "revoked");
+        assert_eq!(
+            sim.payer_view("mnd_5").unwrap().debits.len(),
+            2,
+            "history stays after a revoke"
+        );
     }
 }

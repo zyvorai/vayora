@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var splitting = false
     @State private var scanError: String?
     @State private var receipt: Txn?
+    @State private var mandate: (MandatePayload, String)?
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,9 @@ struct HomeView: View {
                 .sheet(item: Binding(get: { payload.map { Box(value: $0, transfer: isTransfer) } }, set: { if $0 == nil { payload = nil } })) { b in
                     PaySheet(payload: b.value, transfer: b.transfer).environmentObject(store)
                 }
+                .sheet(isPresented: Binding(get: { mandate != nil }, set: { if !$0 { mandate = nil } })) {
+                    if let m = mandate { MandateApproveSheet(mandate: m.0, uri: m.1).environmentObject(store) }
+                }
                 .alert("Can't read that code", isPresented: Binding(get: { scanError != nil }, set: { _ in scanError = nil })) {
                     Button("OK", role: .cancel) {}
                 } message: { Text(scanError ?? "") }
@@ -43,6 +47,10 @@ struct HomeView: View {
 
     /// A merchant UPI link goes through Vayora; a Vayora request QR (from Split) is a person-to-person test transfer.
     func open(_ text: String) {
+        if text.lowercased().hasPrefix("upi://mandate") {
+            do { mandate = (try MandatePayload.parse(text), text) } catch { scanError = "That AutoPay code isn't valid: \(error)." }
+            return
+        }
         if let p = try? UPIPayload.parse(text) { isTransfer = false; payload = p; return }
         if let p = try? RequestPayload.parse(text) { isTransfer = true; payload = p; return }
         scanError = "That is not a UPI payment code or a Vayora request."

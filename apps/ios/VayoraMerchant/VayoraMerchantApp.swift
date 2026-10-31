@@ -10,6 +10,7 @@ struct VayoraMerchantApp: App {
             TabView {
                 CollectView().tabItem { Label("Collect", systemImage: "qrcode") }
                 PaymentsView().tabItem { Label("Payments", systemImage: "list.bullet.rectangle") }
+                AutoPayView().tabItem { Label("AutoPay", systemImage: "arrow.triangle.2.circlepath") }
                 MerchantSettings().tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
             .environmentObject(store).tint(VUI.emerald).preferredColorScheme(.dark).dynamicTypeSize(...DynamicTypeSize.accessibility2)
