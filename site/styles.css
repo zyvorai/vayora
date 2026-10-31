@@ -178,3 +178,32 @@ footer small { display: block; color: var(--muted); margin-top: 48px; font-size:
 .codebox .body { padding: 24px 28px; }
 .copy { top: 5px; }
 @media (max-width: 560px) { .cells { gap: 3px; } }
+
+/* how it works */
+#how { background: var(--bg); }
+.journey { list-style: none; margin: 0 0 40px; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; counter-reset: step; }
+.journey li { counter-increment: step; position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 22px 18px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; }
+.journey li::before { content: counter(step); position: absolute; top: 14px; right: 16px; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.journey b { font-size: 1.05rem; letter-spacing: -.015em; }
+.journey li > span:last-child { color: var(--muted); font-size: .9rem; line-height: 1.4; }
+.journey .ic { width: 48px; height: 48px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 12%, transparent); display: grid; place-items: center; margin-bottom: 8px; }
+.journey .ic svg { width: 28px; height: 28px; fill: none; stroke: var(--accent-text); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 960px) { .journey { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .journey { grid-template-columns: 1fr; } }
+.fig { margin: 0 0 40px; background: var(--card); border: 1px solid var(--line); border-radius: 28px; padding: 24px 20px 20px; box-shadow: var(--shadow); }
+.fig figcaption { font-weight: 700; letter-spacing: -.015em; font-size: 1.1rem; margin: 0 8px 12px; }
+.figscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diagram { display: block; width: 100%; min-width: 640px; height: auto; }
+.diagram .box rect { fill: var(--soft); stroke: var(--line); stroke-width: 1.5; }
+.diagram .box rect.hi { stroke: var(--accent); stroke-width: 2.5; fill: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.diagram .box rect.fill { fill: var(--accent); stroke: var(--accent); }
+.diagram .edge path { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.diagram .edge path.dash { stroke-dasharray: 6 6; }
+.diagram .arrowhead { fill: var(--muted); }
+.diagram text { font-family: inherit; }
+.diagram .t { fill: var(--fg); font-size: 16px; font-weight: 650; }
+.diagram .s { fill: var(--muted); font-size: 12.5px; }
+.diagram .onfill { fill: var(--accent-fg); }
+.cap2 { color: var(--muted); font-size: .95rem; margin: 14px 8px 0; }
+.how-rules { margin-bottom: 40px; }
+.how-rules .tile { min-height: 0; }

@@ -13,7 +13,7 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
 ![Status](https://img.shields.io/badge/status-release%203%20%C2%B7%20sandbox-ff9f0a)
 
-[Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
+[How it works](docs/zyvor/HOW_IT_WORKS.md) · [Status vs the brief](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml)
 
 </div>
 
@@ -30,6 +30,42 @@ Rust core · PostgreSQL · Next.js checkout · TypeScript, Python and Go SDKs
 - **Takes payments your way.** Payment links with QR codes, coupons and a payer-covered fee, marketplace splits to vendors with balances, bulk and maker-checker payouts (bookkeeping: you pay from your bank), risk limits, checkout in six languages (translations awaiting native review).
 - **Runs a shop floor.** Branches and counters (a counter's QR, optionally with a payer-typed amount, ties payments to it), branch-limited API keys, cash entries and an end-of-day closing a second person signs off, a per-payment timeline in plain words, cash-due-by-week and refund-pattern prompts, reconciliation suggestions with evidence, and merchant onboarding records reviewed by a second person. Records and prompts only: Zyvor does not hold funds, verify identity or move cash.
 - **Is hard to abuse.** Per-key and per-address rate limits, API keys with expiry, address allow-lists and rotation, SSRF-guarded webhooks, rotatable master key, tamper-evident audit chain, named console users with TOTP and roles, default-deny network policy, supply-chain scanning in CI. See the [threat model](docs/zyvor/THREAT_MODEL.md).
+
+## How it works
+
+Your own provider account collects the money. Zyvor decides where a payment goes, writes every step into an append-only ledger, and checks that what the provider settled matches what was paid.
+
+```mermaid
+flowchart LR
+  C([Customer]) --> CK[Checkout<br/>6 languages]
+  CK --> API[zyvor-api<br/>Rust, axum]
+  M([Merchant<br/>console, API, SDKs]) --> API
+  API <--> DB[(PostgreSQL<br/>ledger, row-level security)]
+  W[Worker] <--> DB
+  API -- create payment --> P[Razorpay or Cashfree<br/>your own accounts]
+  P -- signed webhooks --> API
+  W -- ask, never re-send --> P
+  W -- signed events --> M
+  P -. settles to .-> B[(Your bank)]
+```
+
+**What a customer sees:** scan a QR or open a link, pick UPI or card in their own language, approve in their UPI app, see "Payment received".
+**What the server does:** saves the attempt first, calls the provider outside any database transaction, accepts duplicated and out-of-order webhooks safely, posts to the ledger exactly once, and tells the merchant with a signed webhook.
+
+```mermaid
+stateDiagram-v2
+  [*] --> created
+  created --> pending
+  pending --> authorized
+  authorized --> captured: money collected
+  created --> unknown: no answer from provider
+  unknown --> captured: provider confirms
+  unknown --> failed: provider says it never happened
+  created --> failed
+  pending --> failed
+```
+
+Full walkthrough with a diagram for each part (the customer's journey, the server's rules, the worker loop and reconciliation): **[docs/zyvor/HOW_IT_WORKS.md](docs/zyvor/HOW_IT_WORKS.md)**. Component map and invariants: [ARCHITECTURE.md](docs/zyvor/ARCHITECTURE.md).
 
 ## Try the sandbox (simulated providers, no real money)
 ```sh

@@ -38,6 +38,7 @@
     <a class="brand" href="#top"><img src="assets/favicon.svg" width="24" height="24" alt="">Zyvor</a>
     <div class="links">
       <a class="hide-s" href="#demo">Try it</a>
+      <a class="hide-s" href="#how">How it works</a>
       <a class="hide-s" href="#features">Features</a>
       <a class="hide-s" href="#code">Code</a>
       <a class="hide-s" href="#status">Status</a>
@@ -106,6 +107,71 @@
       </div>
     </div>
     <p class="simlabel">Simulated in your browser. No network calls, no real money.</p>
+  </div>
+</section>
+
+<section id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <h2 id="how-h">From a tap to your books.</h2>
+    <p class="sub">What a customer sees, what the server does behind it, and how the books stay right afterwards. Your own provider account collects and settles the money; Zyvor never holds it.</p>
+
+    <ol class="journey" aria-label="A customer's payment, step by step">
+      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="8" width="14" height="14" rx="3"/><rect x="26" y="8" width="14" height="14" rx="3"/><rect x="8" y="26" width="14" height="14" rx="3"/><path d="M28 28h4v4h-4zM36 36h4M28 38h2"/></svg></span><b>Scan or tap</b><span>A counter QR or a payment link opens checkout in the customer's language.</span></li>
+      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="12" width="36" height="24" rx="5"/><path d="M6 20h36M12 30h10"/></svg></span><b>Pick UPI or card</b><span>Six languages. The page can pay this one payment and nothing else.</span></li>
+      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="14" y="5" width="20" height="38" rx="5"/><path d="M19 24l4 4 7-8"/></svg></span><b>Approve in the UPI app</b><span>The customer enters their PIN with their bank. Zyvor never sees it.</span></li>
+      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 10h28M10 20h28M10 30h18"/><path d="M34 34l4 4 6-7"/></svg></span><b>Recorded once</b><span>A signed webhook from the provider is checked, de-duplicated and posted to the ledger one time.</span></li>
+      <li class="reveal"><span class="ic"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6a12 12 0 0 1 12 12c0 8 3 10 3 12H9c0-2 3-4 3-12A12 12 0 0 1 24 6zM20 36a4 4 0 0 0 8 0"/></svg></span><b>You are told</b><span>Your system gets a signed event. The customer sees "Payment received".</span></li>
+    </ol>
+
+    <figure class="fig reveal">
+      <figcaption>The pieces</figcaption>
+      <div class="figscroll">
+      <svg viewBox="0 0 920 400" role="img" aria-labelledby="arch-t arch-d" class="diagram">
+        <title id="arch-t">Zyvor Payments architecture</title>
+        <desc id="arch-d">Customers use the checkout, merchants use the API and console. Both reach zyvor-api, which stores everything in PostgreSQL and creates payments at the merchant's own Razorpay or Cashfree account. Providers send signed webhooks back. A worker resolves unknown outcomes and delivers signed events to the merchant. The provider settles to the merchant's bank.</desc>
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+        <g class="edge"><path d="M180 70H240" marker-end="url(#ah)"/><path d="M400 72L470 150" marker-end="url(#ah)"/><path d="M180 285L470 235" marker-end="url(#ah)"/><path d="M560 260V312" marker-start="url(#ah)" marker-end="url(#ah)"/><path d="M400 330H460" marker-start="url(#ah)" marker-end="url(#ah)"/><path d="M660 165L725 105" marker-end="url(#ah)"/><path d="M745 108L670 185" marker-end="url(#ah)"/><path d="M240 340L150 322" marker-end="url(#ah)"/><path class="dash" d="M807 100V300" marker-end="url(#ah)"/></g>
+        <g class="box"><rect x="20" y="40" width="160" height="60" rx="14"/><rect x="20" y="260" width="160" height="60" rx="14"/><rect x="240" y="40" width="160" height="60" rx="14"/><rect class="hi" x="460" y="140" width="200" height="120" rx="18"/><rect x="460" y="312" width="200" height="60" rx="14"/><rect x="240" y="300" width="160" height="60" rx="14"/><rect x="705" y="40" width="205" height="60" rx="14"/><rect x="705" y="300" width="205" height="60" rx="14"/></g>
+        <g class="lbl">
+          <text x="100" y="66" text-anchor="middle" class="t">Customer</text><text x="100" y="86" text-anchor="middle" class="s">phone or laptop</text>
+          <text x="100" y="286" text-anchor="middle" class="t">Merchant</text><text x="100" y="306" text-anchor="middle" class="s">console, API, SDKs</text>
+          <text x="320" y="66" text-anchor="middle" class="t">Checkout</text><text x="320" y="86" text-anchor="middle" class="s">6 languages</text>
+          <text x="560" y="190" text-anchor="middle" class="t big">zyvor-api</text><text x="560" y="212" text-anchor="middle" class="s">Rust · axum</text><text x="560" y="230" text-anchor="middle" class="s">one transaction per request</text>
+          <text x="560" y="338" text-anchor="middle" class="t">PostgreSQL</text><text x="560" y="358" text-anchor="middle" class="s">ledger · row-level security</text>
+          <text x="320" y="326" text-anchor="middle" class="t">Worker</text><text x="320" y="346" text-anchor="middle" class="s">asks, never re-sends</text>
+          <text x="807" y="66" text-anchor="middle" class="t">Razorpay or Cashfree</text><text x="807" y="86" text-anchor="middle" class="s">your own accounts</text>
+          <text x="807" y="326" text-anchor="middle" class="t">Your bank</text><text x="807" y="346" text-anchor="middle" class="s">settled by the provider</text>
+          <text x="585" y="128" class="s">create payment</text><text x="676" y="236" class="s">signed webhooks</text><text x="820" y="205" class="s">settles</text><text x="140" y="352" class="s">signed events</text>
+        </g>
+      </svg>
+      </div>
+    </figure>
+
+    <div class="bento how-rules">
+      <article class="tile wide reveal"><h3>Tap twice, pay once.</h3><p>Each tap carries an idempotency key that is saved in the same database transaction as the work. A repeat returns what already happened.</p></article>
+      <article class="tile wide reveal"><h3>Lost the signal? We ask, never re-send.</h3><p>The attempt is saved before the provider is called. If no answer comes back it becomes <code>unknown</code>, blocks any new attempt, and the worker asks the provider what really happened.</p></article>
+      <article class="tile wide reveal"><h3>Late or duplicate webhooks are safe.</h3><p>Every event goes through one state function. State only moves forward, and money always wins: a capture is accepted even after a failure, and flagged for review.</p></article>
+      <article class="tile wide reveal"><h3>History cannot be rewritten.</h3><p>The ledger and audit trail reject updates and deletes in the database itself. A mistake is fixed with a reversal, never an edit.</p></article>
+    </div>
+
+    <figure class="fig reveal">
+      <figcaption>A payment's life</figcaption>
+      <div class="figscroll">
+      <svg viewBox="0 0 920 300" role="img" aria-labelledby="st-t st-d" class="diagram">
+        <title id="st-t">Payment attempt states</title>
+        <desc id="st-d">An attempt starts as created, moves to pending, then authorized, then captured. If the provider does not answer it becomes unknown and the worker asks the provider; it can then become captured or failed. An attempt can fail from created or pending. Captured is never left.</desc>
+        <g class="edge"><path d="M170 85H240" marker-end="url(#ah)"/><path d="M390 85H460" marker-end="url(#ah)"/><path d="M610 85H700" marker-end="url(#ah)"/><path d="M70 115V205" marker-end="url(#ah)"/><path d="M160 115C160 170 290 150 290 205" marker-end="url(#ah)"/><path d="M240 235H150" marker-end="url(#ah)"/><path d="M390 235C600 235 770 200 790 118" marker-end="url(#ah)"/></g>
+        <g class="box"><rect x="20" y="55" width="150" height="60" rx="14"/><rect x="240" y="55" width="150" height="60" rx="14"/><rect x="460" y="55" width="150" height="60" rx="14"/><rect class="hi fill" x="700" y="55" width="190" height="60" rx="14"/><rect x="20" y="205" width="130" height="60" rx="14"/><rect x="240" y="205" width="150" height="60" rx="14"/></g>
+        <g class="lbl">
+          <text x="95" y="90" text-anchor="middle" class="t">created</text><text x="315" y="90" text-anchor="middle" class="t">pending</text><text x="535" y="90" text-anchor="middle" class="t">authorized</text><text x="795" y="82" text-anchor="middle" class="t onfill">captured</text><text x="795" y="102" text-anchor="middle" class="s onfill">the only state that moves money</text>
+          <text x="85" y="240" text-anchor="middle" class="t">failed</text><text x="315" y="240" text-anchor="middle" class="t">unknown</text>
+          <text x="78" y="166" class="s">declined</text><text x="190" y="176" class="s">no answer</text><text x="540" y="198" class="s">provider confirms</text>
+          <text x="165" y="290" class="s">failed can also come from pending. unknown to failed: the provider says it never happened.</text>
+        </g>
+      </svg>
+      </div>
+      <p class="cap2">Webhooks arrive duplicated and out of order. One pure, unit-tested function decides every move. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/HOW_IT_WORKS.md">Read the full walkthrough</a>.</p>
+    </figure>
   </div>
 </section>
 
