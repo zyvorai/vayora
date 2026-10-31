@@ -39,14 +39,14 @@ export default async function InvoicePrint({ params }: { params: Promise<{ id: s
         <div><strong>Bill to: {customer?.name ?? "—"}</strong><br />{addr(customer?.address1, customer?.location, customer?.pincode)}{(inv.buyer_gstin ?? customer?.gstin) && <><br />GSTIN {inv.buyer_gstin ?? customer?.gstin}</>}{inv.place_of_supply && <><br />Place of supply {inv.place_of_supply}</>}</div>
       </div>
       {isTax ? (
-        <table>
+        <div style={{ overflowX: "auto" }}><table>
           <thead><tr><th>#</th><th>Description</th><th>HSN/SAC</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Taxable</th><th className="r">Tax %</th><th className="r">CGST</th><th className="r">SGST</th><th className="r">IGST</th></tr></thead>
           <tbody>
             {lines.map((l) => (
               <tr key={l.position}><td>{l.position}</td><td>{l.description}</td><td>{l.hsn_sac}</td><td className="r">{l.quantity}</td><td className="r">{money(l.unit_price_minor)}</td><td className="r">{money(l.taxable_minor)}</td><td className="r">{(l.rate_bp / 100).toFixed(2)}</td><td className="r">{money(l.cgst_minor)}</td><td className="r">{money(l.sgst_minor)}</td><td className="r">{money(l.igst_minor)}</td></tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       ) : (
         <table><tbody><tr><td>Amount due for invoice {inv.number}</td><td className="r">{money(inv.amount_minor)}</td></tr></tbody></table>
       )}
