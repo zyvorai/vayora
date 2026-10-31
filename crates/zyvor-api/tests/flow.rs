@@ -7924,15 +7924,16 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
         key: login["session_key"].as_str().unwrap().into(),
     };
     t.ok(&tn, "GET", "/v1/onboarding", None, Value::Null).await;
-    // live mode is a different tenant
-    let live = t
-        .ok_public(
+    // live mode is a different tenant, and closed until the business is approved
+    let (s_live, _) = t
+        .public(
             "POST",
             "/v1/console/login",
+            None,
             json!({ "email": "cfo@beta.in", "password": "correct horse battery", "env": "live" }),
         )
         .await;
-    assert_ne!(live["tenant_id"], login["tenant_id"]);
+    assert_eq!(s_live, StatusCode::UNAUTHORIZED);
     // wrong password and unknown email look the same
     let (s1, b1) = t
         .public(
@@ -7958,7 +7959,7 @@ async fn console_login_by_email_issues_a_role_limited_session_key(pool: PgPool) 
             "SELECT count(*) FROM api_keys WHERE name = 'console session' AND expires_at > now()"
         )
         .await,
-        2
+        1
     );
 }
 
@@ -8022,7 +8023,19 @@ async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(
         key: live["session_key"].as_str().unwrap().into(),
     };
     assert!(ln.key.starts_with("zk_live"));
-    t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
+    // the approval is carried into the live tenant, so its own onboarding view and payout gate agree
+    let view = t.ok(&ln, "GET", "/v1/onboarding", None, Value::Null).await;
+    assert_eq!(view["status"], "approved");
+    assert_eq!(view["profile"]["legal_name"], "Gamma Mills");
+    // a direct live sign-in now works too
+    let direct = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "md@gamma.in", "password": "correct horse battery", "env": "live" }),
+        )
+        .await;
+    assert_eq!(direct["tenant_id"], live["tenant_id"]);
     // and back
     let back = t
         .ok(
@@ -8044,4 +8057,155 @@ async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(
         )
         .await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+/// Onboard through the API with the KYC simulator on; returns the submit response and the onboarding view.
+async fn kyc_onboard(
+    app: &axum::Router,
+    key: &str,
+    pan: &str,
+    business_type: &str,
+    gstin: Option<&str>,
+    account: &str,
+) -> (Value, Value) {
+    let call = |m: &'static str, p: &'static str, b: Value| {
+        let key = key.to_string();
+        async move { common::raw(app, &key, None, m, p, None, b).await }
+    };
+    let (s, b) = call("PUT", "/v1/onboarding", json!({ "legal_name": "Kiran Traders", "business_type": business_type, "pan": pan, "gstin": gstin, "address": "12 MG Road, Pune 411001" })).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let (s, b) = call(
+        "POST",
+        "/v1/onboarding/documents",
+        json!({ "kind": "pan", "reference": "docs://pan.pdf" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let (s, b) = call(
+        "POST",
+        "/v1/onboarding/bank_accounts",
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": account }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let (s, submit) = call("POST", "/v1/onboarding/submit", json!({})).await;
+    assert_eq!(s, StatusCode::OK, "{submit}");
+    let (_, view) = common::raw(app, key, None, "GET", "/v1/onboarding", None, Value::Null).await;
+    (submit, view)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_auto_approves_a_clean_case_and_routes_the_rest_to_a_person(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    let gst14 = "27ABCPE1234F1Z";
+    let gstin = format!("{gst14}{}", zyvor_api::gst::gstin_check_char(gst14));
+
+    // every check passes: approved without a person, and live mode is no longer blocked
+    let (sub, view) = kyc_onboard(
+        &app,
+        &t.a.key,
+        "ABCPE1234F",
+        "proprietorship",
+        Some(&gstin),
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "approved", "{sub}");
+    assert_eq!(sub["automatic"], true);
+    assert_eq!(view["status"], "approved");
+    assert_eq!(view["profile"]["reviewed_by"], "system:auto");
+    assert!(
+        view["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["outcome"] == "pass")
+    );
+    assert_eq!(view["checks"].as_array().unwrap().len(), 3); // pan, gstin, bank
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'onboarding.auto_approved'")
+            .await,
+        1
+    );
+    // the full PAN and account number are not stored anywhere
+    assert_eq!(t.count("SELECT count(*) FROM kyc_checks WHERE detail LIKE '%ABCPE1234F%' OR detail LIKE '%123456789012%'").await, 0);
+
+    // a bank account whose holder name does not match: a person decides, and is told why
+    let (sub, view) = kyc_onboard(
+        &app,
+        &t.b.key,
+        "ABCPE1234F",
+        "proprietorship",
+        None,
+        "123456781111",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review", "{sub}");
+    assert_eq!(sub["automatic"], false);
+    assert!(
+        sub["reasons"][0].as_str().unwrap().contains("bank"),
+        "{sub}"
+    );
+    assert_eq!(view["review_reasons"], sub["reasons"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_without_a_kyc_provider_still_needs_a_person(pool: PgPool) {
+    let t = setup(pool).await;
+    // default state: no provider, so nothing is checked and nothing is approved automatically
+    let (sub, view) = kyc_onboard(
+        &t.app,
+        &t.a.key,
+        "ABCPE1234F",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review", "{sub}");
+    assert_eq!(view["automated_checks"], false);
+    assert_eq!(view["checks"].as_array().unwrap().len(), 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn onboarding_checks_that_fail_or_do_not_fit_go_to_review(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    // PAN not found
+    let (sub, _) = kyc_onboard(
+        &app,
+        &t.a.key,
+        "ABCPE1234X",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    assert!(
+        sub["reasons"].to_string().contains("PAN check failed"),
+        "{sub}"
+    );
+    // PAN is a person's but the business says private limited; and the account does not exist
+    let (sub, _) = kyc_onboard(
+        &app,
+        &t.b.key,
+        "ABCPE1234F",
+        "private_limited",
+        None,
+        "123456780000",
+    )
+    .await;
+    assert_eq!(sub["status"], "in_review");
+    let r = sub["reasons"].to_string();
+    assert!(
+        r.contains("PAN check was inconclusive") && r.contains("bank account check failed"),
+        "{sub}"
+    );
 }

@@ -84,7 +84,7 @@ td a.row { color: var(--fg); font-weight: 500; }
 :root[data-theme="dark"] .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
 .btn[disabled] { opacity: .5; cursor: progress; }
 .btn.small { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
-input[type="text"], input[type="password"], input[type="search"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
+input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
 label.f { display: block; font-size: .75rem; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
 .seg { display: inline-flex; padding: 3px; border-radius: 980px; background: var(--soft); gap: 2px; }
 .seg a { padding: 5px 14px; border-radius: 980px; color: var(--muted); font-weight: 500; font-size: .875rem; }
@@ -238,3 +238,13 @@ label.field.checkbox input { width: auto; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: .8125rem; font-weight: 650; }
 .menu .pop { position: absolute; right: 0; top: calc(100% + 8px); min-width: 210px; padding: 14px; display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); z-index: 30; font-size: .875rem; }
 @media (max-width: 800px) { .col > main { padding-top: 20px; } .top { position: static; flex-wrap: wrap; } }
+
+/* stepper */
+.stepper { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 22px; flex-wrap: wrap; }
+.stepper li { flex: 1 1 140px; }
+.stepper a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 500; font-size: .875rem; }
+.stepper a:hover { text-decoration: none; background: var(--soft); }
+.stepper .dot { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; font-weight: 650; background: var(--chip-neutral); color: var(--fg); }
+.stepper .done .dot { background: var(--chip-ok); color: var(--ok); }
+.stepper .now a { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 0 3px var(--chip-accent); }
+.stepper .now .dot { background: var(--accent); color: #fff; }

@@ -25,6 +25,7 @@ pub mod gst;
 pub mod idempotency;
 pub mod insights;
 pub mod installments;
+pub mod kyc;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -77,6 +78,8 @@ pub struct AppState {
     /// When set, `Zyvor-Actor` is believed only with a valid `Zyvor-Actor-Signature` made with this secret
     /// (`ZYVOR_ACTOR_SECRET`, shared with the console). Without it the header is taken at its word.
     pub actor_secret: Option<Vec<u8>>,
+    /// Identity and bank checks for onboarding (`ZYVOR_KYC_PROVIDER`). `None`: every submission goes to a person.
+    pub kyc: Option<kyc::Kyc>,
 }
 
 pub use crypto::Crypto;
@@ -99,6 +102,7 @@ impl AppState {
             ai: None,
             checkout_public_url: None,
             actor_secret: None,
+            kyc: None,
         }
     }
 }

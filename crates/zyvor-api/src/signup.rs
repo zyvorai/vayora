@@ -201,6 +201,21 @@ pub async fn console_login(
     .bind(env)
     .fetch_optional(&s.pool)
     .await?;
+    if env == "live"
+        && let Some(live) = &tenant_id
+    {
+        let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+            .bind(live)
+            .fetch_one(&s.pool)
+            .await?;
+        // an unapproved business gets the same refusal as a wrong password, so this cannot be probed
+        if open_live(&s, &org, live).await.is_err() {
+            let _ = hash_password(&b.password);
+            return Err(ApiError::unauthorized(
+                "incorrect username, password or code",
+            ));
+        }
+    }
     let Some(tenant_id) = tenant_id else {
         // same time and same answer as a wrong password, so emails cannot be probed
         let _ = hash_password(&b.password);
@@ -265,27 +280,7 @@ pub async fn switch_env(
             .fetch_one(&s.pool)
             .await?;
     if env == "live" {
-        // merchant_profiles is per tenant (row-level security), so ask each of the organisation's tenants
-        let tenants: Vec<String> =
-            sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1")
-                .bind(&org)
-                .fetch_all(&s.pool)
-                .await?;
-        let mut approved = false;
-        for tid in &tenants {
-            let mut tx = tenant::begin(&s.pool, tid).await?;
-            let st: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles")
-                .fetch_optional(&mut *tx)
-                .await?;
-            tx.commit().await?;
-            approved |= st.as_deref() == Some("approved");
-        }
-        if !approved {
-            return Err(ApiError::conflict(
-                "onboarding_incomplete",
-                "live mode opens once your business details are approved",
-            ));
-        }
+        open_live(&s, &org, &target).await?;
     }
     let mut tx = tenant::begin(&s.pool, &target).await?;
     let user: Option<(
@@ -313,4 +308,54 @@ pub async fn switch_env(
         "user": { "id": uid, "username": username, "role": role, "branch_id": branch },
         "session_key": key, "tenant_id": target, "env": env,
     })))
+}
+
+/// Live opens only for an organisation whose business is approved (in either environment). The approval
+/// is copied into the live tenant, so its own payout gate and onboarding page agree with it.
+async fn open_live(s: &AppState, org: &str, live: &str) -> Result<(), ApiError> {
+    let tenants: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1")
+            .bind(org)
+            .fetch_all(&s.pool)
+            .await?;
+    type Profile = (
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+    );
+    let mut approved: Option<Profile> = None;
+    let mut live_has_profile = false;
+    // merchant_profiles is per tenant (row-level security), so ask each of the organisation's tenants
+    for tid in &tenants {
+        let mut tx = tenant::begin(&s.pool, tid).await?;
+        let row: Option<(String, String, String, String, Option<String>, String, Option<String>)> = sqlx::query_as(
+            "SELECT status, legal_name, business_type, pan_last4, gstin, address, reviewed_by FROM merchant_profiles",
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        if let Some((status, name, bt, pan, gstin, addr, by)) = row {
+            live_has_profile |= tid == live;
+            if status == "approved" && approved.is_none() {
+                approved = Some((name, bt, pan, gstin, addr, by));
+            }
+        }
+    }
+    let Some((name, bt, pan, gstin, addr, by)) = approved else {
+        return Err(ApiError::conflict(
+            "onboarding_incomplete",
+            "live mode opens once your business details are approved",
+        ));
+    };
+    if !live_has_profile {
+        let mut tx = tenant::begin(&s.pool, live).await?;
+        sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, gstin, address, status, reviewed_by, reviewed_at, review_note) VALUES ($1,$2,$3,$4,$5,$6,'approved',$7, now(), 'Carried over from the approval of the test environment')")
+            .bind(live).bind(name).bind(bt).bind(pan).bind(gstin).bind(addr).bind(by)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+    }
+    Ok(())
 }

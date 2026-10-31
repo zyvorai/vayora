@@ -278,14 +278,15 @@ export class Zyvor {
   };
 
   readonly onboarding = {
-    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[] }>("GET", "/v1/onboarding"),
+    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[]; /** `true` when the deployment runs identity and bank checks itself */ automated_checks: boolean; /** why a submission went to a person */ review_reasons: string[]; checks: { kind: "pan" | "gstin" | "bank"; subject: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[] }>("GET", "/v1/onboarding"),
     saveProfile: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string }) =>
       this.req("PUT", "/v1/onboarding", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address }),
     addDocument: (p: { kind: string; reference: string }) => this.req<{ id: string }>("POST", "/v1/onboarding/documents", p),
     addBankAccount: (p: { holderName: string; ifsc: string; accountNumber: string }) =>
-      this.req<{ id: string; account_last4: string }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
+      this.req<{ id: string; account_last4: string; check: { outcome: "pass" | "fail" | "inconclusive"; detail: string } | null }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
     verifyBankAccount: (id: string) => this.req("POST", `/v1/onboarding/bank_accounts/${encodeURIComponent(id)}/verify`),
-    submit: () => this.req("POST", "/v1/onboarding/submit"),
+    /** `automatic: true` means every check passed and the business was approved without a person. */
+    submit: () => this.req<{ status: "approved" | "in_review"; automatic: boolean; reasons: string[] }>("POST", "/v1/onboarding/submit"),
     review: (p: { decision: "approve" | "reject"; note?: string }) => this.req("POST", "/v1/onboarding/review", p),
   };
 

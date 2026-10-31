@@ -13,7 +13,22 @@ use serde_json::{Value, json};
 use sqlx::PgConnection;
 use zyvor_core::new_id;
 
-use crate::{ApiError, AppState, auth::Auth, gst, tenant};
+use crate::{ApiError, AppState, auth::Auth, gst, kyc, tenant};
+
+async fn record_check(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    kind: &str,
+    subject: &str,
+    c: &kyc::Check,
+    provider: Option<kyc::Kyc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO kyc_checks (id, tenant_id, kind, subject, outcome, detail, provider) VALUES ($1,$2,$3,$4,$5,$6,$7)")
+        .bind(new_id("kyc")).bind(tenant_id).bind(kind).bind(subject).bind(c.outcome.as_str()).bind(&c.detail)
+        .bind(provider.map_or("none", kyc::Kyc::name))
+        .execute(conn).await?;
+    Ok(())
+}
 
 const BUSINESS_TYPES: [&str; 6] = [
     "proprietorship",
@@ -98,6 +113,37 @@ pub async fn put_profile(
     if gstin.as_deref().is_some_and(|g| !gst::valid_gstin(g)) {
         return Err(bad("gstin failed its checksum"));
     }
+    // identity checks run now, while the full PAN is in hand; only their outcome is kept
+    let mut checks: Vec<(&str, kyc::Check)> = Vec::new();
+    if let Some(k) = s.kyc {
+        let mut c = k.verify_pan(&pan, b.legal_name.trim()).await;
+        if c.outcome == kyc::Outcome::Pass && !kyc::pan_fits_business(&pan, &b.business_type) {
+            c = kyc::Check {
+                outcome: kyc::Outcome::Inconclusive,
+                detail: "PAN holder type does not fit the business type".to_string(),
+            };
+        }
+        checks.push(("pan", c));
+        if let Some(g) = &gstin {
+            let ok = kyc::gstin_matches_pan(g, &pan);
+            checks.push((
+                "gstin",
+                kyc::Check {
+                    outcome: if ok {
+                        kyc::Outcome::Pass
+                    } else {
+                        kyc::Outcome::Fail
+                    },
+                    detail: if ok {
+                        "GSTIN carries this PAN"
+                    } else {
+                        "GSTIN carries a different PAN"
+                    }
+                    .to_string(),
+                },
+            ));
+        }
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let st: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles FOR UPDATE")
         .fetch_optional(&mut *tx)
@@ -112,6 +158,15 @@ pub async fn put_profile(
          ON CONFLICT (tenant_id) DO UPDATE SET legal_name = $2, business_type = $3, pan_last4 = $4, gstin = $5, address = $6, status = 'draft', updated_at = now()")
         .bind(&auth.tenant_id).bind(b.legal_name.trim()).bind(&b.business_type).bind(&pan[6..]).bind(&gstin).bind(b.address.trim())
         .execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM kyc_checks WHERE subject = 'profile'")
+        .execute(&mut *tx)
+        .await?;
+    for (kind, c) in &checks {
+        record_check(&mut tx, &auth.tenant_id, kind, "profile", c, s.kyc).await?;
+    }
+    sqlx::query("UPDATE merchant_profiles SET review_reasons = '{}'")
+        .execute(&mut *tx)
+        .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -191,10 +246,22 @@ pub async fn add_bank_account(
         ));
     }
     let id = new_id("mba");
+    let penny = match s.kyc {
+        Some(k) => Some(k.verify_bank(&ifsc, acct, b.holder_name.trim()).await),
+        None => None,
+    };
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     sqlx::query("INSERT INTO merchant_bank_accounts (id, tenant_id, holder_name, ifsc, account_last4, added_by) VALUES ($1,$2,$3,$4,$5,$6)")
         .bind(&id).bind(&auth.tenant_id).bind(b.holder_name.trim()).bind(&ifsc).bind(&acct[acct.len() - 4..]).bind(&auth.actor)
         .execute(&mut *tx).await?;
+    if let Some(c) = &penny {
+        record_check(&mut tx, &auth.tenant_id, "bank", &id, c, s.kyc).await?;
+        // a passed penny drop stands in for the second person who would otherwise verify the account
+        if c.outcome == kyc::Outcome::Pass {
+            sqlx::query("UPDATE merchant_bank_accounts SET verified_by = 'system:kyc', verified_at = now() WHERE id = $1")
+                .bind(&id).execute(&mut *tx).await?;
+        }
+    }
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -207,7 +274,9 @@ pub async fn add_bank_account(
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "id": id, "account_last4": &acct[acct.len() - 4..] })),
+        Json(
+            json!({ "id": id, "account_last4": &acct[acct.len() - 4..], "check": penny.map(|c| json!({ "outcome": c.outcome.as_str(), "detail": c.detail })) }),
+        ),
     ))
 }
 
@@ -272,7 +341,18 @@ pub async fn get_onboarding(
     .fetch_all(&mut *tx)
     .await?;
     let banks: Vec<(String, String, String, String, bool)> = sqlx::query_as("SELECT id, holder_name, ifsc, account_last4, verified_at IS NOT NULL FROM merchant_bank_accounts ORDER BY created_at").fetch_all(&mut *tx).await?;
+    let reasons: Vec<String> =
+        sqlx::query_scalar("SELECT unnest(review_reasons) FROM merchant_profiles")
+            .fetch_all(&mut *tx)
+            .await?;
+    let checks: Vec<(String, String, String, String)> =
+        sqlx::query_as("SELECT kind, subject, outcome, detail FROM kyc_checks ORDER BY created_at")
+            .fetch_all(&mut *tx)
+            .await?;
     Ok(Json(json!({
+        "automated_checks": s.kyc.is_some(),
+        "review_reasons": reasons,
+        "checks": checks.into_iter().map(|c| json!({ "kind": c.0, "subject": c.1, "outcome": c.2, "detail": c.3 })).collect::<Vec<_>>(),
         "status": p.as_ref().map_or("not_started", |p| p.5.as_str()),
         "profile": p.as_ref().map(|p| json!({ "legal_name": p.0, "business_type": p.1, "pan": format!("XXXXXX{}", &p.2[..]), "gstin": p.3, "address": p.4, "submitted_by": p.6, "reviewed_by": p.7, "review_note": p.8 })),
         "documents": docs.into_iter().map(|d| json!({ "id": d.0, "kind": d.1, "reference": d.2, "status": d.3 })).collect::<Vec<_>>(),
@@ -306,8 +386,62 @@ pub async fn submit(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
             "add a PAN document and a bank account before submitting",
         ));
     }
-    sqlx::query("UPDATE merchant_profiles SET status = 'in_review', submitted_by = $1, submitted_at = now(), reviewed_by = NULL, review_note = NULL")
-        .bind(&auth.actor).execute(&mut *tx).await?;
+    let decision = if s.kyc.is_some() {
+        let outcome = |kind: &str, v: String| match (kind, v.as_str()) {
+            (_, "pass") => kyc::Outcome::Pass,
+            (_, "fail") => kyc::Outcome::Fail,
+            _ => kyc::Outcome::Inconclusive,
+        };
+        let rows: Vec<(String, String)> = sqlx::query_as("SELECT kind, outcome FROM kyc_checks")
+            .fetch_all(&mut *tx)
+            .await?;
+        let pick = |k: &str| {
+            rows.iter()
+                .find(|r| r.0 == k)
+                .map(|r| outcome(k, r.1.clone()))
+        };
+        let banks: Vec<kyc::Outcome> = rows
+            .iter()
+            .filter(|r| r.0 == "bank")
+            .map(|r| outcome("bank", r.1.clone()))
+            .collect();
+        let bt: String = sqlx::query_scalar("SELECT business_type FROM merchant_profiles")
+            .fetch_one(&mut *tx)
+            .await?;
+        Some(kyc::decide(pick("pan"), pick("gstin"), &banks, &bt))
+    } else {
+        None
+    };
+    if let Some(kyc::Decision::Approve) = decision {
+        sqlx::query("UPDATE merchant_profiles SET status = 'approved', submitted_by = $1, submitted_at = now(), reviewed_by = 'system:auto', reviewed_at = now(), review_note = 'Approved automatically: every identity and bank check passed', review_reasons = '{}'")
+            .bind(&auth.actor).execute(&mut *tx).await?;
+        tenant::audit(
+            &mut tx,
+            &auth.tenant_id,
+            "system:auto",
+            "onboarding.auto_approved",
+            None,
+            json!({ "submitted_by": auth.actor }),
+        )
+        .await?;
+        tenant::emit(
+            &mut tx,
+            &auth.tenant_id,
+            "onboarding.approved",
+            json!({ "reviewed_by": "system:auto", "automatic": true }),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(Json(
+            json!({ "status": "approved", "automatic": true, "reasons": [] }),
+        ));
+    }
+    let reasons = match decision {
+        Some(kyc::Decision::Review(r)) => r,
+        _ => Vec::new(),
+    };
+    sqlx::query("UPDATE merchant_profiles SET status = 'in_review', submitted_by = $1, submitted_at = now(), reviewed_by = NULL, review_note = NULL, review_reasons = $2")
+        .bind(&auth.actor).bind(&reasons).execute(&mut *tx).await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -325,7 +459,9 @@ pub async fn submit(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({ "status": "in_review" })))
+    Ok(Json(
+        json!({ "status": "in_review", "automatic": false, "reasons": reasons }),
+    ))
 }
 
 #[derive(Deserialize)]
