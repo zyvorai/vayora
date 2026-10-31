@@ -7,7 +7,7 @@ export function EnvSwitch({ env }: { env: "test" | "live" }) {
   const [state, action, pending] = useActionState(switchEnv, undefined);
   return (
     <form action={action} className="envsw" aria-label="Environment">
-      <div role="group" aria-label="Test or live mode" className="seg">
+      <div role="group" aria-label="Test or live mode" className="envseg">
         {(["test", "live"] as const).map((e) => (
           <button key={e} name="env" value={e} type="submit" aria-pressed={env === e} disabled={pending} className={env === e ? `on ${e}` : ""}>
             {e === "test" ? "Test" : "Live"}

@@ -22,3 +22,8 @@ export async function api(actor?: string): Promise<Zyvor> {
 }
 
 export const authConfig = () => ({ username: process.env.CONSOLE_USERNAME ?? "admin", password: need("CONSOLE_PASSWORD"), secret: need("CONSOLE_SESSION_SECRET") });
+
+/** The key and address the console talks to the API with, for the few routes that fetch raw files (a QR image). */
+export async function apiAccess(): Promise<{ key: string; base: string }> {
+  return { key: (await sessionKey()) ?? need("ZYVOR_API_KEY"), base: (process.env.ZYVOR_API_URL ?? "http://localhost:8080").replace(/\/$/, "") };
+}

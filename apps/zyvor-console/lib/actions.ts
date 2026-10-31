@@ -156,6 +156,16 @@ const id = (f: FormData) => String(f.get("id") ?? "");
 export const approveRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.approve(id(f)));
 export const rejectRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.reject(id(f)));
 export const retryRefund = async (_: FormState, f: FormData) => run(["/refunds"], (z) => z.refunds.retry(id(f)));
+/** Refund all or part of a payment. The key comes from the form, so a double click is one refund, not two. */
+export const refundPayment = async (_: FormState, f: FormData) => {
+  const raw = String(f.get("amount") ?? "").replace(/,/g, "").trim();
+  const rupees = raw === "" ? undefined : Number(raw);
+  if (rupees !== undefined && (!Number.isFinite(rupees) || rupees <= 0)) return { error: "Enter an amount greater than zero, or leave it empty to refund what is left." };
+  const key = String(f.get("key") ?? "");
+  const intent = id(f);
+  const r = await run([`/payments/${intent}`, "/refunds", "/"], (z) => z.intents.refund(intent, { amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100), reason: String(f.get("reason") ?? "").trim() || undefined, idempotencyKey: key || undefined }));
+  return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
+};
 export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
 export const resolveCase = async (_: FormState, f: FormData) => {
   const note = String(f.get("resolution") ?? "").trim();
