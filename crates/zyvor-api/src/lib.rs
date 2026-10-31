@@ -34,6 +34,7 @@ pub mod recon;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
+pub mod sim_pay;
 pub mod state_machine;
 pub mod suggestions;
 pub mod telemetry;
@@ -76,6 +77,8 @@ pub struct AppState {
     /// When set, `Zyvor-Actor` is believed only with a valid `Zyvor-Actor-Signature` made with this secret
     /// (`ZYVOR_ACTOR_SECRET`, shared with the console). Without it the header is taken at its word.
     pub actor_secret: Option<Vec<u8>>,
+    /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
+    pub sim_payer: bool,
 }
 
 pub use crypto::Crypto;
@@ -98,6 +101,7 @@ impl AppState {
             ai: None,
             checkout_public_url: None,
             actor_secret: None,
+            sim_payer: false,
         }
     }
 }
@@ -396,6 +400,8 @@ pub fn app(state: AppState) -> Router {
             "/checkout/{tenant_id}/{intent_id}/upi-qr.svg",
             get(checkout::upi_qr),
         )
+        // simulated payer (test builds only; 404 unless ZYVOR_SIM_PAYER=1)
+        .route("/sim/pay", post(sim_pay::pay))
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

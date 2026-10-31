@@ -1,0 +1,42 @@
+name: Vayora
+options:
+  bundleIdPrefix: dev.zyvor.vayora
+  deploymentTarget: { iOS: "17.0" }
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: NX667LTDQ2
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  VayoraKit: { path: Packages/VayoraKit }
+targets:
+  VayoraPay:
+    type: application
+    platform: iOS
+    sources: [VayoraPay]
+    dependencies: [{ package: VayoraKit }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.pay
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Vayora Pay
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: Vayora Pay scans payment QR codes with the camera. Nothing is recorded.
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock the app with Face ID.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+  VayoraMerchant:
+    type: application
+    platform: iOS
+    sources: [VayoraMerchant]
+    dependencies: [{ package: VayoraKit }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.merchant
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Vayora Merchant
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES

@@ -91,6 +91,8 @@ async fn main() {
     state.checkout_public_url = env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
         .ok()
         .filter(|u| u.starts_with("http"));
+    state.sim_payer = env::var("ZYVOR_SIM_PAYER").as_deref() == Ok("1");
+    state.sim.set_manual_payer(state.sim_payer);
     state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
     state.actor_secret = env::var("ZYVOR_ACTOR_SECRET")
         .ok()
