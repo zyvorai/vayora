@@ -124,14 +124,24 @@ pub async fn list_reviewers(pool: &PgPool) -> Result<Vec<(String, String, bool)>
 }
 
 pub async fn disable_reviewer(pool: &PgPool, id: &str) -> Result<bool, sqlx::Error> {
-    Ok(sqlx::query(
+    let done = sqlx::query(
         "UPDATE platform_reviewers SET disabled_at = now() WHERE id = $1 AND disabled_at IS NULL",
     )
     .bind(id)
     .execute(pool)
     .await?
     .rows_affected()
-        == 1)
+        == 1;
+    if done {
+        // whatever they were holding goes back to the queue
+        sqlx::query(
+            "UPDATE live_access SET assigned_to = NULL, assigned_at = NULL WHERE assigned_to = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(done)
 }
 
 async fn org_of(s: &AppState, tenant_id: &str) -> Result<(String, String), ApiError> {
@@ -267,7 +277,7 @@ pub async fn request_live_access(
             ("pending", true)
         }
         Some("rejected") => {
-            sqlx::query("UPDATE live_access SET status = 'pending', requested_by = $2, requested_at = now(), reviewed_by = NULL, reviewed_at = NULL, note = NULL, round = round + 1, first_approved_by = NULL, first_approved_at = NULL, first_note = NULL, escalated_by = NULL, escalated_note = NULL, sla_alerted_at = NULL WHERE organisation_id = $1")
+            sqlx::query("UPDATE live_access SET status = 'pending', requested_by = $2, requested_at = now(), reviewed_by = NULL, reviewed_at = NULL, note = NULL, round = round + 1, first_approved_by = NULL, first_approved_at = NULL, first_note = NULL, escalated_by = NULL, escalated_note = NULL, sla_alerted_at = NULL, assigned_to = NULL, assigned_at = NULL WHERE organisation_id = $1")
                 .bind(&org)
                 .bind(&auth.actor)
                 .execute(&mut *tx)
@@ -314,6 +324,8 @@ pub async fn request_live_access(
 #[derive(Deserialize)]
 pub struct ListQuery {
     status: Option<String>,
+    /// `me`, `none` (nobody has it) or a reviewer id.
+    assigned: Option<String>,
 }
 
 /// What a reviewer needs to decide, read from the merchant's test tenant. No secrets, and never a full PAN or
@@ -349,20 +361,33 @@ async fn detail(s: &AppState, org: &str) -> Result<Value, ApiError> {
 /// `GET /v1/platform/reviews?status=pending`
 pub async fn list_reviews(
     State(s): State<AppState>,
-    _p: PlatformAuth,
+    p: PlatformAuth,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    // `none` is "nobody"; anything else names a reviewer (`me` is the caller)
+    let (want_none, want) = match q.assigned.as_deref() {
+        None | Some("") => (false, None),
+        Some("none") => (true, None),
+        Some("me") => (false, Some(p.id.clone())),
+        Some(id) => (false, Some(id.to_string())),
+    };
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32, bool, Option<String>)> = sqlx::query_as(
-        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round, l.escalated_by IS NOT NULL, f.name
+    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32, bool, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round, l.escalated_by IS NOT NULL, f.name, l.assigned_to, a.name
          FROM live_access l JOIN organisations o ON o.id = l.organisation_id LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by
-         WHERE ($1::text IS NULL OR l.status = $1) ORDER BY l.requested_at LIMIT 100",
+         LEFT JOIN platform_reviewers a ON a.id = l.assigned_to
+         WHERE ($1::text IS NULL OR l.status = $1)
+           AND (NOT $2 OR l.assigned_to IS NULL)
+           AND ($3::text IS NULL OR l.assigned_to = $3)
+         ORDER BY l.requested_at LIMIT 100",
     )
     .bind(&q.status)
+    .bind(want_none)
+    .bind(&want)
     .fetch_all(&s.pool)
     .await?;
     let mut out = Vec::new();
-    for (org, name, status, by, at, round, escalated, first) in rows {
+    for (org, name, status, by, at, round, escalated, first, assignee, assignee_name) in rows {
         let d = detail(&s, &org).await?;
         let checks = d["checks"].as_array().cloned().unwrap_or_default();
         let failed = checks.iter().filter(|x| x["outcome"] != "pass").count();
@@ -376,6 +401,7 @@ pub async fn list_reviews(
         let (due, overdue) = sla(at, s.review_sla_hours, status == "pending");
         out.push(json!({ "organisation_id": org, "organisation": name, "status": status, "requested_by": by, "requested_at": at, "round": round, "legal_name": d["profile"]["legal_name"], "checks_failed": failed,
             "stage": if status == "pending" && first.is_some() { "awaiting_second" } else { "new" }, "first_approved_by": first, "needs_second_because": why,
+            "assigned_to": assignee, "assigned_to_name": assignee_name, "assigned_to_me": assignee.as_deref() == Some(p.id.as_str()),
             "due_at": due, "overdue": overdue, "sla_hours": s.review_sla_hours }));
     }
     Ok(Json(json!({ "data": out })))
@@ -384,7 +410,7 @@ pub async fn list_reviews(
 /// `GET /v1/platform/reviews/{organisation_id}`
 pub async fn show_review(
     State(s): State<AppState>,
-    _p: PlatformAuth,
+    p: PlatformAuth,
     Path(org): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     #[allow(clippy::type_complexity)]
@@ -405,8 +431,9 @@ pub async fn show_review(
     d["note"] = json!(note);
     d["reviewed_by"] = json!(reviewer);
     d["round"] = json!(round);
-    let (escalated, first, esc_note): (bool, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT l.escalated_by IS NOT NULL, f.name, l.escalated_note FROM live_access l LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by WHERE l.organisation_id = $1",
+    #[allow(clippy::type_complexity)]
+    let (escalated, first, esc_note, assignee, assignee_name, assigned_at): (bool, Option<String>, Option<String>, Option<String>, Option<String>, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
+        "SELECT l.escalated_by IS NOT NULL, f.name, l.escalated_note, l.assigned_to, a.name, l.assigned_at FROM live_access l LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by LEFT JOIN platform_reviewers a ON a.id = l.assigned_to WHERE l.organisation_id = $1",
     )
     .bind(&org)
     .fetch_one(&s.pool)
@@ -428,6 +455,10 @@ pub async fn show_review(
     });
     d["first_approved_by"] = json!(first);
     d["escalation_note"] = json!(esc_note);
+    d["assigned_to_me"] = json!(assignee.as_deref() == Some(p.id.as_str()));
+    d["assigned_to"] = json!(assignee);
+    d["assigned_to_name"] = json!(assignee_name);
+    d["assigned_at"] = json!(assigned_at);
     d["due_at"] = json!(due);
     d["overdue"] = json!(overdue);
     d["sla_hours"] = json!(s.review_sla_hours);
@@ -468,18 +499,33 @@ pub async fn decide(
     let tid = test_tenant_of(&s, &org).await?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
     // the review row is not tenant data; lock it in this same transaction
-    let cur: Option<(String, String, i32, bool, Option<String>)> = sqlx::query_as(
-        "SELECT status, requested_by, round, escalated_by IS NOT NULL, first_approved_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    #[allow(clippy::type_complexity)]
+    let cur: Option<(String, String, i32, bool, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT status, requested_by, round, escalated_by IS NOT NULL, first_approved_by, assigned_to FROM live_access WHERE organisation_id = $1 FOR UPDATE",
     )
     .bind(&org)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, requested_by, round, escalated, first_by) =
+    let (status, requested_by, round, escalated, first_by, assignee) =
         cur.ok_or_else(|| ApiError::not_found("review"))?;
     if status != "pending" {
         return Err(ApiError::conflict(
             "not_pending",
             format!("this review is already {status}"),
+        ));
+    }
+    if let Some(a) = assignee.as_deref().filter(|a| *a != p.id) {
+        let who: Option<String> =
+            sqlx::query_scalar("SELECT name FROM platform_reviewers WHERE id = $1")
+                .bind(a)
+                .fetch_optional(&mut *tx)
+                .await?;
+        return Err(ApiError::conflict(
+            "assigned_to_other",
+            format!(
+                "{} has this review; ask them, or take it over first",
+                who.unwrap_or_else(|| a.to_string())
+            ),
         ));
     }
     if approve && !onboarding_approved(&s, &org).await? {
@@ -500,7 +546,7 @@ pub async fn decide(
         if !why.is_empty() {
             match first_by.as_deref() {
                 None => {
-                    sqlx::query("UPDATE live_access SET first_approved_by = $2, first_approved_at = now(), first_note = $3 WHERE organisation_id = $1")
+                    sqlx::query("UPDATE live_access SET first_approved_by = $2, first_approved_at = now(), first_note = $3, assigned_to = NULL, assigned_at = NULL WHERE organisation_id = $1")
                         .bind(&org)
                         .bind(&p.id)
                         .bind(note)
@@ -540,7 +586,7 @@ pub async fn decide(
         }
     }
     let new = if approve { "approved" } else { "rejected" };
-    sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE organisation_id = $1")
+    sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4, assigned_to = NULL, assigned_at = NULL WHERE organisation_id = $1")
         .bind(&org)
         .bind(new)
         .bind(&p.id)
@@ -736,6 +782,99 @@ fn sla(
 ) -> (chrono::DateTime<chrono::Utc>, bool) {
     let due = asked + chrono::Duration::hours(hours);
     (due, pending && chrono::Utc::now() > due)
+}
+
+#[derive(Deserialize)]
+pub struct Assignment {
+    /// `me`, a reviewer id, or absent / `none` to put it back in the queue.
+    to: Option<String>,
+    /// Say so on purpose to touch a review another reviewer holds.
+    #[serde(default)]
+    take_over: bool,
+}
+
+/// `POST /v1/platform/reviews/{organisation_id}/assign`: give a pending review to one reviewer (`to: "me"` claims
+/// it), or hand it back. Only the holder decides it while it is held; taking one from someone else is explicit and
+/// audited. Nothing is held by a reviewer who has been disabled.
+pub async fn assign(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(org): Path<String>,
+    Json(b): Json<Assignment>,
+) -> Result<Json<Value>, ApiError> {
+    let target: Option<String> = match b.to.as_deref().map(str::trim) {
+        None | Some("") | Some("none") => None,
+        Some("me") => Some(p.id.clone()),
+        Some(id) => Some(id.to_string()),
+    };
+    let tid = test_tenant_of(&s, &org).await?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT status, assigned_to, first_approved_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    )
+    .bind(&org)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, holder, first_by) = cur.ok_or_else(|| ApiError::not_found("review"))?;
+    if status != "pending" {
+        return Err(ApiError::conflict(
+            "not_pending",
+            format!("this review is already {status}"),
+        ));
+    }
+    if holder.as_deref().is_some_and(|h| h != p.id) && !b.take_over {
+        let who: Option<String> =
+            sqlx::query_scalar("SELECT name FROM platform_reviewers WHERE id = $1")
+                .bind(holder.as_deref())
+                .fetch_optional(&mut *tx)
+                .await?;
+        return Err(ApiError::conflict(
+            "assigned_to_other",
+            format!(
+                "{} has this review; say take_over to change that",
+                who.unwrap_or_default()
+            ),
+        ));
+    }
+    let mut to_name: Option<String> = None;
+    if let Some(t) = &target {
+        to_name = sqlx::query_scalar(
+            "SELECT name FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+        )
+        .bind(t)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if to_name.is_none() {
+            return Err(ApiError::invalid(
+                "unknown_reviewer",
+                "that reviewer does not exist or is disabled",
+            ));
+        }
+        if first_by.as_deref() == Some(t.as_str()) {
+            return Err(ApiError::conflict(
+                "first_reviewer_cannot_second",
+                "that reviewer gave the first approval; the second has to be someone else",
+            ));
+        }
+    }
+    sqlx::query("UPDATE live_access SET assigned_to = $2, assigned_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END WHERE organisation_id = $1")
+        .bind(&org)
+        .bind(&target)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &tid,
+        &format!("zyvor:{}", p.name),
+        "live_access.assigned",
+        None,
+        json!({ "to": target, "to_name": to_name, "from": holder, "took_over": holder.as_deref().is_some_and(|h| h != p.id) }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "organisation_id": org, "assigned_to": target, "assigned_to_name": to_name }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -957,7 +1096,7 @@ async fn change_live_access(
             format!("this review is {status}, not {from}"),
         ));
     }
-    sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE organisation_id = $1")
+    sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4, assigned_to = NULL, assigned_at = NULL WHERE organisation_id = $1")
         .bind(org)
         .bind(to)
         .bind(&p.id)

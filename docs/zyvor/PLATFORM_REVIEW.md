@@ -64,8 +64,22 @@ promise to the merchant, and the API says so: the merchant sees "we aim to answe
 - with `ZYVOR_REVIEW_ALERT_EMAIL` set (on the **worker**), the worker emails that address once for each item that passes
   its target. With no address nothing is sent and nothing is marked, so setting one later still reports what is already late.
 
-**Not built:** assigning a review to one reviewer (anyone sees the whole queue, so two people can open the same one), a
-reviewer's working hours or on-call rota, and a second reviewer for revokes or changes.
+## Who has a review (assignment)
+
+A reviewer can take a pending review (`scripts/platform-review.sh claim <org>`, or "Take this review" on its page) so two
+people do not read the same file. While it is held, **only the holder can approve or reject it** (anyone else gets
+`assigned_to_other`); the queue can be filtered to the ones you hold (`list pending me`) or that nobody holds
+(`list pending none`; the page has Mine / Nobody's). Any reviewer can hand a review to a named, active reviewer
+(`assign <org> <reviewer id>`) or take one from its holder on purpose (`take-over`); that is written to the audit log
+(`live_access.assigned`, with who it was taken from). A review goes back to the queue when its holder is disabled, when
+the first of two approvals is given (so a different reviewer can give the second; the first approver cannot be handed
+it), and when it is decided or the business asks again. Escalating a review is not blocked by who holds it.
+
+Assignment is a courtesy that stops duplicated work, not an access control: any reviewer can take over. It covers
+live-access requests, not bank-account changes.
+
+**Not built:** a reviewer's working hours or on-call rota, assigning bank-account changes, automatic assignment, and a
+second reviewer for revokes or changes.
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -155,6 +169,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Assigning a review to one reviewer, working hours and an on-call rota (the clock and the second reviewer exist; see above).
+- Working hours and an on-call rota, and assigning bank-account changes (assignment of live-access requests, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change) and a way for an approved business to ask for a change to
   its legal details; today it can only add bank accounts, and those are re-reviewed (see above).

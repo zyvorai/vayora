@@ -1504,6 +1504,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/reviews/{organisation_id}/assign:
+    post:
+      summary: 'Zyvor reviewers only: give a pending review to one reviewer (to: me, or a reviewer id), or hand it back (to absent). While it is held only the holder can decide it; take_over: true changes that on purpose'
+      tags:
+      - platform
+      parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/escalate:
     post:
       summary: Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown to them)
