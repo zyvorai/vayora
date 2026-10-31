@@ -27,6 +27,18 @@ async fn main() {
             tokio::time::sleep(Duration::from_secs(3)).await;
         }
     });
+    // Old console session keys are cleared out every ten minutes.
+    let prune_pool = state.pool.clone();
+    tokio::spawn(async move {
+        loop {
+            match zyvor_api::signup::prune_session_keys(&prune_pool).await {
+                Ok(n) if n > 0 => tracing::info!(removed = n, "pruned console session keys"),
+                Ok(_) => {}
+                Err(e) => tracing::error!(error = %e, "pruning session keys failed"),
+            }
+            tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+    });
     tracing::info!("zyvor-worker started");
     loop {
         tokio::select! {

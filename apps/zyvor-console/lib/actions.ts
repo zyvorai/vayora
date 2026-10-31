@@ -172,6 +172,9 @@ export const inviteUser = async (_: FormState, f: FormData) => {
 export const revokeInvitation = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.revokeInvitation(id(f)), "admin");
 
 export async function logout() {
+  // end the session at the API too, not only in this browser (best effort: signing out must always work)
+  const key = await sessionKey();
+  if (key) await publicPost("/v1/console/logout", {}, key);
   (await cookies()).delete(COOKIE);
   (await cookies()).delete(KEY_COOKIE);
   redirect("/login");

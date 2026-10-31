@@ -246,7 +246,7 @@ pub async fn console_login(
     let role = out["user"]["role"].as_str().unwrap_or("viewer").to_string();
     let branch = out["user"]["branch_id"].as_str().map(str::to_string);
     let (key, prefix, hash) = mint_key(env);
-    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id, session_username) VALUES ($1, $2, 'console session', $3, $4, $5, now() + make_interval(hours => $6), $7, $8)")
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id, session_username, session_started_at) VALUES ($1, $2, 'console session', $3, $4, $5, now() + make_interval(hours => $6), $7, $8, now())")
         .bind(new_id("key")).bind(&tenant_id).bind(prefix).bind(hash).bind(session_scopes(&role)).bind(SESSION_HOURS).bind(branch).bind(&email)
         .execute(&s.pool).await?;
     out["session_key"] = json!(key);
@@ -272,17 +272,24 @@ pub async fn switch_env(
         "test" | "live" => b.env.as_str(),
         _ => return Err(ApiError::invalid("invalid_env", "env is test or live")),
     };
-    let row: Option<(Option<String>, String)> = sqlx::query_as(
-        "SELECT k.session_username, t.organisation_id FROM api_keys k JOIN tenants t ON t.id = k.tenant_id WHERE k.id = $1",
+    let row: Option<(Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT k.session_username, t.organisation_id, COALESCE(k.session_started_at, k.created_at) FROM api_keys k JOIN tenants t ON t.id = k.tenant_id WHERE k.id = $1",
     )
     .bind(&auth.key_id)
     .fetch_optional(&s.pool)
     .await?;
-    let (Some((Some(username), org)), true) = (row, auth.branch_id.is_none()) else {
+    let (Some((Some(username), org, started)), true) = (row, auth.branch_id.is_none()) else {
         return Err(ApiError::forbidden(
             "only a signed-in console session can switch environments",
         ));
     };
+    // swapping keys never extends a session: it ends 12 hours after the sign-in that began it
+    let session_end = started + chrono::Duration::hours(SESSION_HOURS as i64);
+    if session_end <= chrono::Utc::now() {
+        return Err(ApiError::unauthorized(
+            "this session is over; sign in again",
+        ));
+    }
     let target: String =
         sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1 AND env = $2")
             .bind(&org)
@@ -321,9 +328,16 @@ pub async fn switch_env(
     }
     let branch = if env == "live" { None } else { branch };
     let (key, prefix, hash) = mint_key(env);
-    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id, session_username) VALUES ($1, $2, 'console session', $3, $4, $5, now() + make_interval(hours => $6), $7, $8)")
-        .bind(new_id("key")).bind(&target).bind(prefix).bind(hash).bind(session_scopes(&role)).bind(SESSION_HOURS).bind(&branch).bind(&username)
-        .execute(&s.pool).await?;
+    let mut swap = s.pool.begin().await?;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, expires_at, branch_id, session_username, session_started_at) VALUES ($1, $2, 'console session', $3, $4, $5, LEAST(now() + make_interval(hours => $6), $9), $7, $8, $10)")
+        .bind(new_id("key")).bind(&target).bind(prefix).bind(hash).bind(session_scopes(&role)).bind(SESSION_HOURS).bind(&branch).bind(&username).bind(session_end).bind(started)
+        .execute(&mut *swap).await?;
+    // the console replaces its key, so the one it held is no longer needed (or safe to leave valid)
+    sqlx::query("UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL")
+        .bind(&auth.key_id)
+        .execute(&mut *swap)
+        .await?;
+    swap.commit().await?;
     Ok(Json(json!({
         "user": { "id": uid, "username": username, "role": role, "branch_id": branch },
         "session_key": key, "tenant_id": target, "env": env,
@@ -428,4 +442,29 @@ pub async fn resend(
         send_verification(&s, &email, &org, &token).await?;
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /v1/console/logout`: end this console session now. Only a session key is revoked (an ordinary API
+/// key is left alone), and it is revoked here, not just forgotten by the browser.
+pub async fn console_logout(
+    State(s): State<AppState>,
+    auth: crate::auth::Auth,
+) -> Result<Json<Value>, ApiError> {
+    let n = sqlx::query("UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND session_username IS NOT NULL AND revoked_at IS NULL")
+        .bind(&auth.key_id)
+        .execute(&s.pool)
+        .await?
+        .rows_affected();
+    Ok(Json(json!({ "ok": true, "ended": n == 1 })))
+}
+
+/// Delete console session keys that have been revoked or expired for a day, so they do not pile up in
+/// `api_keys` (one is made per sign-in). Returns how many went.
+pub async fn prune_session_keys(pool: &sqlx::PgPool) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query(
+        "DELETE FROM api_keys WHERE name = 'console session' AND (revoked_at < now() - interval '1 day' OR expires_at < now() - interval '1 day')",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected())
 }

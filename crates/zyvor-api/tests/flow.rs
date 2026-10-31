@@ -8225,9 +8225,20 @@ async fn session_key_switches_between_test_and_live_once_onboarding_is_approved(
         )
         .await;
     assert_eq!(back["tenant_id"], login["tenant_id"]);
+    // each switch retires the key it came from
+    for old_key in [&tn, &ln] {
+        let (s, _) = t
+            .call(old_key, "GET", "/v1/onboarding", None, Value::Null)
+            .await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
+    }
+    let latest = Tenant {
+        id: back["tenant_id"].as_str().unwrap().into(),
+        key: back["session_key"].as_str().unwrap().into(),
+    };
     let (s, _) = t
         .call(
-            &tn,
+            &latest,
             "POST",
             "/v1/console/switch_env",
             None,
@@ -9573,4 +9584,298 @@ async fn provider_connection_check_says_whether_credentials_are_accepted_and_key
         )
     );
     assert_eq!(t.call(&tn2, "POST", "/v1/provider_accounts", None, json!({ "provider": "razorpay", "credentials": { "key_id": "rzp_test_abc", "key_secret": "x" }, "webhook_secret": "w" })).await.0, StatusCode::CREATED);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn the_console_can_vouch_for_a_visitors_address_and_nobody_else_can(pool: PgPool) {
+    use tower::ServiceExt;
+    use zyvor_api::ratelimit::{Bucket, Limits, RateLimiter};
+    let t = setup(pool).await;
+    let secret = b"console-actor-secret-0123456789".to_vec();
+    let mut st = t.state.clone();
+    st.actor_secret = Some(secret.clone());
+    st.trusted_hops = 1;
+    st.limiter = std::sync::Arc::new(RateLimiter::new(Limits {
+        key: Bucket {
+            burst: 100.0,
+            per_sec: 100.0,
+        },
+        ip_authed: Bucket {
+            burst: 100.0,
+            per_sec: 100.0,
+        },
+        ip_public: Bucket {
+            burst: 2.0,
+            per_sec: 0.01,
+        },
+    }));
+    let app = zyvor_api::app(st);
+    let send = |vouch: Option<(String, String)>, xff: &'static str| {
+        let app = app.clone();
+        async move {
+            let mut r = axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/password_reset/request")
+                .header("content-type", "application/json")
+                .header("x-forwarded-for", xff);
+            if let Some((ip, sig)) = vouch {
+                r = r
+                    .header("zyvor-client-ip", ip)
+                    .header("zyvor-client-ip-signature", sig);
+            }
+            app.oneshot(
+                r.body(axum::body::Body::from(r#"{"email":"nobody@x.in"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+        }
+    };
+    let signed = |ip: &str| {
+        (
+            ip.to_string(),
+            zyvor_api::outbox::sign(&secret, chrono::Utc::now().timestamp(), ip.as_bytes()),
+        )
+    };
+    // all of these arrive from one connection address (the console), but each visitor has their own budget
+    for _ in 0..2 {
+        assert_eq!(send(Some(signed("198.51.100.1")), "10.0.0.9").await, 200);
+    }
+    assert_eq!(
+        send(Some(signed("198.51.100.1")), "10.0.0.9").await,
+        429,
+        "the same visitor runs out"
+    );
+    assert_eq!(
+        send(Some(signed("198.51.100.2")), "10.0.0.9").await,
+        200,
+        "another visitor does not"
+    );
+    // a made-up or stale signature is ignored: the caller stays in the budget of the address the proxy saw,
+    // however many addresses they claim
+    for claimed in ["203.0.113.5", "203.0.113.6", "203.0.113.7"] {
+        let bad = Some((claimed.to_string(), "t=1,v1=00".to_string()));
+        let code = send(bad, "192.0.2.50").await;
+        assert!(code == 200 || code == 429);
+    }
+    assert_eq!(
+        send(
+            Some(("203.0.113.8".into(), "t=1,v1=00".into())),
+            "192.0.2.50"
+        )
+        .await,
+        429,
+        "forged claims did not buy a new budget"
+    );
+    let stale = (
+        "203.0.113.9".to_string(),
+        zyvor_api::outbox::sign(
+            &secret,
+            chrono::Utc::now().timestamp() - 3600,
+            b"203.0.113.9",
+        ),
+    );
+    assert_eq!(
+        send(Some(stale), "192.0.2.50").await,
+        429,
+        "an old signature is ignored too"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_console_session_cannot_be_stretched_and_logout_really_ends_it(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": "Cap Ltd", "email": "c@cap.in", "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status) VALUES ($1, 'Cap Ltd', 'private_limited', '1234', 'Pune 411001', 'approved')")
+        .bind(&home).execute(&t.root).await.unwrap();
+    let login = || {
+        t.ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "c@cap.in", "password": pw }),
+        )
+    };
+    let tn = |v: &Value| Tenant {
+        id: v["tenant_id"].as_str().unwrap().into(),
+        key: v["session_key"].as_str().unwrap().into(),
+    };
+    let k1 = tn(&login().await);
+    // switching gives a new key and revokes the one that was swapped out
+    let live = t
+        .ok(
+            &k1,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" }),
+        )
+        .await;
+    let k2 = tn(&live);
+    assert_eq!(
+        t.call(&k1, "GET", "/v1/onboarding", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    t.ok(&k2, "GET", "/v1/onboarding", None, Value::Null).await;
+    // a session 11h59m old can only be renewed for the minute it has left
+    sqlx::query("UPDATE api_keys SET session_started_at = now() - interval '11 hours 59 minutes' WHERE key_hash = $1")
+        .bind(zyvor_api::auth::hash_key(&k2.key)).execute(&t.root).await.unwrap();
+    let k3 = tn(&t
+        .ok(
+            &k2,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "test" }),
+        )
+        .await);
+    assert_eq!(t.count(&format!("SELECT count(*) FROM api_keys WHERE key_hash = '{}' AND expires_at < now() + interval '2 minutes'", zyvor_api::auth::hash_key(&k3.key))).await, 1, "the new key ends with the session");
+    // one that is over cannot be renewed, even if its own key were still valid
+    sqlx::query("UPDATE api_keys SET session_started_at = now() - interval '13 hours', expires_at = now() + interval '1 hour' WHERE key_hash = $1")
+        .bind(zyvor_api::auth::hash_key(&k3.key)).execute(&t.root).await.unwrap();
+    assert_eq!(
+        t.call(
+            &k3,
+            "POST",
+            "/v1/console/switch_env",
+            None,
+            json!({ "env": "live" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // logout revokes the session key; an ordinary API key is untouched
+    let k4 = tn(&login().await);
+    assert_eq!(
+        t.ok(&k4, "POST", "/v1/console/logout", None, json!({}))
+            .await["ended"],
+        true
+    );
+    assert_eq!(
+        t.call(&k4, "GET", "/v1/onboarding", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let plain = Tenant {
+        id: home.clone(),
+        key: su["test_key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.ok(&plain, "POST", "/v1/console/logout", None, json!({}))
+            .await["ended"],
+        false
+    );
+    t.ok(&plain, "GET", "/v1/onboarding", None, Value::Null)
+        .await;
+
+    // pruning removes session keys that ended a day ago and leaves recent ones (and every other key)
+    let (old, recent) = (
+        zyvor_api::auth::hash_key(&k4.key),
+        zyvor_api::auth::hash_key(&k1.key),
+    );
+    sqlx::query("UPDATE api_keys SET revoked_at = now() - interval '2 days' WHERE key_hash = $1")
+        .bind(&old)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let before_plain = t
+        .count("SELECT count(*) FROM api_keys WHERE name <> 'console session'")
+        .await;
+    assert!(
+        zyvor_api::signup::prune_session_keys(&t.state.pool)
+            .await
+            .unwrap()
+            >= 1
+    );
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM api_keys WHERE key_hash = '{old}'"
+        ))
+        .await,
+        0
+    );
+    assert_eq!(
+        t.count(&format!(
+            "SELECT count(*) FROM api_keys WHERE key_hash = '{recent}'"
+        ))
+        .await,
+        1,
+        "a key revoked a minute ago stays"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM api_keys WHERE name <> 'console session'")
+            .await,
+        before_plain
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_new_bank_account_after_approval_needs_a_person_and_must_carry_the_right_name(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    let (sub, _) = kyc_onboard(
+        &app,
+        &t.a.key,
+        "ABCPE1234F",
+        "proprietorship",
+        None,
+        "123456789012",
+    )
+    .await;
+    assert_eq!(sub["status"], "approved");
+    let add = |acct: &'static str| {
+        let (app, key) = (app.clone(), t.a.key.clone());
+        async move {
+            common::raw(&app, &key, None, "POST", "/v1/onboarding/bank_accounts", None, json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": acct })).await
+        }
+    };
+    // approved already: the check passes and is recorded, but a second person still verifies it
+    let (st, b) = add("555566667777").await;
+    assert_eq!(st, StatusCode::CREATED, "{b}");
+    assert_eq!(b["check"]["outcome"], "pass");
+    let view = t.ok(&t.a, "GET", "/v1/onboarding", None, Value::Null).await;
+    let accts = view["bank_accounts"].as_array().unwrap();
+    assert_eq!(
+        accts
+            .iter()
+            .filter(|a| a["account_last4"] == "7777")
+            .map(|a| a["verified"].clone())
+            .next(),
+        Some(json!(false))
+    );
+    assert_eq!(
+        accts
+            .iter()
+            .filter(|a| a["account_last4"] == "9012")
+            .map(|a| a["verified"].clone())
+            .next(),
+        Some(json!(true)),
+        "the one added before approval stays verified"
+    );
+    // an account that exists but is held under another name is not a pass
+    let (_, b) = add("999911111111").await;
+    assert_eq!(b["check"]["outcome"], "inconclusive");
+    assert!(
+        b["check"]["detail"].as_str().unwrap().contains("name"),
+        "{b}"
+    );
 }

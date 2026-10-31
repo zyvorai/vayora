@@ -30,7 +30,15 @@ async function keyForSession(deployment: boolean): Promise<string> {
  *  organisation with the key the API issued for their session; the deployment's `ZYVOR_API_KEY` is used only for
  *  the deployment's own sign-in (`deployment: true` is for the sign-in check itself, before any session exists). */
 export async function api(actor?: string, opts: { deployment?: boolean } = {}): Promise<Zyvor> {
-  return new Zyvor({ apiKey: await keyForSession(!!opts.deployment), baseUrl: process.env.ZYVOR_API_URL ?? "http://localhost:8080", actor: actor ?? process.env.CONSOLE_USER ?? "console", actorSecret: process.env.ZYVOR_ACTOR_SECRET || undefined });
+  const organisation = !opts.deployment && !!(await sessionKey());
+  return new Zyvor({
+    apiKey: await keyForSession(!!opts.deployment),
+    // a person's key that the API no longer accepts (signed out elsewhere, disabled, session over): back to sign-in
+    fetch: organisation ? async (url, init) => { const r = await fetch(url, init); if (r.status === 401) redirect("/login"); return r; } : undefined,
+    baseUrl: process.env.ZYVOR_API_URL ?? "http://localhost:8080",
+    actor: actor ?? process.env.CONSOLE_USER ?? "console",
+    actorSecret: process.env.ZYVOR_ACTOR_SECRET || undefined,
+  });
 }
 
 export const authConfig = () => ({ username: process.env.CONSOLE_USERNAME ?? "admin", password: need("CONSOLE_PASSWORD"), secret: need("CONSOLE_SESSION_SECRET") });

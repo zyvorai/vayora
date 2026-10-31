@@ -121,6 +121,7 @@ pub async fn put_profile(
             c = kyc::Check {
                 outcome: kyc::Outcome::Inconclusive,
                 detail: "PAN holder type does not fit the business type".to_string(),
+                registered_name: None,
             };
         }
         checks.push(("pan", c));
@@ -140,6 +141,7 @@ pub async fn put_profile(
                         "GSTIN carries a different PAN"
                     }
                     .to_string(),
+                    registered_name: None,
                 },
             ));
         }
@@ -247,7 +249,18 @@ pub async fn add_bank_account(
     }
     let id = new_id("mba");
     let penny = match s.kyc {
-        Some(k) => Some(k.verify_bank(&ifsc, acct, b.holder_name.trim()).await),
+        Some(k) => {
+            let mut c = k.verify_bank(&ifsc, acct, b.holder_name.trim()).await;
+            // the bank's name for the account must be the merchant's, not just any live account
+            if c.outcome == kyc::Outcome::Pass
+                && let Some(n) = c.registered_name.as_deref()
+                && !kyc::names_match(b.holder_name.trim(), n)
+            {
+                c.outcome = kyc::Outcome::Inconclusive;
+                c.detail = "the account holder name does not match the name given".into();
+            }
+            Some(c)
+        }
         None => None,
     };
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
@@ -256,8 +269,14 @@ pub async fn add_bank_account(
         .execute(&mut *tx).await?;
     if let Some(c) = &penny {
         record_check(&mut tx, &auth.tenant_id, "bank", &id, c, s.kyc).await?;
-        // a passed penny drop stands in for the second person who would otherwise verify the account
-        if c.outcome == kyc::Outcome::Pass {
+        // A passed penny drop stands in for the second person who would otherwise verify the account, but only
+        // while onboarding is still open. Once a business is submitted or approved, a new payout account is
+        // checked and then verified by a different person, as without KYC.
+        let status: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles")
+            .fetch_optional(&mut *tx)
+            .await?;
+        let open = !matches!(status.as_deref(), Some("in_review" | "approved"));
+        if c.outcome == kyc::Outcome::Pass && open {
             sqlx::query("UPDATE merchant_bank_accounts SET verified_by = 'system:kyc', verified_at = now() WHERE id = $1")
                 .bind(&id).execute(&mut *tx).await?;
         }
