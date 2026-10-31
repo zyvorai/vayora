@@ -49,6 +49,7 @@ impl Custom {
                 partial_refund: true,
                 manual_capture: false,
                 server_initiated_upi: true,
+                upi_intent: false,
                 refund_window_days: None,
             },
         }

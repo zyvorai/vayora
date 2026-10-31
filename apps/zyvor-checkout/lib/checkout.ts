@@ -8,6 +8,8 @@ export interface Session {
   status: string;
   phase: Phase;
   methods: ("upi" | "card" | "netbanking" | "wallet")[];
+  /** How UPI works for this payment: a provider-issued QR / intent, or the payer types a UPI ID (fallback). */
+  upi_flow?: "intent" | "collect";
   attempt: { id: string; method: string; status: string; failure_reason: string | null; action: { type: string; [k: string]: unknown } | null } | null;
 }
 

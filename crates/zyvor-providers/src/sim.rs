@@ -40,11 +40,41 @@ impl Provider for SimProvider {
             partial_refund: true,
             manual_capture: true,
             server_initiated_upi: true,
+            upi_intent: true,
             refund_window_days: None,
         }
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        // UPI with no payer-typed UPI ID: issue a QR / intent payload, as a partner would. The payee is a
+        // sandbox-only handle that no real UPI app can pay. The payment stays pending until the payer
+        // "approves"; a lookup after that returns the final state (see `fetch_payment`).
+        if req.method == Method::Upi && req.vpa.is_none() {
+            let state = PaymentState {
+                status: PaymentStatus::Pending,
+                provider_order_ref: Some(req.attempt_id.clone()),
+                provider_payment_ref: Some(new_id("simpay")),
+                failure_reason: None,
+                raw: json!({ "sim": true, "flow": "upi_intent", "amount_minor": req.amount_minor }),
+            };
+            self.payments
+                .lock()
+                .unwrap()
+                .insert(req.attempt_id.clone(), state.clone());
+            let uri = format!(
+                "upi://pay?pa=sandbox@zyvor-sim&pn=Zyvor%20Sandbox&am={}&cu={}&tn={}",
+                zyvor_core::minor_to_decimal(req.amount_minor, req.currency),
+                req.currency.code(),
+                req.attempt_id
+            );
+            return Ok(Initiated {
+                state,
+                action: ClientAction::UpiIntent {
+                    uri,
+                    expires_at: None,
+                },
+            });
+        }
         let handle = req
             .vpa
             .as_deref()
@@ -100,12 +130,16 @@ impl Provider for SimProvider {
     }
 
     async fn fetch_payment(&self, attempt_id: &str) -> Result<PaymentState, ProviderError> {
-        self.payments
-            .lock()
-            .unwrap()
-            .get(attempt_id)
-            .cloned()
-            .ok_or_else(|| ProviderError::Rejected("not found".into()))
+        let mut m = self.payments.lock().unwrap();
+        let s = m
+            .get_mut(attempt_id)
+            .ok_or_else(|| ProviderError::Rejected("not found".into()))?;
+        // A pending QR / intent payment is approved by the simulated payer on the first lookup, so a
+        // sandbox run can complete without a real UPI app. A real adapter reports only what the partner says.
+        if s.status == PaymentStatus::Pending && s.raw["flow"] == "upi_intent" {
+            s.status = PaymentStatus::Captured;
+        }
+        Ok(s.clone())
     }
 
     async fn refund(&self, req: &RefundRequest) -> Result<RefundState, ProviderError> {

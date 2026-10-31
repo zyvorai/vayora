@@ -1664,6 +1664,24 @@ paths:
         required: true
         schema:
           type: string
+  /v1/checkout/{tenant_id}/{intent_id}/upi-qr.svg:
+    get:
+      summary: QR code (SVG) of the latest pending attempt's provider-issued UPI payload
+      description: Authorised by the intent's client secret. 404 when there is no pending UPI QR / intent attempt. The payload is encoded exactly as issued.
+      tags:
+      - checkout
+      parameters:
+      - {name: tenant_id, in: path, required: true, schema: {type: string}}
+      - {name: intent_id, in: path, required: true, schema: {type: string}}
+      - {name: secret, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: SVG image
+          content:
+            image/svg+xml:
+              schema: {type: string}
+        '404':
+          description: Unknown intent, wrong secret, or nothing to show
   /v1/checkout/{tenant_id}/{intent_id}:
     get:
       summary: Public checkout session (client-secret authorised)
@@ -1802,6 +1820,7 @@ components:
           type:
           - object
           - 'null'
+          description: 'What the payer must do next: `{"type":"upi_intent","uri":"upi://pay?..."}` (a provider-issued payload; show it as a QR or open it as an intent, never edit it), `upi_collect`, or `hosted_checkout`. Showing or opening it is not proof of payment.'
         refunded_minor:
           type: integer
         reserved_refund_minor:

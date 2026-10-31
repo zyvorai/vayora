@@ -52,3 +52,7 @@ input[type=text]:focus-visible { outline: 3px solid var(--accent); outline-offse
 .langpick select { appearance: none; background: transparent; border: 0; color: var(--muted); font: inherit; font-size: .8125rem; text-align: center; cursor: pointer; padding: 6px 10px; border-radius: 10px; }
 .langpick select:focus-visible { outline: 3px solid var(--accent); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* UPI QR / intent */
+.qr { display: block; margin: 12px auto; padding: 10px; background: #fff; border-radius: 16px; }
+a.pay { display: flex; align-items: center; justify-content: center; text-decoration: none; }

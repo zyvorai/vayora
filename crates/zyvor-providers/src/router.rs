@@ -83,6 +83,8 @@ pub struct Request {
     pub currency: Currency,
     /// Caller restriction (e.g. per-intent allowed providers).
     pub allowed: Option<Vec<String>>,
+    /// A UPI payment with no payer-typed UPI ID: the provider must issue the QR / intent itself.
+    pub upi_intent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -124,6 +126,8 @@ pub fn choose(
             Some("not allowed for this payment".to_string())
         } else if let Err(e) = c.caps.supports(req.method, req.currency) {
             Some(e)
+        } else if req.method == Method::Upi && req.upi_intent && !c.caps.upi_intent {
+            Some("does not issue a UPI QR or intent".to_string())
         } else if active.iter().any(|r| r.exclude.contains(&c.provider)) {
             Some("excluded by routing rule".to_string())
         } else {
@@ -244,6 +248,7 @@ mod tests {
             partial_refund: true,
             manual_capture: false,
             server_initiated_upi: false,
+            upi_intent: false,
             refund_window_days: None,
         }
     }
@@ -273,6 +278,7 @@ mod tests {
             amount_minor: amount,
             currency: Currency::Inr,
             allowed: None,
+            upi_intent: false,
         }
     }
 

@@ -7533,3 +7533,148 @@ async fn a_custom_provider_needs_a_public_https_gateway_and_a_key(pool: PgPool) 
         Some(format!("/v1/webhooks/custom/{}", a.id).as_str())
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn upi_checkout_issues_a_qr_or_intent_instead_of_asking_for_a_upi_id(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    t.ok(
+        a,
+        "POST",
+        "/v1/provider_accounts",
+        None,
+        json!({ "provider": "sim", "credentials": {}, "webhook_secret": "x" }),
+    )
+    .await;
+    let new_intent = |providers: Value| {
+        let t = &t;
+        async move {
+            let i = t
+                .intent(a, 49_900, json!({ "allowed_providers": providers }))
+                .await;
+            (
+                i["id"].as_str().unwrap().to_string(),
+                i["client_secret"].as_str().unwrap().to_string(),
+            )
+        }
+    };
+    let session = |iid: String, secret: String| {
+        let (t, tid) = (&t, a.id.clone());
+        async move {
+            t.public(
+                "GET",
+                &format!("/v1/checkout/{tid}/{iid}?secret={secret}"),
+                None,
+                Value::Null,
+            )
+            .await
+        }
+    };
+
+    // a provider that can issue a QR / intent makes that the UPI flow; one that cannot falls back to collect
+    let (iid, secret) = new_intent(json!(["sim"])).await;
+    assert_eq!(
+        session(iid.clone(), secret.clone()).await.1["upi_flow"],
+        "intent"
+    );
+    let (rz_iid, rz_secret) = new_intent(json!(["razorpay"])).await;
+    assert_eq!(
+        session(rz_iid.clone(), rz_secret.clone()).await.1["upi_flow"],
+        "collect"
+    );
+
+    // no typed UPI ID and no provider that can issue one: refused, not silently turned into a collect
+    let (s, e) = t
+        .public(
+            "POST",
+            &format!("/v1/checkout/{}/{rz_iid}/attempts", a.id),
+            Some("rz-no-vpa"),
+            json!({ "secret": rz_secret, "method": "upi", "upi_flow": "intent" }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{e}");
+    assert_eq!(e["error"]["code"], "no_route");
+
+    // a return URL must be https (or, in a sandbox, http) with no embedded credentials
+    for bad in [
+        "javascript:alert(1)",
+        "https://user:pw@shop.example.com/done",
+    ] {
+        let (s, e) = t
+            .public(
+                "POST",
+                &format!("/v1/checkout/{}/{iid}/attempts", a.id),
+                Some("bad-return"),
+                json!({ "secret": secret, "method": "upi", "upi_flow": "intent", "return_url": bad }),
+            )
+            .await;
+        assert_eq!(
+            (s, e["error"]["code"].as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("invalid_return_url")),
+            "{bad}"
+        );
+    }
+
+    // the payer starts a UPI payment with no UPI ID: the provider's payload comes back, pending
+    let (s, att) = t
+        .public(
+            "POST",
+            &format!("/v1/checkout/{}/{iid}/attempts", a.id),
+            Some("upi-1"),
+            json!({ "secret": secret, "method": "upi", "upi_flow": "intent" }),
+        )
+        .await;
+    assert!(s.is_success(), "{att}");
+    assert_eq!(att["status"], "pending");
+    let uri = att["client_action"]["uri"].as_str().unwrap();
+    assert!(uri.starts_with("upi://pay?pa="), "{uri}");
+    assert!(uri.contains("am=499.00&cu=INR"), "{uri}");
+    assert_eq!(att["client_action"]["type"], "upi_intent");
+
+    // the page shows it as awaiting payment, and the QR is available only with the right secret
+    let (_, v) = session(iid.clone(), secret.clone()).await;
+    assert_eq!(v["phase"], "awaiting_payment");
+    assert_eq!(v["attempt"]["action"]["type"], "upi_intent");
+    let qr = format!("/v1/checkout/{}/{iid}/upi-qr.svg", a.id);
+    assert_eq!(
+        t.public("GET", &format!("{qr}?secret={secret}"), None, Value::Null)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.public("GET", &format!("{qr}?secret=pis_wrong"), None, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+
+    // showing a QR or returning to the page proves nothing: the payment is still not paid
+    assert_eq!(
+        session(iid.clone(), secret.clone()).await.1["status"],
+        "processing",
+        "awaiting the payer is not paid"
+    );
+
+    // the simulated payer approves; only a verified provider result marks it paid
+    let aid = att["id"].as_str().unwrap();
+    let r = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/payment_attempts/{aid}/refresh"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(r["status"], "captured");
+    let (_, v) = session(iid.clone(), secret.clone()).await;
+    assert_eq!(v["phase"], "paid");
+    assert_eq!(
+        t.public("GET", &format!("{qr}?secret={secret}"), None, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND,
+        "a finished payment has no QR to show"
+    );
+}

@@ -104,6 +104,8 @@ impl Provider for Razorpay {
             partial_refund: true,
             manual_capture: true,
             server_initiated_upi: false,
+            // Hosted flows exist, but no QR/intent payload is verified with this partner yet.
+            upi_intent: false,
             refund_window_days: Some(180),
         }
     }

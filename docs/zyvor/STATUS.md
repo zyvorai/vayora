@@ -16,7 +16,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Capability matrix | ✅ | Router cannot select a provider for an unsupported method or currency (tested). |
 | Mobile-first checkout | ✅ | `apps/zyvor-checkout`. Resumable from the URL, clear pending/"confirming" states, accessible errors. Exercised in a browser against the mock. |
 | Provider-hosted card fields | ◐ | Script wiring for Razorpay Checkout / Cashfree JS exists but is untested against live providers. No card data ever reaches Zyvor; no CVV is stored. |
-| UPI intent / QR | ❌ | Only server-initiated UPI collect. |
+| UPI intent / QR | 🟡 | A provider-issued `upi://pay` payload shown as a QR and an "open my UPI app" link; no UPI ID typed. Simulator only: Razorpay and Cashfree adapters do not issue one yet (`upi_intent: false`) until a flow is verified with each partner. UPI collect (typed UPI ID) stays as the fallback when no provider can issue a QR. |
 | Safe routing | ✅ | Rules (method, amount band, prefer/exclude), configured fees, health (recent failures, unresolved payments). Every decision stores the providers considered and why. |
 | Uncertain outcomes | ✅ | A timeout after the provider may have accepted produces `unknown`; no other attempt can start (through any provider) until it resolves; resolver asks the provider, never re-sends. |
 | Financial ledger | ✅ | Append-only double-entry; balanced per currency in code **and** by a deferred database constraint; corrections are reversals; accounting only, it says nothing about custody. |

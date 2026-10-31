@@ -59,6 +59,11 @@ pub struct Capabilities {
     pub manual_capture: bool,
     /// Provider can start a UPI collect from the server (no hosted checkout needed).
     pub server_initiated_upi: bool,
+    /// Provider issues a partner-generated UPI QR / intent payload for a payment, so the payer pays from
+    /// any UPI app (BHIM, PhonePe, Google Pay...) without typing a UPI ID. Default off: turn it on only
+    /// for a flow verified with that partner.
+    #[serde(default)]
+    pub upi_intent: bool,
     /// Refunds are refused after this many days.
     pub refund_window_days: Option<u32>,
 }
@@ -119,6 +124,13 @@ pub enum ClientAction {
     /// Approve the collect request in the payer's UPI app.
     UpiCollect {
         vpa: String,
+    },
+    /// A partner-issued `upi://pay?...` payload. Show it as a QR on a desktop or counter screen and open
+    /// it as an intent on a phone. Never edit it: partners may sign fields inside it. It is not proof of
+    /// payment; only a verified provider result is.
+    UpiIntent {
+        uri: String,
+        expires_at: Option<String>,
     },
 }
 

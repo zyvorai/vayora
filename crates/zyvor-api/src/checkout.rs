@@ -86,6 +86,18 @@ pub async fn session(
     .map(Method::as_str)
     .collect();
     methods.sort_unstable();
+    // How should a UPI payment work? Prefer a partner-issued QR / intent (any UPI app). Asking the payer to
+    // type a UPI ID ("collect") is only the fallback when no eligible provider can issue one.
+    let upi_flow = if candidates.iter().any(|c| {
+        c.enabled
+            && allowed.as_ref().is_none_or(|a| a.contains(&c.provider))
+            && c.caps.supports(Method::Upi, ccy).is_ok()
+            && c.caps.upi_intent
+    }) {
+        "intent"
+    } else {
+        "collect"
+    };
 
     // The latest attempt tells the page what to do next (and makes the session resumable).
     let attempt: Option<AttemptRow> = sqlx::query_as(
@@ -104,7 +116,7 @@ pub async fn session(
     };
     Ok(Json(json!({
         "merchant": merchant, "amount_minor": amount, "currency": currency, "description": description,
-        "status": status, "phase": phase, "methods": methods,
+        "status": status, "phase": phase, "methods": methods, "upi_flow": upi_flow,
         // Only what the page needs. No provider refs, no routing internals.
         "attempt": attempt.map(|a| json!({ "id": a.id, "method": a.method, "status": a.status, "failure_reason": a.failure_reason.filter(|_| a.status == "failed"), "action": a.client_action })),
     })))
@@ -116,6 +128,8 @@ pub struct PayRequest {
     method: String,
     vpa: Option<String>,
     return_url: Option<String>,
+    /// `"intent"` when the session's `upi_flow` said so.
+    upi_flow: Option<String>,
 }
 
 pub async fn pay(
@@ -136,7 +150,46 @@ pub async fn pay(
             method: b.method,
             vpa: b.vpa,
             return_url: b.return_url,
+            upi_flow: b.upi_flow,
         },
     )
     .await
+}
+
+/// `GET /v1/checkout/{tenant}/{intent}/upi-qr.svg?secret=`: the QR of the latest attempt's partner-issued
+/// UPI payload, for a desktop or counter screen. The payload is encoded exactly as the partner issued it;
+/// a QR is only a way to present it, never proof of payment.
+pub async fn upi_qr(
+    State(s): State<AppState>,
+    Path((tenant_id, intent_id)): Path<(String, String)>,
+    Query(q): Query<SecretQuery>,
+) -> Result<Response, ApiError> {
+    use axum::response::IntoResponse;
+    authorise(&s, &tenant_id, &intent_id, &q.secret).await?;
+    let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
+    let action: Option<Value> = sqlx::query_scalar(
+        "SELECT client_action FROM payment_attempts WHERE intent_id = $1 AND status IN ('pending', 'authorized', 'created') ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(&intent_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+    let uri = action
+        .filter(|a| a["type"] == "upi_intent")
+        .and_then(|a| a["uri"].as_str().map(str::to_string))
+        .ok_or_else(|| ApiError::not_found("UPI payment"))?;
+    let svg = qrcode::QrCode::new(uri.as_bytes())
+        .map_err(|_| ApiError::internal())?
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(320, 320)
+        .quiet_zone(true)
+        .build();
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
+        svg,
+    )
+        .into_response())
 }

@@ -328,6 +328,10 @@ pub struct CreateAttempt {
     pub method: String,
     pub vpa: Option<String>,
     pub return_url: Option<String>,
+    /// `"intent"` asks for a provider-issued UPI QR / intent instead of a hosted or collect flow. Only the
+    /// public checkout sets it, after the session said that is how UPI works for this payment.
+    #[serde(default)]
+    pub upi_flow: Option<String>,
 }
 
 fn valid_vpa(v: &str) -> bool {
@@ -383,6 +387,14 @@ pub async fn start_attempt(
         ));
     }
 
+    // A return URL is where the payer's browser is sent afterwards. Never trust it blindly: https only, no
+    // embedded credentials. (A per-merchant allowlist of origins is the next step.)
+    if let Some(u) = &b.return_url
+        && let Err(e) = crate::ssrf::check_url(u, s.allow_private_targets)
+    {
+        return Err(ApiError::invalid("invalid_return_url", e));
+    }
+
     // ---- tx1: claim the key, validate, route, and persist the attempt BEFORE calling the provider ----
     let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     let hash = fingerprint(&[
@@ -390,6 +402,7 @@ pub async fn start_attempt(
         method.as_str(),
         b.vpa.as_deref().unwrap_or(""),
         b.return_url.as_deref().unwrap_or(""),
+        b.upi_flow.as_deref().unwrap_or(""),
     ]);
     let key = match idempotency::begin(&mut tx, tenant_id, "attempts", headers, &hash).await? {
         Begin::Replay {
@@ -499,6 +512,11 @@ pub async fn start_attempt(
             amount_minor,
             currency,
             allowed,
+            // Only when the checkout asked for the QR / intent flow; a UPI payment through a hosted
+            // checkout (no typed UPI ID) keeps working as before.
+            upi_intent: method == Method::Upi
+                && b.vpa.is_none()
+                && b.upi_flow.as_deref() == Some("intent"),
         },
         &candidates,
         &routing.rules,
