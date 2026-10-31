@@ -10487,3 +10487,56 @@ async fn console_branches_lists_only_this_organisations_branches(pool: PgPool) {
         .await;
     assert!(r["data"].as_array().unwrap().is_empty());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn payment_search_matches_id_reference_and_description_and_treats_wildcards_literally(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let mut ids = Vec::new();
+    for (reference, description) in [("ORD-1001", "Term fee"), ("ORD-2002", "100%_off kit")] {
+        let r = t
+            .ok(
+                a,
+                "POST",
+                "/v1/payment_intents",
+                Some(reference),
+                json!({ "amount_minor": 5000, "currency": "INR", "external_ref": reference, "description": description }),
+            )
+            .await;
+        ids.push(r["id"].as_str().unwrap().to_string());
+    }
+    let find = |q: String| {
+        let t = &t;
+        async move {
+            let r = t
+                .ok(
+                    a,
+                    "GET",
+                    &format!("/v1/payment_intents?q={q}"),
+                    None,
+                    Value::Null,
+                )
+                .await;
+            r["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["external_ref"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        }
+    };
+    assert_eq!(find("ord-2".into()).await, ["ORD-2002"]);
+    assert_eq!(find("term".into()).await, ["ORD-1001"]);
+    assert_eq!(find(ids[0].clone()).await, ["ORD-1001"]);
+    // a bare % or _ is text, not a wildcard
+    assert_eq!(find("%25".into()).await, ["ORD-2002"]);
+    assert!(find("_".into()).await.len() == 1);
+    assert!(find("nothing-like-this".into()).await.is_empty());
+    assert_eq!(find("".into()).await.len(), 2);
+    let r = t
+        .ok(b, "GET", "/v1/payment_intents?q=ORD", None, Value::Null)
+        .await;
+    assert!(r["data"].as_array().unwrap().is_empty());
+}

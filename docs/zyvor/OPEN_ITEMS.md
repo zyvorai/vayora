@@ -140,7 +140,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 ## 6. Console polish
 
 Mobile was checked on three pages only. Walk every page at 390 px (`apps/zyvor-console/app/globals.css` has the phone
-rules at the end), and add: search and saved views on Payments (needs `q=` on `GET /v1/payment_intents`),
+rules at the end), and add: saved views on Payments (search is **done**: `q=` on `GET /v1/payment_intents` and a box on the page),
 payment-link reminders (backend feature), an audit of empty and error states, keyboard and screen-reader pass,
 translations for the new pages (`apps/zyvor-checkout` shows the approach).
 

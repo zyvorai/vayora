@@ -292,6 +292,8 @@ pub struct ListQuery {
     pub status: Option<String>,
     pub branch_id: Option<String>,
     pub counter_id: Option<String>,
+    /// Matches the payment id exactly, or part of its reference or description (case-insensitive).
+    pub q: Option<String>,
 }
 
 pub async fn list_intents(
@@ -301,12 +303,18 @@ pub async fn list_intents(
 ) -> Result<Json<Value>, ApiError> {
     auth.require_branch("payments:read")?;
     let limit = q.limit.unwrap_or(25).clamp(1, 100);
+    let needle =
+        q.q.as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(|n| n.chars().take(100).collect::<String>());
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let mut rows: Vec<IntentRow> = sqlx::query_as(
         "SELECT id, customer_id, invoice_id, branch_id, amount_minor, currency, status, capture_method, allowed_providers, external_ref, description, metadata, created_at, updated_at
          FROM payment_intents WHERE ($1::text IS NULL OR status = $1)
            AND ($4::text IS NULL OR branch_id = $4) AND ($5::text IS NULL OR counter_id = $5)
            AND ($2::text IS NULL OR (created_at, id) < (SELECT created_at, id FROM payment_intents WHERE id = $2))
+           AND ($6::text IS NULL OR id = $6 OR external_ref ILIKE $7 OR description ILIKE $7)
          ORDER BY created_at DESC, id DESC LIMIT $3",
     )
     .bind(&q.status)
@@ -314,6 +322,11 @@ pub async fn list_intents(
     .bind(limit + 1)
     .bind(auth.pin_branch(q.branch_id.clone())?)
     .bind(&q.counter_id)
+    .bind(&needle)
+    .bind(needle.as_ref().map(|n| {
+        let escaped = n.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        format!("%{escaped}%")
+    }))
     .fetch_all(&mut *tx)
     .await?;
     let has_more = rows.len() as i64 > limit;

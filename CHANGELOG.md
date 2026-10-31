@@ -7,6 +7,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 ## 31 October 2026
 **People page and FX exposure**
 - `GET /v1/console/branches` lists the branches a person can be tied to, read from the home environment that `invite` checks. The People page uses it, so a cashier can be invited with a branch while looking at live.
+- Payments can be searched: `q=` on `GET /v1/payment_intents` matches a payment ID exactly or part of its reference or description (case-insensitive, `%` and `_` are plain text), with a search box on the Payments page and in its CSV export.
 - `/v1/fx/exposure` reports `complete: true` when no open dollar invoice lacks a rate (it said false with no dollar invoices).
 
 **iOS test apps**
