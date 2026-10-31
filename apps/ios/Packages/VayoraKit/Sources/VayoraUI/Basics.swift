@@ -9,8 +9,8 @@ public struct AmountText: View {
     public var body: some View {
         let parts = money.display.split(separator: ".", maxSplits: 1).map(String.init)
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(parts[0]).font(VUI.display(size)).contentTransition(.numericText())
-            if parts.count > 1 { Text("." + parts[1]).font(VUI.display(size * 0.5, .semibold)).foregroundStyle(VUI.textSecondary).contentTransition(.numericText()) }
+            Text(parts[0]).vfont(size, .bold).contentTransition(.numericText())
+            if parts.count > 1 { Text("." + parts[1]).vfont(size * 0.5, .semibold).foregroundStyle(VUI.textSecondary).contentTransition(.numericText()) }
         }
         .foregroundStyle(VUI.textPrimary)
         .minimumScaleFactor(0.5).lineLimit(1)
@@ -25,7 +25,7 @@ public struct StatusPill: View {
     public init(_ text: String, _ kind: Kind) { self.text = text; self.kind = kind }
     var colour: Color { switch kind { case .success: VUI.mint; case .warn: VUI.amber; case .danger: VUI.coral; case .neutral: VUI.textSecondary } }
     public var body: some View {
-        Text(text.uppercased()).font(.system(size: 10.5, weight: .bold, design: .rounded)).kerning(0.6)
+        Text(text.uppercased()).vfont(10.5, .bold).kerning(0.6)
             .padding(.horizontal, 9).padding(.vertical, 4)
             .foregroundStyle(colour).background(colour.opacity(0.16), in: Capsule())
             .overlay(Capsule().strokeBorder(colour.opacity(0.28), lineWidth: 0.5))
@@ -48,7 +48,7 @@ public struct AvatarBadge: View {
     }
     public var body: some View {
         let h = Self.hue(seed)
-        Text(initials).font(VUI.display(size * 0.38)).foregroundStyle(.white)
+        Text(initials).vfont(size * 0.38, .bold).foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(LinearGradient(colors: [Color(hue: h, saturation: 0.55, brightness: 0.95), Color(hue: (h + 0.08).truncatingRemainder(dividingBy: 1), saturation: 0.75, brightness: 0.62)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
             .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))

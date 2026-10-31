@@ -41,20 +41,30 @@ public struct AmbientBackground: View {
     }
 }
 
-/// Frosted card: translucent fill, a lit top edge, and a hairline. Deterministic, so it renders the same everywhere.
+/// Frosted card. On iOS 26 and later it is real Liquid Glass; before that, a translucent fill with a lit top edge
+/// and a hairline, which also renders the same everywhere (the Mac gallery included).
 public struct GlassCard<Content: View>: View {
     let radius: CGFloat
     let content: Content
     public init(radius: CGFloat = VUI.Radius.card, @ViewBuilder _ content: () -> Content) { self.radius = radius; self.content = content() }
     public var body: some View {
-        content
-            .padding(VUI.Space.m + 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom))
-                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
-            }
+        let padded = content.padding(VUI.Space.m + 4).frame(maxWidth: .infinity, alignment: .leading)
+        if #available(iOS 26, *), VUI.useLiquidGlass {
+            #if os(iOS)
+            padded.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            #else
+            fallback(padded)
+            #endif
+        } else {
+            fallback(padded)
+        }
+    }
+    private func fallback<V: View>(_ v: V) -> some View {
+        v.background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom))
+                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+        }
     }
 }

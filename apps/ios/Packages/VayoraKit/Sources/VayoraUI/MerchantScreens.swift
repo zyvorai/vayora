@@ -31,11 +31,11 @@ public struct CollectKeypadScreen: View {
         ZStack {
             AmbientBackground(brand: brand, phase: 0.3)
             VStack(spacing: 16) {
-                HStack { Text(title).font(VUI.display(28)).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
+                HStack { Text(title).vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
                 Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("₹").font(VUI.display(40, .semibold)).foregroundStyle(VUI.textSecondary)
-                    Text(text.isEmpty ? "0" : text).font(VUI.display(84)).foregroundStyle(text.isEmpty ? VUI.textTertiary : VUI.textPrimary)
+                    Text("₹").vfont(40, .semibold).foregroundStyle(VUI.textSecondary)
+                    Text(text.isEmpty ? "0" : text).vfont(84, .bold).foregroundStyle(text.isEmpty ? VUI.textTertiary : VUI.textPrimary)
                         .minimumScaleFactor(0.4).lineLimit(1).contentTransition(.numericText())
                 }
                 .animation(VUI.snap, value: text).accessibilityElement(children: .ignore).accessibilityLabel("Amount \(text.isEmpty ? "zero" : text) rupees")
@@ -43,7 +43,7 @@ public struct CollectKeypadScreen: View {
                     HStack(spacing: 8) {
                         ForEach(chips, id: \.self) { c in
                             Button { onChip(c) } label: {
-                                Text(c).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(note == c ? VUI.ink : VUI.textPrimary)
+                                Text(c).vfont(14, .semibold).foregroundStyle(note == c ? VUI.ink : VUI.textPrimary)
                                     .padding(.horizontal, 14).padding(.vertical, 8).background(note == c ? AnyShapeStyle(brand.glow) : AnyShapeStyle(.white.opacity(0.10)), in: Capsule())
                             }.buttonStyle(.plain)
                         }
@@ -52,7 +52,7 @@ public struct CollectKeypadScreen: View {
                 Spacer(minLength: 0)
                 KeyPad(onDigit: onDigit, onDelete: onDelete, extraKey: KeyPad.Extra(title: ".", label: "Decimal point", action: onPoint))
                 Button(action: onShowQR) {
-                    Label(actionLabel, systemImage: actionIcon).font(VUI.display(19, .semibold)).foregroundStyle(canContinue ? VUI.ink : VUI.textTertiary)
+                    Label(actionLabel, systemImage: actionIcon).vfont(19, .semibold).foregroundStyle(canContinue ? VUI.ink : VUI.textTertiary)
                         .frame(maxWidth: .infinity).padding(.vertical, 18)
                         .background(canContinue ? AnyShapeStyle(LinearGradient(colors: [brand.glow, brand.primary], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(.white.opacity(0.08)), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                 }.buttonStyle(PressScale()).disabled(!canContinue)
@@ -74,7 +74,7 @@ public struct QRHeroScreen: View {
         ZStack {
             if customerMode { Color.white } else { AmbientBackground(brand: .merchant, phase: 0.55) }
             VStack(spacing: 22) {
-                if !customerMode { HStack { Text("Waiting for payment").font(VUI.display(22)).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() } }
+                if !customerMode { HStack { Text("Waiting for payment").vfont(22, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() } }
                 Spacer(minLength: 0)
                 AmountText(amount, size: customerMode ? 64 : 52).environment(\.colorScheme, customerMode ? .light : .dark)
                     .colorMultiply(customerMode ? .black : .white)
@@ -86,15 +86,15 @@ public struct QRHeroScreen: View {
                     else { Image(systemName: "qrcode").font(.system(size: 160)).foregroundStyle(.black) }
                     FrameProgress(expiry, cornerRadius: 46, lineWidth: 5, colour: VUI.emerald).frame(width: 308, height: 308)
                 }
-                if !note.isEmpty { Text(note).font(.system(size: 16, design: .rounded)).foregroundStyle(customerMode ? Color.black.opacity(0.6) : VUI.textSecondary) }
-                HStack(spacing: 8) { Circle().fill(VUI.emerald).frame(width: 8, height: 8).opacity(0.4 + 0.6 * (1 - pulse)); Text("Scan with Vayora Pay to pay (test)").font(.system(size: 13, design: .rounded)) }
+                if !note.isEmpty { Text(note).vfont(16).foregroundStyle(customerMode ? Color.black.opacity(0.6) : VUI.textSecondary) }
+                HStack(spacing: 8) { Circle().fill(VUI.emerald).frame(width: 8, height: 8).opacity(0.4 + 0.6 * (1 - pulse)); Text("Scan with Vayora Pay to pay (test)").vfont(13) }
                     .foregroundStyle(customerMode ? Color.black.opacity(0.5) : VUI.textTertiary)
                 Spacer(minLength: 0)
                 HStack(spacing: 12) {
                     Button(action: onCustomerMode) { Label(customerMode ? "Exit customer view" : "Customer view", systemImage: customerMode ? "xmark" : "person.2.fill")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(customerMode ? Color.black : VUI.textPrimary).frame(maxWidth: .infinity).padding(.vertical, 16)
+                        .vfont(16, .semibold).foregroundStyle(customerMode ? Color.black : VUI.textPrimary).frame(maxWidth: .infinity).padding(.vertical, 16)
                         .background(customerMode ? Color.black.opacity(0.08) : .white.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }.buttonStyle(.plain)
-                    if !customerMode { Button(action: onCancel) { Text("Cancel").font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(VUI.coral).padding(.horizontal, 24).padding(.vertical, 16)
+                    if !customerMode { Button(action: onCancel) { Text("Cancel").vfont(16, .semibold).foregroundStyle(VUI.coral).padding(.horizontal, 24).padding(.vertical, 16)
                         .background(VUI.coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }.buttonStyle(.plain) }
                 }
             }
@@ -119,10 +119,10 @@ public struct MerchantTodayScreen: View {
     }
     var content: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Payments").font(VUI.display(28)).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
+            HStack { Text("Payments").vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
             GlassCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Collected today").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(VUI.textSecondary)
+                    Text("Collected today").vfont(14, .medium).foregroundStyle(VUI.textSecondary)
                     AmountText(collected, size: 52)
                     Sparkline(trend, colour: VUI.mint).frame(height: 56)
                     HStack {
@@ -130,17 +130,17 @@ public struct MerchantTodayScreen: View {
                     }
                 }
             }
-            if let error { Text(error).font(.system(size: 14, design: .rounded)).foregroundStyle(VUI.coral) }
-            Text("Recent").font(VUI.display(20)).foregroundStyle(VUI.textPrimary)
-            if rows.isEmpty && error == nil { Text("No payments yet. Create one on the Collect tab.").font(.system(size: 15, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+            if let error { Text(error).vfont(14).foregroundStyle(VUI.coral) }
+            Text("Recent").vfont(20, .bold).foregroundStyle(VUI.textPrimary)
+            if rows.isEmpty && error == nil { Text("No payments yet. Create one on the Collect tab.").vfont(15).foregroundStyle(VUI.textSecondary) }
             ForEach(rows) { r in
               Button { onOpen(r) } label: {
                 HStack(spacing: 14) {
                     Image(systemName: icon(r.state)).font(.system(size: 18, weight: .semibold)).foregroundStyle(tint(r.state))
                         .frame(width: 44, height: 44).background(tint(r.state).opacity(0.14), in: Circle())
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(r.amount.display).font(VUI.display(18, .semibold)).foregroundStyle(VUI.textPrimary)
-                        Text(r.note.isEmpty ? r.when : "\(r.note) · \(r.when)").font(.system(size: 12.5, design: .rounded)).foregroundStyle(VUI.textTertiary)
+                        Text(r.amount.display).vfont(18, .semibold).foregroundStyle(VUI.textPrimary)
+                        Text(r.note.isEmpty ? r.when : "\(r.note) · \(r.when)").vfont(12.5).foregroundStyle(VUI.textTertiary)
                     }
                     Spacer()
                     StatusPill(r.pill.0, r.pill.1)
@@ -154,7 +154,7 @@ public struct MerchantTodayScreen: View {
         .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 32)
     }
     func stat(_ k: String, _ v: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) { Text(k).font(.system(size: 12.5, design: .rounded)).foregroundStyle(VUI.textTertiary); Text(v).font(VUI.display(18, .semibold)).foregroundStyle(VUI.textPrimary) }
+        VStack(alignment: .leading, spacing: 2) { Text(k).vfont(12.5).foregroundStyle(VUI.textTertiary); Text(v).vfont(18, .semibold).foregroundStyle(VUI.textPrimary) }
     }
     func icon(_ s: PaymentRowModel.State) -> String { switch s { case .succeeded: "arrow.down.left"; case .processing: "hourglass"; case .refunded, .partRefunded: "arrow.uturn.backward"; case .failed: "xmark" } }
     func tint(_ s: PaymentRowModel.State) -> Color { switch s { case .succeeded: VUI.mint; case .processing: VUI.textSecondary; case .refunded, .partRefunded: VUI.amber; case .failed: VUI.coral } }
