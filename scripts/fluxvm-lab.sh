@@ -5,9 +5,10 @@
 #   VM=zyvor-sandbox ./scripts/fluxvm-lab.sh          # creates the VM if it does not exist
 #   CONSOLE_PASSWORD=... ./scripts/fluxvm-lab.sh      # otherwise a random one is written to $OUT/console-password
 #
-# Every step here was run by hand first (see docs/zyvor/FLUXVM_LAB.md). The SCRIPT has not yet completed a full run:
-# its first attempt got through packages, toolchains, source and database, then the VM stopped answering SSH during the
-# Rust build. Treat it as unverified. Providers are SIMULATED. The address is private, so only this Mac reaches it.
+# Verified once, end to end, on one Mac: a fresh VM ran this script to the end, the console answered 307 (login) and
+# checkout 200 over HTTPS, and after a VM restart all services came back by themselves. Not tested: a second Mac,
+# other macOS versions, or re-running over a half-built VM beyond what is described in docs/zyvor/FLUXVM_LAB.md.
+# Providers are SIMULATED. The address is private, so only this Mac reaches it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$PWD"
@@ -15,17 +16,18 @@ VM="${VM:-zyvor-sandbox}"
 OUT="${OUT:-$HOME/.zyvor-lab/$VM}"; mkdir -p "$OUT"; chmod 700 "$OUT"
 command -v fluxctl >/dev/null || { echo "fluxctl not found: brew install zyvorai/tap/fluxvm" >&2; exit 1; }
 
-rs() { fluxctl ssh "$VM" -- "$@" 2>&1 | grep -v 'fluxvm_scheduler' || true; }
+# Plain ssh/scp to the VM's address: `fluxctl ssh` hangs on large commands and never sees EOF on stdin.
+SSHO=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o StrictHostKeyChecking=no -o LogLevel=ERROR)
+IP=""
+rs() { ssh "${SSHO[@]}" "$(whoami)@$IP" "$@" 2>&1 || true; }
 vm_ip() { fluxctl get "$VM" 2>/dev/null | grep -o '"guest_ip": "[^"]*"' | cut -d'"' -f4; }
-wait_ssh() { local i; for i in $(seq 1 60); do fluxctl ssh "$VM" -- true >/dev/null 2>&1 && return 0; sleep 5; done; echo "no SSH to $VM" >&2; return 1; }
+wait_ssh() { local i; for i in $(seq 1 60); do IP="$(vm_ip)"; [ -n "$IP" ] && ssh "${SSHO[@]}" "$(whoami)@$IP" true >/dev/null 2>&1 && return 0; sleep 5; done; echo "no SSH to $VM" >&2; return 1; }
 
 # Run a script inside the VM, detached (an SSH drop must not kill it), and wait for it to finish.
 bg() {
   local name="$1" body="$2"
-  # `fluxctl ssh` never sees EOF on stdin, so ship the script inside the command line instead
-  local enc
-  enc="$(printf 'set -e\ntrap "echo FAIL-%s" ERR\n%s\necho DONE-%s\n' "$name" "$body" "$name" | base64 | tr -d '\n')"
-  rs "echo $enc | base64 -d > ~/$name.sh" >/dev/null
+  printf 'set -e\ntrap "echo FAIL-%s" ERR\n%s\necho DONE-%s\n' "$name" "$body" "$name" > "$OUT/$name.sh"
+  scp "${SSHO[@]}" -q "$OUT/$name.sh" "$(whoami)@$IP:$name.sh"
   rs "setsid nohup bash ~/$name.sh > ~/$name.log 2>&1 < /dev/null & sleep 1; echo started-$name" >/dev/null
   echo "==> $name"
   local out
@@ -44,7 +46,6 @@ if ! fluxctl get "$VM" >/dev/null 2>&1; then
   fluxctl start "$VM" >/dev/null 2>&1
 fi
 wait_ssh
-IP="$(vm_ip)"; [ -n "$IP" ] || { echo "VM has no address" >&2; exit 1; }
 H="${IP//./-}.sslip.io"
 echo "    address $IP  (hosts console.$H, pay.$H)"
 
@@ -75,6 +76,7 @@ sudo -n -u postgres psql -tAc "select 1 from pg_database where datname = '"'"'zy
 # we replace its hand-started processes with services.
 bg sandbox '
 . ~/.cargo/env; cd ~/zyvor
+export CARGO_BUILD_JOBS=2   # the VM stopped answering SSH under a 4-job build
 OWNER_URL=postgres://mini:lab-owner-pass@127.0.0.1:5432/zyvor_sandbox OUT=$HOME/sbx ./scripts/zyvor-sandbox.sh >/dev/null
 cargo build --release -p zyvor-api -p zyvor-provider-mock 2>&1 | tail -1
 '
@@ -157,7 +159,7 @@ for h in console pay; do
   echo "    https://$h.$H -> $code"
   case "$code" in 200|307) ;; *) ok=0;; esac
 done
-echo "    API ready: $(rs 'curl -s -m 5 localhost:8080/readyz' | tr -d '\r' | head -1)"
+echo "    API ready: $(rs 'curl -s -m 5 localhost:8080/readyz' | head -1)"
 [ "$ok" = 1 ] || { echo "not healthy" >&2; exit 1; }
 cat <<MSG
 

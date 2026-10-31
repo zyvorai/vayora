@@ -34,18 +34,25 @@ appears in your own command line.
 
 Not verified: a repeatable one-command script, HTTPS in front of the VM, or any use beyond one Mac.
 
-## Running it as the sandbox (what was done, and what is not proven)
+## Running it as the sandbox: `scripts/fluxvm-lab.sh`
 
-Done once by hand in the VM: release binaries copied to `/opt/zyvor/bin`; one systemd unit each for the API, worker,
-provider mock, console and checkout (env files in `/etc/zyvor`, mode 600; the console and checkout bind loopback);
-Caddy 2.6 in front with `tls internal` for `console.<ip-with-dashes>.sslip.io` and `pay.<ip-with-dashes>.sslip.io`.
-Verified while it was up: all units active, console 307 to login and `/keys` 307 when signed out, pay 200.
+`VM=zyvor-sandbox ./scripts/fluxvm-lab.sh` creates the VM (4 vCPU, 8 GiB, 40 GiB), installs Postgres, Rust, Node and
+Caddy, builds the API and web apps, runs the repo's sandbox script to migrate and seed simulated providers, installs one
+systemd unit per service (env files in `/etc/zyvor`, mode 600; console and checkout bind loopback) and puts Caddy in
+front with its own CA. It prints the addresses and writes a random console password to
+`~/.zyvor-lab/<vm>/console-password`.
+
+Verified once, on one Mac: the script ran to the end on a fresh VM, console answered 307 (to login) and checkout 200 over
+HTTPS from the Mac, the API reported ready, and after a VM restart every service and Caddy came back on its own.
 
 Limits you should know:
-- The certificate comes from Caddy's own CA, so browsers warn and `curl` needs `-k`. A public certificate needs a
-  public address. This is reachable only from the Mac that hosts the VM (a private 192.168.64.x address).
-- A reboot of the VM was **not** shown to bring the services back: after I restarted it, it never got a DHCP address
-  (another VM on the same Mac lost its address at the same time, which points at the Mac's vmnet DHCP, not the guest).
-  Fixing that needs root on the Mac, so it was left alone.
-- Stopping a leftover hand-started process by name misses long names: `pgrep -x` compares the first 15 characters, so
-  `zyvor-provider-mock` was not matched. Stop by port instead.
+- The certificate comes from Caddy's own CA, so browsers warn and `curl` needs `-k`. The address is a private
+  192.168.64.x one, reachable only from the Mac that hosts the VM.
+- The script talks to the VM with plain `ssh`/`scp`. `fluxctl ssh` hangs on large commands and never sees EOF on stdin.
+- Hard-stopping or force-restarting a VM mid-write damaged files inside it (a Rust toolchain crashed with SIGBUS, a
+  `package.json` came back empty, the journal was "uncleanly shut down"). Stop VMs cleanly; if a build step fails
+  strangely after a force-stop, delete the toolchain or `node_modules` and rerun. The Rust build is capped at two jobs
+  because the first VM stopped answering SSH under a four-job build (a guess at the cause, not proven).
+- If every VM on the Mac loses its address, that is the Mac's DHCP service (`bootpd`), not the guest. It needed
+  `sudo launchctl kickstart -k system/com.apple.bootpd` run by the person at the Mac.
+- `pgrep -x` compares only the first 15 characters of a process name, so `zyvor-provider-mock` is not matched.
