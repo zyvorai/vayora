@@ -1,0 +1,6 @@
+# Test fixtures, not secrets: SetupPayloadTests.swift parses a made-up `zk_test_` placeholder (14 characters)
+# to check the iOS setup link parser. The generic-api-key rule matches the `key=` / `apiKey` shape.
+1d4f3ae9ed377fd58c520043b29a40302e643896:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:6
+1d4f3ae9ed377fd58c520043b29a40302e643896:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:8
+c73ad525d994cde0dbd4aef46cdbd5db8272a991:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:6
+c73ad525d994cde0dbd4aef46cdbd5db8272a991:apps/ios/Packages/VayoraKit/Tests/VayoraKitTests/SetupPayloadTests.swift:generic-api-key:8
