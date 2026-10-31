@@ -46,7 +46,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use sqlx::PgPool;
 use zyvor_providers::sim::SimProvider;
@@ -170,6 +170,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/provider_accounts",
             post(create_provider_account).get(list_provider_accounts),
+        )
+        .route(
+            "/provider_accounts/{provider}",
+            put(replace_provider_account),
         )
         .route(
             "/provider_accounts/{provider}/enabled",

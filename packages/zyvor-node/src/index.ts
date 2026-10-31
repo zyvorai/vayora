@@ -269,6 +269,15 @@ export class Zyvor {
     exposure: (p: { asOf?: string } = {}) => this.req<{ as_of: string; rate_date: string | null; outstanding_usd_minor: number; complete: boolean; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null; data: Array<{ invoice_id: string; number: string; outstanding_usd_minor: number; raised_on: string; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null }> }>("GET", `/v1/fx/exposure${this.qs({ as_of: p.asOf })}`),
   };
 
+  /** Payment provider accounts (admin). Secrets go in and are never returned. */
+  readonly providers = {
+    list: () => this.req<{ data: { id: string; provider: string; label: string; enabled: boolean; base_url: string | null; webhook_url: string; capabilities: Record<string, unknown> | null }[] }>("GET", "/v1/provider_accounts"),
+    /** Store these credentials for the provider, replacing its account if there is one. Leave `baseUrl` out for the provider's own test or live address. */
+    connect: (provider: "razorpay" | "cashfree" | "custom", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
+      this.req<{ id: string; provider: string; enabled: boolean; replaced: boolean }>("PUT", `/v1/provider_accounts/${provider}`, { credentials: p.credentials, webhook_secret: p.webhookSecret, label: p.label, base_url: p.baseUrl }),
+    setEnabled: (provider: string, enabled: boolean) => this.req<{ provider: string; enabled: boolean }>("POST", `/v1/provider_accounts/${provider}/enabled`, { enabled }),
+  };
+
   readonly settings = {
     get: () => this.req<Settings>("GET", "/v1/settings"),
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),

@@ -329,3 +329,17 @@ export const createKey = async (_: FormState, f: FormData): Promise<FormState> =
   return r?.error ? r : { ok: secret };
 };
 export const revokeKey = async (_: FormState, f: FormData) => run(["/keys"], (z) => z.keys.revoke(id(f)), "admin");
+
+// ---- payment providers (admin). The secrets are typed into the console, sent once and never shown again ----
+export const connectProvider = async (_: FormState, f: FormData) => {
+  const t = (k: string) => String(f.get(k) ?? "").trim();
+  const provider = t("provider");
+  if (provider !== "cashfree" && provider !== "razorpay") return { error: "Choose Cashfree or Razorpay." };
+  const credentials: Record<string, string | boolean> = provider === "cashfree"
+    ? { client_id: t("key_id"), client_secret: t("key_secret"), ...(on(f, "upi_intent") ? { upi_intent: true } : {}) }
+    : { key_id: t("key_id"), key_secret: t("key_secret") };
+  if (!t("key_id") || !t("key_secret") || !t("webhook_secret")) return { error: "Enter the key, its secret and the webhook secret." };
+  return run(["/providers"], (z) => z.providers.connect(provider, { credentials, webhookSecret: t("webhook_secret"), label: t("label") || undefined }), "admin");
+};
+export const toggleProvider = async (_: FormState, f: FormData) =>
+  run(["/providers"], (z) => z.providers.setEnabled(String(f.get("provider") ?? ""), String(f.get("enabled")) === "1"), "admin");

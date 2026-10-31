@@ -24,6 +24,7 @@ const items = [
 const admin = [
   { href: "/users", label: "People", icon: icon("M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21a8 8 0 0116 0") },
   { href: "/onboarding", label: "Onboarding", icon: icon("M9 12l2 2 4-4M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z") },
+  { href: "/providers", label: "Providers", icon: icon("M3 7h18v10H3zM7 12h4M15 12h2") },
   { href: "/keys", label: "API keys", icon: icon("M15 7a4 4 0 11-3.9 4.9L3 20v-3l2-1v-2l2-1 4.1-4.1A4 4 0 0115 7zM16 9h.01") },
   { href: "/settings", label: "Settings", icon: icon("M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.4 2.7a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.4-2.7a7 7 0 002-1.2l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z") },
 ];

@@ -1001,6 +1001,78 @@ async fn api_keys_are_scoped_revocable_and_secrets_are_encrypted_at_rest(pool: P
         accounts.contains("server_initiated_upi"),
         "the capability matrix is exposed"
     );
+    // replacing an account (how a simulator becomes a real one): validated, enabled, secrets never echoed
+    for bad in [
+        json!({ "credentials": { "client_id": "only-id" }, "webhook_secret": "w" }),
+        json!({ "credentials": { "client_id": "i", "client_secret": "s" }, "webhook_secret": "" }),
+    ] {
+        assert_eq!(
+            t.call(a, "PUT", "/v1/provider_accounts/cashfree", None, bad)
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    assert_eq!(
+        t.call(
+            a,
+            "PUT",
+            "/v1/provider_accounts/nope",
+            None,
+            json!({ "credentials": {}, "webhook_secret": "w" })
+        )
+        .await
+        .0
+        .as_u16(),
+        422
+    );
+    let put = t.ok(a, "PUT", "/v1/provider_accounts/cashfree", None, json!({ "label": "Cashfree test", "credentials": { "client_id": "CFID_replaced", "client_secret": "cf_secret_replaced", "upi_intent": true }, "webhook_secret": "cf_hook_new" })).await;
+    assert_eq!(
+        (put["replaced"].clone(), put["enabled"].clone()),
+        (json!(true), json!(true))
+    );
+    let after = t
+        .ok(a, "GET", "/v1/provider_accounts", None, Value::Null)
+        .await;
+    let cf = after["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["provider"] == "cashfree")
+        .unwrap();
+    assert_eq!(
+        (
+            cf["label"].clone(),
+            cf["base_url"].clone(),
+            cf["capabilities"]["upi_intent"].clone()
+        ),
+        (json!("Cashfree test"), Value::Null, json!(true)),
+        "now the provider's own address, intent on"
+    );
+    assert!(
+        !after.to_string().contains("cf_secret_replaced")
+            && !after.to_string().contains("CFID_replaced")
+    );
+    assert_eq!(
+        after["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|x| x["provider"] == "cashfree")
+            .count(),
+        1,
+        "replaced, not duplicated"
+    );
+    assert_eq!(t.call(&t.b, "PUT", "/v1/provider_accounts/cashfree", None, json!({ "credentials": { "client_id": "x", "client_secret": "y" }, "webhook_secret": "w" })).await.0.as_u16(), 200, "another tenant gets its own account");
+    let mine = t
+        .ok(a, "GET", "/v1/provider_accounts", None, Value::Null)
+        .await;
+    assert!(
+        mine.to_string().contains("Cashfree test"),
+        "and does not touch ours"
+    );
+
     // the simulator can never be used in a live environment
     let live = t.root.clone();
     let live_tenant: String =

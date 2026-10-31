@@ -241,6 +241,8 @@ pub async fn revoke_key(
 
 #[derive(Deserialize)]
 pub struct NewProviderAccount {
+    /// Taken from the path on `PUT /v1/provider_accounts/{provider}`.
+    #[serde(default)]
     provider: String,
     label: Option<String>,
     /// razorpay: {key_id, key_secret}; cashfree: {client_id, client_secret}; sim: {}
@@ -250,12 +252,8 @@ pub struct NewProviderAccount {
     base_url: Option<String>,
 }
 
-pub async fn create_provider_account(
-    State(s): State<AppState>,
-    auth: Auth,
-    Json(b): Json<NewProviderAccount>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("admin")?;
+/// What must hold before provider credentials are stored, for a new account or a replacement.
+fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(), ApiError> {
     let required: &[&str] = match b.provider.as_str() {
         "razorpay" => &["key_id", "key_secret"],
         "cashfree" => &["client_id", "client_secret"],
@@ -291,6 +289,22 @@ pub async fn create_provider_account(
             format!("credentials need {required:?}"),
         ));
     }
+    if b.webhook_secret.is_empty() {
+        return Err(ApiError::invalid(
+            "missing_webhook_secret",
+            "give the webhook secret the provider signs its callbacks with",
+        ));
+    }
+    Ok(())
+}
+
+pub async fn create_provider_account(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<NewProviderAccount>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("admin")?;
+    check_provider(&s, &auth, &b)?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let id = new_id("pa");
     sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)")
@@ -342,6 +356,56 @@ pub async fn list_provider_accounts(
         out.push(json!({ "id": id, "provider": provider, "label": label, "enabled": enabled, "base_url": base_url, "capabilities": caps, "webhook_url": format!("/v1/webhooks/{provider}/{}", auth.tenant_id) }));
     }
     Ok(Json(json!({ "data": out })))
+}
+
+/// `PUT /v1/provider_accounts/{provider}`: store these credentials for the provider, replacing the account if there
+/// is one (how a simulator account becomes a real one), enabled. Leave `base_url` out to use the provider's own
+/// test or live address for this environment. Secrets are never returned.
+pub async fn replace_provider_account(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(provider): Path<String>,
+    Json(mut b): Json<NewProviderAccount>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    b.provider = provider.clone();
+    check_provider(&s, &auth, &b)?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT id FROM provider_accounts WHERE provider = $1")
+            .bind(&provider)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let creds = s.crypto.encrypt(b.credentials.to_string().as_bytes());
+    let hook = s.crypto.encrypt(b.webhook_secret.as_bytes());
+    let (id, action) = match existing {
+        Some(id) => {
+            sqlx::query("UPDATE provider_accounts SET label = $2, base_url = $3, credentials_enc = $4, webhook_secret_enc = $5, enabled = true WHERE id = $1")
+                .bind(&id).bind(b.label.as_deref().unwrap_or("")).bind(&b.base_url).bind(creds).bind(hook)
+                .execute(&mut *tx).await?;
+            (id, "provider_account.replaced")
+        }
+        None => {
+            let id = new_id("pa");
+            sqlx::query("INSERT INTO provider_accounts (id, tenant_id, provider, label, base_url, credentials_enc, webhook_secret_enc) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                .bind(&id).bind(&auth.tenant_id).bind(&provider).bind(b.label.as_deref().unwrap_or("")).bind(&b.base_url).bind(creds).bind(hook)
+                .execute(&mut *tx).await?;
+            (id, "provider_account.created")
+        }
+    };
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        action,
+        Some(&id),
+        json!({ "provider": provider, "base_url": b.base_url }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "provider": provider, "enabled": true, "replaced": action.ends_with("replaced") }),
+    ))
 }
 
 #[derive(Deserialize)]
