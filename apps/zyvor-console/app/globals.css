@@ -93,6 +93,8 @@ label.f { display: block; font-size: .75rem; font-weight: 600; color: var(--mute
 .pager { display: flex; justify-content: space-between; margin-top: 14px; }
 .note { padding: 10px 14px; border-radius: 12px; font-size: .875rem; }
 .note.ok { background: var(--chip-ok); color: var(--ok); } .note.bad { background: var(--chip-bad); color: var(--bad); } .note.info { background: var(--chip-accent); color: var(--accent-text); }
+.note.warn { background: var(--chip-warn); color: var(--warn); }
+textarea { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 10px 12px; resize: vertical; }
 .banner { padding: 8px 14px; border-radius: 12px; background: var(--chip-warn); color: var(--warn); font-size: .8125rem; font-weight: 500; margin-bottom: 18px; }
 .theme { all: unset; cursor: pointer; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
 .theme:hover { background: var(--soft); color: var(--fg); } .theme svg { width: 17px; height: 17px; }

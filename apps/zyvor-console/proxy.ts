@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE, readSession, tillOnly } from "@/lib/session";
 
+// /reviewer has its own sign-in (a reviewer key) and is off unless CONSOLE_REVIEWER=1.
 // Everything except the login page and static assets requires a valid signed session. With
 // CONSOLE_REQUIRE_MFA=1, anyone without a second factor can only reach /account to set one up.
 export async function proxy(req: NextRequest) {
@@ -27,4 +28,4 @@ export async function proxy(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/((?!login|signup|accept|forgot|reset|verify|check-email|_next/|favicon.svg).*)"] };
+export const config = { matcher: ["/((?!login|signup|accept|forgot|reset|verify|check-email|reviewer|_next/|favicon.svg).*)"] };
