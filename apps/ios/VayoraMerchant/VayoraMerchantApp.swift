@@ -12,7 +12,7 @@ struct VayoraMerchantApp: App {
                 PaymentsView().tabItem { Label("Payments", systemImage: "list.bullet.rectangle") }
                 MerchantSettings().tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
-            .environmentObject(store).tint(VUI.emerald).preferredColorScheme(.dark)
+            .environmentObject(store).tint(VUI.emerald).preferredColorScheme(.dark).dynamicTypeSize(...DynamicTypeSize.accessibility2)
         }
     }
 }

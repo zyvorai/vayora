@@ -47,11 +47,11 @@ public struct ScannerView: View {
                     }
                     .padding(.horizontal, 20).padding(.top, 8)
                     Spacer()
-                    Text(lock == nil ? hint : "Got it").font(VUI.display(17, .semibold)).foregroundStyle(.white)
+                    Text(lock == nil ? hint : "Got it").vfont(17, .semibold).foregroundStyle(.white)
                         .padding(.horizontal, 18).padding(.vertical, 10).background(.black.opacity(0.45), in: Capsule()).padding(.bottom, 56)
                 }
                 if denied {
-                    Text("Camera access is off. Allow it in iPhone Settings, then try again.").font(.system(size: 15, design: .rounded)).foregroundStyle(.white)
+                    Text("Camera access is off. Allow it in iPhone Settings, then try again.").vfont(15).foregroundStyle(.white)
                         .multilineTextAlignment(.center).padding(20).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 18)).padding(30)
                 }
             }

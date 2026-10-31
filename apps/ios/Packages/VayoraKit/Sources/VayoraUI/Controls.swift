@@ -28,7 +28,7 @@ public struct SlideToPay: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.08)).overlay(Capsule().strokeBorder(VUI.hairline))
                 Capsule().fill(brand.gradient).frame(width: 4 + thumb + travel * CGFloat(p)).opacity(0.35 + 0.65 * p)
-                Text(label).font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(VUI.textPrimary.opacity(1 - p * 1.4))
+                Text(label).vfont(17, .semibold).foregroundStyle(VUI.textPrimary.opacity(1 - p * 1.4))
                     .frame(maxWidth: .infinity).padding(.leading, thumb * 0.6)
                 Circle().fill(.white).frame(width: thumb, height: thumb)
                     .overlay(Image(systemName: done ? "checkmark" : "chevron.right.2").font(.system(size: 20, weight: .bold)).foregroundStyle(brand.deep))
@@ -105,7 +105,7 @@ public struct KeyPad: View {
     private func key(_ text: String?, icon: String? = nil, label: String? = nil, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
-                if let text { Text(text).font(VUI.display(30, .semibold)) } else if let icon { Image(systemName: icon).font(.system(size: 22, weight: .semibold)) }
+                if let text { Text(text).vfont(30, .semibold) } else if let icon { Image(systemName: icon).font(.system(size: 22, weight: .semibold)) }
             }
             .foregroundStyle(VUI.textPrimary).frame(maxWidth: .infinity, minHeight: 64)
             .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))

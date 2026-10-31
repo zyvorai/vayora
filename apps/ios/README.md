@@ -33,3 +33,5 @@ cd Packages/VayoraKit && swift run VayoraGallery ../../docs/gallery
 The PNGs in `docs/gallery` are its output. The screens live in the `VayoraUI` target and both apps use them, so what the gallery shows is what the apps draw. It cannot show the camera, haptics or motion; check those on a phone. The Mac renderer also cannot draw scroll views, system progress spinners or default-style buttons, so the gallery uses flat variants of those.
 
 The server address and API key are remembered in the Keychain, so deleting and reinstalling an app keeps them. The Merchant app's Settings and Pay's first screen can fill them in by scanning a setup QR (`vayora://setup?server=…&key=zk_test_…`); live keys are refused.
+
+Text uses a Dynamic Type aware rounded font (`vfont`), capped at the second accessibility size at the app roots. macOS has no text-size setting, so the gallery cannot show large text, and it draws the fallback frosted card, not the iOS 26 Liquid Glass; check both on a phone.

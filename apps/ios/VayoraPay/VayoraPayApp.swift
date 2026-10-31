@@ -7,7 +7,7 @@ struct VayoraPayApp: App {
     @StateObject private var store = Store()
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(store).tint(VUI.violet).preferredColorScheme(.dark)
+            RootView().environmentObject(store).tint(VUI.violet).preferredColorScheme(.dark).dynamicTypeSize(...DynamicTypeSize.accessibility2)
         }
     }
 }
@@ -68,26 +68,26 @@ struct Onboarding: View {
                         .frame(width: 112, height: 112).background(Brand.pay.gradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(.white.opacity(0.35)))
                         .shadow(color: VUI.indigo.opacity(0.6), radius: 28, y: 10)
-                    Text("Vayora Pay").font(VUI.display(36)).foregroundStyle(VUI.textPrimary)
+                    Text("Vayora Pay").vfont(36, .bold).foregroundStyle(VUI.textPrimary)
                     Text("Pay like a gesture. A UPI-style payer for testing Vayora Payments end to end.")
-                        .font(.system(size: 16, design: .rounded)).multilineTextAlignment(.center).foregroundStyle(VUI.textSecondary).padding(.horizontal, 12)
+                        .vfont(16).multilineTextAlignment(.center).foregroundStyle(VUI.textSecondary).padding(.horizontal, 12)
                     GlassCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Test money only", systemImage: "flask.fill").font(VUI.display(17, .semibold)).foregroundStyle(VUI.amber)
+                            Label("Test money only", systemImage: "flask.fill").vfont(17, .semibold).foregroundStyle(VUI.amber)
                             Text("Not a bank-linked UPI app. Your ₹10,000 balance is a test balance on this phone, and payments go to Vayora's simulator.")
-                                .font(.system(size: 14, design: .rounded)).foregroundStyle(VUI.textSecondary)
+                                .vfont(14).foregroundStyle(VUI.textSecondary)
                         }
                     }
                     GlassCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Test server", systemImage: "server.rack").font(VUI.display(17, .semibold)).foregroundStyle(VUI.textPrimary)
+                            Label("Test server", systemImage: "server.rack").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                             TextField("http://192.168.1.10:8080", text: $address)
                                 .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).foregroundStyle(VUI.textPrimary)
                                 .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 .onChange(of: address) { _, _ in check = .idle }
                             Button { scanning = true } label: { Label("Scan setup QR", systemImage: "qrcode.viewfinder") }
-                                .font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(VUI.violet)
-                            if let scanNote { Text(scanNote).font(.system(size: 13, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+                                .vfont(15, .semibold).foregroundStyle(VUI.violet)
+                            if let scanNote { Text(scanNote).vfont(13).foregroundStyle(VUI.textSecondary) }
                             HStack {
                                 Button("Test connection", action: test).disabled(url == nil || check == .checking).foregroundStyle(VUI.violet)
                                 switch check {
@@ -96,12 +96,12 @@ struct Onboarding: View {
                                 case .ok: Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(VUI.mint)
                                 case .failed: Label("Failed", systemImage: "xmark.circle.fill").foregroundStyle(VUI.coral)
                                 }
-                            }.font(.system(size: 15, weight: .semibold, design: .rounded))
-                            if case .failed(let why) = check { Text(why).font(.system(size: 13, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+                            }.vfont(15, .semibold)
+                            if case .failed(let why) = check { Text(why).vfont(13).foregroundStyle(VUI.textSecondary) }
                         }
                     }
                     Button(action: done) {
-                        Text("Get started").font(VUI.display(18, .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 17)
+                        Text("Get started").vfont(18, .semibold).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 17)
                             .background(Brand.pay.gradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     }.buttonStyle(PressScale()).disabled(check != .ok).opacity(check == .ok ? 1 : 0.4)
                 }

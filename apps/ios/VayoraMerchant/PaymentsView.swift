@@ -105,7 +105,7 @@ struct PaymentDetail: View {
                         if s.remainingMinor > 0 {
                             Button(role: .destructive) { confirm = true } label: {
                                 Text(s.isPartlyRefunded ? "Refund the remaining \(Money(minor: s.remainingMinor, currency: intent.currency).display)" : "Refund in full")
-                                    .font(VUI.display(18, .semibold)).foregroundStyle(VUI.coral).frame(maxWidth: .infinity).padding(.vertical, 17)
+                                    .vfont(18, .semibold).foregroundStyle(VUI.coral).frame(maxWidth: .infinity).padding(.vertical, 17)
                                     .background(VUI.coral.opacity(0.14), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                                     .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(VUI.coral.opacity(0.35)))
                             }.buttonStyle(PressScale()).disabled(refunding)
@@ -113,10 +113,10 @@ struct PaymentDetail: View {
                                 Button("Refund \(Money(minor: s.remainingMinor, currency: intent.currency).display)", role: .destructive) { refund(s.remainingMinor) }
                             } message: { Text("Test mode: recorded against the simulator.") }
                         } else {
-                            Label("Fully refunded", systemImage: "arrow.uturn.backward.circle.fill").font(VUI.display(17, .semibold)).foregroundStyle(VUI.amber)
+                            Label("Fully refunded", systemImage: "arrow.uturn.backward.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.amber)
                         }
                     }
-                    if let message { Text(message).font(.system(size: 14, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+                    if let message { Text(message).vfont(14).foregroundStyle(VUI.textSecondary) }
                 }
                 .padding(20)
             }
@@ -128,7 +128,7 @@ struct PaymentDetail: View {
 
     func row(_ k: String, _ v: String) -> some View {
         HStack { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).lineLimit(1).truncationMode(.middle) }
-            .font(.system(size: 15, design: .rounded))
+            .vfont(15)
     }
 
     func reload() async {
@@ -154,28 +154,53 @@ struct MerchantSettings: View {
     @EnvironmentObject var store: MerchantStore
     @State private var scanning = false
     @State private var setupMessage: String?
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Quick setup") {
-                    Button { scanning = true } label: { Label("Scan setup QR", systemImage: "qrcode.viewfinder") }
-                    if let setupMessage { Text(setupMessage).font(.footnote).foregroundStyle(.secondary) }
-                    Text("Fills in the server and a test key from a QR shown on your computer. Live keys are refused.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Server") {
-                    TextField("https://api.example.com", text: $store.serverURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                }
-                Section("API key") {
-                    SecureField("zy_test_…", text: $store.apiKey).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("Stored in the iPhone Keychain, never in app settings.").font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("About") {
-                    Text("Vayora Merchant creates test payments and shows their QR. With the simulator or Cashfree sandbox no real money moves.")
-                        .font(.footnote).foregroundStyle(.secondary)
+            ZStack {
+                AmbientBackground(brand: .merchant, phase: 0.5)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Settings").vfont(28, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Quick setup", systemImage: "qrcode.viewfinder").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Button { scanning = true } label: {
+                                    Text("Scan setup QR").vfont(16, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity).padding(.vertical, 14)
+                                        .background(LinearGradient(colors: [VUI.mint, VUI.emerald], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                }.buttonStyle(PressScale())
+                                if let setupMessage { Text(setupMessage).vfont(13).foregroundStyle(VUI.textSecondary) }
+                                Text("Fills in the server and a test key from a QR shown on your computer. Live keys are refused.").vfont(13).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Server", systemImage: "server.rack").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                TextField("https://api.example.com", text: $store.serverURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                                    .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("API key", systemImage: "key.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                SecureField("zk_test_…", text: $store.apiKey).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                Text("Stored in the iPhone Keychain, never in app settings.").vfont(13).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("About", systemImage: "info.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Text("Vayora Merchant creates test payments and shows their QR. With the simulator or Cashfree sandbox no real money moves.")
+                                    .vfont(14).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 32)
                 }
             }
-            .navigationTitle("Settings")
+            .environment(\.colorScheme, .dark)
+            .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .merchant, hint: "Scan the setup QR") { text in
                     scanning = false
@@ -184,6 +209,7 @@ struct MerchantSettings: View {
                         store.serverURL = p.server.absoluteString
                         store.apiKey = p.apiKey
                         setupMessage = "Set up for \(p.server.host ?? "server"). Open Payments."
+                        Haptics.success()
                     } catch SetupPayload.Failure.liveKeyRefused {
                         setupMessage = "That QR holds a live key. These apps are test-only, so it was refused."
                     } catch {
