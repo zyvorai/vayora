@@ -26,17 +26,17 @@ struct HistoryView: View {
                 AmbientBackground(brand: .pay, phase: 0.35)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("History").font(VUI.display(28)).foregroundStyle(VUI.textPrimary)
+                        Text("History").vfont(28, .bold).foregroundStyle(VUI.textPrimary)
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass").foregroundStyle(VUI.textTertiary)
                             TextField("Search payments", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled().foregroundStyle(VUI.textPrimary)
                         }
                         .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         if rows.isEmpty {
-                            GlassCard { Text(query.isEmpty ? "Payments you make appear here." : "Nothing matches “\(query)”.").font(.system(size: 15, design: .rounded)).foregroundStyle(VUI.textSecondary) }
+                            GlassCard { Text(query.isEmpty ? "Payments you make appear here." : "Nothing matches “\(query)”.").vfont(15).foregroundStyle(VUI.textSecondary) }
                         }
                         ForEach(days, id: \.day) { group in
-                            Text(title(group.day).uppercased()).font(.system(size: 12, weight: .bold, design: .rounded)).kerning(0.8).foregroundStyle(VUI.textTertiary).padding(.top, 6)
+                            Text(title(group.day).uppercased()).vfont(12, .bold).kerning(0.8).foregroundStyle(VUI.textTertiary).padding(.top, 6)
                             ForEach(group.items) { t in
                                 Button { open = t } label: {
                                     TxnRowView(model: TxnRowModel(id: t.id.uuidString, name: t.name, payee: t.payee, amount: t.money, when: t.date.formatted(date: .omitted, time: .shortened), ok: t.status == .success))
@@ -77,10 +77,10 @@ struct Receipt: View {
                         }
                     }
                     ShareLink(item: text) {
-                        Label("Share receipt", systemImage: "square.and.arrow.up").font(VUI.display(17, .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
+                        Label("Share receipt", systemImage: "square.and.arrow.up").vfont(17, .semibold).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
                             .background(Brand.pay.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }.buttonStyle(PressScale())
-                    Text("Test receipt. No real money moved.").font(.system(size: 12, design: .rounded)).foregroundStyle(VUI.textTertiary)
+                    Text("Test receipt. No real money moved.").vfont(12).foregroundStyle(VUI.textTertiary)
                 }
                 .padding(20)
             }
@@ -90,6 +90,6 @@ struct Receipt: View {
         .onAppear { withAnimation(.easeOut(duration: 0.9)) { progress = 1 } }
     }
     func row(_ k: String, _ v: String) -> some View {
-        HStack(alignment: .firstTextBaseline) { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).multilineTextAlignment(.trailing) }.font(.system(size: 15, design: .rounded))
+        HStack(alignment: .firstTextBaseline) { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).multilineTextAlignment(.trailing) }.vfont(15)
     }
 }

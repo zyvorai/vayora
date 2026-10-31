@@ -42,7 +42,7 @@ struct PaySheet: View {
             case .working:
                 ZStack {
                     AmbientBackground(brand: .pay)
-                    VStack(spacing: 18) { ProgressView().controlSize(.large).tint(.white); Text("Paying…").font(VUI.display(22)).foregroundStyle(VUI.textPrimary) }
+                    VStack(spacing: 18) { ProgressView().controlSize(.large).tint(.white); Text("Paying…").vfont(22, .bold).foregroundStyle(VUI.textPrimary) }
                 }
             case .done(let o):
                 ResultScreen(kind: kind(o), amount: amount ?? Money(minor: 0), to: payeeName, progress: progress, brand: .pay, footnote: footnote(o), onDone: { dismiss() })
