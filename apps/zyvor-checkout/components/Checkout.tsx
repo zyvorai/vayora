@@ -69,20 +69,23 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   }, [session, load]);
 
   const errText = error === "net" ? t("errNetwork") : error === "vpa" ? t("errVpa") : error ? t("errStart") : null;
+  // With a provider-issued QR / intent the payer never types a UPI ID.
+  const upiIntent = session?.upi_flow === "intent";
+  const needsVpa = method === "upi" && !upiIntent;
   const vpaOk = VPA.test(vpa);
-  const showVpaError = touched && method === "upi" && !vpaOk;
+  const showVpaError = touched && needsVpa && !vpaOk;
 
   async function pay(e: React.FormEvent) {
     e.preventDefault();
     setTouched(true);
     setError(null);
-    if (method === "upi" && !vpaOk) return;
+    if (needsVpa && !vpaOk) return;
     setBusy(true);
     try {
       const r = await fetch(`${base}/attempts`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": idemKey(intent, method, vpa) },
-        body: JSON.stringify({ secret, method, vpa: method === "upi" ? vpa : undefined }),
+        body: JSON.stringify({ secret, method, vpa: needsVpa ? vpa : undefined, upi_flow: method === "upi" && upiIntent ? "intent" : undefined }),
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -158,6 +161,25 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   }
   if (session.phase === "awaiting_payment" && session.attempt) {
     const upi = session.attempt.action?.type === "upi_collect";
+    const intentUri = session.attempt.action?.type === "upi_intent" ? String(session.attempt.action.uri ?? "") : "";
+    if (intentUri.startsWith("upi://")) {
+      // A partner-issued payload, shown as-is. Neither the QR nor the app opening proves payment: the page
+      // moves to "paid" only when the server reports a verified result.
+      return (
+        <div className="card">
+          {head}
+          <div className="state" role="status" aria-live="polite">
+            <h2>{t("scanTitle")}</h2>
+            <img className="qr" src={`${base}/upi-qr.svg?secret=${encodeURIComponent(secret)}`} width={220} height={220} alt={t("scanAlt")} />
+            <p>{t("scanBody")}</p>
+            <a className="pay" href={intentUri}>{t("openUpiApp")}</a>
+            <p className="desc">{t("upiAppFail")}</p>
+            {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
+            <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="card">
         {head}
@@ -193,7 +215,9 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
               </label>
             ))}
           </fieldset>
-          {method === "upi" ? (
+          {method === "upi" && upiIntent ? (
+            <p className="desc">{t("upiIntentDesc")}</p>
+          ) : method === "upi" ? (
             <div>
               <label className="f" htmlFor="vpa">{t("upiId")}</label>
               <input id="vpa" type="text" inputMode="email" autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="name@bank" value={vpa}

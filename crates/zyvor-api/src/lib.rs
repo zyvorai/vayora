@@ -391,6 +391,10 @@ pub fn app(state: AppState) -> Router {
             "/checkout/{tenant_id}/{intent_id}/attempts",
             post(checkout::pay),
         )
+        .route(
+            "/checkout/{tenant_id}/{intent_id}/upi-qr.svg",
+            get(checkout::upi_qr),
+        )
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",
