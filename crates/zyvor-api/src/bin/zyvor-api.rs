@@ -177,6 +177,7 @@ async fn main() {
     {
         state.mandate_notice_hours = v;
     }
+    state.review_settings_from_env();
     state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
     state.actor_secret = env::var("ZYVOR_ACTOR_SECRET")
         .ok()

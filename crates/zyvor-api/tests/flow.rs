@@ -11233,3 +11233,383 @@ async fn a_new_bank_account_after_approval_needs_zyvor_and_holds_live_payouts_un
     );
     assert_eq!(zyvor_api::platform::pending_changes(&t.state.pool).await, 0);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+/// A business whose details are approved and which has asked for live access: `(console key, organisation id)`.
+async fn asks_for_live(t: &T, app: &axum::Router, name: &str, email: &str) -> (String, String) {
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": name, "email": email, "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": email, "password": pw }),
+        )
+        .await;
+    let key: String = login["session_key"].as_str().unwrap().into();
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status, reviewed_by) VALUES ($1, $2, 'private_limited', '1234', 'Pune 411001', 'approved', 'the merchant themselves')")
+        .bind(&home).bind(name).execute(&t.root).await.unwrap();
+    let (st, _) = common::raw(
+        app,
+        &key,
+        Some(email),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+        .bind(&home)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    (key, org)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_unusual_business_needs_two_different_reviewers_and_anyone_can_ask_for_a_second_opinion(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st);
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let approve = json!({ "decision": "approve" });
+
+    // no automatic check ran: nothing but a person's eyes stands behind it, so two people must approve
+    let (mkey, org) = asks_for_live(&t, &app, "Odd Ltd", "o@odd.in").await;
+    let (_, list) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/reviews?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        list["data"][0]["needs_second_because"][0],
+        "no automatic check ran"
+    );
+    assert_eq!(list["data"][0]["stage"], "new");
+    let (st1, b1) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org}/decision"),
+        approve.clone(),
+    )
+    .await;
+    assert_eq!(
+        (st1, b1["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b1}"
+    );
+    // still pending; live stays closed; the same reviewer cannot be the second
+    let (_, s1) = common::raw(
+        &app,
+        &mkey,
+        None,
+        "GET",
+        "/v1/live_access",
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(s1["status"], "pending");
+    let (st2, b2) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org}/decision"),
+        approve.clone(),
+    )
+    .await;
+    assert_eq!(
+        (st2, b2["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("second_reviewer_required"))
+    );
+    let (_, d) = rv(
+        &b_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (d["stage"].clone(), d["first_approved_by"].clone()),
+        (json!("awaiting_second"), json!("Asha"))
+    );
+    let (_, list) = rv(
+        &b_key,
+        "GET",
+        "/v1/platform/reviews?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(list["data"][0]["stage"], "awaiting_second");
+    // a different reviewer completes it, and both are on the record
+    let (st3, b3) = rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org}/decision"),
+        approve.clone(),
+    )
+    .await;
+    assert_eq!(
+        (st3, b3["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b3}"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.first_approval' AND actor = 'zyvor:Asha'").await, 1);
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.approved' AND actor = 'zyvor:Bala' AND detail->>'first_approved_by' = 'Asha'").await, 1);
+    let _ = a_id;
+
+    // anyone can reject on their own, and asking again starts both the clock and the two-person step over
+    let (mkey2, org2) = asks_for_live(&t, &app, "Other Ltd", "o@other.in").await;
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/decision"),
+        approve.clone(),
+    )
+    .await;
+    let (st, b) = rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/decision"),
+        json!({ "decision": "reject", "note": "documents missing" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("rejected"))
+    );
+    common::raw(
+        &app,
+        &mkey2,
+        Some("o@other.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    let (_, d) = rv(
+        &a_key,
+        "GET",
+        format!("/v1/platform/reviews/{org2}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (d["stage"].clone(), d["first_approved_by"].clone()),
+        (json!("new"), Value::Null)
+    );
+
+    // a review no rule flagged can still be escalated, with a reason
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Never;
+    let calm = zyvor_api::app(st);
+    let (_, org3) = asks_for_live(&t, &calm, "Calm Ltd", "o@calm.in").await;
+    let crv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (calm.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    assert_eq!(
+        crv(
+            &a_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/escalate"),
+            json!({})
+        )
+        .await
+        .1["error"]["code"],
+        "note_required"
+    );
+    assert_eq!(
+        crv(
+            &a_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/escalate"),
+            json!({ "note": "the website sells something we do not serve" })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        crv(
+            &a_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/decision"),
+            approve.clone()
+        )
+        .await
+        .1["stage"],
+        "awaiting_second"
+    );
+    assert_eq!(
+        crv(
+            &a_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/decision"),
+            approve.clone()
+        )
+        .await
+        .1["error"]["code"],
+        "second_reviewer_required"
+    );
+    assert_eq!(
+        crv(
+            &b_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/decision"),
+            approve.clone()
+        )
+        .await
+        .1["status"],
+        "approved"
+    );
+    // and a settled review cannot be escalated
+    assert_eq!(
+        crv(
+            &a_key,
+            "POST",
+            format!("/v1/platform/reviews/{org3}/escalate"),
+            json!({ "note": "late" })
+        )
+        .await
+        .1["error"]["code"],
+        "not_pending"
+    );
+
+    // with `always`, even a clean business needs two
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Always;
+    let strict = zyvor_api::app(st);
+    let (_, org4) = asks_for_live(&t, &strict, "Clean Ltd", "o@clean.in").await;
+    sqlx::query("INSERT INTO kyc_checks (id, tenant_id, kind, subject, outcome, detail, provider) SELECT 'kyc_x', id, 'pan', 's', 'pass', 'ok', 'simulator' FROM tenants WHERE organisation_id = $1 AND env = 'test'")
+        .bind(&org4).execute(&t.root).await.unwrap();
+    let (_, b) = common::raw(
+        &strict,
+        &a_key,
+        None,
+        "POST",
+        &format!("/v1/platform/reviews/{org4}/decision"),
+        None,
+        approve,
+    )
+    .await;
+    assert_eq!(b["stage"], "awaiting_second");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn waiting_past_the_target_is_flagged_counted_and_reported_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_sla_hours = 24;
+    st.change_sla_hours = 4;
+    st.review_alert_email = Some("ops@zyvor.test".into());
+    let app = zyvor_api::app(st.clone());
+    let (_, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (mkey, org) = asks_for_live(&t, &app, "Slow Ltd", "o@slow.in").await;
+    let call = |k: &str, p: String| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move {
+            common::raw(&app, &k, None, "GET", &p, None, Value::Null)
+                .await
+                .1
+        }
+    };
+
+    // fresh: due in a day, not late, and the merchant is told when to expect an answer
+    let l = call(&rkey, "/v1/platform/reviews?status=pending".into()).await;
+    assert_eq!(
+        (
+            l["data"][0]["overdue"].clone(),
+            l["data"][0]["sla_hours"].clone()
+        ),
+        (json!(false), json!(24))
+    );
+    let m = call(&mkey, "/v1/live_access".into()).await;
+    assert!(m["expected_by"].is_string(), "{m}");
+    assert_eq!(zyvor_api::platform::overdue(&st).await.0, 0);
+    assert_eq!(zyvor_api::platform::notify_overdue(&st).await.unwrap(), 0);
+
+    // 30 hours on: late, counted, and the operator is emailed once
+    sqlx::query("UPDATE live_access SET requested_at = now() - interval '30 hours' WHERE organisation_id = $1")
+        .bind(&org).execute(&t.root).await.unwrap();
+    let l = call(&rkey, "/v1/platform/reviews?status=pending".into()).await;
+    assert_eq!(l["data"][0]["overdue"], true);
+    let (late, _, oldest) = zyvor_api::platform::overdue(&st).await;
+    assert_eq!(late, 1);
+    assert!(oldest >= 30 * 3600, "{oldest}");
+    assert!(
+        t.text("/metrics")
+            .await
+            .contains("zyvor_live_access_overdue 1\n")
+    );
+    assert_eq!(zyvor_api::platform::notify_overdue(&st).await.unwrap(), 1);
+    assert_eq!(zyvor_api::platform::notify_overdue(&st).await.unwrap(), 0);
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'ops@zyvor.test' AND subject LIKE '%Slow Ltd%'").await, 1);
+
+    // a held bank-account change has its own, shorter target
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let home: String =
+        sqlx::query_scalar("SELECT id FROM tenants WHERE organisation_id = $1 AND env = 'test'")
+            .bind(&org)
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    let (st_b, _) = common::raw(&app, &mkey, Some("o@slow.in"), "POST", "/v1/onboarding/bank_accounts", None, json!({ "holder_name": "Slow Ltd", "ifsc": "HDFC0001234", "account_number": "111122223333" })).await;
+    assert_eq!(st_b, StatusCode::CREATED);
+    let _ = home;
+    assert_eq!(zyvor_api::platform::overdue(&st).await.1, 0);
+    sqlx::query("UPDATE live_changes SET requested_at = now() - interval '5 hours'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(zyvor_api::platform::overdue(&st).await.1, 1);
+    let c = call(&rkey, "/v1/platform/changes?status=pending".into()).await;
+    assert_eq!(c["data"][0]["overdue"], true);
+    assert_eq!(zyvor_api::platform::notify_overdue(&st).await.unwrap(), 1);
+
+    // a decision stops the clock
+    let (st_d, _) = common::raw(
+        &app,
+        &rkey,
+        None,
+        "POST",
+        &format!(
+            "/v1/platform/changes/{}/decision",
+            c["data"][0]["id"].as_str().unwrap()
+        ),
+        None,
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(st_d, StatusCode::OK);
+    assert_eq!(zyvor_api::platform::overdue(&st).await.1, 0);
+}

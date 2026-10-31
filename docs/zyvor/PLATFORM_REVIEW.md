@@ -35,6 +35,38 @@ k3s: `kubectl -n zyvor exec deploy/zyvor-api -- zyvor-api platform-reviewer add 
 Hand the key to that person over a channel you trust; do not put it in chat or a ticket. Make one per person and
 disable it when they leave. No key, no live mode: with no reviewer set up, every request stays pending.
 
+## Two reviewers, and how long a request may wait
+
+**Second reviewer.** For the cases that warrant it, one reviewer's approval is only the *first*: the review stays
+`pending` (stage `awaiting_second`) until a **different** reviewer approves too. The same person approving twice is
+refused (`second_reviewer_required`). Either reviewer can **reject on their own**, and a merchant who asks again after a
+rejection starts the whole review over (new clock, no earlier approval carried over). `ZYVOR_REVIEW_TWO_PERSON`:
+
+- `flagged` (default): two reviewers when a check did not pass, **no automatic check ran at all**, the business has asked
+  three or more times, or a reviewer escalated it;
+- `always`: every approval needs two;
+- `never`: only an escalation does.
+
+A reviewer can **escalate** any pending review (`scripts/platform-review.sh escalate <org> "why"`, or "Not sure? Ask for
+a second reviewer" on the review page) when no rule fired but something looks wrong; the note is shown to whoever gives
+the second approval. Both approvals are in the merchant's audit trail (`live_access.first_approval`, then
+`live_access.approved`, which names the first approver). **You need at least two active reviewers** for `flagged` or
+`always` to ever open anything; with one, set `never` or add another (`zyvor-api platform-reviewer add`). Revoking, and
+approving a changed bank account, still take one reviewer.
+
+**The clock.** Every request and every held change has a *target*: `ZYVOR_REVIEW_SLA_HOURS` (default 24) for live access,
+`ZYVOR_CHANGE_SLA_HOURS` (default 4) for a bank account that holds a live business's payouts. It is a target, not a
+promise to the merchant, and the API says so: the merchant sees "we aim to answer by ..." (`expected_by`), reviewers see
+"due in 5h" / "overdue by 3h" in the queue, and the lists and reviews carry `due_at`, `overdue` and `sla_hours`.
+
+- gauges: `zyvor_live_access_overdue`, `zyvor_live_changes_overdue`, `zyvor_review_oldest_pending_seconds`; alerts
+  `ZyvorLiveAccessOverdue` and `ZyvorLiveChangeOverdue` (deploy/zyvor/alerts.yml) fire when any is past its target;
+- with `ZYVOR_REVIEW_ALERT_EMAIL` set (on the **worker**), the worker emails that address once for each item that passes
+  its target. With no address nothing is sent and nothing is marked, so setting one later still reports what is already late.
+
+**Not built:** assigning a review to one reviewer (anyone sees the whole queue, so two people can open the same one), a
+reviewer's working hours or on-call rota, and a second reviewer for revokes or changes.
+
 ## Taking live mode away (revoke) and giving it back
 
 For a business that is already live and should not be: a chargeback spike, a failed re-check, a complaint, a request from
@@ -123,6 +155,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- A second reviewer for large or unusual merchants; assignment and an SLA clock.
+- Assigning a review to one reviewer, working hours and an on-call rota (the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change) and a way for an approved business to ask for a change to
   its legal details; today it can only add bank accounts, and those are re-reviewed (see above).

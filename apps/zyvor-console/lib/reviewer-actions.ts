@@ -42,6 +42,8 @@ export async function decideReview(_: State, form: FormData): Promise<State> {
     return { error: r.message };
   }
   revalidatePath("/reviewer");
+  // the first of two approvals leaves the review pending: stay on it so the next reviewer is not a surprise
+  if ((r.body as { stage?: string } | undefined)?.stage === "awaiting_second") redirect(`/reviewer?status=pending&done=first_approval`);
   redirect(`/reviewer?status=pending&done=${decision}`);
 }
 
@@ -82,4 +84,21 @@ export async function decideChange(_: State, form: FormData): Promise<State> {
   }
   revalidatePath("/reviewer");
   redirect(`/reviewer?status=pending&done=change_${decision}`);
+}
+
+/** Ask for a second, different reviewer. The note is read by whoever gives the second approval. */
+export async function escalateReview(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const org = String(form.get("org") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+  if (!note) return { error: "Say why. The second reviewer reads this." };
+  const r = await platform(key, "POST", `/reviews/${encodeURIComponent(org)}/escalate`, { note });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath(`/reviewer/review/${org}`);
+  return { ok: "Done. A different reviewer must now approve it too." };
 }

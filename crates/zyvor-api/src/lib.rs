@@ -99,6 +99,14 @@ pub struct AppState {
     pub mandate_max_minor: i64,
     /// How long before a debit the payer must be told, in hours (`ZYVOR_MANDATE_NOTICE_HOURS`).
     pub mandate_notice_hours: i64,
+    /// The target for answering a live-access request, in hours (`ZYVOR_REVIEW_SLA_HOURS`). A target, not a promise.
+    pub review_sla_hours: i64,
+    /// The target for answering a change a live business made, in hours (`ZYVOR_CHANGE_SLA_HOURS`).
+    pub change_sla_hours: i64,
+    /// When live access needs two reviewers (`ZYVOR_REVIEW_TWO_PERSON`: never, flagged or always).
+    pub review_two_person: platform::TwoPerson,
+    /// Who is emailed once when a request waits past its target (`ZYVOR_REVIEW_ALERT_EMAIL`); nobody when unset.
+    pub review_alert_email: Option<String>,
 }
 
 pub use crypto::Crypto;
@@ -127,7 +135,38 @@ impl AppState {
             sim_payer: false,
             mandate_max_minor: 1_500_000,
             mandate_notice_hours: 24,
+            review_sla_hours: 24,
+            change_sla_hours: 4,
+            review_two_person: platform::TwoPerson::Flagged,
+            review_alert_email: None,
         }
+    }
+
+    /// Read the review settings from the environment (the API and the worker both need them). Anything unusable
+    /// keeps the default rather than stopping the process.
+    pub fn review_settings_from_env(&mut self) {
+        let hours = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .and_then(|v| v.trim().parse::<i64>().ok())
+                .filter(|v| *v > 0)
+        };
+        if let Some(v) = hours("ZYVOR_REVIEW_SLA_HOURS") {
+            self.review_sla_hours = v;
+        }
+        if let Some(v) = hours("ZYVOR_CHANGE_SLA_HOURS") {
+            self.change_sla_hours = v;
+        }
+        if let Some(v) = std::env::var("ZYVOR_REVIEW_TWO_PERSON")
+            .ok()
+            .and_then(|v| platform::TwoPerson::parse(&v))
+        {
+            self.review_two_person = v;
+        }
+        self.review_alert_email = std::env::var("ZYVOR_REVIEW_ALERT_EMAIL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| v.contains('@'));
     }
 }
 
@@ -412,6 +451,10 @@ pub fn app(state: AppState) -> Router {
             post(platform::decide_change),
         )
         .route(
+            "/platform/reviews/{organisation_id}/escalate",
+            post(platform::escalate),
+        )
+        .route(
             "/platform/reviews/{organisation_id}/revoke",
             post(platform::revoke),
         )
@@ -541,8 +584,9 @@ async fn metrics(axum::extract::State(s): axum::extract::State<AppState>) -> Str
     let (pending, dead, cases) = worker::queue_depths(&s.pool).await.unwrap_or((-1, -1, -1));
     let live = platform::pending_count(&s.pool).await;
     let changes = platform::pending_changes(&s.pool).await;
+    let (access_overdue, changes_overdue, oldest) = platform::overdue(&s).await;
     let (mail_pending, mail_dead) = mail::counts(&s.pool).await;
     format!(
-        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n# TYPE zyvor_live_changes_pending gauge\nzyvor_live_changes_pending {changes}\n"
+        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n# TYPE zyvor_live_changes_pending gauge\nzyvor_live_changes_pending {changes}\n# TYPE zyvor_live_access_overdue gauge\nzyvor_live_access_overdue {access_overdue}\n# TYPE zyvor_live_changes_overdue gauge\nzyvor_live_changes_overdue {changes_overdue}\n# TYPE zyvor_review_oldest_pending_seconds gauge\nzyvor_review_oldest_pending_seconds {oldest}\n"
     )
 }

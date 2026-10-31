@@ -23,6 +23,7 @@ async fn main() {
     {
         state.mandate_notice_hours = v;
     }
+    state.review_settings_from_env();
     let client = outbox::http_client();
     // Mail has its own loop: a mail server that hangs must not hold up webhooks, polling or refunds.
     let mail_state = state.clone();

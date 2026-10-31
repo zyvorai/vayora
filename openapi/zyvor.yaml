@@ -1488,6 +1488,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/reviews/{organisation_id}/escalate:
+    post:
+      summary: Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown to them)
+      tags:
+      - platform
+      parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/changes:
     get:
       summary: Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status
