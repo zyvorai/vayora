@@ -220,6 +220,10 @@ pub fn app(state: AppState) -> Router {
         .route("/settlements/import", post(recon::import_settlement))
         .route("/settlements/sync", post(recon::sync_settlements))
         .route("/settlements/{id}/explain", get(recon::explain))
+        .route(
+            "/settlements/{id}/simulate_bank",
+            post(recon::simulate_bank),
+        )
         .route("/bank_statements/import", post(recon::import_bank))
         .route("/bank_statements/import_csv", post(bankcsv::import_csv))
         .route("/recon/cases", get(recon::list_cases))

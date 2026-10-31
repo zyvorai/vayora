@@ -190,6 +190,8 @@ export class Zyvor {
     /** "Explain every rupee": payments, refunds, fees, adjustments, bank match and a plain-language narrative. */
     explain: (id: string) => this.req<{ narrative: string; difference_minor: number; difference_breakdown: { reason: string; amount_minor: number }[]; [k: string]: unknown }>("GET", `/v1/settlements/${encodeURIComponent(id)}/explain`),
     sync: (provider: string, date: string) => this.req<{ imported: string[] }>("POST", "/v1/settlements/sync", { provider, date }),
+    /** Test mode: add the bank credit a simulated settlement would produce, optionally `shortMinor` less than its net. */
+    simulateBank: (id: string, shortMinor = 0) => this.req<Record<string, unknown>>("POST", `/v1/settlements/${encodeURIComponent(id)}/simulate_bank`, { short_minor: shortMinor }),
   };
 
   readonly cases = {

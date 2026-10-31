@@ -163,6 +163,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/settlements/{id}/simulate_bank:
+    post:
+      summary: Add the bank credit a simulated settlement would produce (test mode only)
+      tags:
+      - reconciliation
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/settlements/{id}/explain:
     get:
       summary: Explain every rupee of a settlement

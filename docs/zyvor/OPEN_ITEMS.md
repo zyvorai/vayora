@@ -122,7 +122,8 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
   exercises routing, the ledger and refunds, not a card form (a test covers all three methods).
 - ~~Settlement simulation.~~ **Done:** `POST /v1/settlements/sync` with provider `sim` builds one settlement per day from the
   organisation's own captured simulated payments and processed refunds, with an invented 2% fee (button on Reconciliation in
-  test mode). Still open: matching it against a generated bank statement, and simulated webhook delivery from a provider.
+  test mode). `POST /v1/settlements/{id}/simulate_bank` adds the matching bank credit (optionally short, which opens a
+  case); buttons on the same page. Still open: simulated webhook delivery from a provider.
 - Test clocks for subscriptions and dunning; a "reset test data" button (delete everything for a test tenant, never live).
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
   posting (`crates/zyvor-api/src/timeline.rs`); the test fails without the fix.

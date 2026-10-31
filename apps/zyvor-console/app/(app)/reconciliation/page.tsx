@@ -1,6 +1,6 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { assignCase, simulateSettlement } from "@/lib/actions";
+import { assignCase, simulateBankCredit, simulateSettlement } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -40,9 +40,9 @@ export default async function Reconciliation() {
       {settings.env === "test" && <p className="muted" style={{ marginTop: 0 }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</p>}
       <div className="tablewrap">
         <table>
-          <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th></tr></thead>
+          <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th><th /></tr></thead>
           <tbody>
-            {settlements.data.length === 0 && <tr><td colSpan={7} className="empty">No settlements imported yet.</td></tr>}
+            {settlements.data.length === 0 && <tr><td colSpan={8} className="empty">No settlements imported yet.</td></tr>}
             {settlements.data.map((s) => {
               const r = s as Record<string, number | string | null>;
               return (
@@ -51,6 +51,7 @@ export default async function Reconciliation() {
                   <td className="num">{inr(Number(r.gross_minor))}</td><td className="num">{inr(Number(r.refunds_minor))}</td>
                   <td className="num">{inr(Number(r.fee_minor))}</td><td className="num">{inr(Number(r.net_minor))}</td>
                   <td><Chip status={String(r.status)} /></td>
+                  <td>{settings.env === "test" && r.provider === "sim" && r.status !== "matched" && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateBankCredit} id={String(r.id)} label="Add bank credit" showOk /><Act action={simulateBankCredit} id={String(r.id)} extra={{ short: "50" }} label="…₹50 short" showOk /></span>}</td>
                 </tr>
               );
             })}

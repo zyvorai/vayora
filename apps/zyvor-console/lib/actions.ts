@@ -256,6 +256,16 @@ export async function simulateSettlement(_: FormState, __: FormData): Promise<Fo
     throw e;
   }
 }
+/** Test mode only: the bank credit for a simulated settlement, optionally short by some rupees (so a case opens). */
+export async function simulateBankCredit(_: FormState, f: FormData): Promise<FormState> {
+  const short = Math.round(Number(String(f.get("short") ?? "0")) * 100);
+  if (!Number.isFinite(short) || short < 0) return { error: "Enter a shortfall of zero or more." };
+  const r = await run(["/reconciliation"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Simulated bank credits are only available in test mode.");
+    await z.settlements.simulateBank(id(f), short);
+  });
+  return r?.ok ? { ok: short ? "Credit added, short as asked: check Cases." : "Credit added." } : r;
+}
 /** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
 export const connectProvider = async (_: FormState, f: FormData) => {
   const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";

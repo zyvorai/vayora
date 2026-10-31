@@ -746,6 +746,55 @@ pub struct ImportBank {
     pub(crate) lines: Vec<BankLine>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct SimulateBank {
+    /// Pay this much less than the settlement's net, to see a difference become a case.
+    #[serde(default)]
+    short_minor: i64,
+}
+
+/// `POST /v1/settlements/{id}/simulate_bank`: test environments only. Adds the bank credit a simulated settlement
+/// would produce (its net, less `short_minor`, on its settlement day, carrying its UTR), as if the bank statement had
+/// been imported, then matches it the normal way.
+pub async fn simulate_bank(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    body: Option<Json<SimulateBank>>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("recon:write")?;
+    if auth.env != "test" {
+        return Err(ApiError::invalid(
+            "test_only",
+            "simulated bank credits are only available in test mode",
+        ));
+    }
+    let short = body.map(|b| b.0.short_minor).unwrap_or(0);
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(String, Option<String>, i64, NaiveDate)> = sqlx::query_as(
+        "SELECT provider, utr, net_minor, settled_on FROM settlements WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let (provider, utr, net, on) = row.ok_or_else(|| ApiError::not_found("settlement"))?;
+    let utr = utr.filter(|_| provider == "sim").ok_or_else(|| {
+        ApiError::invalid(
+            "not_simulated",
+            "only a simulated settlement can have a simulated bank credit",
+        )
+    })?;
+    if short < 0 || short >= net {
+        return Err(ApiError::invalid(
+            "invalid_short",
+            "short_minor must be at least 0 and less than the settlement's net",
+        ));
+    }
+    let line = BankLine::new(on, net - short, "SIMULATED settlement credit".into(), utr);
+    import_bank(State(s), auth, Json(ImportBank { lines: vec![line] })).await
+}
+
 pub async fn import_bank(
     State(s): State<AppState>,
     auth: Auth,

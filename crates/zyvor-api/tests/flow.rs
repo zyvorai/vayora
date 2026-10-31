@@ -11613,3 +11613,133 @@ async fn waiting_past_the_target_is_flagged_counted_and_reported_once(pool: PgPo
     assert_eq!(st_d, StatusCode::OK);
     assert_eq!(zyvor_api::platform::overdue(&st).await.1, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_simulated_settlement_can_be_matched_or_shorted_by_a_simulated_bank_credit(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Bank Ltd", "email": "b@bank.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let today = zyvor_api::ist_today().to_string();
+    let i = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/payment_intents",
+            Some("bi-1"),
+            json!({ "amount_minor": 100_000, "currency": "INR" }),
+        )
+        .await;
+    t.ok(
+        &tn,
+        "POST",
+        &format!("/v1/payment_intents/{}/attempts", i["id"].as_str().unwrap()),
+        Some("ba-1"),
+        json!({ "method": "upi", "vpa": "ok@bank" }),
+    )
+    .await;
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    let sid = r["imported"][0].as_str().unwrap().to_string();
+    let path = format!("/v1/settlements/{sid}/simulate_bank");
+
+    // out-of-range shortfalls are refused, and nothing is added
+    for short in [-1, 98_000, 200_000] {
+        let (st, _) = t
+            .call(&tn, "POST", &path, None, json!({ "short_minor": short }))
+            .await;
+        assert_eq!(st.as_u16(), 422, "short {short}");
+    }
+    // a real settlement is not a simulated one
+    let real = t
+        .ok(&t.a, "GET", "/v1/settlements", None, Value::Null)
+        .await;
+    if let Some(x) = real["data"].as_array().and_then(|d| d.first()) {
+        let (st, _) = t
+            .call(
+                &t.a,
+                "POST",
+                &format!(
+                    "/v1/settlements/{}/simulate_bank",
+                    x["id"].as_str().unwrap()
+                ),
+                None,
+                Value::Null,
+            )
+            .await;
+        assert_eq!(st.as_u16(), 422);
+    }
+
+    // paid in full: the credit matches the settlement and no case is opened
+    t.ok(&tn, "POST", &path, None, json!({})).await;
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    assert_eq!(list["data"][0]["status"], "matched", "{list}");
+    let cases = t.ok(&tn, "GET", "/v1/recon/cases", None, Value::Null).await;
+    assert!(cases["data"].as_array().unwrap().is_empty(), "{cases}");
+    // asking again is the same credit, not a second one
+    t.ok(&tn, "POST", &path, None, json!({})).await;
+    let n = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    assert_eq!(n["data"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_short_simulated_bank_credit_opens_a_case_for_the_difference(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Short Ltd", "email": "s@short.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let today = zyvor_api::ist_today().to_string();
+    let i = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/payment_intents",
+            Some("sh-1"),
+            json!({ "amount_minor": 100_000, "currency": "INR" }),
+        )
+        .await;
+    t.ok(
+        &tn,
+        "POST",
+        &format!("/v1/payment_intents/{}/attempts", i["id"].as_str().unwrap()),
+        Some("sha-1"),
+        json!({ "method": "upi", "vpa": "ok@bank" }),
+    )
+    .await;
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    let sid = r["imported"][0].as_str().unwrap().to_string();
+    t.ok(
+        &tn,
+        "POST",
+        &format!("/v1/settlements/{sid}/simulate_bank"),
+        None,
+        json!({ "short_minor": 5_000 }),
+    )
+    .await;
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    assert_ne!(list["data"][0]["status"], "matched", "{list}");
+    let cases = t.ok(&tn, "GET", "/v1/recon/cases", None, Value::Null).await;
+    assert!(
+        !cases["data"].as_array().unwrap().is_empty(),
+        "a shortfall must open a case: {cases}"
+    );
+}
