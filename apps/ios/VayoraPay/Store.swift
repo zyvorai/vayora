@@ -17,6 +17,20 @@ struct Txn: Codable, Identifiable, Equatable, Hashable {
     var noPIN: Bool? = nil
     var money: Money { Money(minor: amountMinor) }
     var isTransfer: Bool { kind == "transfer" }
+    var isAutoPay: Bool { kind == "autopay" }
+}
+
+/// An AutoPay this phone approved. The debits are what the (simulated) bank reported, kept so a poll never takes
+/// the same one from the wallet twice.
+struct ApprovedMandate: Codable, Identifiable, Equatable {
+    var id: String
+    var merchant: String
+    var payee: String
+    var capMinor: Int64
+    var frequency: String
+    var until: String?
+    var status: String
+    var debits: [PayerDebit] = []
 }
 
 /// The payer's local state. The wallet is **test money kept on this phone**: it is not a bank account.
@@ -28,6 +42,7 @@ final class Store: ObservableObject {
     @Published var balanceMinor: Int64 { didSet { UserDefaults.standard.set(balanceMinor, forKey: "balance") } }
     @Published var history: [Txn] { didSet { save() } }
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
+    @Published var autoPays: [ApprovedMandate] { didSet { if let d = try? JSONEncoder().encode(autoPays) { UserDefaults.standard.set(d, forKey: "autoPays") } } }
     @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
     @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders) } } }
     @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
@@ -46,6 +61,7 @@ final class Store: ObservableObject {
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []
+        autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
         payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()
         reminders = (d.data(forKey: "reminders")).flatMap { try? JSONDecoder().decode([BillReminder].self, from: $0) } ?? []
         smallPayments = d.bool(forKey: "smallPayments")
@@ -133,5 +149,51 @@ final class Store: ObservableObject {
                         .init(name: "am", value: amount.decimalString), .init(name: "cu", value: "INR"),
                         .init(name: "tn", value: p.note)]
         return c.string ?? ""
+    }
+
+    // MARK: AutoPay
+
+    /// The payer approves a mandate in the simulated bank, and this phone remembers it. A failure leaves nothing saved.
+    func approveMandate(_ m: MandatePayload, uri: String) async -> Result<Void, APIError> {
+        guard let c = client else { return .failure(APIError(status: 0, code: "no_server", message: "Set the test server in Settings first.")) }
+        do {
+            let r = try await c.simMandateDecide(upiURI: uri, approve: true)
+            guard r.status == "active" else { return .failure(APIError(status: 0, code: "not_active", message: "The bank did not turn it on (\(r.status)).")) }
+            let until = m.end.map { Self.isoDay($0) }
+            autoPays.removeAll { $0.id == m.mandateID }
+            autoPays.insert(ApprovedMandate(id: m.mandateID, merchant: m.name, payee: m.payee, capMinor: m.cap.minor, frequency: m.frequency.rawValue, until: until, status: "active"), at: 0)
+            payees.save(name: m.name, input: m.payee)
+            return .success(())
+        } catch let e as APIError { return .failure(e) }
+        catch { return .failure(APIError(status: 0, code: "network", message: "Couldn't reach the test server.")) }
+    }
+
+    /// Ask the bank about every AutoPay: its state, and the debits it took. New debits leave the test wallet **once**
+    /// (by attempt id) and appear in History. Failures are quiet: the next poll tries again.
+    func refreshAutoPays() async {
+        guard let c = client else { return }
+        for m in autoPays {
+            guard let v = try? await c.simMandateView(id: m.id), let i = autoPays.firstIndex(where: { $0.id == m.id }) else { continue }
+            autoPays[i].status = v.status
+            let fresh = AutoPayLedger.newDebits(applied: Set(autoPays[i].debits.map(\.attemptID)), reported: v.debits)
+            for d in fresh {
+                balanceMinor = max(0, balanceMinor - d.amountMinor)
+                history.insert(Txn(payee: m.payee, name: m.merchant, amountMinor: d.amountMinor, note: "AutoPay", status: .success, kind: "autopay", category: SpendCategory.guess(name: m.merchant, note: "", transfer: false).rawValue), at: 0)
+            }
+            autoPays[i].debits.append(contentsOf: fresh)
+        }
+    }
+
+    /// The payer stops an AutoPay from their own app.
+    func stopAutoPay(_ id: String) async -> Bool {
+        guard let c = client, (try? await c.simMandateRevoke(id: id)) != nil, let i = autoPays.firstIndex(where: { $0.id == id }) else { return false }
+        autoPays[i].status = "revoked"
+        return true
+    }
+
+    static func isoDay(_ d: Date) -> String {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
+        let c = cal.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }

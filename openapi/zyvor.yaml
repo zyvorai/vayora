@@ -1346,6 +1346,19 @@ paths:
           description: Nothing pending for this link
         '422':
           description: Not a simulator mandate link
+  /v1/sim/mandate/{id}:
+    get:
+      summary: What the payer's bank shows about a simulated mandate (test mode only)
+      description: 'Returns the mandate status, its per-debit limit and the debits the simulated bank took. Upcoming debits are not shown: Zyvor emits the pre-debit notice to the merchant and does not deliver it to the payer. Answers 404 unless ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
+      tags:
+      - mandates
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The payer's view
+        '404':
+          description: Not enabled on this server, or unknown mandate
   /v1/sim/mandate/revoke:
     post:
       summary: Revoke a simulated mandate as the payer would from their UPI app (test mode only)

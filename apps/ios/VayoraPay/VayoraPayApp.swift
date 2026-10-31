@@ -20,7 +20,7 @@ struct RootView: View {
             TabView {
                 HomeView().tabItem { Label("Home", systemImage: "house.fill") }
                 PayeesView().tabItem { Label("Payees", systemImage: "person.2.fill") }
-                RemindersView().tabItem { Label("Bills", systemImage: "bell.fill") }
+                BillsView().tabItem { Label("Bills", systemImage: "bell.fill") }
                 HistoryView().tabItem { Label("History", systemImage: "clock.fill") }
                 SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }

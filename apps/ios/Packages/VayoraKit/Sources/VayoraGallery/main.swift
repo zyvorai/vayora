@@ -57,4 +57,24 @@ MainActor.assumeIsolated {
         ReminderRowModel(id: "2", name: "Electricity", amount: Money(minor: 184_000), schedule: "12th of each month", next: "12 Nov, 9:00 am", enabled: true),
         ReminderRowModel(id: "3", name: "Broadband", amount: Money(minor: 79_900), schedule: "20th of each month", next: "", enabled: false)], scrolls: false))
     render("month-card", ZStack { AmbientBackground(brand: .pay, phase: 0.2); MonthSummaryCard(items: [(.food, 70_000), (.transfers, 50_000), (.bills, 18_400), (.other, 4_990)], total: Money(minor: 143_390)).padding(20) }, size: CGSize(width: 393, height: 330))
+
+    // AutoPay
+    let deb = [DebitRowModel(id: "1", amount: Money(minor: 250_000), when: "1 Nov", state: "captured"),
+               DebitRowModel(id: "2", amount: Money(minor: 250_000), when: "1 Dec", state: "notified"),
+               DebitRowModel(id: "3", amount: Money(minor: 250_013), when: "1 Jan", state: "failed")]
+    render("ap-review-0", MandateReviewScreen(merchant: "Zyvor Sandbox", payee: "sandbox@zyvor-sim", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", frozen: 0))
+    render("ap-review-60", MandateReviewScreen(merchant: "Zyvor Sandbox", payee: "sandbox@zyvor-sim", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", frozen: 0.6))
+    let cards = [PayerMandateCardModel(id: "mnd_1", merchant: "Zyvor Sandbox", payee: "sandbox@zyvor-sim", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", status: .active, taken: Money(minor: 250_000), recent: [DebitRowModel(id: "a", amount: Money(minor: 250_000), when: "1 Nov, 10:02 am", state: "captured")]),
+                 PayerMandateCardModel(id: "mnd_2", merchant: "Chai Point", payee: "chai@upi", cap: Money(minor: 150_000), frequency: "Every week", until: nil, status: .revoked(by: "payer"), taken: Money(minor: 90_000), recent: [])]
+    render("ap-pay-list", ZStack(alignment: .top) { AmbientBackground(brand: .pay, phase: 0.4); VStack(alignment: .leading, spacing: 14) { HStack { Text("AutoPay").vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }; PayerAutoPayList(cards: cards) }.padding(20) }, size: CGSize(width: 393, height: 980))
+    render("ap-pay-empty", ZStack(alignment: .top) { AmbientBackground(brand: .pay, phase: 0.4); VStack(alignment: .leading, spacing: 14) { HStack { Text("AutoPay").vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }; PayerAutoPayList(cards: []) }.padding(20) }, size: CGSize(width: 393, height: 520))
+    let apRows = [MandateRowModel(id: "mnd_a", name: "Ravi Kumar", line: "Up to ₹5,000.00 · Every month", status: .active),
+                MandateRowModel(id: "mnd_b", name: "Asha Rao", line: "Up to ₹1,500.00 · Every week", status: .waiting),
+                MandateRowModel(id: "mnd_c", name: "Chai Point", line: "Up to ₹800.00 · Every month", status: .revoked(by: "payer"))]
+    render("ap-m-list", AutoPayListScreen(rows: apRows, scrolls: false))
+    let mqr = QR.image("upi://mandate?pa=sandbox@zyvor-sim&pn=Zyvor%20Sandbox&am=5000.00&cu=INR&tn=mnd_demo&recur=monthly&start=2026-11-01&end=2027-11-01")
+    render("ap-m-qr", MandateQRScreen(customer: "Ravi", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", qr: mqr, status: .waiting))
+    render("ap-m-qr-active", MandateQRScreen(customer: "Ravi", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", qr: mqr, status: .active, approved: 1))
+    render("ap-m-detail", MandateDetailScreen(name: "Ravi Kumar", cap: Money(minor: 500_000), line: "Every month · until 1 Nov 2027", status: .active, debits: deb, scrolls: false))
+    render("ap-m-new", NewAutoPayDetailsScreen(name: .constant("Ravi Kumar"), frequency: .constant(.monthly), months: .constant(12), canContinue: true))
 }

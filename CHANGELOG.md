@@ -16,6 +16,10 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
 - Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
 
+**AutoPay screens in the iOS apps**
+- Pay: scan a mandate QR, review, slide and PIN to approve; an AutoPay list inside Bills with debits taken, and stop. Merchant: an AutoPay tab to create (with QR), schedule debits, pause, resume, revoke, and a sandbox Run now.
+- `GET /v1/sim/mandate/{id}` (simulated payer's view of a mandate and the debits it took; off unless `ZYVOR_SIM_PAYER=1`). The simulated mandate link now carries the start and end dates.
+
 **UPI AutoPay mandates (simulator)**
 - Create a mandate for the payer to approve, then schedule debits (`POST /v1/mandates`, `/v1/mandates/{id}/debits`, refresh, pause, resume, revoke); a debit is an ordinary payment attempt, so the ledger, events and unknown-outcome resolution are the existing ones. Rules enforced in code: a per-debit cap, the mandate's dates and currency, a pre-debit notice window, one debit per frequency period and never two on one day. A mandate with a subscription collects its invoices automatically. Migration `0037_mandates.sql` (row-level security forced), scopes `mandates:read` and `mandates:write`, ten `mandate.*` events, and the simulated payer `POST /v1/sim/mandate`. `ZYVOR_MANDATE_MAX_MINOR` and `ZYVOR_MANDATE_NOTICE_HOURS` are configurable. No real provider adapter yet, and the rules are not verified against NPCI's circular (see `docs/zyvor/REGULATORY.md`).
 
