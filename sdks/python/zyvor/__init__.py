@@ -159,6 +159,37 @@ class Zyvor:
         params = {k: v for k, v in {"status": status, "q": q, "limit": limit, "starting_after": starting_after}.items() if v not in (None, "")}
         return self._req("GET", "/v1/payment_intents" + ("?" + urllib.parse.urlencode(params) if params else ""))
 
+    # --- UPI AutoPay mandates ------------------------------------------------------------------
+    def create_mandate(self, customer_id: str, max_amount_minor: int, frequency: str, end_date: str, idempotency_key: Optional[str] = None, **extra) -> dict:
+        """The payer approves once. `frequency`: daily, weekly, fortnightly, monthly, bimonthly, quarterly, half_yearly, yearly or as_presented. Extras: start_date, provider, external_ref."""
+        if not isinstance(max_amount_minor, int) or isinstance(max_amount_minor, bool) or max_amount_minor <= 0:
+            raise ValueError("max_amount_minor must be a positive integer (paise)")
+        body = {k: v for k, v in {"customer_id": customer_id, "max_amount_minor": max_amount_minor, "frequency": frequency, "end_date": end_date, **extra}.items() if v is not None}
+        return self._req("POST", "/v1/mandates", body, idempotency_key or str(uuid.uuid4()))
+
+    def list_mandates(self, status: Optional[str] = None, customer_id: Optional[str] = None) -> dict:
+        params = {k: v for k, v in {"status": status, "customer_id": customer_id}.items() if v}
+        return self._req("GET", "/v1/mandates" + ("?" + urllib.parse.urlencode(params) if params else ""))
+
+    def get_mandate(self, mandate_id: str) -> dict:
+        return self._req("GET", f"/v1/mandates/{mandate_id}")
+
+    def mandate_action(self, mandate_id: str, action: str) -> dict:
+        """`action`: refresh (ask the provider), pause, resume or revoke."""
+        if action not in ("refresh", "pause", "resume", "revoke"):
+            raise ValueError("action must be refresh, pause, resume or revoke")
+        return self._req("POST", f"/v1/mandates/{mandate_id}/{action}", {})
+
+    def schedule_debit(self, mandate_id: str, amount_minor: int, due_date: str, invoice_id: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict:
+        """`due_date` is an India-time day far enough ahead for the payer's notice."""
+        if not isinstance(amount_minor, int) or isinstance(amount_minor, bool) or amount_minor <= 0:
+            raise ValueError("amount_minor must be a positive integer (paise)")
+        body = {k: v for k, v in {"amount_minor": amount_minor, "due_date": due_date, "invoice_id": invoice_id}.items() if v is not None}
+        return self._req("POST", f"/v1/mandates/{mandate_id}/debits", body, idempotency_key or str(uuid.uuid4()))
+
+    def list_mandate_debits(self, mandate_id: str) -> dict:
+        return self._req("GET", f"/v1/mandates/{mandate_id}/debits")
+
     # --- merchant operations -------------------------------------------------------------------
     def payment_timeline(self, intent_id: str) -> dict:
         """One ordered story of the payment, with a plain sentence on where it stands."""

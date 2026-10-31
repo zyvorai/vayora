@@ -11,6 +11,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - The Sandbox page can pay by UPI, card, net banking or wallet. The simulator still decides the outcome from the handle (no card number is asked for); a flow test covers all three non-UPI methods.
 - Settlement simulation: `POST /v1/settlements/sync` with provider `sim` builds a day's settlement from the organisation's own simulated payments (gross, an invented 2% fee, refunds), once per day, tied to those payments so it can explain itself. Reconciliation has a button for it in test mode.
 - `POST /v1/settlements/{id}/simulate_bank` (test mode, simulated settlements only) adds the bank credit the settlement would produce, in full or short by an amount, and matches it the normal way, so the whole payment → settlement → bank → case path can be tried without a provider. Buttons on Reconciliation.
+- UPI AutoPay mandates in all three SDKs: create, list, get, refresh/pause/resume/revoke, schedule a debit and list debits (Node `mandates.*`, Python `create_mandate` and friends, Go `CreateMandate`, `GetMandate`, `MandateAction`, `ScheduleDebit`). Each checks its arguments before any request. Simulator only until a live provider supports mandates.
 - `/v1/fx/exposure` reports `complete: true` when no open dollar invoice lacks a rate (it said false with no dollar invoices).
 
 **iOS test apps**

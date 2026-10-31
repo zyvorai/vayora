@@ -1,6 +1,8 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 export type Currency = "INR" | "USD";
+/** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
+export type Mandate = { id: string; customer_id: string; status: string; max_amount_minor: number; frequency: string; start_date: string; end_date: string; authorization?: Record<string, unknown> | null; [k: string]: unknown };
 export type Method = "upi" | "card" | "netbanking" | "wallet";
 export type AttemptStatus = "created" | "pending" | "authorized" | "captured" | "failed" | "unknown";
 
@@ -262,6 +264,29 @@ export class Zyvor {
     update: (id: string, p: { name?: string; email?: string; phone?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) => this.req<Customer>("PATCH", `/v1/customers/${encodeURIComponent(id)}`, p),
     create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) =>
       this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin, address1: p.address1, location: p.location, pincode: p.pincode }),
+  };
+
+  /** UPI AutoPay. The payer approves once; you schedule debits, each with a pre-debit notice. Simulator only until a live provider supports it. */
+  readonly mandates = {
+    create: (p: { customerId: string; maxAmountMinor: number; frequency: "daily" | "weekly" | "fortnightly" | "monthly" | "bimonthly" | "quarterly" | "half_yearly" | "yearly" | "as_presented"; endDate: string; startDate?: string; provider?: string; externalRef?: string; idempotencyKey?: string }) => {
+      if (!Number.isSafeInteger(p.maxAmountMinor) || p.maxAmountMinor <= 0) throw new RangeError("maxAmountMinor must be a positive integer (paise)");
+      return this.req<Mandate>("POST", "/v1/mandates", { customer_id: p.customerId, max_amount_minor: p.maxAmountMinor, frequency: p.frequency, start_date: p.startDate, end_date: p.endDate, provider: p.provider, external_ref: p.externalRef }, key(p.idempotencyKey));
+    },
+    list: (p: { status?: string; customerId?: string } = {}) => this.req<Page<Mandate>>("GET", `/v1/mandates${this.qs({ status: p.status, customer_id: p.customerId })}`),
+    get: (id: string) => this.req<Mandate & { debits?: Record<string, unknown>[] }>("GET", `/v1/mandates/${encodeURIComponent(id)}`),
+    /** Ask the provider where it stands (approved, declined, revoked by the payer). */
+    refresh: (id: string) => this.req<Mandate>("POST", `/v1/mandates/${encodeURIComponent(id)}/refresh`, {}),
+    pause: (id: string) => this.req<Mandate>("POST", `/v1/mandates/${encodeURIComponent(id)}/pause`, {}),
+    resume: (id: string) => this.req<Mandate>("POST", `/v1/mandates/${encodeURIComponent(id)}/resume`, {}),
+    revoke: (id: string) => this.req<Mandate>("POST", `/v1/mandates/${encodeURIComponent(id)}/revoke`, {}),
+    /** Schedule a debit for an India-time day far enough ahead for the payer's notice. */
+    scheduleDebit: (id: string, p: { amountMinor: number; dueDate: string; invoiceId?: string; idempotencyKey?: string }) => {
+      if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
+      return this.req<Record<string, unknown>>("POST", `/v1/mandates/${encodeURIComponent(id)}/debits`, { amount_minor: p.amountMinor, due_date: p.dueDate, invoice_id: p.invoiceId }, key(p.idempotencyKey));
+    },
+    debits: (id: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/mandates/${encodeURIComponent(id)}/debits`),
+    /** Sandbox aid: run the mandate pass now (the worker does this on its own). */
+    run: () => this.req<Record<string, unknown>>("POST", "/v1/mandates/run", {}),
   };
 
   readonly fx = {

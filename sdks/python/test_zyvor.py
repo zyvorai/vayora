@@ -126,6 +126,26 @@ class Tests(unittest.TestCase):
         z.list_payments(); z.list_payments(status="succeeded", q="ORD 1&x", limit=10)
         self.assertEqual(seen, ["/v1/payment_intents", "/v1/payment_intents?status=succeeded&q=ORD+1%26x&limit=10"])
 
+    def test_mandates_use_the_right_routes_and_keys(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None, req.get_header("Idempotency-key")))
+            return FakeRes(b"{}")
+
+        z = Zyvor("k", opener=opener)
+        z.create_mandate("cus_1", 500000, "monthly", "2027-10-31", idempotency_key="m1")
+        z.list_mandates(status="active"); z.mandate_action("mnd_1", "pause")
+        z.schedule_debit("mnd_1", 125000, "2026-11-30", idempotency_key="d1"); z.list_mandate_debits("mnd_1")
+        self.assertEqual([(m, p, k) for m, p, _, k in seen], [
+            ("POST", "/v1/mandates", "m1"), ("GET", "/v1/mandates?status=active", None), ("POST", "/v1/mandates/mnd_1/pause", None),
+            ("POST", "/v1/mandates/mnd_1/debits", "d1"), ("GET", "/v1/mandates/mnd_1/debits", None)])
+        self.assertEqual(seen[0][2], {"customer_id": "cus_1", "max_amount_minor": 500000, "frequency": "monthly", "end_date": "2027-10-31"})
+        with self.assertRaises(ValueError):
+            z.create_mandate("c", 0, "daily", "2027-01-01")
+        with self.assertRaises(ValueError):
+            z.mandate_action("mnd_1", "delete")
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

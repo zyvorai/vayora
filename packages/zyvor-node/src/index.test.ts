@@ -65,6 +65,28 @@ describe("payment links, dunning and key rotation", () => {
   });
 });
 
+describe("mandates", () => {
+  it("maps options to the API's routes and body, with idempotency keys on the writes that need them", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    const c = client(f);
+    await c.mandates.create({ customerId: "cus_1", maxAmountMinor: 500000, frequency: "monthly", endDate: "2027-10-31", idempotencyKey: "m1" });
+    await c.mandates.list({ status: "active" });
+    await c.mandates.pause("mnd_1");
+    await c.mandates.scheduleDebit("mnd_1", { amountMinor: 125000, dueDate: "2026-11-30", idempotencyKey: "d1" });
+    const seen = f.mock.calls.map((x) => { const [u, i] = x as unknown as [string, RequestInit]; return [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined, (i.headers as Record<string, string>)["idempotency-key"]]; });
+    expect(seen.map((x) => [x[0], x[1], x[3]])).toEqual([
+      ["POST", "/v1/mandates", "m1"], ["GET", "/v1/mandates?status=active", undefined], ["POST", "/v1/mandates/mnd_1/pause", undefined], ["POST", "/v1/mandates/mnd_1/debits", "d1"],
+    ]);
+    expect(seen[0][2]).toMatchObject({ customer_id: "cus_1", max_amount_minor: 500000, frequency: "monthly", end_date: "2027-10-31" });
+    expect(seen[3][2]).toMatchObject({ amount_minor: 125000, due_date: "2026-11-30" });
+  });
+  it("rejects a non-positive limit before any request", () => {
+    const f = vi.fn();
+    expect(() => client(f).mandates.create({ customerId: "c", maxAmountMinor: 0, frequency: "daily", endDate: "2027-01-01" })).toThrow(RangeError);
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
 describe("verifyWebhook", () => {
   const secret = "whsec";
   const body = '{"type":"payment.captured"}';

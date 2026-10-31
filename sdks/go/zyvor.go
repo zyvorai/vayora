@@ -252,6 +252,52 @@ func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
 	return out, err
 }
 
+// CreateMandate asks the payer to approve a UPI AutoPay mandate. frequency is daily, weekly, fortnightly, monthly,
+// bimonthly, quarterly, half_yearly, yearly or as_presented; endDate is YYYY-MM-DD. idempotencyKey "" makes a new one.
+func (c *Client) CreateMandate(customerID string, maxAmountMinor int64, frequency, endDate, idempotencyKey string) (map[string]any, error) {
+	if maxAmountMinor <= 0 {
+		return nil, fmt.Errorf("maxAmountMinor must be a positive integer (paise)")
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates", map[string]any{"customer_id": customerID, "max_amount_minor": maxAmountMinor, "frequency": frequency, "end_date": endDate}, idempotencyKey, &out)
+	return out, err
+}
+
+// GetMandate returns a mandate with its recent debits.
+func (c *Client) GetMandate(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("GET", "/v1/mandates/"+id, nil, "", &out)
+	return out, err
+}
+
+// MandateAction is "refresh" (ask the provider where it stands), "pause", "resume" or "revoke".
+func (c *Client) MandateAction(id, action string) (map[string]any, error) {
+	switch action {
+	case "refresh", "pause", "resume", "revoke":
+	default:
+		return nil, fmt.Errorf("action must be refresh, pause, resume or revoke")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates/"+id+"/"+action, map[string]any{}, "", &out)
+	return out, err
+}
+
+// ScheduleDebit schedules a debit for dueDate (YYYY-MM-DD, India time), far enough ahead for the payer's notice.
+func (c *Client) ScheduleDebit(mandateID string, amountMinor int64, dueDate, idempotencyKey string) (map[string]any, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("amountMinor must be a positive integer (paise)")
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates/"+mandateID+"/debits", map[string]any{"amount_minor": amountMinor, "due_date": dueDate}, idempotencyKey, &out)
+	return out, err
+}
+
 // ListPayments returns payments newest first. status and q are optional; q matches a payment id exactly, or part of
 // its reference or description. limit 0 uses the server default.
 func (c *Client) ListPayments(status, q string, limit int) (map[string]any, error) {

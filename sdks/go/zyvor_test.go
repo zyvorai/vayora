@@ -90,11 +90,20 @@ func TestBillingAndCollectionsPaths(t *testing.T) {
 	_, _ = c.SetFxRate("83.2150", "")
 	_, _ = c.FxExposure("2026-10-31")
 	_, _ = c.ListPayments("succeeded", "ORD 1&x", 10)
+	_, _ = c.CreateMandate("cus_1", 500000, "monthly", "2027-10-31", "m1")
+	_, _ = c.MandateAction("mnd_1", "pause")
+	_, _ = c.ScheduleDebit("mnd_1", 125000, "2026-11-30", "d1")
+	if _, err := c.MandateAction("mnd_1", "delete"); err == nil {
+		t.Fatal("an unknown action must be refused before any request")
+	}
+	if _, err := c.CreateMandate("cus_1", 0, "daily", "2027-01-01", ""); err == nil {
+		t.Fatal("a zero limit must be refused before any request")
+	}
 	_, _ = c.EinvoiceDraft("inv_1")
 	_, _ = c.UpdateCustomer("cus_1", map[string]string{"pincode": "110001"})
 	want := []string{"POST /v1/subscriptions", "POST /v1/subscriptions/sub_1/change_plan", "POST /v1/subscriptions/sub_1/usage",
 		"POST /v1/invoices/inv_1/credit_notes", "GET /v1/collections/ageing?as_of=2026-10-31", "POST /v1/invoices/inv_1/promises",
-		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31", "GET /v1/payment_intents?limit=10&q=ORD+1%26x&status=succeeded", "GET /v1/invoices/inv_1/einvoice", "PATCH /v1/customers/cus_1"}
+		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31", "GET /v1/payment_intents?limit=10&q=ORD+1%26x&status=succeeded", "POST /v1/mandates", "POST /v1/mandates/mnd_1/pause", "POST /v1/mandates/mnd_1/debits", "GET /v1/invoices/inv_1/einvoice", "PATCH /v1/customers/cus_1"}
 	if fmt.Sprint(seen) != fmt.Sprint(want) {
 		t.Fatalf("got %v", seen)
 	}
