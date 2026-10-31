@@ -19,5 +19,6 @@ spec:
           env:
             {{- include "zyvor.secEnv" . | nindent 12 }}
             - { name: RUST_LOG, value: info }
+            {{- include "zyvor.mailEnv" . | nindent 12 }}
           resources: {{- toYaml .Values.worker.resources | nindent 12 }}
           {{- include "zyvor.containerSecurity" . | nindent 10 }}

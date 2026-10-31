@@ -105,6 +105,13 @@ spec:
             - { name: ZYVOR_TRUST_PROXY_HOPS, value: "2" }
             - { name: ZYVOR_ACTOR_SECRET, valueFrom: { secretKeyRef: { name: zyvor-actor, key: secret, optional: true } } }
             - { name: ZYVOR_CHECKOUT_PUBLIC_URL, value: "https://pay.80-79-5-173.sslip.io" }
+            # Email (see docs/zyvor/OPEN_ITEMS.md, "Email"): all optional. With no secret `zyvor-mail` the API
+            # only logs mail and does not require a verified address at sign-in.
+            - { name: ZYVOR_SMTP_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: smtp-url, optional: true } } }
+            - { name: ZYVOR_MAIL_FROM, valueFrom: { secretKeyRef: { name: zyvor-mail, key: from, optional: true } } }
+            - { name: ZYVOR_CONSOLE_PUBLIC_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: console-url, optional: true } } }
+            # Test clusters only, never for real merchants (it verifies nothing):
+            # - { name: ZYVOR_KYC_PROVIDER, value: simulator }
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10 }
           resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
@@ -134,6 +141,9 @@ spec:
             - { name: ZYVOR_MASTER_KEY, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: master-key } } }
             # SANDBOX: the simulated providers and webhook sinks live on private cluster addresses
             - { name: ZYVOR_ALLOW_PRIVATE_TARGETS, value: "1" }
+            # Email: the worker is what actually sends it. Same optional secret as the API.
+            - { name: ZYVOR_SMTP_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: smtp-url, optional: true } } }
+            - { name: ZYVOR_MAIL_FROM, valueFrom: { secretKeyRef: { name: zyvor-mail, key: from, optional: true } } }
           resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 ---

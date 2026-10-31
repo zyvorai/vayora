@@ -17,6 +17,14 @@ worker:
   replicas: 2   # safe to scale: events and jobs use SKIP LOCKED
   resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
 
+# Email (verification links, invitations, password reset). Off: the API only logs mail and does not require a
+# verified address at sign-in. On: `existingSecret` needs `smtp-url` (smtp://user:pass@host:587?tls=required or
+# smtps://...) and `from` ("Zyvor <no-reply@your-domain>"). `consoleUrl` is where people reach the console.
+mail:
+  enabled: false
+  existingSecret: zyvor-mail
+  consoleUrl: ""
+
 # SANDBOX ONLY. Simulates Razorpay and Cashfree. Never enable in a live environment.
 sandbox:
   providerMock: { enabled: false }
