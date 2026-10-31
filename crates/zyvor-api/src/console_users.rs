@@ -131,7 +131,11 @@ pub(crate) async fn home(s: &AppState, mut auth: Auth) -> Result<Auth, ApiError>
 }
 
 /// Sign someone out everywhere: their console session keys stop working at once.
-async fn revoke_sessions(s: &AppState, tenant_id: &str, username: &str) -> Result<(), sqlx::Error> {
+pub(crate) async fn revoke_sessions(
+    s: &AppState,
+    tenant_id: &str,
+    username: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE api_keys SET revoked_at = now() WHERE session_username = $2 AND revoked_at IS NULL AND tenant_id IN (SELECT b.id FROM tenants a JOIN tenants b ON b.organisation_id = a.organisation_id WHERE a.id = $1)")
         .bind(tenant_id).bind(username).execute(&s.pool).await?;
     Ok(())

@@ -15,12 +15,14 @@ async fn main() {
     let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
     let mut state = AppState::new(pool, crypto);
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
+    state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
     let client = outbox::http_client();
     tracing::info!("zyvor-worker started");
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => { tracing::info!("shutting down"); break; }
             _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                if let Err(e) = zyvor_api::mail::drain(&state).await { tracing::error!(error = %e, "mail drain failed"); }
                 match worker::run_cycle(&state, &client).await {
                     Ok(s) if s.attempts_checked + s.refunds_checked + s.events_delivered > 0 => tracing::info!(?s, "cycle"),
                     Ok(_) => {}

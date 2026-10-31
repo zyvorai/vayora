@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { Act } from "@/components/Act";
+import { InviteForm } from "@/components/InviteForm";
 import { UserForm } from "@/components/UserForm";
-import { disableUser, enableUser, resetUserMfa } from "@/lib/actions";
+import { disableUser, enableUser, resetUserMfa, revokeInvitation } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { istDateTime } from "@/lib/format";
 import { api } from "@/lib/zyvor";
@@ -9,11 +10,23 @@ import { api } from "@/lib/zyvor";
 export default async function People() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
-  const [page, branches] = await Promise.all([(await api()).consoleUsers.list(), (await api()).branches.list()]);
+  const z = await api();
+  const [page, branches, invites] = await Promise.all([z.consoleUsers.list(), z.branches.list(), z.consoleUsers.invitations()]);
   return (
     <>
       <div className="head"><div><h1>People</h1><p className="lede">Who can sign in. <strong>Viewers</strong> can look, <strong>finance</strong> can also move money and send reminders, <strong>admins</strong> manage people.</p></div></div>
-      <UserForm branches={branches.data.map((b) => ({ id: b.id, name: b.name }))} />
+      <InviteForm branches={branches.data.map((b) => ({ id: b.id, name: b.name }))} />
+      {invites.data.length > 0 && (<>
+        <h2>Waiting to join</h2>
+        <div className="tablewrap" style={{ marginBottom: 24 }}><table>
+          <thead><tr><th>Email</th><th>Role</th><th>Link expires (IST)</th><th /></tr></thead>
+          <tbody>{invites.data.map((i) => <tr key={i.id}><td>{i.email}</td><td>{i.role}</td><td className="muted">{istDateTime(i.expires_at)}</td><td style={{ textAlign: "right" }}><Act action={revokeInvitation} id={i.id} label="Cancel" /></td></tr>)}</tbody>
+        </table></div>
+      </>)}
+      <details className="card" style={{ marginBottom: 24 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Add someone with a password instead (no email)</summary>
+        <div style={{ marginTop: 14 }}><UserForm branches={branches.data.map((b) => ({ id: b.id, name: b.name }))} /></div>
+      </details>
       <div className="tablewrap">
         <table>
           <thead><tr><th>User</th><th>Role</th><th>Second factor</th><th>Last sign-in (IST)</th><th>Status</th><th /></tr></thead>

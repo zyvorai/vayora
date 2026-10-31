@@ -8479,3 +8479,645 @@ async fn members_sign_in_by_email_with_role_limited_keys_and_lose_sessions_when_
             .any(|u| u["username"] == "view@delta.in")
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+/// The one-time token in the latest email to this address.
+async fn mailed_token(t: &T, to: &str) -> String {
+    let body: String = sqlx::query_scalar(
+        "SELECT body FROM mail_queue WHERE to_email = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(to)
+    .fetch_one(&t.root)
+    .await
+    .unwrap_or_else(|_| panic!("no email queued for {to}"));
+    body.split("token=")
+        .nth(1)
+        .expect("a link with a token")
+        .split(|c: char| !c.is_ascii_hexdigit())
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn signup_emails_a_verification_link_that_gates_sign_in_only_when_mail_is_delivered(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    // log-only mailer: the link is queued, and nothing blocks sign-in (nobody could read it)
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Alpha Ltd", "email": "a@alpha.in", "password": pw }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'a@alpha.in'")
+            .await,
+        1
+    );
+    t.ok_public(
+        "POST",
+        "/v1/console/login",
+        json!({ "email": "a@alpha.in", "password": pw }),
+    )
+    .await;
+
+    // a delivering mailer: sign-in waits for the link to be used
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::Null;
+    let app = zyvor_api::app(st.clone());
+    let pubcall = |p: &'static str, b: Value| {
+        let app = app.clone();
+        async move { common::raw(&app, "", None, "POST", p, None, b).await }
+    };
+    assert_eq!(
+        pubcall(
+            "/v1/signup",
+            json!({ "organisation_name": "Beta Ltd", "email": "b@beta.in", "password": pw })
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    let (s1, b1) = pubcall(
+        "/v1/console/login",
+        json!({ "email": "b@beta.in", "password": pw }),
+    )
+    .await;
+    assert_eq!(
+        (s1, b1["error"]["code"].clone()),
+        (StatusCode::FORBIDDEN, json!("email_not_verified"))
+    );
+    // a wrong password is still just a wrong password
+    assert_eq!(
+        pubcall(
+            "/v1/console/login",
+            json!({ "email": "b@beta.in", "password": "not the password" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // resending replaces the link: the first no longer works
+    let first = mailed_token(&t, "b@beta.in").await;
+    assert_eq!(
+        pubcall("/v1/signup/resend", json!({ "email": "b@beta.in" }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall("/v1/signup/resend", json!({ "email": "nobody@beta.in" }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'nobody@beta.in'")
+            .await,
+        0
+    );
+    let second = mailed_token(&t, "b@beta.in").await;
+    assert_ne!(first, second);
+    assert_ne!(
+        pubcall("/v1/signup/verify", json!({ "token": first }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall("/v1/signup/verify", json!({ "token": second }))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        pubcall(
+            "/v1/console/login",
+            json!({ "email": "b@beta.in", "password": pw })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+
+    // the worker sends what is queued, and blanks the body (it carried a one-time link)
+    let pending = t
+        .count("SELECT count(*) FROM mail_queue WHERE status = 'pending'")
+        .await;
+    assert!(pending >= 3);
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap() as i64, pending);
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent' AND body = ''")
+            .await,
+        pending
+    );
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_admin_invites_someone_by_email_and_the_link_works_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Gamma Ltd", "email": "boss@gamma.in", "password": pw }),
+    )
+    .await;
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Elsewhere", "email": "x@elsewhere.in", "password": pw }),
+    )
+    .await;
+    let admin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "boss@gamma.in", "password": pw }),
+        )
+        .await;
+    let atn = Tenant {
+        id: admin["tenant_id"].as_str().unwrap().into(),
+        key: admin["session_key"].as_str().unwrap().into(),
+    };
+
+    let inv = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "Fin@Gamma.in", "role": "finance" }),
+        )
+        .await;
+    assert_eq!(inv["email"], "fin@gamma.in");
+    let token = mailed_token(&t, "fin@gamma.in").await;
+    // the people who cannot be invited
+    for (email, code) in [
+        ("boss@gamma.in", "already_member"),
+        ("x@elsewhere.in", "email_taken"),
+    ] {
+        let (st, b) = t
+            .call(
+                &atn,
+                "POST",
+                "/v1/console/invitations",
+                None,
+                json!({ "email": email, "role": "viewer" }),
+            )
+            .await;
+        assert_eq!(
+            (st, b["error"]["code"].clone()),
+            (StatusCode::CONFLICT, json!(code)),
+            "{email}"
+        );
+    }
+    let (st, _) = t
+        .call(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "c@gamma.in", "role": "cashier", "branch_id": "br_nope" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    // pending list, and nothing exists for the person yet
+    let list = t
+        .ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+        .await;
+    assert_eq!(list["data"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "fin@gamma.in", "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // the link says who it is for; a wrong token says nothing
+    let who = t
+        .ok_public("POST", "/v1/invitations/lookup", json!({ "token": token }))
+        .await;
+    assert_eq!(
+        (
+            who["email"].clone(),
+            who["organisation"].clone(),
+            who["role"].clone()
+        ),
+        (json!("fin@gamma.in"), json!("Gamma Ltd"), json!("finance"))
+    );
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/lookup",
+            None,
+            json!({ "token": "nope" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // a weak password does not spend the link; a good one joins
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": token, "password": "short" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": token, "password": "member password 1" }),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": token, "password": "another password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let fin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "fin@gamma.in", "password": "member password 1" }),
+        )
+        .await;
+    assert_eq!(fin["user"]["role"], "finance");
+    assert_eq!(fin["tenant_id"], admin["tenant_id"]);
+    assert_eq!(
+        t.ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'console_user.joined'")
+            .await,
+        1
+    );
+
+    // a revoked invitation, and a re-invitation that replaces an older one
+    let inv2 = t
+        .ok(
+            &atn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "v@gamma.in", "role": "viewer" }),
+        )
+        .await;
+    let old = mailed_token(&t, "v@gamma.in").await;
+    t.ok(
+        &atn,
+        "POST",
+        &format!(
+            "/v1/console/invitations/{}/revoke",
+            inv2["id"].as_str().unwrap()
+        ),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": old, "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "v@gamma.in", "role": "viewer" }),
+    )
+    .await;
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "v@gamma.in", "role": "admin" }),
+    )
+    .await;
+    let fresh = mailed_token(&t, "v@gamma.in").await;
+    assert_eq!(
+        t.ok(&atn, "GET", "/v1/console/invitations", None, Value::Null)
+            .await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    t.ok_public(
+        "POST",
+        "/v1/invitations/accept",
+        json!({ "token": fresh, "password": "member password 1" }),
+    )
+    .await;
+    assert_eq!(
+        t.ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "v@gamma.in", "password": "member password 1" })
+        )
+        .await["user"]["role"],
+        "admin"
+    );
+
+    // a member cannot invite
+    let ftn = Tenant {
+        id: atn.id.clone(),
+        key: fin["session_key"].as_str().unwrap().into(),
+    };
+    assert_eq!(
+        t.call(
+            &ftn,
+            "POST",
+            "/v1/console/invitations",
+            None,
+            json!({ "email": "z@gamma.in", "role": "viewer" })
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    // an invitation that expired cannot be used
+    t.ok(
+        &atn,
+        "POST",
+        "/v1/console/invitations",
+        None,
+        json!({ "email": "late@gamma.in", "role": "viewer" }),
+    )
+    .await;
+    let late = mailed_token(&t, "late@gamma.in").await;
+    sqlx::query("UPDATE email_tokens SET expires_at = now() - interval '1 minute' WHERE email = 'late@gamma.in'").execute(&t.root).await.unwrap();
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/invitations/accept",
+            None,
+            json!({ "token": late, "password": "member password 1" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_forgotten_password_is_reset_by_a_link_that_ends_old_sessions(pool: PgPool) {
+    let t = setup(pool).await;
+    let (old, new) = ("correct horse battery", "a brand new password");
+    t.ok_public(
+        "POST",
+        "/v1/signup",
+        json!({ "organisation_name": "Delta Ltd", "email": "d@delta.in", "password": old }),
+    )
+    .await;
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "d@delta.in", "password": old }),
+        )
+        .await;
+    let tn = Tenant {
+        id: login["tenant_id"].as_str().unwrap().into(),
+        key: login["session_key"].as_str().unwrap().into(),
+    };
+    // an unknown address looks the same and queues nothing
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "ghost@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'ghost@delta.in'")
+            .await,
+        0
+    );
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "D@Delta.in" }),
+    )
+    .await;
+    let token = mailed_token(&t, "d@delta.in").await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": token, "password": "short" })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/confirm",
+        json!({ "token": token, "password": new }),
+    )
+    .await;
+    // the link works once; the old password and the old session are gone; the new password works
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": token, "password": new })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/console/login",
+            None,
+            json!({ "email": "d@delta.in", "password": old })
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        t.call(&tn, "GET", "/v1/payment_intents", None, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    t.ok_public(
+        "POST",
+        "/v1/console/login",
+        json!({ "email": "d@delta.in", "password": new }),
+    )
+    .await;
+    // a second request replaces the first link
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    let first = mailed_token(&t, "d@delta.in").await;
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.public(
+            "POST",
+            "/v1/password_reset/confirm",
+            None,
+            json!({ "token": first, "password": old })
+        )
+        .await
+        .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    // a disabled person gets no link
+    sqlx::query("UPDATE console_users SET disabled_at = now() WHERE username = 'd@delta.in'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let before = t
+        .count("SELECT count(*) FROM mail_queue WHERE to_email = 'd@delta.in'")
+        .await;
+    t.ok_public(
+        "POST",
+        "/v1/password_reset/request",
+        json!({ "email": "d@delta.in" }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'd@delta.in'")
+            .await,
+        before
+    );
+}
+
+/// A tiny SMTP server that accepts one message and hands back what it was sent.
+async fn smtp_sink() -> (String, tokio::task::JoinHandle<String>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("smtp://{}", l.local_addr().unwrap());
+    let h = tokio::spawn(async move {
+        let (sock, _) = l.accept().await.unwrap();
+        let (r, mut w) = sock.into_split();
+        let mut r = BufReader::new(r);
+        w.write_all(b"220 sink ready\r\n").await.unwrap();
+        let (mut got, mut in_data, mut line) = (String::new(), false, String::new());
+        loop {
+            line.clear();
+            if r.read_line(&mut line).await.unwrap() == 0 {
+                break;
+            }
+            if in_data {
+                if line == ".\r\n" {
+                    in_data = false;
+                    w.write_all(b"250 queued\r\n").await.unwrap();
+                } else {
+                    got.push_str(&line);
+                }
+                continue;
+            }
+            let cmd = line.trim().to_uppercase();
+            if cmd.starts_with("EHLO") || cmd.starts_with("HELO") {
+                w.write_all(b"250 sink\r\n").await.unwrap();
+            } else if cmd.starts_with("DATA") {
+                in_data = true;
+                w.write_all(b"354 go\r\n").await.unwrap();
+            } else if cmd.starts_with("QUIT") {
+                w.write_all(b"221 bye\r\n").await.unwrap();
+                break;
+            } else {
+                w.write_all(b"250 ok\r\n").await.unwrap();
+            }
+        }
+        got
+    });
+    (url, h)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
+    let t = setup(pool).await;
+    let (url, got) = smtp_sink().await;
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::smtp(&url, "Zyvor <no-reply@example.com>").unwrap();
+    zyvor_api::mail::enqueue(
+        &st.pool,
+        "to@example.com",
+        "Hello there",
+        "Line one\nhttps://console.example/accept?token=abc",
+    )
+    .await
+    .unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 1);
+    let raw = got.await.unwrap();
+    assert!(
+        raw.contains("Subject: Hello there")
+            && raw.contains("To: to@example.com")
+            && raw.contains("no-reply@example.com"),
+        "{raw}"
+    );
+    assert!(raw.contains("token=abc"), "{raw}");
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent' AND body = ''")
+            .await,
+        1
+    );
+
+    // a server that is not there: the message stays queued, with the error, and waits before the next try
+    st.mailer = zyvor_api::mail::Mailer::smtp("smtp://127.0.0.1:1", "Zyvor <no-reply@example.com>")
+        .unwrap();
+    zyvor_api::mail::enqueue(&st.pool, "later@example.com", "Later", "body")
+        .await
+        .unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0);
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'later@example.com' AND status = 'pending' AND attempts = 1 AND last_error IS NOT NULL AND next_attempt_at > now()").await, 1);
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0); // not due yet, not tried again
+    assert_eq!(
+        t.count("SELECT attempts::bigint FROM mail_queue WHERE to_email = 'later@example.com'")
+            .await,
+        1
+    );
+    // after eight failed tries it is marked dead
+    sqlx::query("UPDATE mail_queue SET attempts = 7, next_attempt_at = now() WHERE to_email = 'later@example.com'").execute(&t.root).await.unwrap();
+    zyvor_api::mail::drain(&st).await.unwrap();
+    assert_eq!(t.count("SELECT count(*) FROM mail_queue WHERE to_email = 'later@example.com' AND status = 'dead'").await, 1);
+}

@@ -2,6 +2,7 @@
 // sqlx row tuples are the idiomatic shape for these queries.
 #![allow(clippy::type_complexity)]
 
+pub mod accounts;
 pub mod admin;
 pub mod ai;
 pub mod audit;
@@ -26,6 +27,7 @@ pub mod idempotency;
 pub mod insights;
 pub mod installments;
 pub mod kyc;
+pub mod mail;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -80,6 +82,10 @@ pub struct AppState {
     pub actor_secret: Option<Vec<u8>>,
     /// Identity and bank checks for onboarding (`ZYVOR_KYC_PROVIDER`). `None`: every submission goes to a person.
     pub kyc: Option<kyc::Kyc>,
+    /// Outgoing email (`ZYVOR_SMTP_URL`); the log-only mailer when unset.
+    pub mailer: mail::Mailer,
+    /// Where the console is reached, for links in emails (`ZYVOR_CONSOLE_PUBLIC_URL`).
+    pub console_url: String,
 }
 
 pub use crypto::Crypto;
@@ -103,6 +109,8 @@ impl AppState {
             checkout_public_url: None,
             actor_secret: None,
             kyc: None,
+            mailer: mail::Mailer::Log,
+            console_url: "http://localhost:3000".to_string(),
         }
     }
 }
@@ -325,6 +333,19 @@ pub fn app(state: AppState) -> Router {
         // public self-serve signup
         .route("/signup", post(signup::signup))
         .route("/signup/verify", post(signup::verify))
+        .route("/signup/resend", post(signup::resend))
+        .route(
+            "/console/invitations",
+            post(accounts::invite).get(accounts::list_invitations),
+        )
+        .route(
+            "/console/invitations/{id}/revoke",
+            post(accounts::revoke_invitation),
+        )
+        .route("/invitations/lookup", post(accounts::lookup_invitation))
+        .route("/invitations/accept", post(accounts::accept_invitation))
+        .route("/password_reset/request", post(accounts::request_reset))
+        .route("/password_reset/confirm", post(accounts::confirm_reset))
         .route("/console/login", post(signup::console_login))
         .route("/console/switch_env", post(signup::switch_env))
         .route("/audit_events/seal", post(audit::seal))

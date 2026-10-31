@@ -107,6 +107,10 @@ async fn main() {
             ),
         }
     }
+    state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
+    if let Ok(u) = env::var("ZYVOR_CONSOLE_PUBLIC_URL") {
+        state.console_url = u.trim_end_matches('/').to_string();
+    }
     state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
         .ok()
         .and_then(|v| v.parse().ok())

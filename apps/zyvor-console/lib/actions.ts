@@ -9,7 +9,7 @@ import { publicPost, type EmailLogin } from "@/lib/public";
 import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
 import { api, authConfig, sessionKey } from "@/lib/zyvor";
 
-export type FormState = { ok?: string; error?: string; otp?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
+export type FormState = { ok?: string; error?: string; otp?: boolean; unverified?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
 
 async function startWithKey(who: Omit<Session, "exp">, key: string) {
   await start(who);
@@ -28,6 +28,7 @@ async function emailSignIn(email: string, password: string, otp: string): Promis
   if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, e: r.body.env, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
   if (r.code === "otp_required") return { otp: true };
   if (r.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes." };
+  if (r.code === "email_not_verified") return { error: "Confirm your email first: we sent you a link when you signed up.", unverified: true };
   if (r.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
   await new Promise((x) => setTimeout(x, 500)); // slow down guessing
   return { error: "Incorrect email, password or code." };
@@ -125,10 +126,48 @@ export async function signup(_: FormState, form: FormData): Promise<FormState> {
     return { error: "Signup is unavailable right now. Try again in a moment." };
   }
   const si = await emailSignIn(email, password, "");
+  if ("unverified" in si && si.unverified) redirect(`/check-email?email=${encodeURIComponent(email)}`);
   if (!("who" in si)) redirect("/login");
   await startWithKey(si.who, si.key);
   redirect("/onboarding");
 }
+
+/** Send a fresh confirmation link. Always the same answer, so addresses cannot be probed. */
+export async function resendVerification(_: FormState, form: FormData): Promise<FormState> {
+  await publicPost("/v1/signup/resend", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  return { ok: "If that address is waiting to be confirmed, a new link is on its way." };
+}
+
+export async function requestReset(_: FormState, form: FormData): Promise<FormState> {
+  const r = await publicPost("/v1/password_reset/request", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  if (!r.ok && r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+  return { ok: "If that address has an account, a reset link is on its way. It works for an hour." };
+}
+
+export async function confirmReset(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost("/v1/password_reset/confirm", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That link has expired.")[0].toUpperCase()}${(r.message ?? "That link has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : "Could not reset the password right now. Try again in a moment." };
+  redirect("/login?reset=1");
+}
+
+export async function acceptInvitation(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost<{ email: string }>("/v1/invitations/accept", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That invitation has expired.")[0].toUpperCase()}${(r.message ?? "That invitation has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : r.status === 409 ? "That email already belongs to an account." : "Could not accept right now. Try again in a moment." };
+  const si = await emailSignIn(r.body.email, password, "");
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/");
+}
+
+export const inviteUser = async (_: FormState, f: FormData) => {
+  const r = await run(["/users"], (z) => z.consoleUsers.invite({ email: text(f, "email"), role: text(f, "role") as "viewer", branchId: text(f, "branch_id") || undefined }), "admin");
+  return r?.ok ? { ok: "Invitation sent. The link works once and expires in 7 days." } : r;
+};
+export const revokeInvitation = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.revokeInvitation(id(f)), "admin");
 
 export async function logout() {
   (await cookies()).delete(COOKIE);

@@ -1,8 +1,7 @@
 //! Self-serve signup: a public call that creates an organisation with test and live tenants and a
 //! first admin console user, then an emailed link that proves the address. The test key is returned
 //! once. Live use stays closed until onboarding is approved (see `onboarding`), as for any tenant.
-//! There is no mailer yet: the verification link token is only written to the log, so email is not
-//! actually delivered until an SMTP adapter exists.
+//! The verification link is emailed through the queue in `mail`; with no SMTP configured it is only logged.
 
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Deserialize;
@@ -27,7 +26,7 @@ pub struct SignupIn {
     password: String,
 }
 
-fn valid_email(e: &str) -> bool {
+pub(crate) fn valid_email(e: &str) -> bool {
     let Some((local, domain)) = e.split_once('@') else {
         return false;
     };
@@ -39,7 +38,7 @@ fn valid_email(e: &str) -> bool {
         && !e.chars().any(|c| c.is_whitespace())
 }
 
-fn token_hash(t: &str) -> String {
+pub(crate) fn token_hash(t: &str) -> String {
     hex::encode(Sha256::digest(t.as_bytes()))
 }
 
@@ -103,7 +102,7 @@ pub async fn signup(
             sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::conflict("email_taken", "an account already exists for that email"),
             e => e.into(),
         })?;
-    tracing::info!(%email, link_token = %token, "signup verification link (log-only mailer)");
+    send_verification(&s, &email, name, &token).await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -218,6 +217,21 @@ pub async fn console_login(
         },
     )
     .await?;
+    if s.mailer.delivers() {
+        let unverified: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM signups WHERE email = $1 AND verified_at IS NULL)",
+        )
+        .bind(&email)
+        .fetch_one(&s.pool)
+        .await?;
+        if unverified {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "email_not_verified",
+                "confirm your email first; the link was sent when you signed up",
+            ));
+        }
+    }
     let role = out["user"]["role"].as_str().unwrap_or("viewer").to_string();
     let branch = out["user"]["branch_id"].as_str().map(str::to_string);
     let (key, prefix, hash) = mint_key(env);
@@ -353,4 +367,54 @@ async fn open_live(s: &AppState, org: &str, live: &str) -> Result<(), ApiError> 
         tx.commit().await?;
     }
     Ok(())
+}
+
+async fn send_verification(
+    s: &AppState,
+    email: &str,
+    org: &str,
+    token: &str,
+) -> Result<(), ApiError> {
+    crate::mail::enqueue(
+        &s.pool,
+        email,
+        "Confirm your email for Zyvor",
+        &format!(
+            "Welcome to Zyvor.\n\nConfirm that {email} is yours to finish setting up {org}:\n\n{}/verify?token={token}\n\nThe link works for {TOKEN_HOURS} hours. If you did not sign up, ignore this email.\n",
+            s.console_url
+        ),
+    )
+    .await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct ResendIn {
+    email: String,
+}
+
+/// `POST /v1/signup/resend`: a fresh verification link. Always answers the same, so addresses cannot be probed.
+pub async fn resend(
+    State(s): State<AppState>,
+    Json(b): Json<ResendIn>,
+) -> Result<Json<Value>, ApiError> {
+    let email = b.email.trim().to_lowercase();
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT o.name FROM signups g JOIN organisations o ON o.id = g.organisation_id WHERE g.email = $1 AND g.verified_at IS NULL",
+    )
+    .bind(&email)
+    .fetch_optional(&s.pool)
+    .await?;
+    if let Some((org,)) = row {
+        let token = format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
+        sqlx::query("UPDATE signups SET token_hash = $2, token_expires_at = now() + make_interval(hours => $3) WHERE email = $1")
+            .bind(&email).bind(token_hash(&token)).bind(TOKEN_HOURS as i32)
+            .execute(&s.pool).await?;
+        send_verification(&s, &email, &org, &token).await?;
+    }
+    Ok(Json(json!({ "ok": true })))
 }

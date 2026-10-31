@@ -395,6 +395,10 @@ export class Zyvor {
   readonly consoleUsers = {
     create: (p: { username: string; password: string; role: "admin" | "finance" | "viewer" | "cashier"; branchId?: string }) => this.req<{ id: string; username: string; role: string; branch_id: string | null }>("POST", "/v1/console/users", { username: p.username, password: p.password, role: p.role, branch_id: p.branchId }),
     list: () => this.req<Page<{ id: string; username: string; role: "admin" | "finance" | "viewer" | "cashier"; branch_id: string | null; mfa_enrolled: boolean; last_login_at: string | null; locked: boolean; disabled: boolean }>>("GET", "/v1/console/users"),
+    /** Email someone a one-time link to join. The link works once and expires in 7 days. */
+    invite: (p: { email: string; role: "admin" | "finance" | "viewer" | "cashier"; branchId?: string }) => this.req<{ id: string; email: string; role: string; expires_at: string }>("POST", "/v1/console/invitations", { email: p.email, role: p.role, branch_id: p.branchId }),
+    invitations: () => this.req<Page<{ id: string; email: string; role: string; expires_at: string; invited_by: string | null }>>("GET", "/v1/console/invitations"),
+    revokeInvitation: (id: string) => this.req("POST", `/v1/console/invitations/${encodeURIComponent(id)}/revoke`),
     disable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/disable`),
     enable: (id: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/enable`),
     setPassword: (id: string, password: string) => this.req("POST", `/v1/console/users/${encodeURIComponent(id)}/password`, { password }),

@@ -1057,6 +1057,96 @@ paths:
           description: Created
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/signup/resend:
+    post:
+      summary: Public: email a fresh verification link (always answers the same)
+      tags:
+      - signup
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invitations/lookup:
+    post:
+      summary: Public: who an invitation link is for
+      tags:
+      - invitations
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/invitations/accept:
+    post:
+      summary: Public: accept an invitation by choosing a password
+      tags:
+      - invitations
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/password_reset/request:
+    post:
+      summary: Public: email a password reset link (always answers the same)
+      tags:
+      - password_reset
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/password_reset/confirm:
+    post:
+      summary: Public: set a new password with the emailed token
+      tags:
+      - password_reset
+      security: []
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/invitations:
+    post:
+      summary: Email someone a one-time link to join this organisation (admin)
+      tags:
+      - invitations
+      responses:
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: Invitations nobody has accepted yet (admin)
+      tags:
+      - invitations
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/console/invitations/{id}/revoke:
+    post:
+      summary: Cancel an unused invitation (admin)
+      tags:
+      - invitations
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN
