@@ -232,6 +232,18 @@ func (c *Client) SetFxRate(rate, asOf string) (map[string]any, error) {
 	return out, err
 }
 
+// UpdateCustomer corrects a customer. Keys: name, email, phone, gstin, address1, location, pincode. A key left out
+// stays; an empty string clears it.
+func (c *Client) UpdateCustomer(customerID string, fields map[string]string) (map[string]any, error) {
+	body := map[string]any{}
+	for k, v := range fields {
+		body[k] = v
+	}
+	var out map[string]any
+	err := c.do("PATCH", "/v1/customers/"+customerID, body, "", &out)
+	return out, err
+}
+
 // EinvoiceDraft returns a DRAFT e-invoice (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal.
 func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
 	var out map[string]any

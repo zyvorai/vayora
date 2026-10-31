@@ -424,6 +424,96 @@ pub async fn create_customer(
     ))
 }
 
+/// Fields to change on a customer. A field left out stays; an empty string clears it (name cannot be cleared).
+#[derive(Deserialize)]
+pub struct CustomerPatch {
+    name: Option<String>,
+    email: Option<String>,
+    phone: Option<String>,
+    gstin: Option<String>,
+    address1: Option<String>,
+    location: Option<String>,
+    pincode: Option<String>,
+}
+
+/// `PATCH /v1/customers/{id}`: correct a customer's details. Invoices already issued keep the GSTIN they were
+/// issued with (it is copied onto the invoice), so fixing a typo here does not rewrite history.
+pub async fn update_customer(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<CustomerPatch>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("customers:write")?;
+    if b.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+        return Err(ApiError::invalid("invalid_name", "name cannot be empty"));
+    }
+    let g = b.gstin.as_deref().map(str::trim).filter(|g| !g.is_empty());
+    if g.is_some_and(|g| !crate::gst::valid_gstin(g)) {
+        return Err(ApiError::invalid("invalid_gstin", "GSTIN is not valid"));
+    }
+    let nz = |v: &Option<String>| {
+        v.as_deref()
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(str::to_string)
+    };
+    crate::gst::check_address(
+        nz(&b.address1).as_deref(),
+        nz(&b.location).as_deref(),
+        nz(&b.pincode).as_deref(),
+    )?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let changed: Vec<&str> = [
+        ("name", b.name.is_some()),
+        ("email", b.email.is_some()),
+        ("phone", b.phone.is_some()),
+        ("gstin", b.gstin.is_some()),
+        ("address1", b.address1.is_some()),
+        ("location", b.location.is_some()),
+        ("pincode", b.pincode.is_some()),
+    ]
+    .into_iter()
+    .filter(|(_, c)| *c)
+    .map(|(n, _)| n)
+    .collect();
+    // `$n IS NULL` keeps the column; an empty string becomes NULL
+    let done = sqlx::query(
+        "UPDATE customers SET name = COALESCE($2, name),
+            email = CASE WHEN $3::text IS NULL THEN email ELSE NULLIF(btrim($3), '') END,
+            phone = CASE WHEN $4::text IS NULL THEN phone ELSE NULLIF(btrim($4), '') END,
+            gstin = CASE WHEN $5::text IS NULL THEN gstin ELSE NULLIF(btrim($5), '') END,
+            address1 = CASE WHEN $6::text IS NULL THEN address1 ELSE NULLIF(btrim($6), '') END,
+            location = CASE WHEN $7::text IS NULL THEN location ELSE NULLIF(btrim($7), '') END,
+            pincode = CASE WHEN $8::text IS NULL THEN pincode ELSE NULLIF(btrim($8), '') END
+         WHERE id = $1",
+    )
+    .bind(&id)
+    .bind(b.name.as_deref().map(str::trim))
+    .bind(&b.email)
+    .bind(&b.phone)
+    .bind(&b.gstin)
+    .bind(&b.address1)
+    .bind(&b.location)
+    .bind(&b.pincode)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::not_found("customer"));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "customer.updated",
+        Some(&id),
+        json!({ "fields": changed }),
+    )
+    .await?;
+    tx.commit().await?;
+    get_customer(State(s), auth, Path(id)).await
+}
+
 pub async fn get_customer(
     State(s): State<AppState>,
     auth: Auth,

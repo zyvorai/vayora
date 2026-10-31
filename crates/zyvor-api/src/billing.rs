@@ -777,9 +777,10 @@ pub async fn list_customers(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as("SELECT id, name, email, phone, external_ref FROM customers WHERE ($1::text IS NULL OR external_ref = $1) ORDER BY created_at DESC LIMIT $2")
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as("SELECT id, name, email, phone, external_ref, gstin, address1, location, pincode FROM customers WHERE ($1::text IS NULL OR external_ref = $1) ORDER BY created_at DESC LIMIT $2")
         .bind(&q.external_ref).bind(q.limit.unwrap_or(50).clamp(1, 200)).fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, email, phone, ext)| json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, email, phone, ext, gstin, a1, loc, pin)| json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext, "gstin": gstin, "address1": a1, "location": loc, "pincode": pin })).collect::<Vec<_>>() }),
     ))
 }

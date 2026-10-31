@@ -5,6 +5,7 @@ live Razorpay or Cashfree. See [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for 
 
 ## Release 2 (current)
 **Merchant operations (Release 3, in progress)**
+- Correct a customer (`PATCH /v1/customers/{id}`, console Customers page, all three SDKs): left-out fields stay, an empty string clears, audited; issued invoices keep the GSTIN they were issued with.
 - Printable invoice page (`/invoice/{id}` in the console; browser print gives a PDF), laid out as a GST tax invoice when it has tax lines; invoice and customer reads now return the buyer, place of supply and address.
 - Draft e-invoice (`GET /v1/invoices/{id}/einvoice`, IRP schema 1.1 shape) for B2B tax invoices, with seller/buyer addresses; says what is missing; not submitted, no IRN, not validated against the portal.
 - FX exposure report (`GET /v1/fx/exposure`, SDK `fx.exposure`): open dollar invoices at the rate when raised vs the report date, with the difference; reporting only, nothing is posted to the ledger.

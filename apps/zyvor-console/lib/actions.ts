@@ -236,6 +236,13 @@ export const saveWebhooks = async (_: FormState, f: FormData) => {
 const money = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "").replace(/,/g, "")) * 100);
 export const createCustomer = async (_: FormState, f: FormData) =>
   run(["/billing"], (z) => z.customers.create({ name: String(f.get("name") ?? "").trim(), email: String(f.get("email") ?? "").trim() || undefined, phone: String(f.get("phone") ?? "").trim() || undefined, gstin: String(f.get("gstin") ?? "").trim().toUpperCase() || undefined, address1: String(f.get("address1") ?? "").trim() || undefined, location: String(f.get("location") ?? "").trim() || undefined, pincode: String(f.get("pincode") ?? "").trim() || undefined }));
+export const updateCustomer = async (_: FormState, f: FormData) => {
+  // empty boxes are sent as "" on purpose: that clears the field
+  const t = (k: string) => String(f.get(k) ?? "").trim();
+  const name = t("name");
+  if (!name) return { error: "A customer needs a name." };
+  return run(["/customers", "/billing"], (z) => z.customers.update(id(f), { name, email: t("email"), phone: t("phone"), gstin: t("gstin").toUpperCase(), address1: t("address1"), location: t("location"), pincode: t("pincode") }));
+};
 export const createInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
   const amount = money(f, "amount");
   if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
