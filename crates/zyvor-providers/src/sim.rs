@@ -71,6 +71,7 @@ impl Provider for SimProvider {
                 state,
                 action: ClientAction::UpiIntent {
                     uri,
+                    apps: Default::default(),
                     expires_at: None,
                 },
             });

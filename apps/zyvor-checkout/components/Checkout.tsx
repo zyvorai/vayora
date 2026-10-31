@@ -177,7 +177,25 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   if (session.phase === "awaiting_payment" && session.attempt) {
     const upi = session.attempt.action?.type === "upi_collect";
     const intentUri = session.attempt.action?.type === "upi_intent" ? String(session.attempt.action.uri ?? "") : "";
-    if (intentUri.startsWith("upi://")) {
+    const qrImage = session.attempt.action?.type === "upi_qr" ? String(session.attempt.action.image ?? "") : "";
+    // A partner-rendered QR (desktop and counter screens): only a PNG data URL is ever shown.
+    if (qrImage.startsWith("data:image/png;base64,")) {
+      return (
+        <div className="card">
+          {head}
+          <div className="state" role="status" aria-live="polite">
+            <h2>{t("scanTitle")}</h2>
+            <img className="qr" src={qrImage} width={220} height={220} alt={t("scanAlt")} />
+            <p>{t("scanBody")}</p>
+            {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
+            <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
+          </div>
+          <Help t={t} intent={intent} />
+        </div>
+      );
+    }
+    // Only a UPI link or the partner's own https link is ever opened: never javascript:, data: or anything else.
+    if (intentUri.startsWith("upi://") || intentUri.startsWith("https://")) {
       // A partner-issued payload, shown as-is. Neither the QR nor the app opening proves payment: the page
       // moves to "paid" only when the server reports a verified result.
       return (

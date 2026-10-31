@@ -67,18 +67,23 @@ pub async fn load(
             s("key_secret"),
             state.provider_timeout,
         )),
-        "cashfree" => Arc::new(Cashfree::new(
-            base_url.unwrap_or_else(|| {
-                if env == "live" {
-                    "https://api.cashfree.com".into()
-                } else {
-                    "https://sandbox.cashfree.com".into()
-                }
-            }),
-            s("client_id"),
-            s("client_secret"),
-            state.provider_timeout,
-        )),
+        "cashfree" => Arc::new(
+            Cashfree::new(
+                base_url.unwrap_or_else(|| {
+                    if env == "live" {
+                        "https://api.cashfree.com".into()
+                    } else {
+                        "https://sandbox.cashfree.com".into()
+                    }
+                }),
+                s("client_id"),
+                s("client_secret"),
+                state.provider_timeout,
+            )
+            // Native UPI intent / QR is opt-in per account: set `"upi_intent": true` in the credentials once
+            // Cashfree has enabled it for that account.
+            .with_upi_intent(creds["upi_intent"].as_bool().unwrap_or(false)),
+        ),
         "custom" => {
             // Unlike the two hosted providers there is no default endpoint: it is your own gateway.
             let base = base_url.ok_or_else(ApiError::internal)?;
