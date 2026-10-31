@@ -19,12 +19,18 @@ R 'rm -rf ~/zyvor-src && mkdir -p ~/zyvor-src'
 tar czf - --exclude=target --exclude=node_modules --exclude=.next --exclude=.git --exclude=dist --exclude='.env*' --exclude='*.tsbuildinfo' . | R 'tar xzf - -C ~/zyvor-src'
 
 echo "==> building images on the node (the Rust build takes a few minutes the first time)"
+# Remember what exists, so afterwards we delete only what THIS build left behind (never other people's images).
+R 'podman images -aq --no-trunc | sort -u > ~/zyvor-images.before; for i in api checkout console; do podman image inspect --format "{{.Id}}" localhost/zyvor-$i:dev 2>/dev/null; done | sort -u > ~/zyvor-images.old || true'
 R 'cd ~/zyvor-src && podman build -q -t localhost/zyvor-api:dev -f deploy/zyvor/Dockerfile . \
  && podman build -q -t localhost/zyvor-checkout:dev --build-arg ZYVOR_API_URL=http://zyvor-api:8080 -f deploy/zyvor/Dockerfile.checkout . \
  && podman build -q -t localhost/zyvor-console:dev -f deploy/zyvor/Dockerfile.console .'
 for img in zyvor-api zyvor-checkout zyvor-console; do
   R "podman save localhost/$img:dev | sudo -n k3s ctr images import -" >/dev/null
 done
+# Free the disk: new untagged build-stage images from this run, and the :dev images this run replaced.
+R 'cur=$(for i in api checkout console; do podman image inspect --format "{{.Id}}" localhost/zyvor-$i:dev; done | sort -u)
+for id in $(podman images -aq --no-trunc --filter dangling=true | sort -u | comm -23 - ~/zyvor-images.before) $(comm -23 ~/zyvor-images.old <(echo "$cur")); do podman rmi "$id" >/dev/null 2>&1 || true; done
+rm -f ~/zyvor-images.before ~/zyvor-images.old; df -h / | tail -1' || true
 
 echo "==> namespace and secrets"
 R "$K create namespace zyvor --dry-run=client -o yaml | $K apply -f -" >/dev/null
