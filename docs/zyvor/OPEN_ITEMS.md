@@ -180,3 +180,7 @@ translations for the new pages (`apps/zyvor-checkout` shows the approach).
 | `ZYVOR_SIM_PAYER=1` | API | Lets the iPhone payer app approve simulated QR payments and mandates (test only) |
 | `ZYVOR_MANDATE_MAX_MINOR` | API | The highest per-debit limit a UPI AutoPay mandate may be created with, in paise (default 1500000 = ₹15,000). Verify against the current NPCI circular before live use |
 | `ZYVOR_MANDATE_NOTICE_HOURS` | API, Worker | How long before a debit the payer must be told (default 24). The worker also uses it, so set it on both |
+| `ZYVOR_REVIEW_TWO_PERSON` | API | `never`, `flagged` (default) or `always`: when live access needs two different Zyvor reviewers (docs/zyvor/PLATFORM_REVIEW.md). Needs at least two active reviewers unless `never` |
+| `ZYVOR_REVIEW_SLA_HOURS` | API, Worker | Target for answering a live-access request (default 24). A target, not a promise |
+| `ZYVOR_CHANGE_SLA_HOURS` | API, Worker | Target for a live business's new bank account, whose payouts are held meanwhile (default 4) |
+| `ZYVOR_REVIEW_ALERT_EMAIL` | Worker | Emailed once for each request or change that passes its target; nothing is sent when unset |

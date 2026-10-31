@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
 import { ChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
+import { dueLabel } from "@/lib/due";
 import { platform, requireReviewerSurface, reviewerKey, type ChangeRow, type ReviewRow } from "@/lib/reviewer";
 
 const FILTERS = ["pending", "approved", "rejected", "revoked"] as const;
@@ -10,6 +11,7 @@ const DONE: Record<string, string> = {
   reject: "Rejected. The merchant sees your note and has been emailed.",
   revoke: "Live mode taken away. New payments and payouts for that business have stopped, and the merchant has been emailed.",
   restore: "Live mode given back. The merchant has been emailed.",
+  first_approval: "First approval recorded. A different reviewer must approve it too before live mode opens.",
   change_approve: "Change approved. Live payouts for that business are no longer held for it.",
   change_reject: "Change rejected. The account was removed and the merchant has been emailed your reason.",
 };
@@ -47,7 +49,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
           <div style={{ display: "grid", gap: 14 }}>
             {changes.map((c) => (
               <div key={c.id} style={{ display: "grid", gap: 6, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", alignItems: "start" }}>
-                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>: new bank account<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div></div>
+                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>: new bank account<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div><div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
                 <ChangeForm id={c.id} />
               </div>
             ))}
@@ -67,7 +69,12 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
                 <td>{new Date(x.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
                 <td>{x.round}</td>
                 <td>{x.checks_failed === 0 ? "None" : <span className="chip warn">{x.checks_failed} to look at</span>}</td>
-                <td><Chip status={x.status} /></td>
+                <td>
+                  <Chip status={x.status} />
+                  {x.status === "pending" && <div className={`fine${dueLabel(x.due_at).late ? " late" : ""}`} style={dueLabel(x.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(x.due_at).text}</div>}
+                  {x.stage === "awaiting_second" && <div className="fine">{x.first_approved_by} approved; needs a different reviewer</div>}
+                  {x.status === "pending" && x.stage !== "awaiting_second" && x.needs_second_because.length > 0 && <div className="fine">needs two reviewers</div>}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={5} className="fine" style={{ padding: 24, textAlign: "center" }}>{status === "pending" ? "Nobody is waiting. " : "Nothing here. "}</td></tr>}

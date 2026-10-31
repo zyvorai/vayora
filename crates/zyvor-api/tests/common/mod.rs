@@ -70,6 +70,8 @@ pub async fn setup(root: PgPool) -> T {
     state.provider_timeout = std::time::Duration::from_secs(1);
     state.allow_private_targets = true; // the simulators listen on localhost
     state.resolve_after = std::time::Duration::from_secs(0);
+    // most tests have one reviewer; the two-reviewer rules have their own tests that turn them on
+    state.review_two_person = zyvor_api::platform::TwoPerson::Never;
     let router = app(state.clone());
 
     let mut tenants = Vec::new();

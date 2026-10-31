@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
-import { DecisionForm, LiveAccessForm } from "@/components/ReviewerForms";
+import { DecisionForm, EscalateForm, LiveAccessForm } from "@/components/ReviewerForms";
+import { dueLabel } from "@/lib/due";
 import { outcomeTone, platform, requireReviewerSurface, reviewerKey, type ReviewDetail } from "@/lib/reviewer";
 
 const KIND: Record<string, string> = { pan: "PAN", bank_account: "Bank account", gstin: "GSTIN" };
@@ -28,6 +29,21 @@ export default async function Review({ params }: { params: Promise<{ org: string
       {!pending && (
         <div className={`note ${d.status === "approved" ? "ok" : "bad"}`} role="status" style={{ marginBottom: 16 }}>
           {d.status === "approved" ? "Approved" : d.status === "revoked" ? "Live mode taken away" : "Rejected"} by {d.reviewed_by ?? "a reviewer"}.{d.note ? ` Note: ${d.note}` : ""}
+        </div>
+      )}
+      {pending && (
+        <div className={`note ${dueLabel(d.due_at).late ? "bad" : "info"}`} role="status" style={{ marginBottom: 16 }}>
+          Target {d.sla_hours}h: {dueLabel(d.due_at).text}.
+        </div>
+      )}
+      {pending && d.stage === "awaiting_second" && (
+        <div className="note warn" role="status" style={{ marginBottom: 16 }}>
+          <strong>{d.first_approved_by} has approved.</strong> A different reviewer must give the second approval before live mode opens. ({d.needs_second_because.join("; ")})
+        </div>
+      )}
+      {pending && d.stage !== "awaiting_second" && d.needs_second_because.length > 0 && (
+        <div className="note warn" role="status" style={{ marginBottom: 16 }}>
+          <strong>This approval needs two different reviewers:</strong> {d.needs_second_because.join("; ")}. Your approval is recorded as the first; someone else completes it. You can still reject on your own.{d.escalation_note ? ` Escalation note: ${d.escalation_note}` : ""}
         </div>
       )}
       {pending && d.checks.length === 0 && (
@@ -107,7 +123,13 @@ export default async function Review({ params }: { params: Promise<{ org: string
         <section className="card" style={{ marginTop: 16 }}>
           <h2>Your decision</h2>
           <p className="fine">Check that the legal name, PAN holder and bank account holder are the same party, that the documents exist and match, and that the business is one you will put on live rails.</p>
-          <DecisionForm org={d.organisation_id} />
+          <DecisionForm org={d.organisation_id} approveLabel={d.stage === "awaiting_second" ? "Give the second approval and open live mode" : d.needs_second_because.length > 0 ? "Give the first approval" : undefined} />
+          {d.needs_second_because.length === 0 && (
+            <details style={{ marginTop: 14 }}>
+              <summary className="fine">Not sure? Ask for a second reviewer</summary>
+              <div style={{ marginTop: 10 }}><EscalateForm org={d.organisation_id} /></div>
+            </details>
+          )}
         </section>
       )}
     </>

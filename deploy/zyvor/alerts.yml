@@ -15,14 +15,14 @@ groups:
         expr: zyvor_outbox_dead > 0
         for: 5m
         annotations: { summary: "A webhook event to a merchant was given up on after its retries." }
-      - alert: ZyvorLiveAccessWaiting
-        expr: zyvor_live_access_pending > 0
-        for: 1d
-        annotations: { summary: "A merchant has waited a day for live access review." }
-      - alert: ZyvorLiveChangeWaiting
-        expr: zyvor_live_changes_pending > 0
-        for: 4h
-        annotations: { summary: "A live merchant's new bank account has waited 4 hours for Zyvor review, and its live payouts are held." }
+      - alert: ZyvorLiveAccessOverdue
+        expr: zyvor_live_access_overdue > 0
+        for: 5m
+        annotations: { summary: "A business has waited past the review target (ZYVOR_REVIEW_SLA_HOURS, default 24) for live access." }
+      - alert: ZyvorLiveChangeOverdue
+        expr: zyvor_live_changes_overdue > 0
+        for: 5m
+        annotations: { summary: "A live business's new bank account has waited past ZYVOR_CHANGE_SLA_HOURS (default 4) and its live payouts are held." }
       - alert: ZyvorMetricsUnavailable
         expr: zyvor_outbox_pending < 0 or zyvor_mail_dead < 0
         for: 5m

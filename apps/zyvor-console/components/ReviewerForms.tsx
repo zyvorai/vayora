@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { changeLiveAccess, decideChange, decideReview, reviewerSignIn } from "@/lib/reviewer-actions";
+import { changeLiveAccess, decideChange, decideReview, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
 
 export function ReviewerSignIn() {
   const [state, action, pending] = useActionState(reviewerSignIn, undefined);
@@ -18,7 +18,7 @@ export function ReviewerSignIn() {
 }
 
 /** Reject needs a note, because the merchant is shown it; approve may carry one. */
-export function DecisionForm({ org }: { org: string }) {
+export function DecisionForm({ org, approveLabel = "Approve and open live mode" }: { org: string; approveLabel?: string }) {
   const [state, action, pending] = useActionState(decideReview, undefined);
   const [note, setNote] = useState("");
   return (
@@ -30,7 +30,7 @@ export function DecisionForm({ org }: { org: string }) {
       </div>
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="btn primary" name="decision" value="approve" disabled={pending}>{pending ? "…" : "Approve and open live mode"}</button>
+        <button className="btn primary" name="decision" value="approve" disabled={pending}>{pending ? "…" : approveLabel}</button>
         <button className="btn" name="decision" value="reject" disabled={pending}>Reject with note</button>
       </div>
     </form>
@@ -77,6 +77,21 @@ export function ChangeForm({ id }: { id: string }) {
         <button className="btn small primary" name="decision" value="approve" disabled={pending}>Approve</button>
         <button className="btn small" name="decision" value="reject" disabled={pending}>Reject and remove</button>
       </div>
+    </form>
+  );
+}
+
+/** For a review no rule flagged that still deserves a second pair of eyes. */
+export function EscalateForm({ org }: { org: string }) {
+  const [state, action, pending] = useActionState(escalateReview, undefined);
+  const [note, setNote] = useState("");
+  return (
+    <form action={action} style={{ display: "grid", gap: 10 }}>
+      <input type="hidden" name="org" value={org} />
+      <textarea name="note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why a second reviewer should look (they will read this)" aria-label="Why a second reviewer should look" />
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small" disabled={pending}>{pending ? "…" : "Ask for a second reviewer"}</button></div>
     </form>
   );
 }

@@ -8,6 +8,7 @@
 #   ... reject <organisation_id> "what to fix" the merchant is shown this note (required)
 #   ... revoke <organisation_id> "why"         takes live mode away from an approved business (note required)
 #   ... restore <organisation_id> ["note"]     gives it back
+#   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
 #   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account)
 #   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
 #   ... change-reject <id> "why"               removes the account; the merchant is shown why (note required)
@@ -32,7 +33,8 @@ import sys, json
 d = json.load(sys.stdin)
 if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
 for r in d["data"]:
-    print("%-8s %-34s %-28s asked %s (round %s)  checks not passed: %s" % (r["status"], r["organisation_id"], (r["legal_name"] or r["organisation"])[:28], r["requested_at"][:16], r["round"], r["checks_failed"]))
+    flags = (" OVERDUE" if r.get("overdue") else "") + (" [awaiting 2nd after " + r["first_approved_by"] + "]" if r.get("stage") == "awaiting_second" else (" [needs 2 reviewers]" if r.get("needs_second_because") and r["status"] == "pending" else ""))
+    print("%-8s %-34s %-28s asked %s (round %s)  checks not passed: %s%s" % (r["status"], r["organisation_id"], (r["legal_name"] or r["organisation"])[:28], r["requested_at"][:16], r["round"], r["checks_failed"], flags))
 if not d["data"]: print("nothing here")' ;;
   show) call GET "/v1/platform/reviews/${2:?usage: show <organisation_id>}" | python3 -c '
 import sys, json
@@ -56,6 +58,9 @@ if d.get("note"): print("last note  :", d["note"])' ;;
     if [ -z "${3:-}" ]; then echo "say why:  $0 revoke <organisation_id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: revoke <organisation_id> \"why\"}/revoke" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "revoked: no new payments or payouts for " + d["organisation_id"])' ;;
   restore) call POST "/v1/platform/reviews/${2:?usage: restore <organisation_id> [note]}/restore" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "restored: live mode is open again for " + d["organisation_id"])' ;;
+  escalate)
+    if [ -z "${3:-}" ]; then echo "say why:  $0 escalate <organisation_id> \"why\"" >&2; exit 2; fi
+    call POST "/v1/platform/reviews/${2:?usage: escalate <organisation_id> \"why\"}/escalate" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "escalated: a second reviewer must approve " + d["organisation_id"])' ;;
   changes)
     call GET "/v1/platform/changes${2:+?status=$2}" | python3 -c '
 import sys, json
@@ -68,5 +73,5 @@ if not d["data"]: print("nothing here")' ;;
   change-reject)
     if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
-  *) sed -n '2,17p' "$0"; exit 1 ;;
+  *) sed -n '2,18p' "$0"; exit 1 ;;
 esac

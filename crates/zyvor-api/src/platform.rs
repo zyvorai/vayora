@@ -15,6 +15,60 @@ use zyvor_core::new_id;
 
 use crate::{ApiError, AppState, auth::Auth, auth::hash_key, tenant};
 
+/// When live access needs two different reviewers to approve it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TwoPerson {
+    /// Only when a reviewer escalates it.
+    Never,
+    /// When a rule below fires, or a reviewer escalates it.
+    Flagged,
+    /// Always.
+    Always,
+}
+
+impl TwoPerson {
+    pub fn parse(v: &str) -> Option<Self> {
+        match v.trim().to_lowercase().as_str() {
+            "never" => Some(Self::Never),
+            "flagged" => Some(Self::Flagged),
+            "always" => Some(Self::Always),
+            _ => None,
+        }
+    }
+}
+
+/// Why this review needs a second reviewer; empty when one is enough. A business with a check that did not pass, or
+/// with no check at all (nothing but a person's eyes stands behind it), or that has been turned back twice already,
+/// is the unusual case a single reviewer should not wave through alone.
+pub fn second_reviewer_reasons(
+    policy: TwoPerson,
+    checks_total: i64,
+    checks_not_passed: i64,
+    round: i32,
+    escalated: bool,
+) -> Vec<String> {
+    let mut why = Vec::new();
+    if escalated {
+        why.push("a reviewer asked for a second opinion".to_string());
+    }
+    match policy {
+        TwoPerson::Never => {}
+        TwoPerson::Always => why.push("every approval needs two reviewers".to_string()),
+        TwoPerson::Flagged => {
+            if checks_total == 0 {
+                why.push("no automatic check ran".to_string());
+            }
+            if checks_not_passed > 0 {
+                why.push(format!("{checks_not_passed} check(s) did not pass"));
+            }
+            if round >= 3 {
+                why.push(format!("the business has asked {round} times"));
+            }
+        }
+    }
+    why
+}
+
 /// A Zyvor reviewer, identified by a key that is not a merchant API key.
 pub struct PlatformAuth {
     pub id: String,
@@ -162,19 +216,20 @@ pub async fn live_access_status(
     .await?;
     let ready = onboarding_approved(&s, &org).await?;
     // changes made after approval that Zyvor has not settled yet (and the last few it has)
-    let changes: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, kind, summary, status, note FROM live_changes WHERE organisation_id = $1 ORDER BY requested_at DESC LIMIT 5",
+    let changes: Vec<(String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, kind, summary, status, note, requested_at FROM live_changes WHERE organisation_id = $1 ORDER BY requested_at DESC LIMIT 5",
     )
     .bind(&org)
     .fetch_all(&s.pool)
     .await?;
     let changes: Vec<Value> = changes
         .into_iter()
-        .map(|c| json!({ "id": c.0, "kind": c.1, "summary": c.2, "status": c.3, "note": c.4 }))
+        .map(|c| json!({ "id": c.0, "kind": c.1, "summary": c.2, "status": c.3, "note": c.4, "expected_by": (c.3 == "pending").then(|| c.5 + chrono::Duration::hours(s.change_sla_hours)) }))
         .collect();
     Ok(Json(match row {
         Some((st, note, at, rev, round)) => {
-            json!({ "status": st, "note": note, "requested_at": at, "reviewed_at": rev, "round": round, "onboarding_approved": ready, "changes": changes })
+            json!({ "status": st, "note": note, "requested_at": at, "reviewed_at": rev, "round": round, "onboarding_approved": ready, "changes": changes,
+                "expected_by": (st == "pending").then(|| at + chrono::Duration::hours(s.review_sla_hours)), "sla_hours": s.review_sla_hours })
         }
         None => {
             json!({ "status": "not_requested", "note": null, "onboarding_approved": ready, "changes": changes })
@@ -212,7 +267,7 @@ pub async fn request_live_access(
             ("pending", true)
         }
         Some("rejected") => {
-            sqlx::query("UPDATE live_access SET status = 'pending', requested_by = $2, requested_at = now(), reviewed_by = NULL, reviewed_at = NULL, note = NULL, round = round + 1 WHERE organisation_id = $1")
+            sqlx::query("UPDATE live_access SET status = 'pending', requested_by = $2, requested_at = now(), reviewed_by = NULL, reviewed_at = NULL, note = NULL, round = round + 1, first_approved_by = NULL, first_approved_at = NULL, first_note = NULL, escalated_by = NULL, escalated_note = NULL, sla_alerted_at = NULL WHERE organisation_id = $1")
                 .bind(&org)
                 .bind(&auth.actor)
                 .execute(&mut *tx)
@@ -298,17 +353,30 @@ pub async fn list_reviews(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32)> = sqlx::query_as(
-        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round FROM live_access l JOIN organisations o ON o.id = l.organisation_id
+    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32, bool, Option<String>)> = sqlx::query_as(
+        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round, l.escalated_by IS NOT NULL, f.name
+         FROM live_access l JOIN organisations o ON o.id = l.organisation_id LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by
          WHERE ($1::text IS NULL OR l.status = $1) ORDER BY l.requested_at LIMIT 100",
     )
     .bind(&q.status)
     .fetch_all(&s.pool)
     .await?;
     let mut out = Vec::new();
-    for (org, name, status, by, at, round) in rows {
+    for (org, name, status, by, at, round, escalated, first) in rows {
         let d = detail(&s, &org).await?;
-        out.push(json!({ "organisation_id": org, "organisation": name, "status": status, "requested_by": by, "requested_at": at, "round": round, "legal_name": d["profile"]["legal_name"], "checks_failed": d["checks"].as_array().map_or(0, |c| c.iter().filter(|x| x["outcome"] != "pass").count()) }));
+        let checks = d["checks"].as_array().cloned().unwrap_or_default();
+        let failed = checks.iter().filter(|x| x["outcome"] != "pass").count();
+        let why = second_reviewer_reasons(
+            s.review_two_person,
+            checks.len() as i64,
+            failed as i64,
+            round,
+            escalated,
+        );
+        let (due, overdue) = sla(at, s.review_sla_hours, status == "pending");
+        out.push(json!({ "organisation_id": org, "organisation": name, "status": status, "requested_by": by, "requested_at": at, "round": round, "legal_name": d["profile"]["legal_name"], "checks_failed": failed,
+            "stage": if status == "pending" && first.is_some() { "awaiting_second" } else { "new" }, "first_approved_by": first, "needs_second_because": why,
+            "due_at": due, "overdue": overdue, "sla_hours": s.review_sla_hours }));
     }
     Ok(Json(json!({ "data": out })))
 }
@@ -337,6 +405,32 @@ pub async fn show_review(
     d["note"] = json!(note);
     d["reviewed_by"] = json!(reviewer);
     d["round"] = json!(round);
+    let (escalated, first, esc_note): (bool, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT l.escalated_by IS NOT NULL, f.name, l.escalated_note FROM live_access l LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by WHERE l.organisation_id = $1",
+    )
+    .bind(&org)
+    .fetch_one(&s.pool)
+    .await?;
+    let checks = d["checks"].as_array().cloned().unwrap_or_default();
+    let failed = checks.iter().filter(|x| x["outcome"] != "pass").count();
+    let (due, overdue) = sla(at, s.review_sla_hours, status == "pending");
+    d["needs_second_because"] = json!(second_reviewer_reasons(
+        s.review_two_person,
+        checks.len() as i64,
+        failed as i64,
+        round,
+        escalated
+    ));
+    d["stage"] = json!(if status == "pending" && first.is_some() {
+        "awaiting_second"
+    } else {
+        "new"
+    });
+    d["first_approved_by"] = json!(first);
+    d["escalation_note"] = json!(esc_note);
+    d["due_at"] = json!(due);
+    d["overdue"] = json!(overdue);
+    d["sla_hours"] = json!(s.review_sla_hours);
     Ok(Json(d))
 }
 
@@ -374,13 +468,14 @@ pub async fn decide(
     let tid = test_tenant_of(&s, &org).await?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
     // the review row is not tenant data; lock it in this same transaction
-    let cur: Option<(String, String)> = sqlx::query_as(
-        "SELECT status, requested_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    let cur: Option<(String, String, i32, bool, Option<String>)> = sqlx::query_as(
+        "SELECT status, requested_by, round, escalated_by IS NOT NULL, first_approved_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
     )
     .bind(&org)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, requested_by) = cur.ok_or_else(|| ApiError::not_found("review"))?;
+    let (status, requested_by, round, escalated, first_by) =
+        cur.ok_or_else(|| ApiError::not_found("review"))?;
     if status != "pending" {
         return Err(ApiError::conflict(
             "not_pending",
@@ -392,6 +487,57 @@ pub async fn decide(
             "onboarding_incomplete",
             "the business details are no longer approved",
         ));
+    }
+    // Some approvals need two different reviewers. The first is recorded and the review stays pending.
+    let mut first_name: Option<String> = None;
+    if approve {
+        let (total, not_passed): (i64, i64) = sqlx::query_as(
+            "SELECT count(*), count(*) FILTER (WHERE outcome <> 'pass') FROM kyc_checks",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        let why = second_reviewer_reasons(s.review_two_person, total, not_passed, round, escalated);
+        if !why.is_empty() {
+            match first_by.as_deref() {
+                None => {
+                    sqlx::query("UPDATE live_access SET first_approved_by = $2, first_approved_at = now(), first_note = $3 WHERE organisation_id = $1")
+                        .bind(&org)
+                        .bind(&p.id)
+                        .bind(note)
+                        .execute(&mut *tx)
+                        .await?;
+                    tenant::audit(
+                        &mut tx,
+                        &tid,
+                        &format!("zyvor:{}", p.name),
+                        "live_access.first_approval",
+                        None,
+                        json!({ "note": note, "needs_second_because": why }),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(Json(json!({
+                        "organisation_id": org, "status": "pending", "stage": "awaiting_second", "needs_second_because": why,
+                    })));
+                }
+                Some(f) if f == p.id => {
+                    return Err(ApiError::conflict(
+                        "second_reviewer_required",
+                        format!(
+                            "this approval needs a second, different reviewer ({})",
+                            why.join("; ")
+                        ),
+                    ));
+                }
+                Some(f) => {
+                    first_name =
+                        sqlx::query_scalar("SELECT name FROM platform_reviewers WHERE id = $1")
+                            .bind(f)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                }
+            }
+        }
     }
     let new = if approve { "approved" } else { "rejected" };
     sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE organisation_id = $1")
@@ -408,14 +554,14 @@ pub async fn decide(
         &actor,
         &format!("live_access.{new}"),
         None,
-        json!({ "note": note }),
+        json!({ "note": note, "first_approved_by": first_name }),
     )
     .await?;
     tenant::emit(
         &mut tx,
         &tid,
         &format!("live_access.{new}"),
-        json!({ "reviewed_by": actor, "note": note }),
+        json!({ "reviewed_by": actor, "note": note, "first_approved_by": first_name }),
     )
     .await?;
     tx.commit().await?;
@@ -467,10 +613,14 @@ pub async fn list_changes(
     .bind(&q.status)
     .fetch_all(&s.pool)
     .await?;
-    Ok(Json(json!({ "data": rows.into_iter().map(|r| json!({
-        "id": r.0, "organisation_id": r.1, "organisation": r.2, "kind": r.3, "summary": r.4,
-        "status": r.5, "requested_by": r.6, "requested_at": r.7, "note": r.8,
-    })).collect::<Vec<_>>() })))
+    Ok(Json(json!({ "data": rows.into_iter().map(|r| {
+        let (due, overdue) = sla(r.7, s.change_sla_hours, r.5 == "pending");
+        json!({
+            "id": r.0, "organisation_id": r.1, "organisation": r.2, "kind": r.3, "summary": r.4,
+            "status": r.5, "requested_by": r.6, "requested_at": r.7, "note": r.8,
+            "due_at": due, "overdue": overdue, "sla_hours": s.change_sla_hours,
+        })
+    }).collect::<Vec<_>>() })))
 }
 
 /// `POST /v1/platform/changes/{id}/decision`: approve, or reject with a note (the account is then removed and the
@@ -576,6 +726,151 @@ pub async fn decide_change(
         crate::mail::enqueue(&s.pool, to_addr, &subject, &body).await?;
     }
     Ok(Json(json!({ "id": id, "status": new })))
+}
+
+/// When a request is due and whether it is already late; only a pending one can be late.
+fn sla(
+    asked: chrono::DateTime<chrono::Utc>,
+    hours: i64,
+    pending: bool,
+) -> (chrono::DateTime<chrono::Utc>, bool) {
+    let due = asked + chrono::Duration::hours(hours);
+    (due, pending && chrono::Utc::now() > due)
+}
+
+#[derive(Deserialize)]
+pub struct Escalation {
+    note: Option<String>,
+}
+
+/// `POST /v1/platform/reviews/{organisation_id}/escalate`: ask for a second reviewer on a pending review that no
+/// rule flagged (a feeling is a reason). The note says why; the second reviewer sees it.
+pub async fn escalate(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(org): Path<String>,
+    Json(b): Json<Escalation>,
+) -> Result<Json<Value>, ApiError> {
+    let note = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let Some(note) = note else {
+        return Err(ApiError::invalid(
+            "note_required",
+            "say why a second reviewer should look; they will read it",
+        ));
+    };
+    let tid = test_tenant_of(&s, &org).await?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, bool)> = sqlx::query_as(
+        "SELECT status, escalated_by IS NOT NULL FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    )
+    .bind(&org)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, already) = cur.ok_or_else(|| ApiError::not_found("review"))?;
+    if status != "pending" {
+        return Err(ApiError::conflict(
+            "not_pending",
+            format!("this review is already {status}"),
+        ));
+    }
+    if !already {
+        sqlx::query("UPDATE live_access SET escalated_by = $2, escalated_note = $3 WHERE organisation_id = $1")
+            .bind(&org)
+            .bind(&p.id)
+            .bind(note)
+            .execute(&mut *tx)
+            .await?;
+        tenant::audit(
+            &mut tx,
+            &tid,
+            &format!("zyvor:{}", p.name),
+            "live_access.escalated",
+            None,
+            json!({ "note": note }),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "organisation_id": org, "status": "pending", "escalated": true }),
+    ))
+}
+
+/// How many requests and changes are past their target, and the age in seconds of the oldest thing waiting. Any
+/// count is `-1` if the database could not be asked.
+pub async fn overdue(s: &AppState) -> (i64, i64, i64) {
+    let access = sqlx::query_scalar("SELECT count(*) FROM live_access WHERE status = 'pending' AND requested_at < now() - make_interval(hours => $1::int)")
+        .bind(s.review_sla_hours as i32)
+        .fetch_one(&s.pool)
+        .await
+        .unwrap_or(-1);
+    let changes = sqlx::query_scalar("SELECT count(*) FROM live_changes WHERE status = 'pending' AND requested_at < now() - make_interval(hours => $1::int)")
+        .bind(s.change_sla_hours as i32)
+        .fetch_one(&s.pool)
+        .await
+        .unwrap_or(-1);
+    let oldest: Option<f64> = sqlx::query_scalar("SELECT extract(epoch FROM now() - min(t))::float8 FROM (SELECT requested_at AS t FROM live_access WHERE status = 'pending' UNION ALL SELECT requested_at FROM live_changes WHERE status = 'pending') w")
+        .fetch_one(&s.pool)
+        .await
+        .unwrap_or(None);
+    (access, changes, oldest.map_or(0, |v| v.max(0.0) as i64))
+}
+
+/// Email the operator (`ZYVOR_REVIEW_ALERT_EMAIL`) once for each request or change that has waited past its
+/// target. Returns how many were reported; without an address nothing is sent and nothing is marked, so setting
+/// one later still reports what is already late.
+pub async fn notify_overdue(s: &AppState) -> Result<usize, ApiError> {
+    let Some(to) = s.review_alert_email.as_deref() else {
+        return Ok(0);
+    };
+    let mut sent = 0;
+    let mut tx = s.pool.begin().await?;
+    let late: Vec<(String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT l.organisation_id, o.name, l.requested_at FROM live_access l JOIN organisations o ON o.id = l.organisation_id
+         WHERE l.status = 'pending' AND l.sla_alerted_at IS NULL AND l.requested_at < now() - make_interval(hours => $1::int)
+         ORDER BY l.requested_at FOR UPDATE OF l SKIP LOCKED LIMIT 20",
+    )
+    .bind(s.review_sla_hours as i32)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (org, name, at) in late {
+        sqlx::query("UPDATE live_access SET sla_alerted_at = now() WHERE organisation_id = $1")
+            .bind(&org)
+            .execute(&mut *tx)
+            .await?;
+        crate::mail::enqueue(
+            &s.pool,
+            to,
+            &format!("Live access request waiting past {} hours: {name}", s.review_sla_hours),
+            &format!("{name} ({org}) asked for live access on {} and has not had an answer within the {}-hour target.\n\nReviewer page: {}/reviewer\n", at.format("%d %b %Y %H:%M UTC"), s.review_sla_hours, s.console_url),
+        )
+        .await?;
+        sent += 1;
+    }
+    let late: Vec<(String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT c.id, o.name, c.summary, c.requested_at FROM live_changes c JOIN organisations o ON o.id = c.organisation_id
+         WHERE c.status = 'pending' AND c.sla_alerted_at IS NULL AND c.requested_at < now() - make_interval(hours => $1::int)
+         ORDER BY c.requested_at FOR UPDATE OF c SKIP LOCKED LIMIT 20",
+    )
+    .bind(s.change_sla_hours as i32)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (id, name, summary, at) in late {
+        sqlx::query("UPDATE live_changes SET sla_alerted_at = now() WHERE id = $1")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+        crate::mail::enqueue(
+            &s.pool,
+            to,
+            &format!("Change waiting past {} hours, payouts held: {name}", s.change_sla_hours),
+            &format!("{name} added {summary} on {} and its live payouts are held until a reviewer decides. The {}-hour target has passed.\n\nReviewer page: {}/reviewer\n", at.format("%d %b %Y %H:%M UTC"), s.change_sla_hours, s.console_url),
+        )
+        .await?;
+        sent += 1;
+    }
+    tx.commit().await?;
+    Ok(sent)
 }
 
 /// Changes waiting for a reviewer (for the `/metrics` gauge and an alert).
@@ -716,4 +1011,41 @@ pub async fn pending_count(pool: &PgPool) -> i64 {
         .fetch_one(pool)
         .await
         .unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clean_first_request_needs_one_reviewer_and_anything_odd_needs_two() {
+        let why = second_reviewer_reasons;
+        // everything passed, first time
+        assert!(why(TwoPerson::Flagged, 3, 0, 1, false).is_empty());
+        // a check did not pass, no check ran, asked three times
+        assert_eq!(why(TwoPerson::Flagged, 3, 1, 1, false).len(), 1);
+        assert_eq!(why(TwoPerson::Flagged, 0, 0, 1, false).len(), 1);
+        assert_eq!(why(TwoPerson::Flagged, 3, 0, 3, false).len(), 1);
+        assert_eq!(why(TwoPerson::Flagged, 0, 0, 3, false).len(), 2);
+        // always, never, and an escalation that beats never
+        assert_eq!(why(TwoPerson::Always, 3, 0, 1, false).len(), 1);
+        assert!(why(TwoPerson::Never, 0, 2, 5, false).is_empty());
+        assert_eq!(why(TwoPerson::Never, 3, 0, 1, true).len(), 1);
+    }
+
+    #[test]
+    fn the_policy_names_parse_and_nothing_else_does() {
+        assert_eq!(TwoPerson::parse(" Always "), Some(TwoPerson::Always));
+        assert_eq!(TwoPerson::parse("flagged"), Some(TwoPerson::Flagged));
+        assert_eq!(TwoPerson::parse("NEVER"), Some(TwoPerson::Never));
+        assert_eq!(TwoPerson::parse("sometimes"), None);
+    }
+
+    #[test]
+    fn only_a_pending_request_can_be_late() {
+        let long_ago = chrono::Utc::now() - chrono::Duration::hours(30);
+        assert!(sla(long_ago, 24, true).1);
+        assert!(!sla(long_ago, 24, false).1);
+        assert!(!sla(chrono::Utc::now() - chrono::Duration::hours(2), 24, true).1);
+    }
 }
