@@ -343,6 +343,7 @@ pub fn app(state: AppState) -> Router {
             "/console/users/{id}/mfa/reset",
             post(console_users::reset_mfa),
         )
+        .route("/console/branches", get(console_users::branches))
         .route("/console/authenticate", post(console_users::authenticate))
         // public self-serve signup
         .route("/signup", post(signup::signup))

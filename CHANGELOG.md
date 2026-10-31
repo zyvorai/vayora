@@ -5,6 +5,10 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 ## 31 October 2026
+**People page and FX exposure**
+- `GET /v1/console/branches` lists the branches a person can be tied to, read from the home environment that `invite` checks. The People page uses it, so a cashier can be invited with a branch while looking at live.
+- `/v1/fx/exposure` reports `complete: true` when no open dollar invoice lacks a rate (it said false with no dollar invoices).
+
 **iOS test apps**
 - `apps/ios`: **Vayora Pay** (a payer: scan, slide to pay, PIN, receipt, History, Settings) and **Vayora Merchant** (counter keypad, payment QR with Customer view, Today dashboard, refunds, setup by QR), on a shared `VayoraKit` and `VayoraUI` design system. Run on two physical iPhones against the simulator; no real money. A `VayoraGallery` tool renders the screens to PNG for review without a simulator.
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.

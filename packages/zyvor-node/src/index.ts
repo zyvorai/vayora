@@ -350,6 +350,8 @@ export class Zyvor {
 
   readonly branches = {
     list: () => this.req<Page<{ id: string; name: string }>>("GET", "/v1/branches"),
+    /** Branches a person can be tied to: read from the organisation's home environment, as invite checks them. */
+    assignable: () => this.req<Page<{ id: string; name: string }>>("GET", "/v1/console/branches"),
     create: (name: string) => this.req<{ id: string; name: string }>("POST", "/v1/branches", { name }),
   };
 

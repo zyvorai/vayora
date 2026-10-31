@@ -11,7 +11,7 @@ export default async function People() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
   const z = await api();
-  const [page, branches, invites] = await Promise.all([z.consoleUsers.list(), z.branches.list(), z.consoleUsers.invitations()]);
+  const [page, branches, invites] = await Promise.all([z.consoleUsers.list(), z.branches.assignable(), z.consoleUsers.invitations()]);
   return (
     <>
       <div className="head"><div><h1>People</h1><p className="lede">Who can sign in. <strong>Viewers</strong> can look, <strong>finance</strong> can also move money and send reminders, <strong>admins</strong> manage people.</p></div></div>

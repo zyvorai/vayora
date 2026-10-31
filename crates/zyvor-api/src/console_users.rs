@@ -130,6 +130,20 @@ pub(crate) async fn home(s: &AppState, mut auth: Auth) -> Result<Auth, ApiError>
     Ok(auth)
 }
 
+/// `GET /v1/console/branches`: the branches a person can be tied to. They are read from the home tenant, the same one
+/// `create_user` and `invite` check, so the People page offers exactly what those accept.
+pub async fn branches(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let auth = home(&s, auth).await?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, name FROM branches ORDER BY name")
+        .fetch_all(&mut *tx)
+        .await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>() }),
+    ))
+}
+
 /// Sign someone out everywhere: their console session keys stop working at once.
 pub(crate) async fn revoke_sessions(
     s: &AppState,

@@ -10463,3 +10463,27 @@ async fn paid_checks_are_capped_per_business_per_day(pool: PgPool) {
         0
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn console_branches_lists_only_this_organisations_branches(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    for name in ["Kothrud", "Baner"] {
+        t.ok(a, "POST", "/v1/branches", None, json!({ "name": name }))
+            .await;
+    }
+    let r = t
+        .ok(a, "GET", "/v1/console/branches", None, Value::Null)
+        .await;
+    let names: Vec<&str> = r["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Baner", "Kothrud"]);
+    let r = t
+        .ok(b, "GET", "/v1/console/branches", None, Value::Null)
+        .await;
+    assert!(r["data"].as_array().unwrap().is_empty());
+}

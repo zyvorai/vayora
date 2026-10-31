@@ -130,9 +130,8 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 
 - People live in the test tenant, so there are no live-only roles and cashier sessions stay in test (use a
   branch-limited API key at a live till).
-- The People page lists branches with the caller's own key, but `invite` checks them in the test tenant, so a cashier
-  cannot be invited with a branch while looking at live. Fix: add `GET /v1/console/branches` that is home-scoped and
-  use it on that page (`apps/zyvor-console/app/(app)/users/page.tsx`).
+- ~~The People page listed branches with the caller's own key while `invite` checked them in the test tenant.~~
+  **Done:** `GET /v1/console/branches` reads the home tenant and the page uses it (`z.branches.assignable()`).
 - ~~A revoked or expired session shows the error page instead of the sign-in page.~~ **Done:** `api()`
   (`apps/zyvor-console/lib/zyvor.ts`) turns a 401 for a person's own key into a redirect to `/login`.
 
