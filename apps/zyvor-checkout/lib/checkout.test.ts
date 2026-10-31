@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VPA, failureCopy, money, pollDelay } from "./checkout";
+import { VPA, failureCopy, money, pollDelay, supportLink, supportRef } from "./checkout";
 
 describe("checkout helpers", () => {
   it("formats money from minor units with Indian grouping", () => {
@@ -23,5 +23,16 @@ describe("checkout helpers", () => {
     expect(pollDelay("confirming")).toBe(4000);
     expect(pollDelay("paid")).toBeNull();
     expect(pollDelay("choose_method")).toBeNull();
+  });
+  it("makes a short support reference that grants no access", () => {
+    expect(supportRef("pi_01a18f898f4b75fb8738a1ca6c73235c")).toBe("6C73235C");
+    expect(supportRef("pi_abc")).toBe("ABC");
+  });
+  it("only links to https or a plain email address, and adds the reference", () => {
+    expect(supportLink("https://help.example.com/pay", "AB12CD34")).toBe("https://help.example.com/pay?ref=AB12CD34");
+    expect(supportLink("mailto:help@example.com", "AB12CD34")).toBe("mailto:help@example.com?subject=Payment%20AB12CD34");
+    for (const bad of [undefined, "", "javascript:alert(1)", "http://help.example.com", "https://u:p@help.example.com", "mailto:not an email", "data:text/html,x"]) {
+      expect(supportLink(bad, "AB12CD34"), String(bad)).toBeNull();
+    }
   });
 });

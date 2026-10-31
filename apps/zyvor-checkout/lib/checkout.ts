@@ -47,3 +47,26 @@ export const METHOD_LABEL: Record<string, string> = { upi: "UPI", card: "Card", 
 export function pollDelay(phase: Phase): number | null {
   return phase === "awaiting_payment" ? 2000 : phase === "confirming" ? 4000 : null;
 }
+
+/** A short code the payer can quote to support. Derived from the payment's id; it grants no access. */
+export function supportRef(intentId: string): string {
+  return intentId.replace(/^pi_/, "").slice(-8).toUpperCase();
+}
+
+/** Where "report a problem" goes. Only https and mailto are accepted, so a bad setting can never become a script link.
+ *  The reference is added so support can find the payment. Nothing secret or personal is put in the link. */
+export function supportLink(base: string | undefined, ref: string): string | null {
+  const b = (base ?? "").trim();
+  if (b.startsWith("mailto:")) {
+    const addr = b.slice("mailto:".length).split("?")[0];
+    return /^[^\s@?&]+@[^\s@?&]+$/.test(addr) ? `mailto:${addr}?subject=${encodeURIComponent(`Payment ${ref}`)}` : null;
+  }
+  try {
+    const u = new URL(b);
+    if (u.protocol !== "https:" || u.username || u.password) return null;
+    u.searchParams.set("ref", ref);
+    return u.toString();
+  } catch {
+    return null;
+  }
+}

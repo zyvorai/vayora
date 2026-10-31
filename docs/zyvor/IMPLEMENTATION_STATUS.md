@@ -40,3 +40,10 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 | Real partner adapter, physical-device UAT | Needs partner credentials, current partner documentation and devices |
 | The 20 mandatory acceptance tests (spec section 17) | Existing tests cover idempotency, unknown outcomes, refund reservation, tenant isolation, ledger balance and webhook SSRF; mapping each of the 20 to a test is **to audit** |
 | Restore drill, load and fault test evidence | Not run |
+
+## Checkout support reference (level 1)
+Every checkout state shows a short **support reference** derived from the payment id (it grants no access), and, if the operator sets `NEXT_PUBLIC_ZYVOR_SUPPORT_URL` at build time (an `https` URL or a `mailto:` address, nothing else is accepted), a **Report a problem** link that carries the reference. Strings are in six languages (not natively reviewed). Tests: `lib/checkout.test.ts`.
+
+## Payer apps to test on physical devices
+UPI payers use many apps and the checkout must work with all of them, not one. Before any live claim, test the QR scan and the intent launch on real devices with each of the common UPI apps (BHIM, PhonePe, Google Pay, Paytm and other bank and fintech UPI apps), on Android and on iOS, including launch failure and backgrounding. None of this has been done.
+
