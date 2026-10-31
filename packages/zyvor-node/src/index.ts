@@ -89,6 +89,8 @@ export interface SettingsPatch {
 
 export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }
 
+export type Customer = { id: string; name: string; email: string | null; phone: string | null; external_ref?: string | null; gstin: string | null; address1: string | null; location: string | null; pincode: string | null };
+
 export class ZyvorError extends Error {
   constructor(
     readonly status: number,
@@ -251,7 +253,10 @@ export class Zyvor {
   };
 
   readonly customers = {
-    list: (externalRef?: string) => this.req<Page<{ id: string; name: string; email: string | null; phone: string | null; external_ref: string | null }>>("GET", `/v1/customers${this.qs({ external_ref: externalRef })}`),
+    list: (externalRef?: string) => this.req<Page<Customer>>("GET", `/v1/customers${this.qs({ external_ref: externalRef })}`),
+    get: (id: string) => this.req<Customer>("GET", `/v1/customers/${encodeURIComponent(id)}`),
+    /** Correct details. A field left out stays; an empty string clears it. Issued invoices keep the GSTIN they were issued with. */
+    update: (id: string, p: { name?: string; email?: string; phone?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) => this.req<Customer>("PATCH", `/v1/customers/${encodeURIComponent(id)}`, p),
     create: (p: { name: string; email?: string; phone?: string; externalRef?: string; gstin?: string; address1?: string; location?: string; pincode?: string }) =>
       this.req<{ id: string }>("POST", "/v1/customers", { name: p.name, email: p.email, phone: p.phone, external_ref: p.externalRef, gstin: p.gstin, address1: p.address1, location: p.location, pincode: p.pincode }),
   };

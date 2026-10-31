@@ -41,9 +41,12 @@ export default async function Settings() {
         </label>
       </SettingsForm>
 
-      <SettingsForm title="GST" hint="Needed to issue tax invoices. The GSTIN is checked, including its check character." action={saveGst}>
+      <SettingsForm title="GST" hint="Needed to issue tax invoices. The GSTIN is checked, including its check character. The address appears on printed invoices and the draft e-invoice." action={saveGst}>
         <label className="field">GSTIN<input name="gstin" defaultValue={s.gst.gstin ?? ""} maxLength={15} autoCapitalize="characters" spellCheck={false} /></label>
         <label className="field">Legal name<input name="legal_name" defaultValue={s.gst.legal_name ?? ""} /></label>
+        <label className="field">Address<input name="address1" defaultValue={s.gst.address1 ?? ""} maxLength={100} /></label>
+        <label className="field">City<input name="location" defaultValue={s.gst.location ?? ""} maxLength={50} /></label>
+        <label className="field">Pincode<input name="pincode" defaultValue={s.gst.pincode ?? ""} inputMode="numeric" maxLength={6} /></label>
       </SettingsForm>
 
       <SettingsForm title="Exchange rate" hint={`Rupees per US dollar, used to show dollar amounts in INR in reports. One rate per day; it is never edited, so enter the next day's to change it.${fx.data[0] ? ` Latest: ${fx.data[0].rate} on ${fx.data[0].as_of}.` : " None recorded yet."}`} action={saveFxRate}>

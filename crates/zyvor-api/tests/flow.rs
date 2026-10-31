@@ -5177,6 +5177,40 @@ async fn einvoice_draft_lists_what_is_missing_then_matches_the_tax_invoice(pool:
         )
         .await;
     assert_eq!(d["draft"], true);
+    let got = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}", inv2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            got["place_of_supply"].clone(),
+            got["customer_id"].clone(),
+            got["issued_on"].clone()
+        ),
+        (
+            json!("07"),
+            cus2["id"].clone(),
+            json!(zyvor_api::ist_today().to_string())
+        )
+    );
+    let c = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/customers/{}", cus2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (c["pincode"].clone(), c["gstin"].clone()),
+        (json!("110001"), json!(buyer))
+    );
     assert_eq!(d["Version"], "1.1");
     assert_eq!(d["TranDtls"]["SupTyp"], "B2B");
     assert_eq!(d["SellerDtls"]["Stcd"], "27");
@@ -5193,6 +5227,87 @@ async fn einvoice_draft_lists_what_is_missing_then_matches_the_tax_invoice(pool:
     assert_eq!(d["ItemList"][0]["CgstAmt"], 0.0);
     assert_eq!(d["ValDtls"]["TotInvVal"], 1180.0);
     assert_eq!(d["ValDtls"]["AssVal"], 1000.0);
+
+    // a customer can be corrected; the invoice keeps the GSTIN it was issued with
+    let cid = cus2["id"].as_str().unwrap();
+    let pc = format!("/v1/customers/{cid}");
+    assert_eq!(
+        t.call(a, "PATCH", &pc, None, json!({ "gstin": "07AABCT1332L1ZX" }))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(a, "PATCH", &pc, None, json!({ "pincode": "12" }))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+    assert_eq!(
+        t.call(a, "PATCH", &pc, None, json!({ "name": " " }))
+            .await
+            .0
+            .as_u16(),
+        422
+    );
+    let fixed = t.ok(a, "PATCH", &pc, None, json!({ "name": "Delhi Traders Pvt Ltd", "location": "Delhi", "phone": "9999999999", "gstin": "" })).await;
+    assert_eq!(
+        (
+            fixed["name"].clone(),
+            fixed["location"].clone(),
+            fixed["pincode"].clone(),
+            fixed["gstin"].clone()
+        ),
+        (
+            json!("Delhi Traders Pvt Ltd"),
+            json!("Delhi"),
+            json!("110001"),
+            Value::Null
+        ),
+        "left-out fields stay, empty clears"
+    );
+    let again = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}/einvoice", inv2["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            again["BuyerDtls"]["Gstin"].clone(),
+            again["BuyerDtls"]["Loc"].clone()
+        ),
+        (json!(buyer), json!("Delhi"))
+    );
+    let list = t.ok(a, "GET", "/v1/customers", None, Value::Null).await;
+    assert!(
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == cus2["id"] && c["pincode"] == "110001")
+    );
+    assert_eq!(
+        t.call(b, "PATCH", &pc, None, json!({ "name": "x" }))
+            .await
+            .0
+            .as_u16(),
+        404,
+        "not another tenant's"
+    );
+    let audit = t.ok(a, "GET", "/v1/audit_events", None, Value::Null).await;
+    assert!(
+        audit["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["action"] == "customer.updated" && e["subject"] == cus2["id"])
+    );
 
     // another tenant cannot see it
     assert_eq!(

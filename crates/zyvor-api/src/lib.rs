@@ -192,7 +192,7 @@ pub fn app(state: AppState) -> Router {
             "/customers",
             post(create_customer).get(billing::list_customers),
         )
-        .route("/customers/{id}", get(get_customer))
+        .route("/customers/{id}", get(get_customer).patch(update_customer))
         .route("/branches", post(create_branch).get(list_branches))
         .route("/users", post(create_user))
         .route("/invoices", post(create_invoice).get(list_invoices))

@@ -337,6 +337,21 @@ paths:
         required: true
         schema:
           type: string
+    patch:
+      summary: Correct a customer's details (left-out fields stay; an empty string clears)
+      tags:
+      - customers
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/branches:
     get:
       summary: Create or list branches

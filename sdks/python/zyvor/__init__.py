@@ -94,6 +94,10 @@ class Zyvor:
     def ageing(self, as_of: Optional[str] = None) -> dict:
         return self._req("GET", "/v1/collections/ageing" + (f"?as_of={as_of}" if as_of else ""))
 
+    def update_customer(self, customer_id: str, **fields: str) -> dict:
+        """Correct a customer: name, email, phone, gstin, address1, location, pincode. Left-out fields stay; "" clears."""
+        return self._req("PATCH", f"/v1/customers/{customer_id}", fields)
+
     def einvoice_draft(self, invoice_id: str) -> dict:
         """DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal."""
         return self._req("GET", f"/v1/invoices/{invoice_id}/einvoice")

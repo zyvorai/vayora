@@ -424,6 +424,96 @@ pub async fn create_customer(
     ))
 }
 
+/// Fields to change on a customer. A field left out stays; an empty string clears it (name cannot be cleared).
+#[derive(Deserialize)]
+pub struct CustomerPatch {
+    name: Option<String>,
+    email: Option<String>,
+    phone: Option<String>,
+    gstin: Option<String>,
+    address1: Option<String>,
+    location: Option<String>,
+    pincode: Option<String>,
+}
+
+/// `PATCH /v1/customers/{id}`: correct a customer's details. Invoices already issued keep the GSTIN they were
+/// issued with (it is copied onto the invoice), so fixing a typo here does not rewrite history.
+pub async fn update_customer(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<CustomerPatch>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("customers:write")?;
+    if b.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+        return Err(ApiError::invalid("invalid_name", "name cannot be empty"));
+    }
+    let g = b.gstin.as_deref().map(str::trim).filter(|g| !g.is_empty());
+    if g.is_some_and(|g| !crate::gst::valid_gstin(g)) {
+        return Err(ApiError::invalid("invalid_gstin", "GSTIN is not valid"));
+    }
+    let nz = |v: &Option<String>| {
+        v.as_deref()
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(str::to_string)
+    };
+    crate::gst::check_address(
+        nz(&b.address1).as_deref(),
+        nz(&b.location).as_deref(),
+        nz(&b.pincode).as_deref(),
+    )?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let changed: Vec<&str> = [
+        ("name", b.name.is_some()),
+        ("email", b.email.is_some()),
+        ("phone", b.phone.is_some()),
+        ("gstin", b.gstin.is_some()),
+        ("address1", b.address1.is_some()),
+        ("location", b.location.is_some()),
+        ("pincode", b.pincode.is_some()),
+    ]
+    .into_iter()
+    .filter(|(_, c)| *c)
+    .map(|(n, _)| n)
+    .collect();
+    // `$n IS NULL` keeps the column; an empty string becomes NULL
+    let done = sqlx::query(
+        "UPDATE customers SET name = COALESCE($2, name),
+            email = CASE WHEN $3::text IS NULL THEN email ELSE NULLIF(btrim($3), '') END,
+            phone = CASE WHEN $4::text IS NULL THEN phone ELSE NULLIF(btrim($4), '') END,
+            gstin = CASE WHEN $5::text IS NULL THEN gstin ELSE NULLIF(btrim($5), '') END,
+            address1 = CASE WHEN $6::text IS NULL THEN address1 ELSE NULLIF(btrim($6), '') END,
+            location = CASE WHEN $7::text IS NULL THEN location ELSE NULLIF(btrim($7), '') END,
+            pincode = CASE WHEN $8::text IS NULL THEN pincode ELSE NULLIF(btrim($8), '') END
+         WHERE id = $1",
+    )
+    .bind(&id)
+    .bind(b.name.as_deref().map(str::trim))
+    .bind(&b.email)
+    .bind(&b.phone)
+    .bind(&b.gstin)
+    .bind(&b.address1)
+    .bind(&b.location)
+    .bind(&b.pincode)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::not_found("customer"));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "customer.updated",
+        Some(&id),
+        json!({ "fields": changed }),
+    )
+    .await?;
+    tx.commit().await?;
+    get_customer(State(s), auth, Path(id)).await
+}
+
 pub async fn get_customer(
     State(s): State<AppState>,
     auth: Auth,
@@ -442,8 +532,17 @@ pub async fn get_customer(
         .fetch_optional(&mut *tx)
         .await?;
     let (id, name, email, phone, ext) = r.ok_or_else(|| ApiError::not_found("customer"))?;
+    let (gstin, address1, location, pincode): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as("SELECT gstin, address1, location, pincode FROM customers WHERE id = $1")
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext }),
+        json!({ "id": id, "name": name, "email": email, "phone": phone, "external_ref": ext, "gstin": gstin, "address1": address1, "location": location, "pincode": pincode }),
     ))
 }
 
@@ -663,6 +762,7 @@ pub async fn get_invoice(
     let r: Option<(String, String, String, i64, i64, Option<String>, String, Option<NaiveDate>)> = sqlx::query_as("SELECT id, number, currency, amount_minor, tax_minor, external_ref, status, due_date FROM invoices WHERE id = $1").bind(&id).fetch_optional(&mut *tx).await?;
     let (id, number, currency, amount, tax, ext, status, due) =
         r.ok_or_else(|| ApiError::not_found("invoice"))?;
+    let (customer_id, pos, buyer_gstin, reverse, issued): (Option<String>, Option<String>, Option<String>, bool, NaiveDate) = sqlx::query_as("SELECT customer_id, place_of_supply, buyer_gstin, reverse_charge, (created_at AT TIME ZONE 'Asia/Kolkata')::date FROM invoices WHERE id = $1").bind(&id).fetch_one(&mut *tx).await?;
     let allocs: Vec<(String, i64, String)> = sqlx::query_as("SELECT intent_id, amount_minor, reference FROM invoice_allocations WHERE invoice_id = $1 ORDER BY id").bind(&id).fetch_all(&mut *tx).await?;
     let paid: i64 = allocs.iter().map(|a| a.1).sum();
     let credited: i64 = sqlx::query_scalar(
@@ -673,6 +773,7 @@ pub async fn get_invoice(
     .await?;
     Ok(Json(json!({
         "id": id, "number": number, "currency": currency, "amount_minor": amount, "tax_minor": tax, "external_ref": ext, "status": status, "due_date": due,
+        "customer_id": customer_id, "place_of_supply": pos, "buyer_gstin": buyer_gstin, "reverse_charge": reverse, "issued_on": issued,
         "paid_minor": paid, "credited_minor": credited, "outstanding_minor": amount - paid - credited,
         "allocations": allocs.into_iter().map(|(i, a, r)| json!({ "intent_id": i, "amount_minor": a, "reference": r })).collect::<Vec<_>>(),
     })))
