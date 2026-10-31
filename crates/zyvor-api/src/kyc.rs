@@ -25,12 +25,16 @@ impl Outcome {
 pub struct Check {
     pub outcome: Outcome,
     pub detail: String,
+    /// The name the bank holds for the account, when the check returns one. Compared with the name the
+    /// merchant gave; it is never stored.
+    pub registered_name: Option<String>,
 }
 
 fn check(outcome: Outcome, detail: &str) -> Check {
     Check {
         outcome,
         detail: detail.to_string(),
+        registered_name: None,
     }
 }
 
@@ -68,17 +72,49 @@ impl Kyc {
 
     /// A penny-drop: does this account exist and is it held by this name? The simulator: an account
     /// number ending `0000` does not exist, one ending `1111` has a different holder name.
-    pub async fn verify_bank(self, _ifsc: &str, account: &str, _holder: &str) -> Check {
+    pub async fn verify_bank(self, _ifsc: &str, account: &str, holder: &str) -> Check {
         match self {
             Kyc::Simulator if account.ends_with("0000") => {
                 check(Outcome::Fail, "account not found")
             }
-            Kyc::Simulator if account.ends_with("1111") => {
-                check(Outcome::Inconclusive, "account holder name does not match")
-            }
-            Kyc::Simulator => check(Outcome::Pass, "account verified by penny drop"),
+            // the bank's records say someone else: the caller's name comparison catches it
+            Kyc::Simulator if account.ends_with("1111") => Check {
+                registered_name: Some("SOMEONE ELSE ENTIRELY".into()),
+                ..check(Outcome::Pass, "account exists")
+            },
+            Kyc::Simulator => Check {
+                registered_name: Some(holder.to_string()),
+                ..check(Outcome::Pass, "account verified by penny drop")
+            },
         }
     }
+}
+
+/// Do two account-holder names refer to the same party? Case, punctuation, honorifics and company suffixes
+/// are ignored, and the shorter name may be a subset of the longer ("KIRAN TRADERS" and "KIRAN TRADERS
+/// PRIVATE LIMITED"). It needs at least one real word in common and rejects an empty name.
+pub fn names_match(a: &str, b: &str) -> bool {
+    fn words(s: &str) -> std::collections::BTreeSet<String> {
+        const NOISE: [&str; 14] = [
+            "MR", "MRS", "MS", "MISS", "DR", "SHRI", "SMT", "SRI", "M", "S", "PVT", "LTD",
+            "LIMITED", "PRIVATE",
+        ];
+        s.to_uppercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty() && !NOISE.contains(w))
+            .map(str::to_string)
+            .collect()
+    }
+    let (x, y) = (words(a), words(b));
+    if x.is_empty() || y.is_empty() {
+        return false;
+    }
+    let (short, long) = if x.len() <= y.len() {
+        (&x, &y)
+    } else {
+        (&y, &x)
+    };
+    short.is_subset(long)
 }
 
 /// A GSTIN embeds the holder's PAN in characters 3 to 12.
@@ -166,7 +202,26 @@ mod tests {
             )
         });
         use Outcome::*;
-        assert_eq!(r, (Pass, Fail, Inconclusive, Pass, Fail, Inconclusive));
+        // an account held under another name still "passes" the existence check; the caller compares names
+        assert_eq!(r, (Pass, Fail, Inconclusive, Pass, Fail, Pass));
+        let other = tokio_test_block(Kyc::Simulator.verify_bank(
+            "HDFC0001234",
+            "123456781111",
+            "Kiran Traders",
+        ));
+        assert!(!names_match(
+            "Kiran Traders",
+            other.registered_name.as_deref().unwrap()
+        ));
+        let same = tokio_test_block(Kyc::Simulator.verify_bank(
+            "HDFC0001234",
+            "123456789012",
+            "Kiran Traders",
+        ));
+        assert!(names_match(
+            "Kiran Traders",
+            same.registered_name.as_deref().unwrap()
+        ));
     }
 
     fn tokio_test_block<F: std::future::Future>(f: F) -> F::Output {
@@ -174,6 +229,21 @@ mod tests {
             .build()
             .unwrap()
             .block_on(f)
+    }
+
+    #[test]
+    fn account_holder_names_are_compared_loosely_but_not_carelessly() {
+        assert!(names_match("Kiran Traders", "KIRAN TRADERS"));
+        assert!(names_match("Mr. Kiran Kumar", "KIRAN KUMAR"));
+        assert!(names_match(
+            "Kiran Traders",
+            "KIRAN TRADERS PRIVATE LIMITED"
+        ));
+        assert!(names_match("M/S Kiran Traders", "Kiran  Traders"));
+        assert!(!names_match("Kiran Traders", "SOMEONE ELSE ENTIRELY"));
+        assert!(!names_match("Kiran Traders", "Kiran Brothers"));
+        assert!(!names_match("", "Kiran"));
+        assert!(!names_match("Mr", "Mrs"), "only honorifics is not a name");
     }
 
     #[test]

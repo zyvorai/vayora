@@ -25,7 +25,7 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
 - **Check:** a test in `crates/zyvor-api/tests/flow.rs` that signs up, invites a second admin, has them approve, and
   expects `switch_env` to live to still be refused.
 
-### 1.2 Bank accounts are auto-verified after approval, and the holder name is not compared
+### 1.2 Bank accounts are auto-verified after approval, and the holder name is not compared — **DONE** (a new account is only auto-verified before the business is submitted; the bank's name for the account is compared with the name given (`kyc::names_match`))
 - **Why:** `add_bank_account` (`onboarding.rs`) marks an account verified (`verified_by = 'system:kyc'`) whenever the
   simulator's penny drop passes, at any time, and `kyc.rs::verify_bank` ignores the holder name.
 - **How:** only auto-verify while the profile is `draft`/`rejected`; for an approved merchant a new account goes to a
@@ -34,7 +34,7 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
   `holder` it was given unless the handle says otherwise.
 - **Check:** extend `onboarding_auto_approves_a_clean_case_and_routes_the_rest_to_a_person`.
 
-### 1.3 Session keys can be renewed forever, and are not revoked at sign-out
+### 1.3 Session keys can be renewed forever, and are not revoked at sign-out — **DONE** (a session ends 12 hours after its sign-in whatever swaps happen; a switch revokes the key it replaced; `POST /v1/console/logout` revokes the key; the worker prunes session keys a day after they end)
 - **Why:** `switch_env` mints a fresh 12-hour key from any session key with no password or second factor; the old key
   stays valid; each sign-in or switch adds an `api_keys` row named `console session`. Sign-out only deletes cookies.
 - **How:** (a) add `session_started_at` to `api_keys` (new migration, number after the highest on `main`), copy it
@@ -44,7 +44,7 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
   (`crates/zyvor-api/src/worker.rs`).
 - **Check:** tests for the 12-hour cap, for logout making the key return 401, and for the prune job.
 
-### 1.4 The console's server calls share one rate-limit bucket
+### 1.4 The console's server calls share one rate-limit bucket — **DONE** (the console signs the visitor's address with `ZYVOR_ACTOR_SECRET` and the API uses it; set `CONSOLE_TRUST_PROXY_HOPS` to the number of proxies in front of the console, default 0 sends nothing)
 - **Why:** `apps/zyvor-console/lib/public.ts` calls the public endpoints (signup, login, reset, invitations) from the
   console server without the visitor's address, so the API sees one client and one visitor can lock everyone out.
 - **How:** in `publicPost`, forward the visitor's address from `headers()` (`x-forwarded-for`, set by your proxy) as
@@ -133,9 +133,8 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 - The People page lists branches with the caller's own key, but `invite` checks them in the test tenant, so a cashier
   cannot be invited with a branch while looking at live. Fix: add `GET /v1/console/branches` that is home-scoped and
   use it on that page (`apps/zyvor-console/app/(app)/users/page.tsx`).
-- A revoked or expired session shows the error page instead of the sign-in page. Fix: have `api()`
-  (`apps/zyvor-console/lib/zyvor.ts`) turn a 401 into `redirect("/login")`, or check a cheap "who am I" endpoint in the
-  app layout.
+- ~~A revoked or expired session shows the error page instead of the sign-in page.~~ **Done:** `api()`
+  (`apps/zyvor-console/lib/zyvor.ts`) turns a 401 for a person's own key into a redirect to `/login`.
 
 ---
 
@@ -175,4 +174,5 @@ translations for the new pages (`apps/zyvor-checkout` shows the approach).
 | `ZYVOR_KYC_PROVIDER=simulator` | API | Auto-approve with the simulator. **Never for real merchants** |
 | `ZYVOR_PUBLIC_API_URL` / `API_PUBLIC_URL` | Console | Public API address shown on the Providers page |
 | `ZYVOR_TRUST_PROXY_HOPS` | API | How many proxies vouch for `X-Forwarded-For` |
+| `CONSOLE_TRUST_PROXY_HOPS` | Console | How many proxies sit in front of the console; its visitors' addresses are only forwarded (signed) when this is 1 or more. Needs `ZYVOR_ACTOR_SECRET` on both sides |
 | `ZYVOR_SIM_PAYER=1` | API | Lets the iPhone payer app approve simulated QR payments (test only) |

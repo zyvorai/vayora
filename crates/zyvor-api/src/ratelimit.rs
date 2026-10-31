@@ -105,6 +105,26 @@ pub fn client_ip(
     ext.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip())
 }
 
+/// The visitor's address as vouched for by the console. The console runs on the same host as the people it
+/// serves, so without this every visitor looks like the console and shares one budget. It signs the address
+/// with the shared `ZYVOR_ACTOR_SECRET`; an address that is unsigned, badly signed or old is ignored, so a
+/// caller cannot pick which budget it falls in.
+pub fn vouched_client_ip(secret: Option<&[u8]>, headers: &HeaderMap) -> Option<IpAddr> {
+    let secret = secret?;
+    let ip = headers.get("zyvor-client-ip")?.to_str().ok()?;
+    let sig = headers.get("zyvor-client-ip-signature")?.to_str().ok()?;
+    if !crate::outbox::verify(
+        secret,
+        sig,
+        ip.as_bytes(),
+        chrono::Utc::now().timestamp(),
+        300,
+    ) {
+        return None;
+    }
+    ip.trim().parse().ok()
+}
+
 fn too_many(retry: u64) -> Response {
     let mut r = (
         StatusCode::TOO_MANY_REQUESTS,
@@ -125,7 +145,8 @@ pub async fn limit(State(s): State<AppState>, req: Request, next: Next) -> Respo
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    let ip = client_ip(req.headers(), req.extensions(), s.trusted_hops);
+    let ip = vouched_client_ip(s.actor_secret.as_deref(), req.headers())
+        .or_else(|| client_ip(req.headers(), req.extensions(), s.trusted_hops));
     // provider webhooks arrive without a key from a handful of addresses; give them the roomier bucket
     let webhook = req.uri().path().contains("/webhooks/");
     let checks: Vec<(String, Bucket)> = match bearer {
