@@ -139,3 +139,21 @@ export async function escalateChange(_: State, form: FormData): Promise<State> {
   revalidatePath("/reviewer");
   return { ok: "Done. A different reviewer must now approve it too." };
 }
+
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+/** Replace the signed-in reviewer's weekly hours: one shift per ticked day. */
+export async function saveRota(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const shifts = DAY_KEYS.filter((d) => form.get(`${d}_on`) === "on").map((d) => ({ weekday: d, start: String(form.get(`${d}_start`) ?? ""), end: String(form.get(`${d}_end`) ?? "") }));
+  const r = await platform(key, "PUT", "/rota/me", { shifts });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer/rota");
+  revalidatePath("/reviewer");
+  return { ok: shifts.length ? "Your hours are saved." : "Your hours are cleared; you are not on the rota." };
+}

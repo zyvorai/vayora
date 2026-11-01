@@ -1,6 +1,7 @@
 "use client";
 import { useActionState, useState } from "react";
-import { assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
+import { assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, reviewerSignIn, saveRota } from "@/lib/reviewer-actions";
+import { DAYS, type RotaShift } from "@/lib/rota";
 
 export function ReviewerSignIn() {
   const [state, action, pending] = useActionState(reviewerSignIn, undefined);
@@ -124,6 +125,29 @@ export function EscalateChangeForm({ id }: { id: string }) {
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
       <div><button className="btn small" disabled={pending}>{pending ? "…" : "Ask for a second reviewer"}</button></div>
+    </form>
+  );
+}
+
+/** The signed-in reviewer's weekly hours: one shift per day, in the review desk's local time. */
+export function RotaForm({ shifts }: { shifts: RotaShift[] }) {
+  const [state, action, pending] = useActionState(saveRota, undefined);
+  const by = (d: string) => shifts.find((s) => s.weekday === d);
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(DAYS.map((d) => [d, !!by(d)])));
+  const [hours, setHours] = useState<Record<string, { start: string; end: string }>>(() => Object.fromEntries(DAYS.map((d) => [d, { start: by(d)?.start ?? "09:00", end: by(d)?.end ?? "18:00" }])));
+  return (
+    <form action={action} style={{ display: "grid", gap: 10 }}>
+      {DAYS.map((d) => (
+        <div key={d} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <label style={{ width: 70, textTransform: "capitalize" }}><input type="checkbox" name={`${d}_on`} checked={on[d]} onChange={(e) => setOn({ ...on, [d]: e.target.checked })} /> {d}</label>
+          <input type="time" name={`${d}_start`} value={hours[d].start} disabled={!on[d]} onChange={(e) => setHours({ ...hours, [d]: { ...hours[d], start: e.target.value } })} aria-label={`${d} from`} />
+          <span className="fine">to</span>
+          <input type="time" name={`${d}_end`} value={hours[d].end} disabled={!on[d]} onChange={(e) => setHours({ ...hours, [d]: { ...hours[d], end: e.target.value } })} aria-label={`${d} until`} />
+        </div>
+      ))}
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small primary" disabled={pending}>{pending ? "…" : "Save my hours"}</button></div>
     </form>
   );
 }

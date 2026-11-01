@@ -165,6 +165,10 @@ pub async fn disable_reviewer(pool: &PgPool, id: &str) -> Result<bool, sqlx::Err
         .bind(id)
         .execute(pool)
         .await?;
+        sqlx::query("DELETE FROM reviewer_shifts WHERE reviewer_id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
     }
     Ok(done)
 }

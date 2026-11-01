@@ -81,8 +81,27 @@ live-access requests and for changes alike (`change-claim|change-release|change-
 deciding it: its live payout hold is unaffected. It returns to the queue on the same events (holder disabled, first of
 two approvals, decided).
 
-**Not built:** a reviewer's working hours or on-call rota, and automatic assignment. (A revoke is one person on purpose;
-giving access back needs two.)
+## The rota (who is on duty)
+
+Each reviewer sets weekly hours in the review desk's local time: the **Rota** page in the reviewer console, or
+`scripts/platform-review.sh rota-set "mon-fri 09:00-18:00" "sat 10:00-14:00"` (`rota` shows everyone's hours and who is
+on duty now; `rota-set none` clears yours). The queue shows "On duty now: ..." or, in red, "Nobody is on duty now".
+
+- The desk's time is a **fixed UTC offset**, `ZYVOR_REVIEW_UTC_OFFSET_MINUTES` (default 330, India; set it on the API).
+  There is no daylight saving, so a desk that observes it changes the offset twice a year.
+- A shift that runs past midnight is two shifts (to 24:00, then from 00:00 the next day); the console form takes one
+  shift a day, the script and `PUT /v1/platform/rota/me` take any number. Each reviewer sets only their own hours;
+  disabling a reviewer removes theirs.
+- It **informs and never blocks**: an off-duty reviewer can still decide, and assignment, escalation, the clock and the
+  second-reviewer rule ignore the rota. The review target (`ZYVOR_REVIEW_SLA_HOURS`) still counts wall-clock hours, not
+  duty hours.
+- Gauge `zyvor_review_on_duty`: how many active reviewers are on duty now, or **-1 when nobody has set hours** (the rota
+  is not in use, so an empty desk means nothing). Alert `ZyvorReviewQueueUnattended` fires when it is 0 for 15 minutes
+  while requests or changes are waiting.
+
+**Not built:** automatic assignment by the rota, emailing whoever is on duty (reviewers have no email address on file),
+holidays and leave, daylight saving, and a lead setting other people's hours. (A revoke is one person on purpose; giving
+access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -189,6 +208,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Working hours and an on-call rota, and automatic assignment (assigning requests and changes, the clock and the second reviewer exist; see above).
+- Automatic assignment, emailing the on-duty reviewer, holidays and leave, daylight saving (the rota, assignment, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.

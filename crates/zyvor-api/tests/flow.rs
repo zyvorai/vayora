@@ -12990,3 +12990,150 @@ async fn a_test_organisation_can_run_billing_and_reminders_as_of_another_day(poo
         assert_eq!(body["error"]["code"], "test_only", "{path}: {body}");
     }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn the_rota_shows_who_is_on_duty_and_feeds_the_unattended_gauge(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let call = |k: &str, m: &'static str, p: &str, b: Value| {
+        let (app, k, p) = (t.app.clone(), k.to_string(), p.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+
+    // nobody has set hours: the rota is not in use, and the gauge says so (-1) rather than "nobody on duty"
+    let (st0, r) = call(&a_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(st0, StatusCode::OK, "{r}");
+    assert_eq!(
+        (r["configured"].clone(), r["on_duty_now"].clone()),
+        (json!(false), json!([]))
+    );
+    assert_eq!(r["reviewers"].as_array().unwrap().len(), 2);
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, -1);
+
+    // bad shifts are refused, with a reason
+    for (shift, why) in [
+        (
+            json!({ "weekday": "funday", "start": "09:00", "end": "18:00" }),
+            "weekday",
+        ),
+        (
+            json!({ "weekday": "mon", "start": "9am", "end": "18:00" }),
+            "not a time",
+        ),
+        (
+            json!({ "weekday": "mon", "start": "18:00", "end": "09:00" }),
+            "ends after it starts",
+        ),
+        (
+            json!({ "weekday": "mon", "start": "24:00", "end": "24:00" }),
+            "ends after it starts",
+        ),
+    ] {
+        let (st, b) = call(
+            &a_key,
+            "PUT",
+            "/v1/platform/rota/me",
+            json!({ "shifts": [shift] }),
+        )
+        .await;
+        assert_eq!(
+            (st, b["error"]["code"].clone()),
+            (StatusCode::UNPROCESSABLE_ENTITY, json!("invalid_shift")),
+            "{b}"
+        );
+        assert!(b["error"]["message"].as_str().unwrap().contains(why), "{b}");
+    }
+    let (_, r) = call(&a_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(r["configured"], false, "a refused rota changes nothing");
+
+    // Asha works every day, all day; Bala sets no hours. Asha is on duty and the gauge counts her
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    let (st, b) = call(
+        &a_key,
+        "PUT",
+        "/v1/platform/rota/me",
+        json!({ "shifts": all_week }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["shifts"].clone(), b["on_duty"].clone()),
+        (StatusCode::OK, json!(7), json!(true)),
+        "{b}"
+    );
+    let (_, r) = call(&b_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(
+        (r["configured"].clone(), r["on_duty_now"].clone()),
+        (json!(true), json!(["Asha"]))
+    );
+    let who = |name: &str| {
+        r["reviewers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        (who("Asha")["on_duty"].clone(), who("Asha")["me"].clone()),
+        (json!(true), json!(false))
+    );
+    assert_eq!(
+        (who("Bala")["on_duty"].clone(), who("Bala")["me"].clone()),
+        (json!(false), json!(true))
+    );
+    assert_eq!(who("Asha")["shifts"].as_array().unwrap().len(), 7);
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 1);
+
+    // setting hours replaces the old ones; an empty list clears them; so the desk is unattended (0), not unconfigured
+    let (_, b) = call(
+        &b_key,
+        "PUT",
+        "/v1/platform/rota/me",
+        json!({ "shifts": [{ "weekday": "mon", "start": "09:00", "end": "09:01" }] }),
+    )
+    .await;
+    assert_eq!(b["shifts"], 1);
+    let (_, _) = call(
+        &a_key,
+        "PUT",
+        "/v1/platform/rota/me",
+        json!({ "shifts": [] }),
+    )
+    .await;
+    let n = zyvor_api::rota::on_duty_count(&t.state).await;
+    assert!(
+        n == 0 || n == 1,
+        "Bala's one-minute Monday shift may or may not be now: {n}"
+    );
+    assert_ne!(
+        n, -1,
+        "someone has hours, so an empty desk now means unattended"
+    );
+
+    // a disabled reviewer drops off the rota with their hours
+    let _ = a_id;
+    let (b_id,): (String,) =
+        sqlx::query_as("SELECT id FROM platform_reviewers WHERE name = 'Bala'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert!(
+        zyvor_api::platform::disable_reviewer(&t.state.pool, &b_id)
+            .await
+            .unwrap()
+    );
+    let (_, r) = call(&a_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(r["reviewers"].as_array().unwrap().len(), 1);
+    assert_eq!(t.count("SELECT count(*) FROM reviewer_shifts").await, 0);
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, -1);
+}
