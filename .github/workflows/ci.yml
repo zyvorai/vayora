@@ -43,6 +43,7 @@ jobs:
           PY
           python3 scripts/check-openapi.py
           python3 scripts/gen-openapi-requests.py --check
+          python3 scripts/gen-sdk-types.py --check
           python3 -c "import yaml; from openapi_spec_validator import validate; validate(yaml.safe_load(open('openapi/zyvor.yaml')))"
   ios:
     runs-on: macos-latest
