@@ -341,8 +341,17 @@ pub async fn request_profile_change(
         diff.join("; ")
     );
     let id = new_id("lchg");
-    sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by) VALUES ($1,$2,$3,'profile',$1,$4,$5)")
-        .bind(&id).bind(&org).bind(&auth.tenant_id).bind(&summary).bind(&auth.actor)
+    let flagged: Vec<String> = if checks.is_empty() {
+        vec!["no automatic check ran on the new details".to_string()]
+    } else {
+        checks
+            .iter()
+            .filter(|(_, c)| c.outcome != kyc::Outcome::Pass)
+            .map(|(k, c)| format!("the {k} check did not pass ({})", c.detail))
+            .collect()
+    };
+    sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by, flagged_because) VALUES ($1,$2,$3,'profile',$1,$4,$5,$6)")
+        .bind(&id).bind(&org).bind(&auth.tenant_id).bind(&summary).bind(&auth.actor).bind(&flagged)
         .execute(&mut *tx).await?;
     sqlx::query("INSERT INTO profile_changes (change_id, legal_name, business_type, pan_last4, gstin, address, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)")
         .bind(&id).bind(name).bind(&p.business_type).bind(&pan[6..]).bind(&gstin).bind(address).bind(reason)
@@ -473,10 +482,17 @@ pub async fn add_bank_account(
     .fetch_optional(&mut *tx)
     .await?;
     if let Some(org) = change {
-        sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by) VALUES ($1,$2,$3,'bank_account',$4,$5,$6)")
+        let flagged: Vec<String> = match &penny {
+            None => vec!["no bank check ran".to_string()],
+            Some(c) if c.outcome != kyc::Outcome::Pass => {
+                vec![format!("the bank check did not pass ({})", c.detail)]
+            }
+            Some(_) => vec![],
+        };
+        sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by, flagged_because) VALUES ($1,$2,$3,'bank_account',$4,$5,$6,$7)")
             .bind(new_id("lchg")).bind(&org).bind(&auth.tenant_id).bind(&id)
             .bind(format!("{} · {} · ••••{}", b.holder_name.trim(), ifsc, &acct[acct.len() - 4..]))
-            .bind(&auth.actor)
+            .bind(&auth.actor).bind(&flagged)
             .execute(&mut *tx).await?;
     }
     tenant::audit(

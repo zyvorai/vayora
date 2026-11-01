@@ -1564,7 +1564,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/changes/{id}/decision:
     post:
-      summary: Zyvor reviewers only: approve a change, or reject it with a note (the account is removed and the merchant is told why)
+      summary: Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves it pending), or reject it with a note (the account is removed and the merchant is told why)
       tags:
       - platform
       parameters:

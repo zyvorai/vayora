@@ -52,7 +52,7 @@ a second reviewer" on the review page) when no rule fired but something looks wr
 the second approval. Both approvals are in the merchant's audit trail (`live_access.first_approval`, then
 `live_access.approved`, which names the first approver). **You need at least two active reviewers** for `flagged` or
 `always` to ever open anything; with one, set `never` or add another (`zyvor-api platform-reviewer add`). Revoking, and
-approving a changed bank account, still take one reviewer.
+approving an unflagged change, still take one reviewer.
 
 **The clock.** Every request and every held change has a *target*: `ZYVOR_REVIEW_SLA_HOURS` (default 24) for live access,
 `ZYVOR_CHANGE_SLA_HOURS` (default 4) for a bank account that holds a live business's payouts. It is a target, not a
@@ -79,7 +79,7 @@ Assignment is a courtesy that stops duplicated work, not an access control: any 
 live-access requests, not bank-account changes.
 
 **Not built:** a reviewer's working hours or on-call rota, assigning bank-account changes, automatic assignment, and a
-second reviewer for bank-account changes (a revoke is one person on purpose; giving access back needs two).
+assigning changes, and an escalation for changes (a revoke is one person on purpose; giving access back needs two).
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -129,6 +129,11 @@ and **who it is** (its legal details, below).
   both the test and live copies; **reject** needs a reason and leaves the old ones. One request can wait at a time. Only
   the last four digits of the PAN are kept, so the reviewer sees the PAN ending, not the PAN. A change of legal name
   does not by itself check that the bank account holder still matches; look at the bank accounts on the review page.
+- **Two reviewers for a change.** What was unclear when the change was made is kept (`flagged_because`: no bank check
+  ran, a bank/PAN/GSTIN check did not pass). Under `ZYVOR_REVIEW_TWO_PERSON=flagged` (default) a flagged change needs two
+  different reviewers: the first approval is recorded and the change stays pending, so **payouts stay held**; a
+  different reviewer completes it (`second_reviewer_required` otherwise). `always` asks for two on every change, `never`
+  on none. Rejecting is always one reviewer. There is no escalation for changes.
 - the gauge `zyvor_live_changes_pending` counts waiting changes; the alert `ZyvorLiveChangeWaiting` fires after 4 hours.
 
 **What this does not do:** it does not re-run KYC. Zyvor keeps only the last four digits of a PAN, so it cannot re-check

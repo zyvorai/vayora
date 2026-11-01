@@ -12,6 +12,7 @@ const DONE: Record<string, string> = {
   revoke: "Live mode taken away. New payments and payouts for that business have stopped, and the merchant has been emailed.",
   restore: "Live mode given back. The merchant has been emailed.",
   first_approval: "First approval recorded. A different reviewer must approve it too before live mode opens.",
+  change_first_approval: "First approval recorded. A different reviewer must approve this change too; the business's live payouts stay held until then.",
   change_approve: "Change approved. Live payouts for that business are no longer held for it.",
   change_reject: "Change rejected. The account was removed and the merchant has been emailed your reason.",
 };
@@ -50,8 +51,8 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
           <div style={{ display: "grid", gap: 14 }}>
             {changes.map((c) => (
               <div key={c.id} style={{ display: "grid", gap: 6, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", alignItems: "start" }}>
-                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>{c.kind === "profile" ? ": change to legal details" : ": new bank account"}<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div><div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
-                <ChangeForm id={c.id} />
+                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>{c.kind === "profile" ? ": change to legal details" : ": new bank account"}<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>{c.stage === "awaiting_second" ? <div className="fine">{c.first_approved_by} approved; needs a different reviewer</div> : c.needs_second_because.length > 0 && <div className="fine">needs two reviewers: {c.needs_second_because.join("; ")}</div>}<div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
+                <ChangeForm id={c.id} kind={c.kind} firstApprovalOnly={c.stage !== "awaiting_second" && c.needs_second_because.length > 0} />
               </div>
             ))}
           </div>
