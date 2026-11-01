@@ -649,3 +649,824 @@ func VerifyWebhook(secret, header string, rawBody []byte, tolerance time.Duratio
 	m.Write(rawBody)
 	return hmac.Equal(m.Sum(nil), sig)
 }
+
+// ---- more of the API, one method each (the Python SDK has the same set) ----
+
+// GetAttempt: One payment attempt.
+func (c *Client) GetAttempt(attemptId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_attempts/" + attemptId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RefreshAttempt: Ask the provider where an attempt stands now.
+func (c *Client) RefreshAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/refresh", body)
+}
+
+// CancelAttempt: Cancel an attempt that has not been paid.
+func (c *Client) CancelAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/cancel", body)
+}
+
+// CaptureAttempt: Capture an authorised attempt (manual capture).
+func (c *Client) CaptureAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/capture", body)
+}
+
+// ListRefunds: Refunds, optionally by status (for example pending_approval).
+func (c *Client) ListRefunds(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/refunds"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ApproveRefund: Approve a refund waiting for a second person.
+func (c *Client) ApproveRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/approve", body)
+}
+
+// RejectRefund: Reject a refund waiting for approval.
+func (c *Client) RejectRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/reject", body)
+}
+
+// RetryRefund: Retry a failed refund.
+func (c *Client) RetryRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/retry", body)
+}
+
+// RefreshRefund: Ask the provider where a refund stands.
+func (c *Client) RefreshRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/refresh", body)
+}
+
+// ListSettlements: Settlements imported from providers.
+func (c *Client) ListSettlements() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settlements"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListCases: Reconciliation cases.
+func (c *Client) ListCases(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/recon/cases"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CaseSuggestions: Evidence and next steps for a case (read only).
+func (c *Client) CaseSuggestions(caseId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/recon/cases/" + caseId + "/suggestions"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// AssignCase: Give a case to someone.
+func (c *Client) AssignCase(caseId string, assignee string) (map[string]any, error) {
+	body := map[string]any{}
+	body["assignee"] = assignee
+	return c.call("POST", "/v1/recon/cases/"+caseId+"/assign", body)
+}
+
+// ResolveCase: Close a case with what was done.
+func (c *Client) ResolveCase(caseId string, resolution string) (map[string]any, error) {
+	body := map[string]any{}
+	body["resolution"] = resolution
+	return c.call("POST", "/v1/recon/cases/"+caseId+"/resolve", body)
+}
+
+// ListPlans: Billing plans.
+func (c *Client) ListPlans() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/plans"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListSubscriptions: Subscriptions.
+func (c *Client) ListSubscriptions() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/subscriptions"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// PauseSubscription: Pause a subscription.
+func (c *Client) PauseSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/pause", body)
+}
+
+// ResumeSubscription: Resume a paused subscription.
+func (c *Client) ResumeSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/resume", body)
+}
+
+// CancelSubscription: Cancel a subscription.
+func (c *Client) CancelSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/cancel", body)
+}
+
+// ListInvoices: Invoices, optionally by status.
+func (c *Client) ListInvoices(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/invoices"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// GetInvoice: One invoice.
+func (c *Client) GetInvoice(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateInvoice: Raise an invoice: give amount_minor, or GST lines and the server computes tax and total.
+func (c *Client) CreateInvoice(number string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["number"] = number
+	return c.call("POST", "/v1/invoices", body)
+}
+
+// VoidInvoice: Void an invoice nothing has been paid or credited against.
+func (c *Client) VoidInvoice(invoiceId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/invoices/"+invoiceId+"/void", body)
+}
+
+// InvoiceLines: An invoice's GST lines.
+func (c *Client) InvoiceLines(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId + "/lines"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListReminders: Reminders sent for an invoice.
+func (c *Client) ListReminders(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId + "/reminders"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListPromises: Promises to pay, optionally by status (open, kept, broken, canceled).
+func (c *Client) ListPromises(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/collections/promises"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CancelPromise: Cancel a promise to pay.
+func (c *Client) CancelPromise(promiseId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/collections/promises/"+promiseId+"/cancel", body)
+}
+
+// CreateVendor: Add someone you pay out to.
+func (c *Client) CreateVendor(name string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	return c.call("POST", "/v1/vendors", body)
+}
+
+// ListVendors: Vendors (account numbers masked).
+func (c *Client) ListVendors() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// VendorDetails: Full bank details of a vendor; needs payouts:approve and is audited.
+func (c *Client) VendorDetails(vendorId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors/" + vendorId + "/details"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// VendorBalance: What a vendor is owed from split payments and how much is free to pay out.
+func (c *Client) VendorBalance(vendorId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors/" + vendorId + "/balance"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreatePayout: Request a payout. Repeating the same external_ref returns the original.
+func (c *Client) CreatePayout(vendorId string, amountMinor int64, purpose string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["vendor_id"] = vendorId
+	body["amount_minor"] = amountMinor
+	body["purpose"] = purpose
+	return c.call("POST", "/v1/payouts", body)
+}
+
+// CreatePayoutsBulk: Up to 200 payouts, all created or none; each item has vendor_id, amount_minor, purpose and optionally external_ref, from_balance.
+func (c *Client) CreatePayoutsBulk(payouts []any) (map[string]any, error) {
+	body := map[string]any{}
+	body["payouts"] = payouts
+	return c.call("POST", "/v1/payouts/bulk", body)
+}
+
+// ListPayouts: Payouts, optionally by status.
+func (c *Client) ListPayouts(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/payouts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ApprovePayout: Approve a payout (a different person from the requester).
+func (c *Client) ApprovePayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/approve", body)
+}
+
+// RejectPayout: Reject a payout waiting for approval.
+func (c *Client) RejectPayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/reject", body)
+}
+
+// CancelPayout: Cancel a payout that has not been paid.
+func (c *Client) CancelPayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/cancel", body)
+}
+
+// MarkPayoutPaid: Record the bank reference once the transfer is made.
+func (c *Client) MarkPayoutPaid(payoutId string, bankRef string) (map[string]any, error) {
+	body := map[string]any{}
+	body["bank_ref"] = bankRef
+	return c.call("POST", "/v1/payouts/"+payoutId+"/mark_paid", body)
+}
+
+// ListCustomers: Customers, optionally by your own reference.
+func (c *Client) ListCustomers(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/customers"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// GetCustomer: One customer.
+func (c *Client) GetCustomer(customerId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/customers/" + customerId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateCustomer: Add a customer.
+func (c *Client) CreateCustomer(name string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	return c.call("POST", "/v1/customers", body)
+}
+
+// RefreshMandate: Ask the provider where a mandate stands.
+func (c *Client) RefreshMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/refresh", body)
+}
+
+// PauseMandate: Pause a mandate.
+func (c *Client) PauseMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/pause", body)
+}
+
+// ResumeMandate: Resume a paused mandate.
+func (c *Client) ResumeMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/resume", body)
+}
+
+// RevokeMandate: Revoke a mandate for good.
+func (c *Client) RevokeMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/revoke", body)
+}
+
+// RunMandates: Present every mandate debit that is due.
+func (c *Client) RunMandates() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/run", body)
+}
+
+// GetSettings: Organisation settings.
+func (c *Client) GetSettings() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settings"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateCoupon: A coupon: kind percent takes value in basis points (1000 = 10%), flat in minor units.
+func (c *Client) CreateCoupon(code string, kind string, value int64, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["code"] = code
+	body["kind"] = kind
+	body["value"] = value
+	return c.call("POST", "/v1/coupons", body)
+}
+
+// ListCoupons: Coupons.
+func (c *Client) ListCoupons() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/coupons"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// DeactivateCoupon: Stop a coupon being redeemed.
+func (c *Client) DeactivateCoupon(couponId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/coupons/"+couponId+"/deactivate", body)
+}
+
+// ListMilestones: Milestones.
+func (c *Client) ListMilestones() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/milestones"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateMilestone: A milestone that raises an invoice when completed.
+func (c *Client) CreateMilestone(customerId string, name string, amountMinor int64, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["customer_id"] = customerId
+	body["name"] = name
+	body["amount_minor"] = amountMinor
+	return c.call("POST", "/v1/milestones", body)
+}
+
+// CancelMilestone: Cancel a milestone that is not complete.
+func (c *Client) CancelMilestone(milestoneId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/milestones/"+milestoneId+"/cancel", body)
+}
+
+// CreateInstallmentPlan: Split an agreed total into dated invoices; idempotent by external_ref.
+func (c *Client) CreateInstallmentPlan(customerId string, name string, totalMinor int64, instalments int64, firstDueDate string, numberPrefix string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["customer_id"] = customerId
+	body["name"] = name
+	body["total_minor"] = totalMinor
+	body["instalments"] = instalments
+	body["first_due_date"] = firstDueDate
+	body["number_prefix"] = numberPrefix
+	return c.call("POST", "/v1/installment_plans", body)
+}
+
+// GetInstallmentPlan: One instalment plan.
+func (c *Client) GetInstallmentPlan(planId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/installment_plans/" + planId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// OpenDispute: Open a dispute; it holds the amount so it cannot also be refunded.
+func (c *Client) OpenDispute(attemptId string, reason string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["attempt_id"] = attemptId
+	body["reason"] = reason
+	return c.call("POST", "/v1/disputes", body)
+}
+
+// ListDisputes: Disputes, optionally by status (open, under_review, won, lost).
+func (c *Client) ListDisputes(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/disputes"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// AddDisputeEvidence: Attach evidence to a dispute.
+func (c *Client) AddDisputeEvidence(disputeId string, note string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["note"] = note
+	return c.call("POST", "/v1/disputes/"+disputeId+"/evidence", body)
+}
+
+// ResolveDispute: Record the outcome, won or lost.
+func (c *Client) ResolveDispute(disputeId string, outcome string) (map[string]any, error) {
+	body := map[string]any{}
+	body["outcome"] = outcome
+	return c.call("POST", "/v1/disputes/"+disputeId+"/resolve", body)
+}
+
+// ListBranches: Branches.
+func (c *Client) ListBranches() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/branches"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateBranch: Add a branch.
+func (c *Client) CreateBranch(name string) (map[string]any, error) {
+	body := map[string]any{}
+	body["name"] = name
+	return c.call("POST", "/v1/branches", body)
+}
+
+// VerifyAudit: Check the audit trail's seals are unbroken.
+func (c *Client) VerifyAudit() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/audit_events/verify"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// SealAudit: Seal the audit events so far.
+func (c *Client) SealAudit() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/audit_events/seal", body)
+}
+
+// ListKeys: API keys (never the secret).
+func (c *Client) ListKeys() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/api_keys"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateKey: Mint an API key; the secret is shown once.
+func (c *Client) CreateKey(name string, scopes []any, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	body["scopes"] = scopes
+	return c.call("POST", "/v1/api_keys", body)
+}
+
+// RevokeKey: Revoke an API key.
+func (c *Client) RevokeKey(keyId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/api_keys/"+keyId+"/revoke", body)
+}
+
+// ListProviders: Connected payment providers.
+func (c *Client) ListProviders() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/provider_accounts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CheckProvider: Test a provider's credentials.
+func (c *Client) CheckProvider(provider string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/provider_accounts/"+provider+"/check", body)
+}
+
+// SetProviderEnabled: Turn a provider on or off for routing.
+func (c *Client) SetProviderEnabled(provider string, enabled bool) (map[string]any, error) {
+	body := map[string]any{}
+	body["enabled"] = enabled
+	return c.call("POST", "/v1/provider_accounts/"+provider+"/enabled", body)
+}
+
+// LiveAccessStatus: Where your request for live mode stands.
+func (c *Client) LiveAccessStatus() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/live_access"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RequestLiveAccess: Ask Zyvor to open live mode (the onboarding review must be approved).
+func (c *Client) RequestLiveAccess() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/live_access", body)
+}
+
+// EventCatalogue: Every webhook event type and what it means.
+func (c *Client) EventCatalogue() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/events/catalogue"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListOutbox: Webhook events and their delivery state.
+func (c *Client) ListOutbox(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/outbox"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ReplayEvent: Queue a webhook event again.
+func (c *Client) ReplayEvent(eventId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/outbox/"+eventId+"/replay", body)
+}
+
+// GetIntent: One payment with its attempts.
+func (c *Client) GetIntent(intentId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_intents/" + intentId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ExplainSettlement: A settlement explained in words and amounts.
+func (c *Client) ExplainSettlement(settlementId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settlements/" + settlementId + "/explain"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreatePlan: A billing plan.
+func (c *Client) CreatePlan(name string, amountMinor int64, intervalUnit string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	body["amount_minor"] = amountMinor
+	body["interval_unit"] = intervalUnit
+	return c.call("POST", "/v1/plans", body)
+}
+
+// Statement: A customer's statement.
+func (c *Client) Statement(customerId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/customers/" + customerId + "/statement"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CompleteMilestone: Complete a milestone; it raises its invoice.
+func (c *Client) CompleteMilestone(milestoneId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/milestones/"+milestoneId+"/complete", body)
+}
+
+// FxRates: Dollar rates you have set.
+func (c *Client) FxRates() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/fx/rates"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// FxConvert: Convert an amount at the rate for a day.
+func (c *Client) FxConvert(amountMinor int64, fromCurrency string, toCurrency string, opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	v.Set("amount_minor", fmt.Sprint(amountMinor))
+	v.Set("from", fmt.Sprint(fromCurrency))
+	v.Set("to", fmt.Sprint(toCurrency))
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/fx/convert"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListMandates: Mandates.
+func (c *Client) ListMandates(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/mandates"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListMandateDebits: A mandate's debits.
+func (c *Client) ListMandateDebits(mandateId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/mandates/" + mandateId + "/debits"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListPaymentLinks: Payment links.
+func (c *Client) ListPaymentLinks() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_links"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// Remind: Record a reminder you sent for an invoice.
+func (c *Client) Remind(invoiceId string, channel string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["channel"] = channel
+	return c.call("POST", "/v1/invoices/"+invoiceId+"/reminders", body)
+}
+
+// ReminderDrafts: Reminder drafts waiting for a person.
+func (c *Client) ReminderDrafts(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/collections/drafts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListCounters: Counters, optionally for one branch.
+func (c *Client) ListCounters(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/counters"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// Closings: Day closings.
+func (c *Client) Closings(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/closings"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RefundAnomalies: Unusual refund activity (flags only; nothing is blocked).
+func (c *Client) RefundAnomalies() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/insights/refund_anomalies"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// UpdateSettings changes organisation settings; send only the fields to change (see GetSettings for the shape).
+func (c *Client) UpdateSettings(patch map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/settings", patch)
+}

@@ -195,6 +195,113 @@ class Tests(unittest.TestCase):
         self.assertFalse(verify_webhook("whsec", sig(1000), body, now=9000))
         self.assertFalse(verify_webhook("whsec", "junk", body))
 
+    def test_every_endpoint_method_sends_the_right_verb_path_and_body(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        rows = [
+            ("z.get_attempt('att_1')", 'GET', '/v1/payment_attempts/att_1', None),
+            ("z.refresh_attempt('att_1')", 'POST', '/v1/payment_attempts/att_1/refresh', {}),
+            ("z.cancel_attempt('att_1')", 'POST', '/v1/payment_attempts/att_1/cancel', {}),
+            ("z.capture_attempt('att_1')", 'POST', '/v1/payment_attempts/att_1/capture', {}),
+            ("z.list_refunds(status='x1', limit=7)", 'GET', '/v1/refunds?limit=7&status=x1', None),
+            ("z.approve_refund('ref_1')", 'POST', '/v1/refunds/ref_1/approve', {}),
+            ("z.reject_refund('ref_1')", 'POST', '/v1/refunds/ref_1/reject', {}),
+            ("z.retry_refund('ref_1')", 'POST', '/v1/refunds/ref_1/retry', {}),
+            ("z.refresh_refund('ref_1')", 'POST', '/v1/refunds/ref_1/refresh', {}),
+            ('z.list_settlements()', 'GET', '/v1/settlements', None),
+            ("z.list_cases(status='x1', kind='x1')", 'GET', '/v1/recon/cases?kind=x1&status=x1', None),
+            ("z.case_suggestions('cas_1')", 'GET', '/v1/recon/cases/cas_1/suggestions', None),
+            ("z.assign_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/assign', {'assignee': 'x1'}),
+            ("z.resolve_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/resolve', {'resolution': 'x1'}),
+            ('z.list_plans()', 'GET', '/v1/plans', None),
+            ('z.list_subscriptions()', 'GET', '/v1/subscriptions', None),
+            ("z.pause_subscription('sub_1')", 'POST', '/v1/subscriptions/sub_1/pause', {}),
+            ("z.resume_subscription('sub_1')", 'POST', '/v1/subscriptions/sub_1/resume', {}),
+            ("z.cancel_subscription('sub_1')", 'POST', '/v1/subscriptions/sub_1/cancel', {}),
+            ("z.list_invoices(status='x1')", 'GET', '/v1/invoices?status=x1', None),
+            ("z.get_invoice('inv_1')", 'GET', '/v1/invoices/inv_1', None),
+            ("z.create_invoice('x1', amount_minor=7, customer_id='x1', due_date='x1', tax_minor=7, external_ref='x1', lines=['a'], place_of_supply='x1', buyer_gstin='x1', reverse_charge=True)", 'POST', '/v1/invoices', {'number': 'x1', 'amount_minor': 7, 'customer_id': 'x1', 'due_date': 'x1', 'tax_minor': 7, 'external_ref': 'x1', 'lines': ['a'], 'place_of_supply': 'x1', 'buyer_gstin': 'x1', 'reverse_charge': True}),
+            ("z.void_invoice('inv_1')", 'POST', '/v1/invoices/inv_1/void', {}),
+            ("z.invoice_lines('inv_1')", 'GET', '/v1/invoices/inv_1/lines', None),
+            ("z.list_reminders('inv_1')", 'GET', '/v1/invoices/inv_1/reminders', None),
+            ("z.list_promises(status='x1')", 'GET', '/v1/collections/promises?status=x1', None),
+            ("z.cancel_promise('pro_1')", 'POST', '/v1/collections/promises/pro_1/cancel', {}),
+            ("z.create_vendor('x1', account_number='x1', ifsc='x1', vpa='x1', external_ref='x1')", 'POST', '/v1/vendors', {'name': 'x1', 'account_number': 'x1', 'ifsc': 'x1', 'vpa': 'x1', 'external_ref': 'x1'}),
+            ('z.list_vendors()', 'GET', '/v1/vendors', None),
+            ("z.vendor_details('ven_1')", 'GET', '/v1/vendors/ven_1/details', None),
+            ("z.vendor_balance('ven_1')", 'GET', '/v1/vendors/ven_1/balance', None),
+            ("z.create_payout('x1', 7, 'x1', currency='x1', external_ref='x1', from_balance=True)", 'POST', '/v1/payouts', {'vendor_id': 'x1', 'amount_minor': 7, 'purpose': 'x1', 'currency': 'x1', 'external_ref': 'x1', 'from_balance': True}),
+            ("z.create_payouts_bulk(['a'])", 'POST', '/v1/payouts/bulk', {'payouts': ['a']}),
+            ("z.list_payouts(status='x1')", 'GET', '/v1/payouts?status=x1', None),
+            ("z.approve_payout('pay_1')", 'POST', '/v1/payouts/pay_1/approve', {}),
+            ("z.reject_payout('pay_1')", 'POST', '/v1/payouts/pay_1/reject', {}),
+            ("z.cancel_payout('pay_1')", 'POST', '/v1/payouts/pay_1/cancel', {}),
+            ("z.mark_payout_paid('pay_1', 'x1')", 'POST', '/v1/payouts/pay_1/mark_paid', {'bank_ref': 'x1'}),
+            ("z.list_customers(external_ref='x1')", 'GET', '/v1/customers?external_ref=x1', None),
+            ("z.get_customer('cus_1')", 'GET', '/v1/customers/cus_1', None),
+            ("z.create_customer('x1', email='x1', phone='x1', external_ref='x1', gstin='x1', address1='x1', location='x1', pincode='x1')", 'POST', '/v1/customers', {'name': 'x1', 'email': 'x1', 'phone': 'x1', 'external_ref': 'x1', 'gstin': 'x1', 'address1': 'x1', 'location': 'x1', 'pincode': 'x1'}),
+            ("z.refresh_mandate('man_1')", 'POST', '/v1/mandates/man_1/refresh', {}),
+            ("z.pause_mandate('man_1')", 'POST', '/v1/mandates/man_1/pause', {}),
+            ("z.resume_mandate('man_1')", 'POST', '/v1/mandates/man_1/resume', {}),
+            ("z.revoke_mandate('man_1')", 'POST', '/v1/mandates/man_1/revoke', {}),
+            ('z.run_mandates()', 'POST', '/v1/mandates/run', {}),
+            ('z.get_settings()', 'GET', '/v1/settings', None),
+            ("z.create_coupon('x1', 'x1', 7, max_uses=7, expires_at='x1')", 'POST', '/v1/coupons', {'code': 'x1', 'kind': 'x1', 'value': 7, 'max_uses': 7, 'expires_at': 'x1'}),
+            ('z.list_coupons()', 'GET', '/v1/coupons', None),
+            ("z.deactivate_coupon('cou_1')", 'POST', '/v1/coupons/cou_1/deactivate', {}),
+            ('z.list_milestones()', 'GET', '/v1/milestones', None),
+            ("z.create_milestone('x1', 'x1', 7, due_days=7, external_ref='x1')", 'POST', '/v1/milestones', {'customer_id': 'x1', 'name': 'x1', 'amount_minor': 7, 'due_days': 7, 'external_ref': 'x1'}),
+            ("z.cancel_milestone('mil_1')", 'POST', '/v1/milestones/mil_1/cancel', {}),
+            ("z.create_installment_plan('x1', 'x1', 7, 7, 'x1', 'x1', every_unit='x1', every=7, currency='x1', external_ref='x1')", 'POST', '/v1/installment_plans', {'customer_id': 'x1', 'name': 'x1', 'total_minor': 7, 'instalments': 7, 'first_due_date': 'x1', 'number_prefix': 'x1', 'every_unit': 'x1', 'every': 7, 'currency': 'x1', 'external_ref': 'x1'}),
+            ("z.get_installment_plan('pla_1')", 'GET', '/v1/installment_plans/pla_1', None),
+            ("z.open_dispute('x1', 'x1', amount_minor=7, provider_ref='x1', respond_by='x1')", 'POST', '/v1/disputes', {'attempt_id': 'x1', 'reason': 'x1', 'amount_minor': 7, 'provider_ref': 'x1', 'respond_by': 'x1'}),
+            ("z.list_disputes(status='x1')", 'GET', '/v1/disputes?status=x1', None),
+            ("z.add_dispute_evidence('dis_1', 'x1', url='x1')", 'POST', '/v1/disputes/dis_1/evidence', {'note': 'x1', 'url': 'x1'}),
+            ("z.resolve_dispute('dis_1', 'x1')", 'POST', '/v1/disputes/dis_1/resolve', {'outcome': 'x1'}),
+            ('z.list_branches()', 'GET', '/v1/branches', None),
+            ("z.create_branch('x1')", 'POST', '/v1/branches', {'name': 'x1'}),
+            ('z.verify_audit()', 'GET', '/v1/audit_events/verify', None),
+            ('z.seal_audit()', 'POST', '/v1/audit_events/seal', {}),
+            ('z.list_keys()', 'GET', '/v1/api_keys', None),
+            ("z.create_key('x1', ['a'], branch_id='x1', expires_at='x1', allowed_cidrs=['a'])", 'POST', '/v1/api_keys', {'name': 'x1', 'scopes': ['a'], 'branch_id': 'x1', 'expires_at': 'x1', 'allowed_cidrs': ['a']}),
+            ("z.revoke_key('key_1')", 'POST', '/v1/api_keys/key_1/revoke', {}),
+            ('z.list_providers()', 'GET', '/v1/provider_accounts', None),
+            ("z.check_provider('pro_1')", 'POST', '/v1/provider_accounts/pro_1/check', {}),
+            ("z.set_provider_enabled('pro_1', True)", 'POST', '/v1/provider_accounts/pro_1/enabled', {'enabled': True}),
+            ('z.live_access_status()', 'GET', '/v1/live_access', None),
+            ('z.request_live_access()', 'POST', '/v1/live_access', {}),
+            ('z.event_catalogue()', 'GET', '/v1/events/catalogue', None),
+            ("z.list_outbox(status='x1')", 'GET', '/v1/outbox?status=x1', None),
+            ("z.replay_event('eve_1')", 'POST', '/v1/outbox/eve_1/replay', {}),
+        ]
+        for call, verb, url, body in rows:
+            seen.clear()
+            eval(call, {"z": z})
+            got = seen[0]
+            # a GET carries no body; a POST with no fields carries an empty object
+            self.assertEqual((got[0], got[1]), (verb, url), call)
+            self.assertEqual(got[2], body, call)
+        self.assertEqual(len(rows), 74)
+
+    def test_update_settings_sends_only_what_it_is_given(self):
+        seen = []
+        z = Zyvor("k", opener=lambda req, timeout=None: (seen.append(json.loads(req.data)), FakeRes(b"{}"))[1])
+        z.update_settings({"dunning": {"enabled": True}})
+        self.assertEqual(seen, [{"dunning": {"enabled": True}}])
+
+    def test_the_go_sdk_has_every_method_this_one_has_and_the_other_way_round(self):
+        """Parity guard: both SDKs expose the same operations (Go's *At/*AsOf variants are Python keyword arguments)."""
+        import pathlib, re
+        go_src = (pathlib.Path(__file__).resolve().parent.parent / "go" / "zyvor.go").read_text()
+        go = {re.sub(r"(?<!^)(?=[A-Z])", "_", m).lower() for m in re.findall(r"func \(c \*Client\) ([A-Z]\w+)", go_src)}
+        py = {n for n in dir(Zyvor) if not n.startswith("_")}
+        go -= {"create_intent_at", "run_dunning_as_of"}
+        self.assertEqual(sorted(py - go), [], "in Python but not Go")
+        self.assertEqual(sorted(go - py), [], "in Go but not Python")
+
 
 if __name__ == "__main__":
     unittest.main()
