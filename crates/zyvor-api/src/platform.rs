@@ -134,6 +134,19 @@ pub async fn create_reviewer(pool: &PgPool, name: &str) -> Result<(String, Strin
     Ok((id, key))
 }
 
+/// Make a reviewer a lead (or not): leads set other reviewers' weekly hours. Only the operator calls this, from the
+/// CLI. Returns false for an unknown reviewer.
+pub async fn set_reviewer_lead(pool: &PgPool, id: &str, lead: bool) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE platform_reviewers SET is_lead = $2 WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(id)
+    .bind(lead)
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 /// Set (or clear, with `None`) the address a reviewer is told about assignments at. Returns false for an unknown
 /// reviewer; an address that is not one is an `Err(())`.
 pub async fn set_reviewer_email(

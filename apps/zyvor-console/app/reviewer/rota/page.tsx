@@ -30,7 +30,7 @@ export default async function Rota() {
           <tbody>
             {v.reviewers.map((x) => (
               <tr key={x.id}>
-                <td>{x.name}{x.me ? " (you)" : ""}{x.on_duty && <div className="fine">on duty now</div>}{x.on_leave && <div className="fine">on leave today</div>}</td>
+                <td>{x.name}{x.me ? " (you)" : ""}{x.lead && <span className="fine"> · lead</span>}{x.on_duty && <div className="fine">on duty now</div>}{x.on_leave && <div className="fine">on leave today</div>}</td>
                 {DAYS.map((d) => <td key={d} className="fine">{x.shifts.filter((s) => s.weekday === d).map((s) => `${s.start}–${s.end}`).join(", ") || "–"}</td>)}
               </tr>
             ))}
@@ -70,6 +70,24 @@ export default async function Rota() {
           ? <p className="fine">Your rota has more than one shift on a day, which this form cannot show. Change it with <code>scripts/platform-review.sh rota-set</code>.</p>
           : <><p className="fine">Tick the days you work. A shift that runs past midnight is two entries, so use <code>scripts/platform-review.sh rota-set</code> for those.</p><RotaForm shifts={mine?.shifts ?? []} /></>}
       </section>
+      {v.i_am_lead && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h2>Set someone else&apos;s hours</h2>
+          <p className="fine">You are a lead. They are emailed that you changed their hours, and can change them back. Leave stays each person&apos;s own.</p>
+          {v.reviewers.filter((x) => !x.me).length === 0 && <p className="fine">There is nobody else on the desk yet.</p>}
+          {v.reviewers.filter((x) => !x.me).map((x) => {
+            const flat = DAYS.some((d) => x.shifts.filter((s) => s.weekday === d).length > 1);
+            return (
+              <details key={x.id} style={{ marginBottom: 8 }}>
+                <summary>{x.name}</summary>
+                {flat
+                  ? <p className="fine">They have more than one shift on a day, which this form cannot show. Use <code>scripts/platform-review.sh rota-set {x.id}</code>.</p>
+                  : <RotaForm shifts={x.shifts} reviewer={x.id} />}
+              </details>
+            );
+          })}
+        </section>
+      )}
     </>
   );
 }

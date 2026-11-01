@@ -138,8 +138,28 @@ async fn main() {
                     }
                 );
             }
+            Some(v @ ("lead" | "unlead")) => {
+                let id = args
+                    .get(3)
+                    .unwrap_or_else(|| panic!("usage: zyvor-api platform-reviewer {v} <id>"));
+                let done = zyvor_api::platform::set_reviewer_lead(&pool, id, v == "lead")
+                    .await
+                    .expect("set lead");
+                println!(
+                    "{}",
+                    if done {
+                        if v == "lead" {
+                            "now a lead"
+                        } else {
+                            "no longer a lead"
+                        }
+                    } else {
+                        "no such active reviewer"
+                    }
+                );
+            }
             _ => eprintln!(
-                "usage: zyvor-api platform-reviewer add \"Name\" [email] | list | disable <id>"
+                "usage: zyvor-api platform-reviewer add \"Name\" [email] | list | disable <id> | lead <id> | unlead <id>"
             ),
         }
         return;

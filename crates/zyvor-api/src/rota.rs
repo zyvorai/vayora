@@ -201,11 +201,18 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
     .bind(today)
     .fetch_all(&s.pool)
     .await?;
+    let leads: HashSet<String> = sqlx::query_scalar(
+        "SELECT id FROM platform_reviewers WHERE is_lead AND disabled_at IS NULL",
+    )
+    .fetch_all(&s.pool)
+    .await?
+    .into_iter()
+    .collect();
     let reviewers: Vec<Value> = people
         .iter()
         .map(|(id, name, sh)| {
             json!({
-                "id": id, "name": name, "me": *id == p.id,
+                "id": id, "name": name, "me": *id == p.id, "lead": leads.contains(id),
                 "on_duty": working(id, sh),
                 "on_leave": away.on_leave.contains(id),
                 "shifts": sh.iter().map(|x| json!({ "weekday": DAYS[x.weekday as usize], "start": fmt_hm(x.start_min), "end": fmt_hm(x.end_min) })).collect::<Vec<_>>(),
@@ -214,6 +221,7 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
         .collect();
     Ok(Json(json!({
         "configured": configured,
+        "i_am_lead": leads.contains(&p.id),
         "utc_offset_minutes": desk_offset_minutes(&s, now),
         "timezone": s.review_timezone.map(|z| z.name()),
         "local_now": local_now.format("%a %H:%M").to_string(),
@@ -241,12 +249,7 @@ pub struct RotaIn {
     shifts: Vec<ShiftIn>,
 }
 
-/// `PUT /v1/platform/rota/me`: replace the caller's weekly shifts (an empty list clears them).
-pub async fn set_mine(
-    State(s): State<AppState>,
-    p: PlatformAuth,
-    Json(b): Json<RotaIn>,
-) -> Result<Json<Value>, ApiError> {
+fn parse_shifts(b: &RotaIn) -> Result<Vec<Shift>, ApiError> {
     let bad = |m: String| ApiError::invalid("invalid_shift", m);
     if b.shifts.len() > 28 {
         return Err(bad("at most 28 shifts".into()));
@@ -275,15 +278,20 @@ pub async fn set_mine(
             end_min: end,
         });
     }
+    Ok(parsed)
+}
+
+/// Replace one reviewer's weekly shifts and say whether they are on duty now.
+async fn replace_shifts(s: &AppState, reviewer: &str, parsed: &[Shift]) -> Result<bool, ApiError> {
     let mut tx = s.pool.begin().await?;
     sqlx::query("DELETE FROM reviewer_shifts WHERE reviewer_id = $1")
-        .bind(&p.id)
+        .bind(reviewer)
         .execute(&mut *tx)
         .await?;
-    for sh in &parsed {
+    for sh in parsed {
         sqlx::query("INSERT INTO reviewer_shifts (id, reviewer_id, weekday, start_min, end_min) VALUES ($1,$2,$3,$4,$5)")
             .bind(new_id("shf"))
-            .bind(&p.id)
+            .bind(reviewer)
             .bind(sh.weekday)
             .bind(sh.start_min)
             .bind(sh.end_min)
@@ -292,9 +300,68 @@ pub async fn set_mine(
     }
     tx.commit().await?;
     let now = Utc::now();
-    let away = away_on(&s, local_day(&s, now)).await;
+    let away = away_on(s, local_day(s, now)).await;
+    Ok(on_duty(parsed, desk_local(s, now)) && !away.covers(reviewer))
+}
+
+/// `PUT /v1/platform/rota/me`: replace the caller's weekly shifts (an empty list clears them).
+pub async fn set_mine(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Json(b): Json<RotaIn>,
+) -> Result<Json<Value>, ApiError> {
+    let parsed = parse_shifts(&b)?;
+    let on = replace_shifts(&s, &p.id, &parsed).await?;
+    Ok(Json(json!({ "shifts": parsed.len(), "on_duty": on })))
+}
+
+/// `PUT /v1/platform/rota/{reviewer_id}`: a lead replaces another reviewer's weekly shifts. Only a lead may; the
+/// reviewer is emailed (when they have an address) that it changed, so their hours never move silently.
+pub async fn set_for(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(reviewer): Path<String>,
+    Json(b): Json<RotaIn>,
+) -> Result<Json<Value>, ApiError> {
+    let lead: Option<bool> = sqlx::query_scalar(
+        "SELECT is_lead FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(&p.id)
+    .fetch_optional(&s.pool)
+    .await?;
+    if lead != Some(true) {
+        return Err(ApiError::forbidden(
+            "only a lead can set another reviewer's hours; set your own with PUT /platform/rota/me",
+        ));
+    }
+    let target: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT name, email FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(&reviewer)
+    .fetch_optional(&s.pool)
+    .await?;
+    let (name, email) = target.ok_or_else(|| ApiError::not_found("reviewer"))?;
+    let parsed = parse_shifts(&b)?;
+    let on = replace_shifts(&s, &reviewer, &parsed).await?;
+    tracing::info!(lead = %p.id, reviewer = %reviewer, shifts = parsed.len(), "a lead set a reviewer's hours");
+    if reviewer != p.id
+        && let Some(addr) = email
+    {
+        let body = format!(
+            "{} changed your weekly hours on the review rota ({} shift{} now).\n\nSee them, and change them if they are wrong: {}/reviewer/rota\n",
+            p.name,
+            parsed.len(),
+            if parsed.len() == 1 { "" } else { "s" },
+            s.console_url
+        );
+        if let Err(e) =
+            crate::mail::enqueue(&s.pool, &addr, "Your review rota hours were changed", &body).await
+        {
+            tracing::warn!(error = %e, reviewer = %reviewer, "could not queue the hours-changed email");
+        }
+    }
     Ok(Json(
-        json!({ "shifts": parsed.len(), "on_duty": on_duty(&parsed, desk_local(&s, now)) && !away.covers(&p.id) }),
+        json!({ "reviewer": reviewer, "name": name, "shifts": parsed.len(), "on_duty": on }),
     ))
 }
 
