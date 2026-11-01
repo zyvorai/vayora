@@ -645,3 +645,37 @@ final class CatalogueTests: XCTestCase {
         XCTAssertTrue(SalesByItem.summary([], title: "Week").contains("No itemised sales"))
     }
 }
+
+final class ConnectionCheckTests: XCTestCase {
+    let lan = URL(string: "http://192.168.1.13:18080")!
+    func testParse() {
+        XCTAssertNotNil(ConnectionCheck.parse(" http://192.168.1.13:18080 "))
+        XCTAssertNil(ConnectionCheck.parse("192.168.1.13:18080"))
+        XCTAssertNil(ConnectionCheck.parse("ftp://x"))
+        XCTAssertNil(ConnectionCheck.parse(""))
+    }
+    func testThisPhone() {
+        XCTAssertEqual(ConnectionCheck.classify(address: URL(string: "http://127.0.0.1:8080"), health: .status(200), auth: nil), .thisPhone)
+        XCTAssertEqual(ConnectionCheck.classify(address: URL(string: "http://localhost:8080"), health: .failure(-1004), auth: nil), .thisPhone)
+    }
+    func testBadAddress() { XCTAssertEqual(ConnectionCheck.classify(address: nil, health: .status(200), auth: nil), .badAddress) }
+    func testUnreachable() {
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .failure(URLError.cannotConnectToHost.rawValue), auth: nil), .cannotReach)
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .failure(URLError.notConnectedToInternet.rawValue), auth: nil), .cannotReach)
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .failure(URLError.timedOut.rawValue), auth: nil), .timedOut)
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .failure(URLError.appTransportSecurityRequiresSecureConnection.rawValue), auth: nil), .plainHTTPBlocked)
+    }
+    func testHealthWrongStatus() { XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(404), auth: nil), .notVayora(404)) }
+    func testPayHasNoKey() { XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(200), auth: nil), .ok) }
+    func testMerchantWithoutKey() { XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(200), auth: nil, needsKey: true), .noKey) }
+    func testKeyedCall() {
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(200), auth: .status(200)), .ok)
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(200), auth: .status(401)), .wrongKey)
+        XCTAssertEqual(ConnectionCheck.classify(address: lan, health: .status(200), auth: .status(503)), .serverError(503))
+    }
+    func testEveryVerdictHasWords() {
+        for v in [ConnectionVerdict.ok, .badAddress, .thisPhone, .cannotReach, .timedOut, .plainHTTPBlocked, .notVayora(1), .wrongKey, .noKey, .serverError(500)] {
+            XCTAssertFalse(v.title.isEmpty); XCTAssertFalse(v.advice.isEmpty)
+        }
+    }
+}

@@ -7,6 +7,8 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 ## 1 November 2026
 **Merchant: items, bills and sales by item (on-phone, test mode)**
 - A product list with optional GST lines, itemised totals on Collect, and top sellers. No server change.
+**Pay and Merchant: Test connection (on-phone, test mode)**
+- A Settings row that checks the server and the key and explains failures in plain words. No server change.
 
 **Cashfree Subscriptions adapter for UPI AutoPay (mocked, unverified)**
 - Cashfree can now hold a mandate: create (an on-demand subscription plus a payer approval link), refresh, revoke, and debit (a `CHARGE` keyed by our attempt id, with an idempotency key derived from it). `mandates` is on for Cashfree. Built from Cashfree's public docs and tested only against a local mock HTTP server; **not run against Cashfree's sandbox**. Unclear points are marked `UNCLEAR` in the code and listed in the pull request.
