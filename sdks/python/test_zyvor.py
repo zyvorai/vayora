@@ -105,6 +105,18 @@ class Tests(unittest.TestCase):
         ])
         self.assertEqual(seen[4][2], {"decision": "reject", "note": "blurry PAN"})
 
+    def test_profile_change_request(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data)))
+            return FakeRes(b"{}")
+
+        Zyvor("k", opener=opener).request_profile_change("Sri Clinic Pvt Ltd", "private_limited", "ABCPE1234F", "Pune 411001", "converted to a company")
+        self.assertEqual(seen[0][:2], ("POST", "/v1/onboarding/profile_change"))
+        self.assertEqual(seen[0][2]["reason"], "converted to a company")
+        self.assertEqual(seen[0][2]["legal_name"], "Sri Clinic Pvt Ltd")
+
     def test_intent_can_carry_branch_and_counter(self):
         seen = []
 

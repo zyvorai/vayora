@@ -490,6 +490,17 @@ func (c *Client) SaveProfile(legalName, businessType, pan, address, gstin string
 	return c.call("PUT", "/v1/onboarding", b)
 }
 
+// RequestProfileChange asks Zyvor to change business details that were already approved. Nothing changes, and live
+// payouts are held, until a Zyvor reviewer decides; one request can wait at a time. The PAN is checked and only its
+// last four digits are kept. gstin may be empty.
+func (c *Client) RequestProfileChange(legalName, businessType, pan, address, gstin, reason string) (map[string]any, error) {
+	b := map[string]any{"legal_name": legalName, "business_type": businessType, "pan": pan, "address": address, "reason": reason}
+	if gstin != "" {
+		b["gstin"] = gstin
+	}
+	return c.call("POST", "/v1/onboarding/profile_change", b)
+}
+
 // AddOnboardingDocument records where a document is kept; Zyvor stores only the reference.
 func (c *Client) AddOnboardingDocument(kind, reference string) (map[string]any, error) {
 	return c.call("POST", "/v1/onboarding/documents", map[string]any{"kind": kind, "reference": reference})
