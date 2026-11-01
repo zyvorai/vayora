@@ -30,6 +30,17 @@ jobs:
         with: { go-version: "1.22" }
       - run: cd sdks/go && go vet ./... && go test ./...
       - run: cd sdks/python && PYTHONPATH=. python3 -m unittest test_zyvor
+      - name: The OpenAPI file parses and every operation has a summary and responses
+        run: |
+          pip install pyyaml
+          python3 - <<'PY'
+          import yaml
+          d = yaml.safe_load(open("openapi/zyvor.yaml"))
+          bad = [f"{m.upper()} {p}" for p, ops in d["paths"].items() for m, o in ops.items()
+                 if m in ("get", "post", "put", "patch", "delete") and not (o.get("summary") and o.get("responses"))]
+          assert not bad, bad
+          print(len(d["paths"]), "paths ok")
+          PY
   ios:
     runs-on: macos-latest
     steps:
