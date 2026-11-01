@@ -15,8 +15,17 @@ K="sudo -n k3s kubectl"
 R() { ssh -o BatchMode=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 "$HOST" "$@"; }
 
 echo "==> uploading source"
-R 'rm -rf ~/zyvor-src && mkdir -p ~/zyvor-src'
-tar czf - --exclude=target --exclude=node_modules --exclude=.next --exclude=.git --exclude=dist --exclude='.env*' --exclude='*.tsbuildinfo' . | R 'tar xzf - -C ~/zyvor-src'
+# A dropped connection here leaves nothing half-applied (the folder is emptied first), so try again a couple of times.
+# COPYFILE_DISABLE stops macOS tar adding extended-attribute headers that the node's tar warns about.
+upload() {
+  R 'rm -rf ~/zyvor-src && mkdir -p ~/zyvor-src' &&
+    COPYFILE_DISABLE=1 tar czf - --exclude=target --exclude=node_modules --exclude=.next --exclude=.git --exclude=dist --exclude='.env*' --exclude='*.tsbuildinfo' . | R 'tar xzf - -C ~/zyvor-src'
+}
+for try in 1 2 3; do
+  if (set -o pipefail; upload); then break; fi
+  [ "$try" = 3 ] && { echo "upload failed three times" >&2; exit 1; }
+  echo "upload failed, trying again" >&2; sleep 10
+done
 
 echo "==> building images on the node (the Rust build takes a few minutes the first time)"
 # Remember what exists, so afterwards we delete only what THIS build left behind (never other people's images).
