@@ -201,6 +201,10 @@ pub fn app(state: AppState) -> Router {
             post(payments::refresh_attempt),
         )
         .route(
+            "/payment_attempts/{id}/simulate_event",
+            post(payments::simulate_event),
+        )
+        .route(
             "/payment_attempts/{id}/cancel",
             post(payments::cancel_attempt),
         )

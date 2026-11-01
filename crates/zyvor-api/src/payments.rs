@@ -716,6 +716,57 @@ pub async fn refresh_attempt(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct SimulateEvent {
+    /// "captured" or "failed"
+    pub outcome: String,
+}
+
+/// Test mode only: deliver the provider's late update for a simulated payment that is still pending, through the
+/// same path a real provider update takes (state check, ledger, events).
+pub async fn simulate_event(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<SimulateEvent>,
+) -> Result<Json<AttemptRow>, ApiError> {
+    auth.require("payments:write")?;
+    if auth.env != "test" {
+        return Err(ApiError::invalid(
+            "test_only",
+            "simulated provider updates are only available in test mode",
+        ));
+    }
+    let capture = match b.outcome.as_str() {
+        "captured" => true,
+        "failed" => false,
+        _ => {
+            return Err(ApiError::invalid(
+                "invalid_outcome",
+                "outcome must be captured or failed",
+            ));
+        }
+    };
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row = fetch_attempt(&mut tx, &id).await?;
+    tx.commit().await?;
+    if row.provider != "sim" {
+        return Err(ApiError::conflict(
+            "not_simulated",
+            "only simulated payments can be updated this way",
+        ));
+    }
+    if s.sim.provider_decide(&id, capture).is_none() {
+        return Err(ApiError::conflict(
+            "nothing_pending",
+            "this payment is not waiting on the provider",
+        ));
+    }
+    Ok(Json(
+        refresh_attempt_internal(&s, &auth.tenant_id, &auth.env, &id).await?,
+    ))
+}
+
 /// Cancel a payment that has not completed. We first ask the provider; if it already succeeded we adopt that instead.
 pub async fn cancel_attempt(
     State(s): State<AppState>,

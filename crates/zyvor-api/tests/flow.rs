@@ -12248,3 +12248,73 @@ async fn an_approved_business_changes_its_legal_details_only_when_zyvor_agrees(p
     let (_, d) = rv("GET", format!("/v1/platform/reviews/{org}"), Value::Null).await;
     assert_eq!(d["profile"]["legal_name"], "Name Private Limited");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_pending_simulated_payment_can_be_settled_by_a_simulated_provider_update(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Late Ltd", "email": "l@late.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let mut attempts = vec![];
+    for (n, handle) in ["pending@bank", "ok@bank", "pending@bank"]
+        .iter()
+        .enumerate()
+    {
+        let i = t
+            .ok(
+                &tn,
+                "POST",
+                "/v1/payment_intents",
+                Some(&format!("li{n}")),
+                json!({ "amount_minor": 30_000, "currency": "INR" }),
+            )
+            .await;
+        let a = t
+            .ok(
+                &tn,
+                "POST",
+                &format!("/v1/payment_intents/{}/attempts", i["id"].as_str().unwrap()),
+                Some(&format!("la{n}")),
+                json!({ "method": "card", "vpa": handle }),
+            )
+            .await;
+        attempts.push(a["id"].as_str().unwrap().to_string());
+    }
+    let first = format!("/v1/payment_attempts/{}/simulate_event", attempts[0]);
+    // an unknown outcome is refused, and nothing changes
+    let (st, _) = t
+        .call(&tn, "POST", &first, None, json!({ "outcome": "refunded" }))
+        .await;
+    assert_eq!(st, 422);
+    let a = t
+        .ok(&tn, "POST", &first, None, json!({ "outcome": "captured" }))
+        .await;
+    assert_eq!(a["status"], "captured", "{a}");
+    // a second update has nothing left to settle, and a payment that was never pending cannot be forced
+    let (st, _) = t
+        .call(&tn, "POST", &first, None, json!({ "outcome": "failed" }))
+        .await;
+    assert_eq!(st, 409);
+    let (st, _) = t
+        .call(
+            &tn,
+            "POST",
+            &format!("/v1/payment_attempts/{}/simulate_event", attempts[1]),
+            None,
+            json!({ "outcome": "failed" }),
+        )
+        .await;
+    assert_eq!(st, 409);
+    let a = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_attempts/{}/simulate_event", attempts[2]),
+            None,
+            json!({ "outcome": "failed" }),
+        )
+        .await;
+    assert_eq!(a["status"], "failed", "{a}");
+}

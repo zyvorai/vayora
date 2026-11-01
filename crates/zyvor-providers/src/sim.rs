@@ -111,6 +111,23 @@ impl SimProvider {
         self.manual_payer.store(on, Ordering::Relaxed);
     }
 
+    /// Stand in for the provider's late update on any payment still pending (a `pending@...` handle or a QR):
+    /// it becomes captured or failed. `None` when no such payment is waiting.
+    pub fn provider_decide(&self, attempt_id: &str, capture: bool) -> Option<PaymentStatus> {
+        let mut m = self.payments.lock().unwrap();
+        let s = m.get_mut(attempt_id)?;
+        if s.status != PaymentStatus::Pending {
+            return None;
+        }
+        if capture {
+            s.status = PaymentStatus::Captured;
+        } else {
+            s.status = PaymentStatus::Failed;
+            s.failure_reason = Some("failed_at_provider".into());
+        }
+        Some(s.status.clone())
+    }
+
     /// The simulated payer approves or declines a pending QR / intent payment. `None` when there is no
     /// such payment waiting (unknown, already decided, or not an intent flow).
     pub fn payer_decide(&self, attempt_id: &str, approve: bool) -> Option<PaymentStatus> {

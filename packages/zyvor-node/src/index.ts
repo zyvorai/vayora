@@ -175,6 +175,8 @@ export class Zyvor {
     retrieve: (id: string) => this.req<PaymentAttempt>("GET", `/v1/payment_attempts/${encodeURIComponent(id)}`),
     /** Ask the provider where this payment stands. Safe to call any number of times. */
     refresh: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/refresh`),
+    /** Test mode only: deliver the provider's late update for a pending simulated payment. */
+    simulateEvent: (id: string, outcome: "captured" | "failed") => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/simulate_event`, { outcome }),
     cancel: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/cancel`),
     capture: (id: string) => this.req<PaymentAttempt>("POST", `/v1/payment_attempts/${encodeURIComponent(id)}/capture`),
   };
