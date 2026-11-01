@@ -120,7 +120,7 @@ pub async fn require_approved(conn: &mut PgConnection) -> Result<(), ApiError> {
     if waiting {
         return Err(ApiError::conflict(
             "change_awaiting_review",
-            "a change to your business (a new bank account) is waiting for Zyvor to review it; payouts resume when it is approved",
+            "a change to your business is waiting for Zyvor to review it; payouts resume when it is approved",
         ));
     }
     let st: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles")
@@ -144,12 +144,13 @@ pub struct ProfileIn {
     address: String,
 }
 
-pub async fn put_profile(
-    State(s): State<AppState>,
-    auth: Auth,
-    Json(b): Json<ProfileIn>,
-) -> Result<Json<Value>, ApiError> {
-    auth.require("onboarding:write")?;
+/// The rules a set of legal details must pass, and the identity checks run while the full PAN is in hand (only
+/// their outcome is kept). Returns the upper-cased PAN, the GSTIN if any, and the checks.
+async fn validate_profile(
+    s: &AppState,
+    auth: &Auth,
+    b: &ProfileIn,
+) -> Result<(String, Option<String>, Vec<(&'static str, kyc::Check)>), ApiError> {
     let bad = |m: &str| ApiError::invalid("invalid_profile", m.to_string());
     if b.legal_name.trim().len() < 2 || b.address.trim().len() < 5 {
         return Err(bad("legal_name and address are required"));
@@ -173,7 +174,7 @@ pub async fn put_profile(
     let mut checks: Vec<(&str, kyc::Check)> = Vec::new();
     if let Some(k) = s.kyc.as_ref() {
         let calls = 1 + i64::from(gstin.is_some());
-        if !paid_checks_allowed(&s, &auth.tenant_id, k, calls).await? {
+        if !paid_checks_allowed(s, &auth.tenant_id, k, calls).await? {
             checks.push(("pan", capped()));
             if gstin.is_some() {
                 checks.push(("gstin", capped()));
@@ -193,6 +194,16 @@ pub async fn put_profile(
             }
         }
     }
+    Ok((pan, gstin, checks))
+}
+
+pub async fn put_profile(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<ProfileIn>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("onboarding:write")?;
+    let (pan, gstin, checks) = validate_profile(&s, &auth, &b).await?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let st: Option<String> = sqlx::query_scalar("SELECT status FROM merchant_profiles FOR UPDATE")
         .fetch_optional(&mut *tx)
@@ -227,6 +238,129 @@ pub async fn put_profile(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({ "status": "draft" })))
+}
+
+#[derive(Deserialize)]
+pub struct ProfileChangeIn {
+    #[serde(flatten)]
+    profile: ProfileIn,
+    /// Why the details are changing; the reviewer reads it.
+    reason: String,
+}
+
+/// `POST /v1/onboarding/profile_change`: a business whose details were approved asks to change them. The new values
+/// are checked now like any others, then wait for a Zyvor reviewer; until one decides, nothing changes and live
+/// payouts are held. Only one such request can wait at a time.
+pub async fn request_profile_change(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<ProfileChangeIn>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("onboarding:write")?;
+    let reason = b.reason.trim();
+    if reason.len() < 5 {
+        return Err(ApiError::invalid(
+            "reason_required",
+            "say why the details are changing; the reviewer reads this",
+        ));
+    }
+    let (pan, gstin, checks) = validate_profile(&s, &auth, &b.profile).await?;
+    let p = &b.profile;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let cur: Option<(String, String, String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT status, legal_name, business_type, pan_last4, gstin, address FROM merchant_profiles FOR UPDATE",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((status, o_name, o_type, o_pan, o_gstin, o_addr)) = cur else {
+        return Err(ApiError::conflict(
+            "no_profile",
+            "there are no approved details to change; fill them in first",
+        ));
+    };
+    if status != "approved" {
+        return Err(ApiError::conflict(
+            "profile_not_approved",
+            "your details are not approved yet; edit them directly instead",
+        ));
+    }
+    let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+        .bind(&auth.tenant_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM live_changes WHERE organisation_id = $1 AND kind = 'profile' AND status = 'pending')",
+    )
+    .bind(&org)
+    .fetch_one(&mut *tx)
+    .await?;
+    if pending {
+        return Err(ApiError::conflict(
+            "change_pending",
+            "a change to your details is already waiting for Zyvor",
+        ));
+    }
+    let (name, address) = (p.legal_name.trim(), p.address.trim());
+    let mut diff: Vec<String> = Vec::new();
+    if name != o_name {
+        diff.push(format!("legal name {o_name:?} to {name:?}"));
+    }
+    if p.business_type != o_type {
+        diff.push(format!("business type {o_type} to {}", p.business_type));
+    }
+    if pan[6..] != o_pan {
+        diff.push(format!("PAN ending {o_pan} to {}", &pan[6..]));
+    }
+    if gstin != o_gstin {
+        diff.push(format!(
+            "GSTIN {} to {}",
+            o_gstin.as_deref().unwrap_or("none"),
+            gstin.as_deref().unwrap_or("none")
+        ));
+    }
+    if address != o_addr {
+        diff.push(format!("address {o_addr:?} to {address:?}"));
+    }
+    if diff.is_empty() {
+        return Err(ApiError::invalid(
+            "no_change",
+            "these are the details you already have",
+        ));
+    }
+    let verdict = if checks.is_empty() {
+        "no automatic check ran".to_string()
+    } else {
+        checks
+            .iter()
+            .map(|(k, c)| format!("{k} {}", c.outcome.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let summary = format!(
+        "Legal details: {}. Why: {reason}. Checks on the new values: {verdict}",
+        diff.join("; ")
+    );
+    let id = new_id("lchg");
+    sqlx::query("INSERT INTO live_changes (id, organisation_id, tenant_id, kind, ref_id, summary, requested_by) VALUES ($1,$2,$3,'profile',$1,$4,$5)")
+        .bind(&id).bind(&org).bind(&auth.tenant_id).bind(&summary).bind(&auth.actor)
+        .execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO profile_changes (change_id, legal_name, business_type, pan_last4, gstin, address, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)")
+        .bind(&id).bind(name).bind(&p.business_type).bind(&pan[6..]).bind(&gstin).bind(address).bind(reason)
+        .execute(&mut *tx).await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "onboarding.profile_change_requested",
+        Some(&id),
+        json!({ "fields": diff.len(), "checks": verdict }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "status": "pending", "summary": summary })),
+    ))
 }
 
 #[derive(Deserialize)]

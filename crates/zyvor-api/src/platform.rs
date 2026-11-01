@@ -738,6 +738,31 @@ pub async fn decide_change(
             .execute(&mut *tx)
             .await?;
     }
+    if approve && kind == "profile" {
+        // the details Zyvor accepted replace the old ones in every tenant of the business (test and live each keep a
+        // copy); each is row-level secured, so switch to it for its own update
+        let tenants: Vec<String> = sqlx::query_scalar(
+            "SELECT t.id FROM tenants t JOIN live_changes c ON c.organisation_id = t.organisation_id WHERE c.id = $1",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await?;
+        for t in &tenants {
+            sqlx::query("SELECT set_config('zyvor.tenant_id', $1, true)")
+                .bind(t)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE merchant_profiles m SET legal_name = c.legal_name, business_type = c.business_type, pan_last4 = c.pan_last4, gstin = c.gstin, address = c.address, updated_at = now() FROM profile_changes c WHERE c.change_id = $1 AND m.tenant_id = $2")
+                .bind(&id)
+                .bind(t)
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query("SELECT set_config('zyvor.tenant_id', $1, true)")
+            .bind(&tid)
+            .execute(&mut *tx)
+            .await?;
+    }
     let actor = format!("zyvor:{}", p.name);
     let event = format!("live_change.{new}");
     tenant::audit(
@@ -761,7 +786,12 @@ pub async fn decide_change(
         (
             "Zyvor approved the change to your business".to_string(),
             format!(
-                "Zyvor reviewed this change and approved it: {summary}.\n\nPayouts are no longer held for it: {}\n",
+                "Zyvor reviewed this change and approved it: {summary}.\n\n{}Payouts are no longer held for it: {}\n",
+                if kind == "profile" {
+                    "Your business details are now the new ones.\n\n"
+                } else {
+                    ""
+                },
                 s.console_url
             ),
         )
@@ -769,7 +799,12 @@ pub async fn decide_change(
         (
             "Zyvor did not approve a change to your business".to_string(),
             format!(
-                "Zyvor reviewed this change and did not approve it: {summary}.\nThe account was removed.\n\nWhy: {}\n\nYou can add the right one from the Onboarding page: {}/onboarding\n",
+                "Zyvor reviewed this change and did not approve it: {summary}.\n{}\nWhy: {}\n\nYou can try again from the Onboarding page: {}/onboarding\n",
+                if kind == "profile" {
+                    "Your business details stay as they were."
+                } else {
+                    "The account was removed."
+                },
                 note.unwrap_or(""),
                 s.console_url
             ),

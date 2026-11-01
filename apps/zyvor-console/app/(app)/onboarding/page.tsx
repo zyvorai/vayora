@@ -1,6 +1,6 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { BankForm, DocForm, ProfileForm, ReviewForm } from "@/components/OnboardingForms";
+import { BankForm, DocForm, ProfileChangeForm, ProfileForm, ReviewForm } from "@/components/OnboardingForms";
 import { Stepper, type Step } from "@/components/Stepper";
 import { requestLiveAccess, submitOnboarding, verifyBankAccount } from "@/lib/actions";
 import { currentSession, requireRole } from "@/lib/auth";
@@ -47,7 +47,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
       )}
       {access?.changes?.[0]?.status === "rejected" && !access.changes.some((c) => c.status === "pending") && (
         <div className="note bad" role="status" style={{ marginBottom: 16 }}>
-          <strong>Zyvor did not approve your last change.</strong> {access.changes[0].summary}: {access.changes[0].note ?? "no reason was given"}. The account was removed; add the right one below.
+          <strong>Zyvor did not approve your last change.</strong> {access.changes[0].summary}: {access.changes[0].note ?? "no reason was given"}. {access.changes[0].kind === "profile" ? "Your details stay as they were; you can ask again with what they asked for." : "The account was removed; add the right one below."}
         </div>
       )}
       {access && (
@@ -78,6 +78,13 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
             {["pan", "gstin"].map((k) => { const c = checkFor(k); return c && <div key={k} className="muted" style={{ marginTop: 6 }}><Chip status={c.outcome} /> {KIND[k]}: {c.detail}</div>; })}
           </div>}
           {open && admin ? <ProfileForm /> : !o.profile && <p className="muted">An admin needs to enter the business details.</p>}
+          {o.status === "approved" && o.profile && admin && !access?.changes?.some((c) => c.kind === "profile" && c.status === "pending") && (
+            <details style={{ marginTop: 16 }}>
+              <summary>Need to change these details?</summary>
+              <p className="muted">Approved details are locked. Ask Zyvor to change them: a person there reads your reason, and until they decide your details stay as they are and live payouts are held. Enter the PAN again; we check it and keep only its last four digits.</p>
+              <ProfileChangeForm current={o.profile} />
+            </details>
+          )}
           {o.profile && <Next />}
         </section>
       )}
