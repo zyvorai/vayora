@@ -57,7 +57,9 @@ public enum ScheduleBook {
 /// Who has been asked to pay their share of a split, and who has said they did. Kept by hand: this phone is not told when another phone pays.
 public struct SplitRecord: Codable, Equatable, Identifiable, Sendable {
     public struct Member: Codable, Equatable, Identifiable, Sendable { public var id = UUID(); public var name: String; public var paid = false
-        public init(name: String) { self.name = name } }
+        /// Set for an itemised split, where people owe different amounts; nil means the record's even share.
+        public var shareMinor: Int64?
+        public init(name: String, shareMinor: Int64? = nil) { self.name = name; self.shareMinor = shareMinor } }
     public var id = UUID()
     public var date: Date
     public var note: String
@@ -69,6 +71,12 @@ public struct SplitRecord: Codable, Equatable, Identifiable, Sendable {
         // you are one of the people; the rest owe you
         self.members = (1..<max(2, people)).map { Member(name: "Friend \($0)") }
     }
-    public var owedMinor: Int64 { Int64(members.filter { !$0.paid }.count) * shareMinor }
+    /// An itemised split: you plus these named people, each owing their own amount. The total is what was paid.
+    public init(date: Date, note: String, totalMinor: Int64, owing: [(name: String, shareMinor: Int64)]) {
+        self.date = date; self.note = note; self.totalMinor = totalMinor; self.shareMinor = 0
+        self.members = owing.map { Member(name: $0.name, shareMinor: $0.shareMinor) }
+    }
+    public func share(of m: Member) -> Int64 { m.shareMinor ?? shareMinor }
+    public var owedMinor: Int64 { members.filter { !$0.paid }.reduce(0) { $0 + share(of: $1) } }
     public var isSettled: Bool { members.allSatisfy(\.paid) }
 }

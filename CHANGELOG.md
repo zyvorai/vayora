@@ -20,6 +20,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
 - Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
 
+**Pay: receipts vault and split by item (on-phone, test mode)**
+- Notes, tags and photos on payments, a month PDF, and itemised splits with exact shares. No server change.
+
 **Pay: learns categories and jars (on-phone, test mode)**
 - Recategorise a payee once and it sticks; savings jars with goals that conserve the test wallet. No server change.
 

@@ -49,6 +49,7 @@ final class Store: ObservableObject {
     @Published var splits: [SplitRecord] { didSet { if let d = try? JSONEncoder().encode(splits.prefix(50).map { $0 }) { UserDefaults.standard.set(d, forKey: "splits") } } }
     @Published var budgets: Budgets { didSet { if let d = try? JSONEncoder().encode(budgets) { UserDefaults.standard.set(d, forKey: "budgets") } } }
     @Published var categoryMemory: CategoryMemory { didSet { if let d = try? JSONEncoder().encode(categoryMemory) { UserDefaults.standard.set(d, forKey: "categoryMemory") } } }
+    @Published var vault: Vault { didSet { if let d = try? JSONEncoder().encode(vault) { UserDefaults.standard.set(d, forKey: "vault") } } }
     @Published var jars: JarBook { didSet { if let d = try? JSONEncoder().encode(jars) { UserDefaults.standard.set(d, forKey: "jars") } } }
     @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
     @Published var myName: String { didSet { UserDefaults.standard.set(myName, forKey: "myName") } }
@@ -69,6 +70,7 @@ final class Store: ObservableObject {
         scheduled = (d.data(forKey: "scheduled")).flatMap { try? JSONDecoder().decode([ScheduledPayment].self, from: $0) } ?? []
         splits = (d.data(forKey: "splits")).flatMap { try? JSONDecoder().decode([SplitRecord].self, from: $0) } ?? []
         categoryMemory = (d.data(forKey: "categoryMemory")).flatMap { try? JSONDecoder().decode(CategoryMemory.self, from: $0) } ?? CategoryMemory()
+        vault = (d.data(forKey: "vault")).flatMap { try? JSONDecoder().decode(Vault.self, from: $0) } ?? Vault()
         jars = (d.data(forKey: "jars")).flatMap { try? JSONDecoder().decode(JarBook.self, from: $0) } ?? JarBook()
         budgets = (d.data(forKey: "budgets")).flatMap { try? JSONDecoder().decode(Budgets.self, from: $0) } ?? Budgets()
         autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
@@ -97,7 +99,8 @@ final class Store: ObservableObject {
 
     var historyRows: [HistoryRow] {
         history.map { HistoryRow(date: $0.date, name: $0.name, payee: $0.payee, amountMinor: $0.amountMinor, paid: $0.status == .success,
-                                 category: SpendCategory(rawValue: $0.category ?? "") ?? .other, note: $0.note, kind: $0.kind ?? "") }
+                                 category: SpendCategory(rawValue: $0.category ?? "") ?? .other, note: $0.note, kind: $0.kind ?? "",
+                                 tags: vault.entry($0.id.uuidString).tags) }
     }
     var budgetStatuses: [BudgetStatus] { BudgetCheck.statuses(spendEntries, budgets: budgets, now: Date()) }
 
