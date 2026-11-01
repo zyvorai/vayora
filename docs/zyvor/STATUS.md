@@ -89,7 +89,8 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 | Failed debits | 🟡 | One retry the next day, then `failed` with `mandate.debit_failed`; the invoice stays open and the usual reminders carry on. |
 | Auto-collect for subscriptions | 🟡 | Link a mandate to a subscription; each invoice is scheduled as a debit and marked paid when captured. Without an active mandate nothing changes. |
 | iOS screens | 🟡 | Pay (scan, approve, taken debits, stop) and Merchant (create with QR, schedule, pause, resume, revoke, Run now) in `apps/ios`, against the simulator only. The payer sees debits taken, not upcoming ones. Run on phones: see the PR for what was checked. |
-| Real providers | ❌ | No Cashfree Subscriptions or Razorpay recurring adapter. Their `mandates` capability is false, so a mandate request answers `no_route`. |
+| Cashfree Subscriptions adapter | 🟡 (mocks only) | Mandate create, refresh, revoke and debit through Cashfree Subscriptions (v2026-01-01), `mandates` capability on. **Built from Cashfree's public docs and tested against a local mock HTTP server only; NOT verified against Cashfree's sandbox or production.** Several behaviours the docs leave unclear are marked `UNCLEAR` in `crates/zyvor-providers/src/cashfree/subscriptions.rs`. Subscription status and authorization webhooks are not applied (a mandate is refreshed by asking); charge webhooks are. |
+| Razorpay recurring | ❌ | No adapter. Its `mandates` capability is false. With only Razorpay connected, a mandate request answers `no_route`. |
 | The rules (notice window, per-debit ceiling default ₹15,000) | ◐ | Configurable, strict by default, **not verified against NPCI's current circular**; see [REGULATORY.md](REGULATORY.md). |
 
 ## Deviations from the brief

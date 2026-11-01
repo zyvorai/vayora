@@ -55,7 +55,7 @@ async fn new_mandate(t: &T, tn: &Tenant, cust: &str, max: i64, freq: &str, key: 
         "POST",
         "/v1/mandates",
         Some(key),
-        json!({ "customer_id": cust, "max_amount_minor": max, "frequency": freq, "end_date": days(365).to_string() }),
+        json!({ "customer_id": cust, "max_amount_minor": max, "frequency": freq, "provider": "sim", "end_date": days(365).to_string() }),
     )
     .await
 }

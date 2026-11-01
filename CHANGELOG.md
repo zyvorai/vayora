@@ -4,6 +4,13 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 1 November 2026
+**Cashfree Subscriptions adapter for UPI AutoPay (mocked, unverified)**
+- Cashfree can now hold a mandate: create (an on-demand subscription plus a payer approval link), refresh, revoke, and debit (a `CHARGE` keyed by our attempt id, with an idempotency key derived from it). `mandates` is on for Cashfree. Built from Cashfree's public docs and tested only against a local mock HTTP server; **not run against Cashfree's sandbox**. Unclear points are marked `UNCLEAR` in the code and listed in the pull request.
+- A debit whose outcome is unknown is resolved by asking Cashfree for the charge (new `Provider::fetch_debit`, used by the refresh of an attempt that belongs to a mandate), never by sending it again; a charge Cashfree cannot find stays unknown rather than failed.
+- `SUBSCRIPTION_PAYMENT_SUCCESS/FAILED/CANCELLED` webhooks for charges go through the existing Cashfree signature check and become payment events. Status-change and authorization webhooks are accepted and ignored.
+- With both Cashfree and the simulator connected, a mandate with no `provider` now goes to Cashfree (first by name); pass `"provider": "sim"` to use the simulator.
+
 ## 31 October 2026
 **People page and FX exposure**
 - Test mode: billing and reminder runs accept `as_of`, to see what a later day would bring (a partial test clock).
