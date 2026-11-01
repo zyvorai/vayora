@@ -59,7 +59,7 @@ class Zyvor:
         body = {k: v for k, v in {"amount_minor": amount_minor, **extra}.items() if v is not None}
         return self._req("POST", f"/v1/payment_intents/{intent_id}/refunds", body, idempotency_key or str(uuid.uuid4()))
 
-    def explain_settlement(self, settlement_id: str) -> dict:
+    def explain_settlement(self, settlement_id: str) -> types.GetSettlementsByIdExplainResponse:
         return self._req("GET", f"/v1/settlements/{settlement_id}/explain")
 
     def simulate_payment_event(self, attempt_id: str, outcome: str) -> types.PostOutboxTestResponse:
@@ -118,7 +118,7 @@ class Zyvor:
     def ageing(self, as_of: Optional[str] = None) -> types.GetCollectionsAgeingResponse:
         return self._req("GET", "/v1/collections/ageing" + (f"?as_of={as_of}" if as_of else ""))
 
-    def update_customer(self, customer_id: str, **fields: str) -> dict:
+    def update_customer(self, customer_id: str, **fields: str) -> types.PatchCustomersByIdResponse:
         """Correct a customer: name, email, phone, gstin, address1, location, pincode. Left-out fields stay; "" clears."""
         return self._req("PATCH", f"/v1/customers/{customer_id}", fields)
 
@@ -355,15 +355,15 @@ class Zyvor:
         """Subscriptions."""
         return self._req("GET", "/v1/subscriptions")
 
-    def pause_subscription(self, subscription_id: str) -> Any:
+    def pause_subscription(self, subscription_id: str) -> types.PostSubscriptionsByIdPauseResponse:
         """Pause a subscription."""
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/pause", {})
 
-    def resume_subscription(self, subscription_id: str) -> Any:
+    def resume_subscription(self, subscription_id: str) -> types.PostSubscriptionsByIdResumeResponse:
         """Resume a paused subscription."""
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/resume", {})
 
-    def cancel_subscription(self, subscription_id: str) -> Any:
+    def cancel_subscription(self, subscription_id: str) -> types.PostSubscriptionsByIdCancelResponse:
         """Cancel a subscription."""
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/cancel", {})
 
@@ -419,30 +419,30 @@ class Zyvor:
         """What a vendor is owed from split payments and how much is free to pay out."""
         return self._req("GET", f"/v1/vendors/{vendor_id}/balance")
 
-    def create_payout(self, vendor_id: str, amount_minor: int, purpose: str, *, currency: Optional[str] = None, external_ref: Optional[str] = None, from_balance: Optional[bool] = None) -> Any:
+    def create_payout(self, vendor_id: str, amount_minor: int, purpose: str, *, currency: Optional[str] = None, external_ref: Optional[str] = None, from_balance: Optional[bool] = None) -> types.PostPayoutsByIdApproveResponse:
         """Request a payout. Repeating the same external_ref returns the original."""
         body = {k: v for k, v in {"vendor_id": vendor_id, "amount_minor": amount_minor, "purpose": purpose, "currency": currency, "external_ref": external_ref, "from_balance": from_balance}.items() if v is not None}
         return self._req("POST", "/v1/payouts", body)
 
-    def create_payouts_bulk(self, payouts: list) -> Any:
+    def create_payouts_bulk(self, payouts: list) -> types.PostPayoutsByIdApproveResponse:
         """Up to 200 payouts, all created or none; each item has vendor_id, amount_minor, purpose and optionally external_ref, from_balance."""
         body = {k: v for k, v in {"payouts": payouts}.items() if v is not None}
         return self._req("POST", "/v1/payouts/bulk", body)
 
-    def list_payouts(self, *, status: Optional[str] = None) -> Any:
+    def list_payouts(self, *, status: Optional[str] = None) -> types.PostPayoutsByIdApproveResponse:
         """Payouts, optionally by status."""
         q = urllib.parse.urlencode(sorted({k: v for k, v in {"status": status}.items() if v not in (None, '')}.items()))
         return self._req("GET", "/v1/payouts" + ("?" + q if q else ""))
 
-    def approve_payout(self, payout_id: str) -> Any:
+    def approve_payout(self, payout_id: str) -> types.PostPayoutsByIdApproveResponse:
         """Approve a payout (a different person from the requester)."""
         return self._req("POST", f"/v1/payouts/{payout_id}/approve", {})
 
-    def reject_payout(self, payout_id: str) -> Any:
+    def reject_payout(self, payout_id: str) -> types.PostPayoutsByIdRejectResponse:
         """Reject a payout waiting for approval."""
         return self._req("POST", f"/v1/payouts/{payout_id}/reject", {})
 
-    def cancel_payout(self, payout_id: str) -> Any:
+    def cancel_payout(self, payout_id: str) -> types.PostPayoutsByIdCancelResponse:
         """Cancel a payout that has not been paid."""
         return self._req("POST", f"/v1/payouts/{payout_id}/cancel", {})
 
@@ -515,12 +515,12 @@ class Zyvor:
         """Cancel a milestone that is not complete."""
         return self._req("POST", f"/v1/milestones/{milestone_id}/cancel", {})
 
-    def create_installment_plan(self, customer_id: str, name: str, total_minor: int, instalments: int, first_due_date: str, number_prefix: str, *, every_unit: Optional[str] = None, every: Optional[int] = None, currency: Optional[str] = None, external_ref: Optional[str] = None) -> Any:
+    def create_installment_plan(self, customer_id: str, name: str, total_minor: int, instalments: int, first_due_date: str, number_prefix: str, *, every_unit: Optional[str] = None, every: Optional[int] = None, currency: Optional[str] = None, external_ref: Optional[str] = None) -> types.GetInstallmentPlansByIdResponse:
         """Split an agreed total into dated invoices; idempotent by external_ref."""
         body = {k: v for k, v in {"customer_id": customer_id, "name": name, "total_minor": total_minor, "instalments": instalments, "first_due_date": first_due_date, "number_prefix": number_prefix, "every_unit": every_unit, "every": every, "currency": currency, "external_ref": external_ref}.items() if v is not None}
         return self._req("POST", "/v1/installment_plans", body)
 
-    def get_installment_plan(self, plan_id: str) -> Any:
+    def get_installment_plan(self, plan_id: str) -> types.GetInstallmentPlansByIdResponse:
         """One instalment plan."""
         return self._req("GET", f"/v1/installment_plans/{plan_id}")
 
