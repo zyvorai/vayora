@@ -51,7 +51,7 @@ export default async function Reconciliation() {
                   <td className="num">{inr(Number(r.gross_minor))}</td><td className="num">{inr(Number(r.refunds_minor))}</td>
                   <td className="num">{inr(Number(r.fee_minor))}</td><td className="num">{inr(Number(r.net_minor))}</td>
                   <td><Chip status={String(r.status)} /></td>
-                  <td>{settings.env === "test" && r.provider === "sim" && r.status !== "matched" && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateBankCredit} id={String(r.id)} label="Add bank credit" showOk /><Act action={simulateBankCredit} id={String(r.id)} extra={{ short: "50" }} label="…₹50 short" showOk /></span>}</td>
+                  <td>{settings.env === "test" && r.provider === "sim" && r.status !== "matched" && Number(r.net_minor) > 0 && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateBankCredit} id={String(r.id)} label="Add bank credit" showOk /><Act action={simulateBankCredit} id={String(r.id)} extra={{ short: "50" }} label="…₹50 short" showOk /></span>}</td>
                 </tr>
               );
             })}

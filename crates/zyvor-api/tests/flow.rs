@@ -14003,3 +14003,74 @@ async fn the_holder_is_emailed_when_someone_takes_their_item_away(pool: PgPool) 
         "{m:?}"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_simulated_day_of_only_refunds_has_no_bank_credit_to_add(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Refund Day Ltd", "email": "d@rd.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let i = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/payment_intents",
+            Some("rd-i"),
+            json!({ "amount_minor": 50_000, "currency": "INR" }),
+        )
+        .await;
+    let iid = i["id"].as_str().unwrap();
+    t.ok(
+        &tn,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/attempts"),
+        Some("rd-a"),
+        json!({ "method": "upi", "vpa": "ok@bank" }),
+    )
+    .await;
+    let rf = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some("rd-r"),
+            json!({ "amount_minor": 10_000 }),
+        )
+        .await;
+    assert_eq!(rf["status"], "processed", "{rf}");
+    // the ledger cannot be edited, so put the refund on the next day: that day has a refund and no payment
+    sqlx::query("UPDATE refunds SET updated_at = updated_at + interval '1 day' WHERE id = $1")
+        .bind(rf["id"].as_str().unwrap())
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let day = zyvor_api::ist_today()
+        .checked_add_days(chrono::Days::new(1))
+        .unwrap()
+        .to_string();
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": day }),
+        )
+        .await;
+    let sid = r["imported"][0].as_str().unwrap().to_string();
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    assert_eq!(list["data"][0]["net_minor"], -10_000, "{list}");
+    let (st, body) = t
+        .call(
+            &tn,
+            "POST",
+            &format!("/v1/settlements/{sid}/simulate_bank"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st, 422);
+    assert_eq!(body["error"]["code"], "nothing_to_credit", "{body}");
+}
