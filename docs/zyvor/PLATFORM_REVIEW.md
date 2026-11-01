@@ -151,8 +151,14 @@ moves to the on-duty reviewer holding the fewest, never the first approver. Item
 shift stay with them, nothing moves while nobody is on duty (409), and an item with nobody it can go to is counted as
 `left`. Each move is audited as the lead's, and the new holder and the old one are told.
 
-**Not built:** re-balancing by workload alone (it only moves work off people on leave), and moving work when someone is
-only off shift. (A revoke is one person on purpose; giving
+`rebalance even` (`{"even": true}`) goes further and **evens out the load** between the people on duty: while the
+most-loaded holds two or more than the least-loaded, the item the most-loaded was given most recently (the least likely
+to be started) moves to the least-loaded, never to the first approver; it stops when the gap is one, after at most 50
+moves. It counts only what is pending. It cannot know that someone has started an item, so use it when the load is
+plainly lopsided; the audit trail says `rebalanced: load` for these and `leave` for the others.
+
+**Not built:** moving work because someone is only off shift (an evening is not a reason to move it), and a gentler
+balance that weighs how old or how big an item is. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back

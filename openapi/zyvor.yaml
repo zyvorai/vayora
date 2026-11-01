@@ -1644,7 +1644,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/rota/rebalance:
     post:
-      summary: Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved and left
+      summary: Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). With `even: true` in the body it then evens out the on-duty reviewers: while the most-loaded holds two or more than the least-loaded, the item given to them most recently moves to the least-loaded (never the first approver), at most 50 moves. Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved, evened and left
       tags:
       - platform
       responses:

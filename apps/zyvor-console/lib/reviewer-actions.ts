@@ -214,16 +214,18 @@ export async function removeDayOff(_: State, form: FormData): Promise<State> {
 }
 
 /** A lead moves what people on leave hold to people on duty. */
-export async function rebalance(_: State): Promise<State> {
+export async function rebalance(_: State, form: FormData): Promise<State> {
   requireReviewerSurface();
   const key = await reviewerKey();
   if (!key) redirect("/reviewer");
-  const r = await platform<{ moved: number; left: number }>(key, "POST", "/rota/rebalance", {});
+  const r = await platform<{ moved: number; evened: number; left: number }>(key, "POST", "/rota/rebalance", { even: form.get("even") === "on" });
   if (!r.ok) {
     if (r.status === 401) redirect("/reviewer");
     return { error: r.message };
   }
   revalidatePath("/reviewer/rota");
   revalidatePath("/reviewer");
-  return { ok: r.body.moved ? `Moved ${r.body.moved} item(s) to people on duty${r.body.left ? `; ${r.body.left} could not be moved` : ""}.` : r.body.left ? `Nothing moved; ${r.body.left} could not be given to anyone else.` : "Nobody on leave is holding anything." };
+  const { moved, evened, left } = r.body;
+  if (!moved && !evened && !left) return { ok: "Nothing to move." };
+  return { ok: `Moved ${moved} item(s) off people on leave and ${evened} to even out the load${left ? `; ${left} could not be given to anyone else` : ""}.` };
 }

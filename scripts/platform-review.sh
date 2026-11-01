@@ -19,7 +19,7 @@
 #   ... holiday 2026-12-25 [2026-12-25] ["why"] a desk holiday: nobody is on duty; holiday-remove <id> lifts it
 #   ... leave-for rev_... 2026-12-24 [2026-12-31] ["why"]   a lead books leave for another reviewer (leave-remove works on theirs too)
 #   ... coverage [days]                          the hours in the coming days (default 7, up to 28) when nobody is working
-#   ... rebalance                                a lead moves what reviewers on leave hold to people on duty
+#   ... rebalance [even]                         a lead moves what reviewers on leave hold to people on duty; "even" also evens out the load between them
 #   ... email you@example.com | none            where you are emailed when something is given to you (none stops it)
 #   ... rota-set "mon-fri 09:00-18:00" ["sat 10:00-14:00" ...]   replace your hours; days are mon, mon-fri or mon,wed; "none" clears them
 #   ... rota-set rev_... "mon-fri 09:00-18:00" ...   a lead sets that reviewer's hours (they are emailed); the operator makes a lead
@@ -125,7 +125,8 @@ for x in d["days"]:
     note = "HOLIDAY (%s)" % x["holiday"] if x["holiday"] else ("covered" if x["fully_covered"] else "NOBODY " + ", ".join("%s-%s" % (g["from"], g["to"]) for g in x["gaps"]))
     print("%s %s  %s%s" % (x["date"], x["weekday"], note, "  (%d on leave)" % x["on_leave"] if x["on_leave"] else ""))' ;;
   rebalance)
-    call POST "/v1/platform/rota/rebalance" "{}" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "moved %d item(s) off people on leave; %d could not be moved" % (d["moved"], d["left"]))' ;;
+    body='{}'; [ "${2:-}" = even ] && body='{"even":true}'
+    call POST "/v1/platform/rota/rebalance" "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "moved %d item(s) off people on leave, %d to even out the load; %d could not be moved" % (d["moved"], d["evened"], d["left"]))' ;;
   leave|holiday)
     [ -n "${2:-}" ] || { echo "usage: $0 $1 <first day YYYY-MM-DD> [last day] [\"why\"]" >&2; exit 2; }
     body="$(python3 -c '

@@ -1356,17 +1356,133 @@ pub async fn auto_assign(s: &AppState) -> Result<usize, ApiError> {
     Ok(done)
 }
 
+/// A pending item a reviewer holds: a live-access request (by organisation) or a post-approval change.
+enum Held {
+    Review {
+        org: String,
+    },
+    Change {
+        id: String,
+        tid: String,
+        ref_id: String,
+    },
+}
+
+/// Move one held item from `from` to `to`, only if `from` still holds it. Audited as the lead's; the new holder and
+/// the old one are told. Returns whether it moved.
+async fn move_held(
+    s: &AppState,
+    lead: &PlatformAuth,
+    item: &Held,
+    from: &str,
+    to: &str,
+    why: &str,
+) -> Result<bool, ApiError> {
+    let (tid, sql, key, action, subject) = match item {
+        Held::Review { org } => (
+            test_tenant_of(s, org).await?,
+            "UPDATE live_access SET assigned_to = $2, assigned_at = now() WHERE organisation_id = $1 AND status = 'pending' AND assigned_to = $3",
+            org.as_str(),
+            "live_access.assigned",
+            None,
+        ),
+        Held::Change { id, tid, ref_id } => (
+            tid.clone(),
+            "UPDATE live_changes SET assigned_to = $2, assigned_at = now() WHERE id = $1 AND status = 'pending' AND assigned_to = $3",
+            id.as_str(),
+            "live_change.assigned",
+            Some(ref_id.as_str()),
+        ),
+    };
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let won = sqlx::query(sql)
+        .bind(key)
+        .bind(to)
+        .bind(from)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+        == 1;
+    if won {
+        tenant::audit(
+            &mut tx,
+            &tid,
+            &format!("zyvor:{}", lead.name),
+            action,
+            subject,
+            json!({ "to": to, "from": from, "rebalanced": why }),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    if won {
+        let to_name = reviewer_name(s, to).await;
+        match item {
+            Held::Review { org } => {
+                let (what, _) = review_what(s, org).await;
+                tell_review_assignee(s, to, &lead.name, org).await;
+                tell_taken_from(s, from, &lead.name, &what, to_name.as_deref()).await;
+            }
+            Held::Change { id, .. } => {
+                if let Some((what, _)) = change_what(s, id).await {
+                    tell_change_assignee(s, to, &lead.name, id).await;
+                    tell_taken_from(s, from, &lead.name, &what, to_name.as_deref()).await;
+                }
+            }
+        }
+    }
+    Ok(won)
+}
+
+async fn held_by(
+    s: &AppState,
+    who: &[String],
+) -> Result<Vec<(Held, String, Option<String>, chrono::DateTime<chrono::Utc>)>, ApiError> {
+    let mut out = Vec::new();
+    let reviews: Vec<(String, String, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT organisation_id, assigned_to, first_approved_by, COALESCE(assigned_at, requested_at) FROM live_access WHERE status = 'pending' AND assigned_to = ANY($1)",
+    )
+    .bind(who)
+    .fetch_all(&s.pool)
+    .await?;
+    for (org, from, first, at) in reviews {
+        out.push((Held::Review { org }, from, first, at));
+    }
+    let changes: Vec<(String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, tenant_id, ref_id, assigned_to, first_approved_by, COALESCE(assigned_at, requested_at) FROM live_changes WHERE status = 'pending' AND assigned_to = ANY($1)",
+    )
+    .bind(who)
+    .fetch_all(&s.pool)
+    .await?;
+    for (id, tid, ref_id, from, first, at) in changes {
+        out.push((Held::Change { id, tid, ref_id }, from, first, at));
+    }
+    Ok(out)
+}
+
+#[derive(Deserialize, Default)]
+pub struct RebalanceIn {
+    /// Also even out the load between the people on duty (see `rebalance`).
+    #[serde(default)]
+    even: bool,
+}
+
 /// `POST /v1/platform/rota/rebalance`: a lead moves every pending request and change held by a reviewer who is on
 /// leave today to the on-duty reviewer holding the fewest (never the first approver). Items held by someone merely off
-/// shift stay: an evening is not a reason to move work. Each move is audited as the lead's and both people are told.
-/// Needs someone on duty; items with nobody they can go to are counted as `left`. Returns `{ moved, left }`.
+/// shift stay: an evening is not a reason to move work. With `even: true` it then evens out the people on duty: while
+/// the most-loaded holds two or more than the least-loaded, the item the most-loaded was given most recently (the
+/// least likely to be started) goes to the least-loaded, never to the first approver. At most 50 moves a call. Each
+/// move is audited as the lead's and both people are told. Needs someone on duty; items with nobody they can go to are
+/// counted as `left`. Returns `{ moved, evened, left }`.
 pub async fn rebalance(
     State(s): State<AppState>,
     p: PlatformAuth,
+    body: Option<Json<RebalanceIn>>,
 ) -> Result<Json<Value>, ApiError> {
     if !crate::rota::is_lead(&s, &p.id).await {
         return Err(ApiError::forbidden("only a lead can re-balance held items"));
     }
+    let even = body.is_some_and(|Json(b)| b.even);
     let away =
         crate::rota::away_on(&s, crate::rota::desk_local(&s, chrono::Utc::now()).date()).await;
     let on_duty = crate::rota::on_duty_ids(&s).await;
@@ -1376,106 +1492,62 @@ pub async fn rebalance(
             "nobody is on duty to take the items; try again when someone is",
         ));
     }
-    let mut load: Vec<(String, i64)> = Vec::new();
-    for id in &on_duty {
-        let n: i64 = sqlx::query_scalar(
-            "SELECT (SELECT count(*) FROM live_access WHERE assigned_to = $1 AND status = 'pending')
-                  + (SELECT count(*) FROM live_changes WHERE assigned_to = $1 AND status = 'pending')",
-        )
-        .bind(id)
-        .fetch_one(&s.pool)
-        .await?;
-        load.push((id.clone(), n));
-    }
+    let load_of = |held: &[(Held, String, Option<String>, chrono::DateTime<chrono::Utc>)]| -> Vec<(String, i64)> {
+        on_duty
+            .iter()
+            .map(|id| (id.clone(), held.iter().filter(|h| h.1 == *id).count() as i64))
+            .collect()
+    };
+    let (mut moved, mut evened, mut left) = (0usize, 0usize, 0usize);
+
+    // 1. off people on leave
     let gone: Vec<String> = away.on_leave.iter().cloned().collect();
-    let (mut moved, mut left) = (0usize, 0usize);
-    let reviews: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT organisation_id, assigned_to, first_approved_by FROM live_access WHERE status = 'pending' AND assigned_to = ANY($1) ORDER BY requested_at",
-    )
-    .bind(&gone)
-    .fetch_all(&s.pool)
-    .await?;
-    for (org, from, first) in reviews {
+    let mut load = load_of(&held_by(&s, &on_duty).await?);
+    let mut leaving = held_by(&s, &gone).await?;
+    leaving.sort_by_key(|h| h.3);
+    for (item, from, first, _) in &leaving {
         let Some(to) = crate::rota::pick(&load, first.as_deref()) else {
             left += 1;
             continue;
         };
-        let tid = test_tenant_of(&s, &org).await?;
-        let mut tx = tenant::begin(&s.pool, &tid).await?;
-        let won = sqlx::query("UPDATE live_access SET assigned_to = $2, assigned_at = now() WHERE organisation_id = $1 AND status = 'pending' AND assigned_to = $3")
-            .bind(&org)
-            .bind(&to)
-            .bind(&from)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected()
-            == 1;
-        if won {
-            tenant::audit(
-                &mut tx,
-                &tid,
-                &format!("zyvor:{}", p.name),
-                "live_access.assigned",
-                None,
-                json!({ "to": to, "from": from, "rebalanced": true }),
-            )
-            .await?;
+        if move_held(&s, &p, item, from, &to, "leave").await? {
             moved += 1;
             if let Some(l) = load.iter_mut().find(|(i, _)| *i == to) {
                 l.1 += 1;
             }
         }
-        tx.commit().await?;
-        if won {
-            let (what, _) = review_what(&s, &org).await;
-            let to_name = reviewer_name(&s, &to).await;
-            tell_review_assignee(&s, &to, &p.name, &org).await;
-            tell_taken_from(&s, &from, &p.name, &what, to_name.as_deref()).await;
-        }
     }
-    let changes: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, tenant_id, ref_id, assigned_to, first_approved_by FROM live_changes WHERE status = 'pending' AND assigned_to = ANY($1) ORDER BY requested_at",
-    )
-    .bind(&gone)
-    .fetch_all(&s.pool)
-    .await?;
-    for (id, tid, ref_id, from, first) in changes {
-        let Some(to) = crate::rota::pick(&load, first.as_deref()) else {
-            left += 1;
-            continue;
-        };
-        let mut tx = tenant::begin(&s.pool, &tid).await?;
-        let won = sqlx::query("UPDATE live_changes SET assigned_to = $2, assigned_at = now() WHERE id = $1 AND status = 'pending' AND assigned_to = $3")
-            .bind(&id)
-            .bind(&to)
-            .bind(&from)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected()
-            == 1;
-        if won {
-            tenant::audit(
-                &mut tx,
-                &tid,
-                &format!("zyvor:{}", p.name),
-                "live_change.assigned",
-                Some(&ref_id),
-                json!({ "to": to, "from": from, "rebalanced": true }),
-            )
-            .await?;
-            moved += 1;
-            if let Some(l) = load.iter_mut().find(|(i, _)| *i == to) {
-                l.1 += 1;
+
+    // 2. even out the people on duty
+    if even {
+        for _ in 0..50 {
+            let held = held_by(&s, &on_duty).await?;
+            let load = load_of(&held);
+            let (Some(hi), Some(lo)) = (
+                load.iter().max_by_key(|(_, n)| *n),
+                load.iter().min_by_key(|(_, n)| *n),
+            ) else {
+                break;
+            };
+            if hi.1 - lo.1 < 2 {
+                break;
             }
-        }
-        tx.commit().await?;
-        if won && let Some((what, _)) = change_what(&s, &id).await {
-            let to_name = reviewer_name(&s, &to).await;
-            tell_change_assignee(&s, &to, &p.name, &id).await;
-            tell_taken_from(&s, &from, &p.name, &what, to_name.as_deref()).await;
+            let newest = held
+                .iter()
+                .filter(|h| h.1 == hi.0 && h.2.as_deref() != Some(lo.0.as_str()))
+                .max_by_key(|h| h.3);
+            let Some((item, from, _, _)) = newest else {
+                break;
+            };
+            if !move_held(&s, &p, item, from, &lo.0, "load").await? {
+                break;
+            }
+            evened += 1;
         }
     }
-    Ok(Json(json!({ "moved": moved, "left": left })))
+    Ok(Json(
+        json!({ "moved": moved, "evened": evened, "left": left }),
+    ))
 }
 
 async fn reviewer_name(s: &AppState, id: &str) -> Option<String> {
