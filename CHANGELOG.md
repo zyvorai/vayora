@@ -13,6 +13,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 
 ## 31 October 2026
 **People page and FX exposure**
+- Fix: a settlement refund line that names our refund (as the simulated settlement does) no longer opens a false "matches none of our records" case.
 - Test mode: billing and reminder runs accept `as_of`, to see what a later day would bring (a partial test clock).
 - Test mode: `POST /v1/payment_attempts/{id}/simulate_event` settles a pending simulated payment as captured or failed, standing in for a provider's late update.
 - `GET /v1/console/branches` lists the branches a person can be tied to, read from the home environment that `invite` checks. The People page uses it, so a cashier can be invited with a branch while looking at live.
