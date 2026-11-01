@@ -125,7 +125,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
   test mode). `POST /v1/settlements/{id}/simulate_bank` adds the matching bank credit (optionally short, which opens a
   case); buttons on the same page. `POST /v1/payment_attempts/{id}/simulate_event` (test mode) settles a pending simulated
   payment as captured or failed through the normal update path, standing in for a provider's late update (API, Node, Python and Go;
-  no console button, and no signed webhook is actually sent to Zyvor's receiver).
+  a console button on the payment page for pending simulated attempts, and no signed webhook is actually sent to Zyvor's receiver).
 - Test clocks for subscriptions and dunning; a "reset test data" button (delete everything for a test tenant, never live).
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
   posting (`crates/zyvor-api/src/timeline.rs`); the test fails without the fix.

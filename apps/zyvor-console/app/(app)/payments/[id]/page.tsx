@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Chip } from "@/components/Chip";
+import { Act } from "@/components/Act";
 import { RefundForm } from "@/components/RefundForm";
 import { currentSession } from "@/lib/auth";
 import { inr, istDateTime } from "@/lib/format";
+import { simulateProviderUpdate } from "@/lib/actions";
 import { allows } from "@/lib/session";
 import { api } from "@/lib/zyvor";
 import { ZyvorError } from "@zyvor/node";
@@ -21,6 +23,7 @@ export default async function Payment({ params }: { params: Promise<{ id: string
     throw e;
   }
   const me = await currentSession();
+  const testMode = (await z.settings.get()).env === "test";
   const paid = p.attempts.find((a) => a.status === "captured");
   // what is left to refund: what was captured, less refunds done and refunds already asked for
   const refundable = paid ? paid.amount_minor - paid.refunded_minor - paid.reserved_refund_minor : 0;
@@ -37,8 +40,8 @@ export default async function Payment({ params }: { params: Promise<{ id: string
       {p.attempts.length > 0 && (<>
         <h2>Attempts</h2>
         <div className="tablewrap" style={{ marginBottom: 24 }}><table>
-          <thead><tr><th>Provider</th><th>Method</th><th className="num">Amount</th><th>Status</th><th>Why it failed</th></tr></thead>
-          <tbody>{p.attempts.map((a) => <tr key={a.id}><td>{a.provider}</td><td>{a.method}</td><td className="num">{inr(a.amount_minor)}</td><td><Chip status={a.status} /></td><td className="muted">{a.failure_reason ?? "—"}</td></tr>)}</tbody>
+          <thead><tr><th>Provider</th><th>Method</th><th className="num">Amount</th><th>Status</th><th>Why it failed</th><th /></tr></thead>
+          <tbody>{p.attempts.map((a) => <tr key={a.id}><td>{a.provider}</td><td>{a.method}</td><td className="num">{inr(a.amount_minor)}</td><td><Chip status={a.status} /></td><td className="muted">{a.failure_reason ?? "—"}</td><td>{testMode && a.provider === "sim" && a.status === "pending" && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "captured" }} label="Provider says paid" showOk /><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "failed" }} label="…failed" showOk /></span>}</td></tr>)}</tbody>
         </table></div>
       </>)}
       <h2>Timeline</h2>

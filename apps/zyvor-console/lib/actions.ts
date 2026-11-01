@@ -266,6 +266,15 @@ export async function simulateBankCredit(_: FormState, f: FormData): Promise<For
   });
   return r?.ok ? { ok: short ? "Credit added, short as asked: check Cases." : "Credit added." } : r;
 }
+/** Test mode only: the provider's late answer for a simulated payment that is still pending. */
+export async function simulateProviderUpdate(_: FormState, f: FormData): Promise<FormState> {
+  const outcome = String(f.get("outcome") ?? "") === "failed" ? "failed" : "captured";
+  const r = await run(["/payments"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Simulated provider updates are only available in test mode.");
+    await z.attempts.simulateEvent(id(f), outcome);
+  });
+  return r?.ok ? { ok: outcome === "failed" ? "Marked failed." : "Marked paid." } : r;
+}
 /** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
 export const connectProvider = async (_: FormState, f: FormData) => {
   const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";
