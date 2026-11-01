@@ -518,3 +518,34 @@ final class PrivacyTests: XCTestCase {
         XCTAssertEqual(Set(back.keys), ["balance"])
     }
 }
+
+final class VoiceCommandTests: XCTestCase {
+    let asha = Payee(vpa: "asha@x", name: "Asha"), ravi = Payee(vpa: "ravi@x", name: "Ravi Kumar"), ravi2 = Payee(vpa: "ravi2@x", name: "Ravi Shah")
+    var all: [Payee] { [asha, ravi, ravi2] }
+    func pay(_ s: String) -> VoiceCommand.Result { VoiceCommand.parse(s, payees: all) }
+
+    func testEnglishForms() {
+        XCTAssertEqual(pay("Pay Asha 200 rupees"), .pay(payee: asha, amount: Money(minor: 200_00)))
+        XCTAssertEqual(pay("send asha ₹ 50.50"), .pay(payee: asha, amount: Money(minor: 50_50)))
+        XCTAssertEqual(pay("please pay Asha 1,200 rs"), .pay(payee: asha, amount: Money(minor: 1200_00)))
+    }
+    func testHindiAndHinglish() {
+        XCTAssertEqual(pay("Asha ko 300 rupaye bhejo"), .pay(payee: asha, amount: Money(minor: 300_00)))
+        XCTAssertEqual(pay("Asha को ४५० रुपये भेजो"), .pay(payee: asha, amount: Money(minor: 450_00)))
+    }
+    func testAmbiguousAndUnknownAndMissingAmount() {
+        XCTAssertEqual(pay("pay Ravi 100"), .ambiguous([ravi, ravi2], Money(minor: 100_00)))
+        XCTAssertEqual(pay("pay Ravi Shah 100"), .pay(payee: ravi2, amount: Money(minor: 100_00)))
+        XCTAssertEqual(pay("pay Meena 100"), .noPayee("meena"))
+        XCTAssertEqual(pay("pay Asha"), .noAmount)
+        XCTAssertEqual(pay("pay 100"), .noPayee(""))
+    }
+    func testNotAPaymentAndBadAmounts() {
+        XCTAssertEqual(pay("what is my balance"), .notAPayment)
+        XCTAssertEqual(pay("pay Asha 0"), .noAmount)
+        XCTAssertEqual(pay("pay Asha 99999999999999 rupees"), .noAmount)
+    }
+    func testNeverInventsAPayee() {
+        XCTAssertEqual(VoiceCommand.parse("pay Asha 200", payees: []), .noPayee("asha"))
+    }
+}

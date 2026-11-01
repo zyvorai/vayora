@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var scanError: String?
     @State private var receipt: Txn?
     @AppStorage("hideBalance") private var hideBalance = false
+    @State private var speaking = false
     @State private var mandate: (MandatePayload, String)?
 
     var body: some View {
@@ -33,6 +34,11 @@ struct HomeView: View {
                     } onCancel: { scanning = false }
                 }
                 .sheet(isPresented: $pasting) { PasteSheet { open($0) } }
+                .sheet(isPresented: $speaking) { VoiceView().environmentObject(store) }
+                .overlay(alignment: .bottomTrailing) {
+                    Button { speaking = true } label: { Image(systemName: "mic.fill").font(.system(size: 20, weight: .bold)).foregroundStyle(.white).frame(width: 54, height: 54).background(Brand.pay.gradient, in: Circle()).shadow(radius: 10, y: 4) }
+                        .padding(.trailing, 20).padding(.bottom, 12).accessibilityLabel("Speak a payment")
+                }
                 .sheet(isPresented: $sending) { PayeesView().environmentObject(store) }
                 .sheet(isPresented: $splitting) { SplitView().environmentObject(store) }
                 .sheet(item: Binding(get: { payload.map { Box(value: $0, transfer: isTransfer) } }, set: { if $0 == nil { payload = nil } })) { b in
