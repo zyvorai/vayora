@@ -7,7 +7,22 @@ final class MerchantStore: ObservableObject {
     @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "serverURL"); Keychain.set(serverURL, for: "serverURL") } }
     @Published var apiKey: String { didSet { Keychain.set(apiKey, for: "apiKey") } }
 
+    /// Cashier mode hides AutoPay, Settings and refunds until the owner's PIN is entered. A shared-phone convenience, not security.
+    @Published var cashierLocked: Bool { didSet { UserDefaults.standard.set(cashierLocked, forKey: "cashierLocked") } }
+    @Published var regulars: RegularsBook { didSet { if let d = try? JSONEncoder().encode(regulars) { UserDefaults.standard.set(d, forKey: "regulars") } } }
+    @Published var gate = PinGate()
+    @Published var closeReminder: Bool { didSet { UserDefaults.standard.set(closeReminder, forKey: "closeReminder"); syncReminder() } }
+    @Published var closeMinutes: Int { didSet { UserDefaults.standard.set(closeMinutes, forKey: "closeMinutes"); syncReminder() } }
+    var ownerPIN: String { get { Keychain.get("ownerPIN") ?? "" } set { Keychain.set(newValue, for: "ownerPIN") } }
+
+    func syncReminder() { Task { await ClosingReminder.sync(enabled: closeReminder, minutes: closeMinutes) } }
+
     init() {
+        let d = UserDefaults.standard
+        cashierLocked = d.bool(forKey: "cashierLocked")
+        regulars = (d.data(forKey: "regulars")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()
+        closeReminder = d.bool(forKey: "closeReminder")
+        closeMinutes = d.object(forKey: "closeMinutes") as? Int ?? (21 * 60)
         let saved = Keychain.get("serverURL") ?? UserDefaults.standard.string(forKey: "serverURL") ?? "http://127.0.0.1:8080"
         serverURL = saved
         // an address saved by an older build lives only in UserDefaults: copy it to the Keychain so a reinstall keeps it

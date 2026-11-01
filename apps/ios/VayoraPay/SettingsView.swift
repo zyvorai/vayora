@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var scanning = false
     @State private var budgeting = false
     @State private var receiving = false
+    @State private var jarring = false
     @State private var setupMessage: String?
 
     var body: some View {
@@ -48,6 +49,7 @@ struct SettingsView: View {
                                 HStack(spacing: 18) {
                                     Button { budgeting = true } label: { Label("Budgets", systemImage: "slider.horizontal.3") }
                                     Button { receiving = true } label: { Label("Receive", systemImage: "qrcode") }
+                                    Button { jarring = true } label: { Label("Jars", systemImage: "banknote") }
                                 }.vfont(15, .semibold).foregroundStyle(VUI.violet)
                             }
                         }
@@ -86,6 +88,7 @@ struct SettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $budgeting) { BudgetsView().environmentObject(store) }
             .sheet(isPresented: $receiving) { ReceiveView().environmentObject(store) }
+            .sheet(isPresented: $jarring) { JarsView().environmentObject(store) }
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .pay, hint: "Scan the setup QR") { text in
                     scanning = false
