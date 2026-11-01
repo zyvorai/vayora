@@ -100,10 +100,16 @@ async fn main() {
             Some("add") => {
                 let name = args
                     .get(3)
-                    .expect("usage: zyvor-api platform-reviewer add \"Name\"");
+                    .expect("usage: zyvor-api platform-reviewer add \"Name\" [email]");
                 let (id, key) = zyvor_api::platform::create_reviewer(&pool, name)
                     .await
                     .expect("create reviewer");
+                if let Some(email) = args.get(4)
+                    && let Err(e) =
+                        zyvor_api::platform::set_reviewer_email(&pool, &id, Some(email)).await
+                {
+                    eprintln!("reviewer created, but the email was not saved: {e:?}");
+                }
                 println!(
                     "reviewer {id} ({name})\n  key: {key}\n\nStore this key now; it cannot be shown again."
                 );
@@ -132,7 +138,9 @@ async fn main() {
                     }
                 );
             }
-            _ => eprintln!("usage: zyvor-api platform-reviewer add \"Name\" | list | disable <id>"),
+            _ => eprintln!(
+                "usage: zyvor-api platform-reviewer add \"Name\" [email] | list | disable <id>"
+            ),
         }
         return;
     }

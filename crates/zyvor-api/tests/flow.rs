@@ -13638,3 +13638,188 @@ async fn a_simulated_settlement_nets_off_a_refund_processed_the_same_day(pool: P
     let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
     assert_eq!(list["data"][0]["status"], "matched", "{list}");
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_reviewer_with_an_address_is_emailed_when_something_is_given_to_them(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    st.review_auto_assign = true;
+    let app = zyvor_api::app(st.clone());
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (c_id, _) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let mails = |to: &str| {
+        let (root, to) = (t.root.clone(), to.to_string());
+        async move {
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT subject, body FROM mail_queue WHERE to_email = $1 ORDER BY created_at, id",
+            )
+            .bind(to)
+            .fetch_all(&root)
+            .await
+            .unwrap()
+        }
+    };
+
+    // your own address: checked, lower-cased, clearable
+    let (s1, b) = rv(
+        &b_key,
+        "PUT",
+        "/v1/platform/me".into(),
+        json!({ "email": "not an address" }),
+    )
+    .await;
+    assert_eq!(
+        (s1, b["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("invalid_email")),
+        "{b}"
+    );
+    let (s2, b) = rv(
+        &b_key,
+        "PUT",
+        "/v1/platform/me".into(),
+        json!({ "email": " Bala@Desk.Example " }),
+    )
+    .await;
+    assert_eq!(
+        (s2, b["email"].clone()),
+        (StatusCode::OK, json!("bala@desk.example")),
+        "{b}"
+    );
+    let (_, b) = rv(&b_key, "GET", "/v1/platform/me".into(), Value::Null).await;
+    assert_eq!(
+        (b["name"].clone(), b["email"].clone()),
+        (json!("Bala"), json!("bala@desk.example"))
+    );
+    assert!(
+        !zyvor_api::platform::set_reviewer_email(&t.state.pool, "nobody", Some("x@y.in"))
+            .await
+            .unwrap(),
+        "an unknown reviewer is not found"
+    );
+
+    let (_, org1) = asks_for_live(&t, &app, "One Ltd", "o@one.in").await;
+    let (_, org2) = asks_for_live(&t, &app, "Two Ltd", "o@two2.in").await;
+
+    // claiming one for yourself says nothing to you; giving one to Bala does, naming who and what, with a link
+    let (s, _) = rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(
+        mails("bala@desk.example").await.is_empty(),
+        "no mail for a claim"
+    );
+    let (s, _) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/assign"),
+        json!({ "to": b_id }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let m = mails("bala@desk.example").await;
+    assert_eq!(m.len(), 1, "{m:?}");
+    assert!(m[0].0.contains("Two Ltd"), "{m:?}");
+    assert!(m[0].1.contains("Asha gave you"), "{m:?}");
+    assert!(
+        m[0].1.contains(&format!("/reviewer/review/{org2}")),
+        "{m:?}"
+    );
+
+    // a reviewer with no address gets nothing, and the assignment still works
+    let (s, b) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/assign"),
+        json!({ "to": c_id, "take_over": true }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["assigned_to_name"].clone()),
+        (StatusCode::OK, json!("Chitra")),
+        "{b}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Yours to review%'")
+            .await,
+        1
+    );
+
+    // the rota gives a waiting review to Bala (the only one on duty) and says so
+    let (mkey3, org3) = asks_for_live(&t, &app, "Three Ltd", "o@three.in").await;
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    rv(
+        &b_key,
+        "PUT",
+        "/v1/platform/rota/me".into(),
+        json!({ "shifts": all_week }),
+    )
+    .await;
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    let m = mails("bala@desk.example").await;
+    assert_eq!(m.len(), 2, "{m:?}");
+    assert!(
+        m[1].0.contains("Three Ltd") && m[1].1.contains("The rota gave you"),
+        "{m:?}"
+    );
+    assert!(
+        m[1].1.contains(&format!("/reviewer/review/{org3}")),
+        "{m:?}"
+    );
+
+    // a change is announced by kind and business only: no account details in the mail
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org3)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (st_b, _) = common::raw(&app, &mkey3, None, "POST", "/v1/onboarding/bank_accounts", None,
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "111122223333" })).await;
+    assert_eq!(st_b, StatusCode::CREATED);
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    let m = mails("bala@desk.example").await;
+    assert_eq!(m.len(), 3, "{m:?}");
+    assert!(
+        m[2].0.contains("a new bank account") && m[2].0.contains("Three Ltd"),
+        "{m:?}"
+    );
+    assert!(
+        !m[2].1.contains("3333") && !m[2].1.contains("Kiran"),
+        "{m:?}"
+    );
+    assert!(m[2].1.contains("/reviewer"), "{m:?}");
+
+    // clearing the address stops the mail
+    let (_, b) = rv(
+        &b_key,
+        "PUT",
+        "/v1/platform/me".into(),
+        json!({ "email": null }),
+    )
+    .await;
+    assert_eq!(b["email"], Value::Null);
+    let (_, org4) = asks_for_live(&t, &app, "Four Ltd", "o@four.in").await;
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    assert_eq!(mails("bala@desk.example").await.len(), 3);
+    let _ = org4;
+}

@@ -140,6 +140,21 @@ export async function escalateChange(_: State, form: FormData): Promise<State> {
   return { ok: "Done. A different reviewer must now approve it too." };
 }
 
+/** Set or clear the address the signed-in reviewer is told about assignments at. */
+export async function saveMyEmail(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const email = String(form.get("email") ?? "").trim();
+  const r = await platform(key, "PUT", "/me", { email: email || null });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer/rota");
+  return { ok: email ? "Saved. You will be emailed when something is given to you." : "Cleared. You will not be emailed." };
+}
+
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 /** Replace the signed-in reviewer's weekly hours: one shift per ticked day. */
