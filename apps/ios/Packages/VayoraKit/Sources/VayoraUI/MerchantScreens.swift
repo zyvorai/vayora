@@ -65,9 +65,13 @@ public struct CollectKeypadScreen: View {
 
 /// The QR as the hero, with a live ring and an expiry arc. Customer mode strips everything else away.
 public struct QRHeroScreen: View {
-    let amount: Money, qr: Image?, expiry: Double, pulse: Double, customerMode: Bool, note: String, onCustomerMode: () -> Void, onCancel: () -> Void
+    let amount: Money, qr: Image?, expiry: Double, customerMode: Bool, note: String, onCustomerMode: () -> Void, onCancel: () -> Void
+    private let rawPulse: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Reduce Motion holds the ring and the dot still.
+    private var pulse: Double { reduceMotion ? 0 : rawPulse }
     public init(amount: Money, qr: Image?, expiry: Double, pulse: Double, customerMode: Bool, note: String = "", onCustomerMode: @escaping () -> Void = {}, onCancel: @escaping () -> Void = {}) {
-        self.amount = amount; self.qr = qr; self.expiry = expiry; self.pulse = pulse; self.customerMode = customerMode; self.note = note
+        self.amount = amount; self.qr = qr; self.expiry = expiry; self.rawPulse = pulse; self.customerMode = customerMode; self.note = note
         self.onCustomerMode = onCustomerMode; self.onCancel = onCancel
     }
     public var body: some View {
@@ -76,7 +80,7 @@ public struct QRHeroScreen: View {
             VStack(spacing: 22) {
                 if !customerMode { HStack { Text("Waiting for payment").vfont(22, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() } }
                 Spacer(minLength: 0)
-                AmountText(amount, size: customerMode ? 64 : 52).environment(\.colorScheme, customerMode ? .light : .dark)
+                AmountText(amount, size: customerMode ? 84 : 52).environment(\.colorScheme, customerMode ? .light : .dark)
                     .colorMultiply(customerMode ? .black : .white)
                 ZStack {
                     RoundedRectangle(cornerRadius: 56, style: .continuous).stroke(VUI.emerald.opacity(0.3 * (1 - pulse)), lineWidth: 2).scaleEffect(1 + 0.10 * pulse).frame(width: 322, height: 322)
@@ -86,8 +90,11 @@ public struct QRHeroScreen: View {
                     else { Image(systemName: "qrcode").font(.system(size: 160)).foregroundStyle(.black) }
                     FrameProgress(expiry, cornerRadius: 46, lineWidth: 5, colour: VUI.emerald).frame(width: 308, height: 308)
                 }
-                if !note.isEmpty { Text(note).vfont(16).foregroundStyle(customerMode ? Color.black.opacity(0.6) : VUI.textSecondary) }
-                HStack(spacing: 8) { Circle().fill(VUI.emerald).frame(width: 8, height: 8).opacity(0.4 + 0.6 * (1 - pulse)); Text("Scan with Vayora Pay to pay (test)").vfont(13) }
+                // the customer view is read from across a counter: a bigger code, easier for a camera too
+                .scaleEffect(customerMode ? 1.14 : 1)
+                .padding(.vertical, customerMode ? 22 : 0)
+                if !note.isEmpty { Text(note).vfont(customerMode ? 20 : 16).foregroundStyle(customerMode ? Color.black.opacity(0.6) : VUI.textSecondary).multilineTextAlignment(.center) }
+                HStack(spacing: 8) { Circle().fill(VUI.emerald).frame(width: 8, height: 8).opacity(0.4 + 0.6 * (1 - pulse)); Text("Scan with Vayora Pay to pay (test)").vfont(customerMode ? 17 : 13) }
                     .foregroundStyle(customerMode ? Color.black.opacity(0.5) : VUI.textTertiary)
                 Spacer(minLength: 0)
                 HStack(spacing: 12) {

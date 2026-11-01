@@ -109,6 +109,7 @@ public struct CheckmarkDraw: View {
 /// Confetti as a pure function of `progress`: deterministic, so a frame can be rendered for review.
 public struct ParticleBurst: View {
     let progress: Double, colours: [Color]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init(progress: Double, colours: [Color]) { self.progress = progress; self.colours = colours }
     public var body: some View {
         Canvas { ctx, size in
@@ -131,6 +132,7 @@ public struct ParticleBurst: View {
                 c.fill(Path(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h), cornerRadius: 2), with: .color(colours[i % colours.count].opacity(fade)))
             }
         }
+        .opacity(reduceMotion ? 0 : 1) // Reduce Motion: the check mark and the words still say it was paid
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 }
