@@ -30,6 +30,23 @@ jobs:
         with: { go-version: "1.22" }
       - run: cd sdks/go && go vet ./... && go test ./...
       - run: cd sdks/python && PYTHONPATH=. python3 -m unittest test_zyvor
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package tests and the screen gallery
+        working-directory: apps/ios/Packages/VayoraKit
+        run: |
+          swift test
+          swift build --product VayoraGallery
+      - name: Both apps compile for the iOS simulator SDK (unsigned)
+        working-directory: apps/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          for scheme in VayoraPay VayoraMerchant; do
+            xcodebuild -project Vayora.xcodeproj -scheme "$scheme" -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+          done
   helm:
     runs-on: ubuntu-latest
     steps:
