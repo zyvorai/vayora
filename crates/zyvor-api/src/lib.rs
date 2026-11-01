@@ -42,6 +42,7 @@ pub mod registry;
 pub mod reminders;
 pub mod rota;
 pub mod signup;
+pub mod sim_circle;
 pub mod sim_mandate;
 pub mod sim_pay;
 pub mod state_machine;
@@ -616,6 +617,10 @@ pub fn app(state: AppState) -> Router {
         .route("/sim/mandate", post(sim_mandate::decide))
         .route("/sim/mandate/revoke", post(sim_mandate::revoke))
         .route("/sim/mandate/{id}", get(sim_mandate::view))
+        .route("/sim/circle", post(sim_circle::create))
+        .route("/sim/circle/revoke", post(sim_circle::revoke))
+        .route("/sim/circle/pay", post(sim_circle::pay))
+        .route("/sim/circle/{id}", get(sim_circle::view))
         // provider -> Zyvor (authenticated by signature, not API key)
         .route(
             "/webhooks/{provider}/{tenant_id}",

@@ -25,6 +25,7 @@ use crate::*;
 pub struct SimProvider {
     mandates: Mutex<HashMap<String, SimMandate>>,
     payments: Mutex<HashMap<String, PaymentState>>,
+    circles: Mutex<HashMap<String, SimCircle>>,
     refunds: Mutex<HashMap<String, RefundState>>,
     /// When set, a pending QR / intent payment waits for `payer_decide` instead of being approved by the
     /// first lookup. This is what lets a payer app (or a test) play the payer.
@@ -37,6 +38,41 @@ struct SimMandate {
     currency: Currency,
     /// Debits this simulated bank actually took: what the payer's own bank would show them.
     debits: Vec<PayerDebit>,
+}
+
+/// A "circle": the primary payer lets a delegate pay from their account up to a limit. Test mode only; the real rules of UPI Circle are
+/// not verified here. The delegate's payments are recorded so the primary's phone can see what was spent.
+struct SimCircle {
+    primary: String,
+    delegate: String,
+    max_per_payment_minor: i64,
+    total_limit_minor: i64,
+    active: bool,
+    spends: Vec<PayerDebit>,
+}
+
+/// What the primary's UPI app can see of a circle.
+#[derive(Debug, Clone, Serialize)]
+pub struct CircleView {
+    pub circle_id: String,
+    pub primary: String,
+    pub delegate: String,
+    pub status: String,
+    pub max_per_payment_minor: i64,
+    pub total_limit_minor: i64,
+    pub used_minor: i64,
+    pub remaining_minor: i64,
+    pub spends: Vec<PayerDebit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CircleDeny {
+    Unknown,
+    Revoked,
+    NotAnIntentPayment,
+    OverPaymentLimit,
+    OverTotalLimit,
+    AlreadyPaid,
 }
 
 /// One debit the payer's bank took under a mandate.
@@ -105,6 +141,117 @@ impl SimProvider {
         }
         s.state.status = MandateStatus::Revoked;
         Some(MandateStatus::Revoked)
+    }
+
+    /// Open a circle. Names are the UPI IDs or names the phones show; limits are paise and `total >= per payment`.
+    pub fn circle_create(
+        &self,
+        primary: &str,
+        delegate: &str,
+        max_per_payment_minor: i64,
+        total_limit_minor: i64,
+    ) -> Result<String, &'static str> {
+        let ok_name = |s: &str| !s.trim().is_empty() && s.chars().count() <= 60;
+        if !ok_name(primary) || !ok_name(delegate) {
+            return Err("names must be 1 to 60 characters");
+        }
+        if max_per_payment_minor <= 0
+            || total_limit_minor < max_per_payment_minor
+            || total_limit_minor > 10_000_000_000
+        {
+            return Err(
+                "limits must be positive, total at least the per-payment limit, and within range",
+            );
+        }
+        let id = new_id("cir");
+        self.circles.lock().unwrap().insert(
+            id.clone(),
+            SimCircle {
+                primary: primary.trim().into(),
+                delegate: delegate.trim().into(),
+                max_per_payment_minor,
+                total_limit_minor,
+                active: true,
+                spends: vec![],
+            },
+        );
+        Ok(id)
+    }
+
+    pub fn circle_view(&self, id: &str) -> Option<CircleView> {
+        let m = self.circles.lock().unwrap();
+        let c = m.get(id)?;
+        let used: i64 = c.spends.iter().map(|d| d.amount_minor).sum();
+        Some(CircleView {
+            circle_id: id.into(),
+            primary: c.primary.clone(),
+            delegate: c.delegate.clone(),
+            status: if c.active { "active" } else { "revoked" }.into(),
+            max_per_payment_minor: c.max_per_payment_minor,
+            total_limit_minor: c.total_limit_minor,
+            used_minor: used,
+            remaining_minor: (c.total_limit_minor - used).max(0),
+            spends: c.spends.clone(),
+        })
+    }
+
+    /// The primary takes the delegation back. Spends already made stay recorded. `false` when unknown or already revoked.
+    pub fn circle_revoke(&self, id: &str) -> bool {
+        match self.circles.lock().unwrap().get_mut(id) {
+            Some(c) if c.active => {
+                c.active = false;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The delegate pays a pending QR payment through a circle. The amount comes from the payment itself, never from the caller, and the
+    /// limits are checked before anything is approved. On success the spend is recorded and the payment captured.
+    pub fn circle_pay(
+        &self,
+        id: &str,
+        attempt_id: &str,
+    ) -> Result<(PaymentStatus, i64), CircleDeny> {
+        let amount = {
+            let p = self.payments.lock().unwrap();
+            let s = p.get(attempt_id).ok_or(CircleDeny::NotAnIntentPayment)?;
+            if s.raw["flow"] != "upi_intent" || s.status != PaymentStatus::Pending {
+                return Err(CircleDeny::NotAnIntentPayment);
+            }
+            s.raw["amount_minor"]
+                .as_i64()
+                .ok_or(CircleDeny::NotAnIntentPayment)?
+        };
+        {
+            let m = self.circles.lock().unwrap();
+            let c = m.get(id).ok_or(CircleDeny::Unknown)?;
+            if !c.active {
+                return Err(CircleDeny::Revoked);
+            }
+            if c.spends.iter().any(|d| d.attempt_id == attempt_id) {
+                return Err(CircleDeny::AlreadyPaid);
+            }
+            if amount > c.max_per_payment_minor {
+                return Err(CircleDeny::OverPaymentLimit);
+            }
+            let used: i64 = c.spends.iter().map(|d| d.amount_minor).sum();
+            if used + amount > c.total_limit_minor {
+                return Err(CircleDeny::OverTotalLimit);
+            }
+        }
+        let status = self
+            .payer_decide(attempt_id, true)
+            .ok_or(CircleDeny::NotAnIntentPayment)?;
+        let mut m = self.circles.lock().unwrap();
+        let c = m.get_mut(id).ok_or(CircleDeny::Unknown)?;
+        c.spends.push(PayerDebit {
+            attempt_id: attempt_id.into(),
+            amount_minor: amount,
+            at: chrono::Utc::now().to_rfc3339(),
+        });
+        let used: i64 = c.spends.iter().map(|d| d.amount_minor).sum();
+        Ok((status, (c.total_limit_minor - used).max(0)))
     }
 
     pub fn set_manual_payer(&self, on: bool) {
@@ -719,5 +866,78 @@ mod mandate_tests {
             2,
             "history stays after a revoke"
         );
+    }
+
+    // A circle: the delegate pays from the primary's limit, checked before anything is approved.
+    async fn qr_attempt(sim: &SimProvider, amount: i64) -> String {
+        sim.set_manual_payer(true);
+        let req = CreatePayment {
+            attempt_id: new_id("att"),
+            amount_minor: amount,
+            currency: Currency::Inr,
+            method: Method::Upi,
+            vpa: None,
+            customer_id: None,
+            customer_phone: None,
+            capture_automatic: true,
+            return_url: None,
+            upi_intent: true,
+            client: None,
+        };
+        let id = req.attempt_id.clone();
+        sim.initiate(&req).await.unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn a_circle_spend_is_checked_against_the_payment_and_the_limits() {
+        let sim = SimProvider::new();
+        let circle = sim.circle_create("Asha", "Ravi", 50_000, 80_000).unwrap();
+        let a = qr_attempt(&sim, 40_000).await;
+        let (st, left) = sim.circle_pay(&circle, &a).unwrap();
+        assert_eq!(st, PaymentStatus::Captured);
+        assert_eq!(left, 40_000);
+        // the same payment cannot be spent twice (it is also no longer pending)
+        assert!(sim.circle_pay(&circle, &a).is_err());
+        // over the per-payment limit: refused and the payment stays pending
+        let big = qr_attempt(&sim, 50_001).await;
+        assert_eq!(
+            sim.circle_pay(&circle, &big),
+            Err(CircleDeny::OverPaymentLimit)
+        );
+        // within it, but over what is left of the total
+        let b = qr_attempt(&sim, 45_000).await;
+        assert_eq!(sim.circle_pay(&circle, &b), Err(CircleDeny::OverTotalLimit));
+        let v = sim.circle_view(&circle).unwrap();
+        assert_eq!(
+            (v.used_minor, v.remaining_minor, v.spends.len()),
+            (40_000, 40_000, 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_revoked_or_unknown_circle_pays_nothing() {
+        let sim = SimProvider::new();
+        let circle = sim.circle_create("Asha", "Ravi", 10_000, 10_000).unwrap();
+        assert!(sim.circle_revoke(&circle));
+        assert!(!sim.circle_revoke(&circle));
+        let a = qr_attempt(&sim, 1_000).await;
+        assert_eq!(sim.circle_pay(&circle, &a), Err(CircleDeny::Revoked));
+        assert_eq!(sim.circle_pay("cir_nope", &a), Err(CircleDeny::Unknown));
+        // a payment that is not a pending QR payment is not ours to approve
+        assert_eq!(
+            sim.circle_pay(&circle, "att_missing"),
+            Err(CircleDeny::NotAnIntentPayment)
+        );
+    }
+
+    #[test]
+    fn circle_limits_are_validated() {
+        let sim = SimProvider::new();
+        assert!(sim.circle_create("", "Ravi", 1, 1).is_err());
+        assert!(sim.circle_create("A", "R", 0, 10).is_err());
+        assert!(sim.circle_create("A", "R", 100, 99).is_err());
+        assert!(sim.circle_create("A", "R", 100, 10_000_000_001).is_err());
+        assert!(sim.circle_create("A", "R", 100, 100).is_ok());
     }
 }

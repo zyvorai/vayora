@@ -185,6 +185,29 @@ public struct VayoraClient: Sendable {
         return try await send(request("POST", "/sim/pay", body: data), as: SimPayResult.self)
     }
 
+    // Circle (simulator only)
+
+    public func simCircleCreate(primary: String, delegate: String, perPayment: Money, total: Money) async throws -> String {
+        struct Created: Decodable { let circle_id: String }
+        let body: [String: Any] = ["primary": primary, "delegate": delegate, "max_per_payment_minor": perPayment.minor, "total_limit_minor": total.minor]
+        return try await send(request("POST", "/sim/circle", body: try JSONSerialization.data(withJSONObject: body)), as: Created.self).circle_id
+    }
+    public func simCircleView(id: String) async throws -> CircleInfo {
+        guard MandatePayload.isSafeID(id) else { throw APIError(status: 0, code: "bad_id", message: "Not a circle id") }
+        return try await send(request("GET", "/sim/circle/\(id)"), as: CircleInfo.self)
+    }
+    public func simCircleRevoke(id: String) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["circle_id": id])
+        struct Done: Decodable { let status: String }
+        _ = try await send(request("POST", "/sim/circle/revoke", body: data), as: Done.self)
+    }
+    public struct CirclePayResult: Decodable, Sendable { public let status: String; public let remainingMinor: Int64
+        enum CodingKeys: String, CodingKey { case status, remainingMinor = "remaining_minor" } }
+    public func simCirclePay(circleID: String, upiURI: String) async throws -> CirclePayResult {
+        let data = try JSONSerialization.data(withJSONObject: ["circle_id": circleID, "upi_uri": upiURI])
+        return try await send(request("POST", "/sim/circle/pay", body: data), as: CirclePayResult.self)
+    }
+
     // AutoPay: payer side (simulator only)
 
     public func simMandateDecide(upiURI: String, approve: Bool = true) async throws -> SimPayResult {

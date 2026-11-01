@@ -34,6 +34,8 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - Face ID lock that actually locks, an app-switcher cover, hide balance, scam warning on the review screen, and backup and restore of the phone's data. Merchant's Info.plist now has a local-network usage string. No server change.
 **Pay: voice pay (on-phone, test mode)**
 - A spoken payment in English or Hindi that opens the usual review for a saved payee. Never pays by itself. No server change.
+**Circle (simulator, test mode)**
+- `POST /v1/sim/circle`, `GET /v1/sim/circle/{id}`, `POST /v1/sim/circle/revoke` and `POST /v1/sim/circle/pay`: a primary payer lets a delegate pay from their account up to a per-payment and a total limit, played by the simulated bank. The amount is read from the payment, never from the request. Off unless `ZYVOR_SIM_PAYER=1`; only the in-process simulator. A Circle tab in Pay. The real rules of UPI Circle are not verified.
 
 **Pay: receipts vault and split by item (on-phone, test mode)**
 - Notes, tags and photos on payments, a month PDF, and itemised splits with exact shares. No server change.

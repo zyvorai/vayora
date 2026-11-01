@@ -1404,6 +1404,60 @@ paths:
           description: Not enabled on this server
         '409':
           description: No live mandate with that id
+  /v1/sim/circle:
+    post:
+      summary: Open a simulated circle, where a delegate may pay from a primary payer's account up to a limit (test mode only)
+      description: 'Body: primary, delegate, max_per_payment_minor, total_limit_minor. Answers 404 unless ZYVOR_SIM_PAYER=1. Only the in-process simulator; no money moves. The real rules of UPI Circle are not verified here.'
+      tags:
+      - sandbox
+      responses:
+        '201':
+          description: The circle id
+        '404':
+          description: Not enabled on this server
+        '422':
+          description: Invalid names or limits
+  /v1/sim/circle/{id}:
+    get:
+      summary: What the primary payer's bank shows about a simulated circle (test mode only)
+      description: 'Returns the limits, what was spent and the payments behind it. Answers 404 unless ZYVOR_SIM_PAYER=1.'
+      tags:
+      - sandbox
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The circle as the primary sees it
+        '404':
+          description: Not enabled on this server, or unknown circle
+  /v1/sim/circle/revoke:
+    post:
+      summary: The primary takes a simulated circle back (test mode only)
+      description: 'Body: circle_id. Answers 404 unless ZYVOR_SIM_PAYER=1. Spends already made stay recorded.'
+      tags:
+      - sandbox
+      responses:
+        '200':
+          description: Revoked
+        '404':
+          description: Not enabled on this server
+        '409':
+          description: No live circle with that id
+  /v1/sim/circle/pay:
+    post:
+      summary: A delegate pays a sandbox UPI payload through a simulated circle (test mode only)
+      description: 'Body: circle_id and upi_uri. The amount is read from the payment, never from the request, and the per-payment and total limits are checked before anything is approved. Answers 404 unless ZYVOR_SIM_PAYER=1.'
+      tags:
+      - sandbox
+      responses:
+        '200':
+          description: The payment status and what is left of the circle
+        '404':
+          description: Not enabled on this server, or unknown circle
+        '409':
+          description: Circle revoked, already paid, or nothing pending for this QR
+        '422':
+          description: Not a simulator payload, or over the circle's limits
   /v1/sim/pay:
     post:
       summary: A simulated payer approves or declines a sandbox UPI payload (test environments, off unless ZYVOR_SIM_PAYER=1; only the in-process simulator)
