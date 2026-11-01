@@ -14,6 +14,7 @@ import yaml
 
 SRC = Path("crates/zyvor-api/src")
 SPEC = Path("openapi/zyvor.yaml")
+ROW_NAMES: set = set()  # Serialize structs that are components
 VERBS = ("get", "post", "put", "patch", "delete")
 
 
@@ -67,7 +68,7 @@ def split_top(body: str):
     return parts
 
 
-def object_shape(text: str, at: int):
+def object_shape(text: str, at: int, ctx: str = "", params: tuple = ()):
     """The keys of the json!({ ... }) literal whose `{` is at `at`; a key holding a list of json! objects gets those items."""
     end = balanced(text, at, "{", "}")
     props = {}
@@ -78,12 +79,90 @@ def object_shape(text: str, at: int):
         key, val = m.group(1), m.group(2)
         inner = re.search(r"json!\(\s*\{", val)
         if inner and (".collect" in val or "map(" in val):
-            props[key] = {"type": "array", "items": object_shape(val, inner.end() - 1)}
+            cl = re.search(r"\|\(([\w\s,]+)\)\|\s*json!", val[: inner.end()])
+            ps = tuple(x.strip() for x in cl.group(1).split(",") if x.strip()) if cl else ()
+            props[key] = {"type": "array", "items": object_shape(val, inner.end() - 1, ctx_before(ctx, val), ps)}
         elif re.match(r"\s*json!\(\s*\{", val):
-            props[key] = object_shape(val, re.match(r"\s*json!\(\s*\{", val).end() - 1)
+            props[key] = object_shape(val, re.match(r"\s*json!\(\s*\{", val).end() - 1, ctx)
         else:
-            props[key] = {"type": "integer"} if key.endswith("_minor") else {}  # amounts are integer minor units
+            props[key] = local_type(ctx, val.strip()) or key_type(key)
+    row = tuple_type(ctx, params) if params else None
+    if row:
+        for key, part in zip_values(text[at + 1 : end]):
+            ident = part.strip()
+            if ident in params and ident in row:
+                props[key] = nullable(row[ident])
     return {"type": "object", "properties": props}
+
+
+def local_type(ctx: str, ident: str):
+    """Schema for a value that is a plain local variable, from `let x: T =` or the shape of what it was set to."""
+    if not re.fullmatch(r"[a-z_]\w*", ident) or not ctx:
+        return None
+    m = re.search(r"\blet\s+(?:mut\s+)?" + ident + r"\s*:\s*([^=;]+?)\s*=", ctx)
+    if m:
+        return nullable(m.group(1))
+    m = re.search(r"\blet\s+(?:mut\s+)?" + ident + r"\s*=\s*([^;]+);", ctx)
+    if m:
+        rhs = m.group(1)
+        if re.search(r"\s(>|<|==|!=|>=|<=)\s|\.is_(some|none|empty)\(\)", rhs) and "?" not in rhs:
+            return {"type": "boolean"}
+        if re.search(r"\.len\(\)\s*(as i64)?\s*$", rhs):
+            return {"type": "integer"}
+        if re.match(r"\s*(new_id\(|format!\(|String::from|.*\.to_string\(\)\s*$)", rhs):
+            return {"type": "string"}
+    if re.search(r"Path\(\s*" + ident + r"\s*\)\s*:\s*Path<String>", ctx):
+        return {"type": "string"}
+    return None
+
+
+# Names this API uses for the same kind of value everywhere; only consulted when the code gave no better answer.
+STRING_KEYS = {"id", "status", "currency", "provider", "kind", "name", "number", "stage", "email", "role"}
+BOOL_KEYS = {"ok", "enabled", "verified", "revoked", "escalated"}
+
+
+def key_type(key: str):
+    if key in STRING_KEYS:
+        return {"type": "string"}
+    if key in BOOL_KEYS:
+        return {"type": "boolean"}
+    if key.endswith("_id"):
+        return {"type": ["string", "null"]}  # an id that may be absent
+    if key.endswith("_minor"):
+        return {"type": "integer"}  # amounts are integer minor units
+    return {}
+
+
+def ctx_before(ctx: str, val: str) -> str:
+    """The handler text that comes before this value, where its row type was named."""
+    i = ctx.find(val)
+    return ctx[: i if i >= 0 else len(ctx)]
+
+
+def zip_values(obj_body: str):
+    for part in split_top(obj_body):
+        m = re.match(r'\s*"(\w+)"\s*:\s*(.*)$', part, re.S)
+        if m:
+            yield m.group(1), m.group(2)
+
+
+def tuple_type(before: str, params: tuple):
+    """{param: rust type} from the last `query_as::<_, (A, B, ..)>` or `Vec<(A, B, ..)>` before the closure with as many members."""
+    found = None
+    for m in re.finditer(r"(?:query_as::<[^,>]+,\s*|Vec<)\(", before):
+        close = balanced(before, m.end() - 1, "(", ")")
+        members = [x.strip() for x in split_top(before[m.end() : close]) if x.strip()]
+        if len(members) == len(params):
+            found = dict(zip(params, members))
+    return found
+
+
+def nullable(ty: str):
+    """schema_of, but an Option<T> may also be null."""
+    sch = schema_of(ty, {})
+    if ty.strip().startswith("Option<") and isinstance(sch.get("type"), str):
+        sch["type"] = [sch["type"], "null"]
+    return sch
 
 
 def response_of(src: str, fn: str, rows: dict):
@@ -91,15 +170,29 @@ def response_of(src: str, fn: str, rows: dict):
     m = re.search(r"\bfn\s+" + fn + r"\s*\(", src)
     sig_end = balanced(src, m.end() - 1, "(", ")")
     b0 = src.index("{", sig_end)
-    body = src[b0 : balanced(src, b0, "{", "}") + 1]
+    body = src[m.start() : balanced(src, b0, "{", "}") + 1]  # signature and body
     status = "201" if "StatusCode::CREATED" in body else "200"
     j = re.search(r"Json\(\s*json!\(\s*\{", body)
     if j:
-        return status, object_shape(body, j.end() - 1)
+        return status, object_shape(body, j.end() - 1, body)
     r = re.search(r"Json\(\s*(?:\w+::)?(\w+Row)\b", body) or re.search(r"->\s*Result<Json<(\w+)>", src[sig_end : b0])
     if r and r.group(1) in rows:
         return status, {"$ref": "#/components/schemas/" + r.group(1)}
     return status, None
+
+
+# Handlers that answer through idempotency `key.finish(.., &row)`; the row they pass is named here (checked by hand against
+# the code: create_intent adds the one-time client_secret to the intent row).
+_ref = lambda n: {"$ref": "#/components/schemas/" + n}  # noqa: E731
+OVERRIDES = {
+    ("post", "/v1/payment_intents"): (
+        "201",
+        {"allOf": [_ref("IntentRow"), {"type": "object", "properties": {"client_secret": {"type": "string"}}}]},
+    ),
+    ("post", "/v1/payment_intents/{id}/attempts"): ("201", _ref("AttemptRow")),
+    ("post", "/v1/checkout/{tenant_id}/{intent_id}/attempts"): ("201", _ref("AttemptRow")),
+    ("post", "/v1/payment_intents/{id}/refunds"): ("201", _ref("RefundRow")),
+}
 
 
 def strip_comments(s: str) -> str:
@@ -173,6 +266,8 @@ def schema_of(ty: str, known: dict, seen=None):
         return simple["DateTime"]
     if ty in simple:
         return dict(simple[ty])
+    if ty in ROW_NAMES:
+        return {"$ref": "#/components/schemas/" + ty}
     if ty in known and (seen is None or ty not in seen):
         return {"$ref": "#/components/schemas/" + known[ty]}
     return {"type": "object"}
@@ -188,6 +283,7 @@ def main() -> int:
         for n, fl in structs(f.read_text(), "Serialize").items():
             if n.endswith("Row"):
                 rows[n] = (f.stem, fl)
+    ROW_NAMES.update(rows)
     handlers = {}  # (verb, path) -> (module, fn)
 
     # what each handler takes
@@ -279,6 +375,8 @@ def main() -> int:
         if op is None:
             continue
         status, sch = response_of(fn_src[mod], fn, rows)
+        sch = OVERRIDES.get((verb, path), (status, sch))[1] if (verb, path) in OVERRIDES else sch
+        status = OVERRIDES[(verb, path)][0] if (verb, path) in OVERRIDES else status
         if sch is None:
             continue
         resp = {"description": "Created" if status == "201" else "OK",
