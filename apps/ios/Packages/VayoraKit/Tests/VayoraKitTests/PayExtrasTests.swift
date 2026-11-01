@@ -247,3 +247,47 @@ final class BranchDecodeTests: XCTestCase {
         XCTAssertEqual(b.name, "Main stall")
     }
 }
+
+final class PlannedTests: XCTestCase {
+    var cal: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Kolkata")!; return c }
+    func d(_ m: Int, _ day: Int, _ h: Int = 10) -> Date { cal.date(from: DateComponents(year: 2026, month: m, day: day, hour: h))! }
+    func r(_ v: String, _ date: Date, _ minor: Int64 = 199_00, paid: Bool = true, kind: String = "") -> HistoryRow { HistoryRow(date: date, name: v, payee: v, amountMinor: minor, paid: paid, category: .other, note: "", kind: kind) }
+
+    func testMonthlyIsFoundAndNextIsPredicted() {
+        let f = RecurringDetector.find([r("ott@x", d(8, 5)), r("ott@x", d(9, 4)), r("ott@x", d(10, 5))], calendar: cal)
+        XCTAssertEqual(f.count, 1); XCTAssertEqual(f[0].cadence, .monthly); XCTAssertEqual(f[0].count, 3)
+        XCTAssertEqual(cal.dateComponents([.month, .day], from: f[0].next).month, 11)
+    }
+    func testWeeklyIsFound() {
+        let f = RecurringDetector.find([r("milk@x", d(10, 1)), r("milk@x", d(10, 8)), r("milk@x", d(10, 15)), r("milk@x", d(10, 22))], calendar: cal)
+        XCTAssertEqual(f.first?.cadence, .weekly)
+    }
+    func testNotFoundWhenIrregularOrTooFewOrAmountsVaryOrAutopayOrFailed() {
+        XCTAssertTrue(RecurringDetector.find([r("a@x", d(10, 1)), r("a@x", d(10, 20))], calendar: cal).isEmpty)                                    // two
+        XCTAssertTrue(RecurringDetector.find([r("a@x", d(8, 1)), r("a@x", d(8, 20)), r("a@x", d(10, 20))], calendar: cal).isEmpty)                 // irregular
+        XCTAssertTrue(RecurringDetector.find([r("a@x", d(8, 5), 100_00), r("a@x", d(9, 4), 500_00), r("a@x", d(10, 5), 100_00)], calendar: cal).isEmpty) // amounts
+        XCTAssertTrue(RecurringDetector.find([r("a@x", d(8, 5), kind: "autopay"), r("a@x", d(9, 4), kind: "autopay"), r("a@x", d(10, 5), kind: "autopay")], calendar: cal).isEmpty)
+        XCTAssertTrue(RecurringDetector.find([r("a@x", d(8, 5), paid: false), r("a@x", d(9, 4), paid: false), r("a@x", d(10, 5), paid: false)], calendar: cal).isEmpty)
+    }
+    func testSmallAmountDriftIsTolerated() {
+        XCTAssertEqual(RecurringDetector.find([r("e@x", d(8, 5), 100_00), r("e@x", d(9, 5), 115_00), r("e@x", d(10, 5), 90_00)], calendar: cal).count, 1)
+    }
+    func testScheduleBookDueAllDayAndNotDone() {
+        var a = ScheduledPayment(vpa: "a@x", name: "A", amountMinor: 1, date: d(11, 1, 23)), b = ScheduledPayment(vpa: "b@x", name: "B", amountMinor: 1, date: d(11, 2, 9)), c = ScheduledPayment(vpa: "c@x", name: "C", amountMinor: 1, date: d(10, 30))
+        c.done = true; a.note = "x"; b.note = "y"
+        let now = d(11, 1, 8)
+        XCTAssertEqual(ScheduleBook.due([a, b, c], now: now, calendar: cal).map(\.name), ["A"])
+        XCTAssertEqual(ScheduleBook.upcoming([b, a, c]).map(\.name), ["A", "B"])
+    }
+    func testSplitRecord() {
+        var s = SplitRecord(date: Date(), note: "Dinner", totalMinor: 900_00, shareMinor: 300_00, people: 3)
+        XCTAssertEqual(s.members.count, 2); XCTAssertEqual(s.owedMinor, 600_00); XCTAssertFalse(s.isSettled)
+        s.members[0].paid = true; XCTAssertEqual(s.owedMinor, 300_00)
+        s.members[1].paid = true; XCTAssertTrue(s.isSettled); XCTAssertEqual(s.owedMinor, 0)
+        XCTAssertEqual(SplitRecord(date: Date(), note: "", totalMinor: 1, shareMinor: 1, people: 1).members.count, 1)   // never zero friends
+    }
+    func testCodableRoundTrip() throws {
+        let p = ScheduledPayment(vpa: "a@x", name: "A", amountMinor: 5, date: Date(timeIntervalSince1970: 1_700_000_000), note: "n")
+        XCTAssertEqual(try JSONDecoder().decode(ScheduledPayment.self, from: JSONEncoder().encode(p)), p)
+    }
+}

@@ -44,7 +44,9 @@ final class Store: ObservableObject {
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
     @Published var autoPays: [ApprovedMandate] { didSet { if let d = try? JSONEncoder().encode(autoPays) { UserDefaults.standard.set(d, forKey: "autoPays") } } }
     @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
-    @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders) } } }
+    @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders, scheduled: scheduled) } } }
+    @Published var scheduled: [ScheduledPayment] { didSet { if let d = try? JSONEncoder().encode(scheduled) { UserDefaults.standard.set(d, forKey: "scheduled") }; Task { await ReminderScheduler.sync(reminders, scheduled: scheduled) } } }
+    @Published var splits: [SplitRecord] { didSet { if let d = try? JSONEncoder().encode(splits.prefix(50).map { $0 }) { UserDefaults.standard.set(d, forKey: "splits") } } }
     @Published var budgets: Budgets { didSet { if let d = try? JSONEncoder().encode(budgets) { UserDefaults.standard.set(d, forKey: "budgets") } } }
     @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
     @Published var myName: String { didSet { UserDefaults.standard.set(myName, forKey: "myName") } }
@@ -62,6 +64,8 @@ final class Store: ObservableObject {
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []
+        scheduled = (d.data(forKey: "scheduled")).flatMap { try? JSONDecoder().decode([ScheduledPayment].self, from: $0) } ?? []
+        splits = (d.data(forKey: "splits")).flatMap { try? JSONDecoder().decode([SplitRecord].self, from: $0) } ?? []
         budgets = (d.data(forKey: "budgets")).flatMap { try? JSONDecoder().decode(Budgets.self, from: $0) } ?? Budgets()
         autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
         payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()

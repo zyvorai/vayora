@@ -47,7 +47,10 @@ struct SplitView: View {
                 Text("Each pays \(share(total).display)").vfont(18, .semibold).foregroundStyle(VUI.mint)
                 if share(total).minor * Int64(people) != total.minor { Text("Rounded up to the next paisa, so you collect \(Money(minor: share(total).minor * Int64(people) - total.minor).display) extra.").vfont(12).foregroundStyle(VUI.textTertiary).multilineTextAlignment(.center) }
                 Spacer()
-                Button { withAnimation(VUI.spring) { step = 2 } } label: {
+                Button {
+                    store.splits.insert(SplitRecord(date: Date(), note: "Split", totalMinor: total.minor, shareMinor: share(total).minor, people: people), at: 0)
+                    withAnimation(VUI.spring) { step = 2 }
+                } label: {
                     Text("Show request QR").vfont(18, .semibold).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 17)
                         .background(Brand.pay.gradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }.buttonStyle(PressScale())
