@@ -2605,6 +2605,121 @@ paths:
         required: true
         schema:
           type: string
+  /v1/payment_intents:
+    post:
+      summary: "Create a payment intent (amount in minor units; requires an Idempotency-Key)"
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    get:
+      summary: "List payments, newest first (query: status, q, limit, starting_after)"
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payment_intents/{id}/attempts:
+    post:
+      summary: "Start a payment attempt on an intent (body: method, vpa; requires an Idempotency-Key)"
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_intents/{id}/refunds:
+    post:
+      summary: "Refund a captured payment, in full or in part (body: amount_minor, reason, external_ref; requires an Idempotency-Key; may wait for a second person's approval)"
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/checkout/{tenant_id}/{intent_id}/attempts:
+    post:
+      summary: "Public checkout: the payer starts an attempt (authorised by the intent's client secret)"
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/webhooks/{provider}/{tenant_id}:
+    post:
+      summary: "A provider's webhook to Zyvor (authenticated by its signature, not an API key)"
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/provider_accounts/{provider}:
+    put:
+      summary: "Store these credentials for the provider, replacing the account if there is one (how a simulator account becomes a real one); secrets are never returned"
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
 components:
   securitySchemes:
     bearer:
