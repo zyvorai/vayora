@@ -795,6 +795,12 @@ pub async fn simulate_bank(
             "only a simulated settlement can have a simulated bank credit",
         )
     })?;
+    if net <= 0 {
+        return Err(ApiError::invalid(
+            "nothing_to_credit",
+            "this settlement nets to nothing or less, so the bank would not credit anything",
+        ));
+    }
     if short < 0 || short >= net {
         return Err(ApiError::invalid(
             "invalid_short",
