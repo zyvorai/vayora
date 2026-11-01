@@ -13340,3 +13340,151 @@ async fn a_waiting_change_is_given_to_an_on_duty_reviewer_other_than_its_first_a
         "{b}"
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn leave_and_desk_holidays_take_reviewers_off_the_rota(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let call = |k: &str, m: &'static str, p: &str, b: Value| {
+        let (app, k, p) = (t.app.clone(), k.to_string(), p.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let day = |plus: i64| {
+        (chrono::Utc::now()
+            + chrono::Duration::minutes(i64::from(t.state.review_utc_offset_minutes))
+            + chrono::Duration::days(plus))
+        .format("%Y-%m-%d")
+        .to_string()
+    };
+    // both work every day, all day
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    for k in [&a_key, &b_key] {
+        call(
+            k,
+            "PUT",
+            "/v1/platform/rota/me",
+            json!({ "shifts": all_week }),
+        )
+        .await;
+    }
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 2);
+
+    // bad days are refused, with a reason
+    for (body, why) in [
+        (json!({ "from": "christmas" }), "not a day"),
+        (json!({ "from": day(2), "to": day(1) }), "before the first"),
+        (json!({ "from": day(-3), "to": day(-1) }), "already over"),
+        (json!({ "from": day(0), "to": day(400) }), "a year"),
+        (json!({ "from": day(0), "note": "x".repeat(201) }), "200"),
+    ] {
+        let (st, b) = call(&a_key, "POST", "/v1/platform/rota/days_off", body).await;
+        assert_eq!(
+            (st, b["error"]["code"].clone()),
+            (StatusCode::UNPROCESSABLE_ENTITY, json!("invalid_day_off")),
+            "{b}"
+        );
+        assert!(b["error"]["message"].as_str().unwrap().contains(why), "{b}");
+    }
+
+    // Asha's leave covers today: she is off the rota whatever her shifts say; Bala still works
+    let (st, leave) = call(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off",
+        json!({ "from": day(0), "to": day(2), "note": "wedding" }),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{leave}");
+    let (_, r) = call(&b_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(r["on_duty_now"], json!(["Bala"]));
+    assert_eq!(r["holiday_today"], Value::Null);
+    let asha = r["reviewers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["name"] == "Asha")
+        .unwrap();
+    assert_eq!(
+        (asha["on_leave"].clone(), asha["on_duty"].clone()),
+        (json!(true), json!(false))
+    );
+    assert_eq!(r["days_off"][0]["reviewer"], "Asha");
+    assert_eq!(r["days_off"][0]["mine"], false);
+    assert_eq!(
+        zyvor_api::rota::on_duty_ids(&t.state).await.len(),
+        1,
+        "automatic assignment sees the same people"
+    );
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 1);
+
+    // leave is its owner's to remove
+    let path = format!(
+        "/v1/platform/rota/days_off/{}",
+        leave["id"].as_str().unwrap()
+    );
+    let (st, b) = call(&b_key, "DELETE", &path, Value::Null).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "{b}");
+    let (st, _) = call(&a_key, "DELETE", &path, Value::Null).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = call(&a_key, "DELETE", &path, Value::Null).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 2);
+
+    // leave that starts tomorrow does not matter today
+    call(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off",
+        json!({ "from": day(1) }),
+    )
+    .await;
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 2);
+
+    // a desk holiday takes everybody off, and anyone may lift it
+    let (st, hol) = call(
+        &b_key,
+        "POST",
+        "/v1/platform/rota/days_off",
+        json!({ "from": day(0), "note": "Diwali", "desk": true }),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{hol}");
+    let (_, r) = call(&a_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(
+        (
+            r["on_duty_now"].clone(),
+            r["holiday_today"].clone(),
+            r["configured"].clone()
+        ),
+        (json!([]), json!("Diwali"), json!(true))
+    );
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 0);
+    assert!(zyvor_api::rota::on_duty_ids(&t.state).await.is_empty());
+    let (st, _) = call(
+        &a_key,
+        "DELETE",
+        &format!("/v1/platform/rota/days_off/{}", hol["id"].as_str().unwrap()),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, 2);
+
+    // a reviewer who is disabled drops out of the listing with their leave (Asha still has tomorrow booked)
+    let (_, r) = call(&b_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(r["days_off"].as_array().unwrap().len(), 1);
+    zyvor_api::platform::disable_reviewer(&t.state.pool, &a_id)
+        .await
+        .unwrap();
+    let (_, r) = call(&b_key, "GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(r["days_off"], json!([]));
+}

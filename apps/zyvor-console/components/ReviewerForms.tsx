@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, reviewerSignIn, saveRota } from "@/lib/reviewer-actions";
+import { addDayOff, assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, removeDayOff, reviewerSignIn, saveRota } from "@/lib/reviewer-actions";
 import { DAYS, type RotaShift } from "@/lib/rota";
 
 export function ReviewerSignIn() {
@@ -148,6 +148,39 @@ export function RotaForm({ shifts }: { shifts: RotaShift[] }) {
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
       <div><button className="btn small primary" disabled={pending}>{pending ? "…" : "Save my hours"}</button></div>
+    </form>
+  );
+}
+
+/** Leave for yourself or, ticked, a holiday for the whole desk. Controlled, so a refusal keeps what was typed. */
+export function DayOffForm({ today }: { today: string }) {
+  const [state, action, pending] = useActionState(addDayOff, undefined);
+  const [v, setV] = useState({ from: today, to: "", note: "", desk: false });
+  return (
+    <form action={action} style={{ display: "grid", gap: 10, maxWidth: 420 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div><label className="f" htmlFor="off-from">From</label><input id="off-from" type="date" name="from" min={today} value={v.from} onChange={(e) => setV({ ...v, from: e.target.value })} required /></div>
+        <div><label className="f" htmlFor="off-to">Until (optional)</label><input id="off-to" type="date" name="to" min={v.from || today} value={v.to} onChange={(e) => setV({ ...v, to: e.target.value })} /></div>
+      </div>
+      <div><label className="f" htmlFor="off-note">Note (optional)</label><input id="off-note" name="note" maxLength={200} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="Diwali, or why you are away" /></div>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <input type="checkbox" name="desk" checked={v.desk} onChange={(e) => setV({ ...v, desk: e.target.checked })} style={{ marginTop: 3 }} />
+        <span>This is a holiday for the whole desk, not only my leave.</span>
+      </label>
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small primary" disabled={pending}>{pending ? "…" : v.desk ? "Add holiday" : "Book leave"}</button></div>
+    </form>
+  );
+}
+
+export function RemoveDayOff({ id }: { id: string }) {
+  const [state, action, pending] = useActionState(removeDayOff, undefined);
+  return (
+    <form action={action} style={{ display: "inline" }}>
+      <input type="hidden" name="id" value={id} />
+      <button className="btn small" disabled={pending}>{pending ? "…" : "Remove"}</button>
+      {state?.error && <span className="fine" role="alert"> {state.error}</span>}
     </form>
   );
 }

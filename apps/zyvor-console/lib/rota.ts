@@ -2,9 +2,13 @@
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export type RotaShift = { weekday: (typeof DAYS)[number]; start: string; end: string };
 export type RotaView = {
-  configured: boolean; utc_offset_minutes: number; local_now: string; on_duty_now: string[];
-  reviewers: { id: string; name: string; me: boolean; on_duty: boolean; shifts: RotaShift[] }[];
+  configured: boolean; utc_offset_minutes: number; local_now: string; local_date: string; on_duty_now: string[];
+  holiday_today: string | null;
+  reviewers: { id: string; name: string; me: boolean; on_duty: boolean; on_leave: boolean; shifts: RotaShift[] }[];
+  days_off: DayOff[];
 };
+/** Leave for one reviewer, or a holiday for the whole desk (`desk`). Days are `YYYY-MM-DD` in the desk's time, inclusive. */
+export type DayOff = { id: string; desk: boolean; reviewer: string | null; mine: boolean; first_day: string; last_day: string; note: string };
 
 /** `330` as `UTC+5:30`. */
 export const offsetLabel = (m: number) => `UTC${m < 0 ? "-" : "+"}${Math.floor(Math.abs(m) / 60)}${Math.abs(m) % 60 ? ":" + String(Math.abs(m) % 60).padStart(2, "0") : ""}`;
