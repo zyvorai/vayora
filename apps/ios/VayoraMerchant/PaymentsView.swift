@@ -277,6 +277,7 @@ struct MerchantSettings: View {
                                 SecureField("zk_test_…", text: $store.apiKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                                     .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 Text("Stored in the iPhone Keychain, never in app settings.").vfont(13).foregroundStyle(VUI.textSecondary)
+                                ConnectionRow(needsKey: true) { URL(string: store.serverURL.trimmingCharacters(in: .whitespaces)).map { VayoraClient(baseURL: $0, apiKey: store.apiKey) } }
                             }
                         }
                         GlassCard {

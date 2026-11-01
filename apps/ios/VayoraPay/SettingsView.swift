@@ -34,6 +34,7 @@ struct SettingsView: View {
                                     .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 Button { scanning = true } label: { Label("Scan setup QR", systemImage: "qrcode.viewfinder") }
                                     .vfont(15, .semibold).foregroundStyle(VUI.violet)
+                                ConnectionRow { store.client }
                                 if let setupMessage { Text(setupMessage).vfont(13).foregroundStyle(VUI.textSecondary) }
                                 Text("Needs a Vayora API started with ZYVOR_SIM_PAYER=1.").vfont(13).foregroundStyle(VUI.textSecondary)
                             }
