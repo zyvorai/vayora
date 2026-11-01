@@ -88,6 +88,10 @@ struct PaySheet: View {
             Label(text(f), systemImage: "exclamationmark.shield.fill").vfont(13, .semibold).foregroundStyle(VUI.coral)
                 .padding(.horizontal, 14).padding(.vertical, 8).background(VUI.coral.opacity(0.14), in: Capsule())
         }
+        if let hint = ScamHints.check(name: payload.name, note: payload.note) {
+            Label(hint, systemImage: "exclamationmark.octagon.fill").vfont(12, .semibold).foregroundStyle(VUI.coral).multilineTextAlignment(.leading)
+                .padding(.horizontal, 14).padding(.vertical, 8).background(VUI.coral.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal, 20)
+        }
         if cooling > 0 { Text("Take a moment: \(cooling)s").vfont(12).foregroundStyle(VUI.textSecondary) }
     }
     func text(_ f: RiskFlag) -> String {

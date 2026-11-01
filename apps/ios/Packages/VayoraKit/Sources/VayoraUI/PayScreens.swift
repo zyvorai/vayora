@@ -22,13 +22,13 @@ public struct TestChip: View {
 /// The pay home: wallet on glass, one huge scan action, a week at a glance, recent payments.
 public struct PayHomeScreen: View {
     let balance: Money, spentThisMonth: Money, week: [Double], recent: [TxnRowModel]
-    let phase: Double?, scrolls: Bool, summary: [(category: SpendCategory, minor: Int64)]
+    let phase: Double?, scrolls: Bool, summary: [(category: SpendCategory, minor: Int64)], hideBalance: Bool
     let onScan: () -> Void, onPaste: () -> Void, onSend: () -> Void, onSplit: () -> Void, onOpen: (TxnRowModel) -> Void
     public init(balance: Money, spentThisMonth: Money, week: [Double], recent: [TxnRowModel], phase: Double? = nil, scrolls: Bool = true,
-                summary: [(category: SpendCategory, minor: Int64)] = [],
+                summary: [(category: SpendCategory, minor: Int64)] = [], hideBalance: Bool = false,
                 onScan: @escaping () -> Void = {}, onPaste: @escaping () -> Void = {}, onSend: @escaping () -> Void = {}, onSplit: @escaping () -> Void = {},
                 onOpen: @escaping (TxnRowModel) -> Void = { _ in }) {
-        self.summary = summary; self.onSend = onSend; self.onSplit = onSplit
+        self.hideBalance = hideBalance; self.summary = summary; self.onSend = onSend; self.onSplit = onSplit
         self.balance = balance; self.spentThisMonth = spentThisMonth; self.week = week; self.recent = recent; self.phase = phase; self.scrolls = scrolls
         self.onScan = onScan; self.onPaste = onPaste; self.onOpen = onOpen
     }
@@ -71,12 +71,12 @@ public struct PayHomeScreen: View {
         GlassCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack { Text("Test balance").vfont(14, .medium).foregroundStyle(VUI.textSecondary); Spacer(); Image(systemName: "wave.3.right").foregroundStyle(VUI.textTertiary) }
-                AmountText(balance, size: 52)
+                if hideBalance { Text("₹ ••••••").vfont(44, .bold).foregroundStyle(VUI.textPrimary) } else { AmountText(balance, size: 52) }
                 HStack(spacing: 6) { Image(systemName: "iphone").font(.caption); Text("Held on this phone, not in a bank").vfont(12.5) }.foregroundStyle(VUI.textTertiary)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Test balance \(balance.display). Held on this phone, not in a bank.")
+        .accessibilityLabel(hideBalance ? "Test balance hidden. Held on this phone, not in a bank." : "Test balance \(balance.display). Held on this phone, not in a bank.")
     }
     var scan: some View {
         Button(action: { Haptics.thud(); onScan() }) {

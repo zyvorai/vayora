@@ -478,3 +478,43 @@ final class PaymentsCSVTests: XCTestCase {
         XCTAssertLessThan(csv.range(of: "early")!.lowerBound, csv.range(of: "late")!.lowerBound)
     }
 }
+
+final class PrivacyTests: XCTestCase {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    func testLockPolicy() {
+        XCTAssertFalse(LockPolicy.shouldLock(enabled: false, backgroundedAt: nil, now: now, timeoutMinutes: 0))
+        XCTAssertTrue(LockPolicy.shouldLock(enabled: true, backgroundedAt: nil, now: now, timeoutMinutes: 5))               // launch
+        XCTAssertTrue(LockPolicy.shouldLock(enabled: true, backgroundedAt: now, now: now, timeoutMinutes: 0))               // immediately
+        XCTAssertFalse(LockPolicy.shouldLock(enabled: true, backgroundedAt: now.addingTimeInterval(-299), now: now, timeoutMinutes: 5))
+        XCTAssertTrue(LockPolicy.shouldLock(enabled: true, backgroundedAt: now.addingTimeInterval(-300), now: now, timeoutMinutes: 5))
+        // a clock that moved backwards, or a negative timeout, never locks by itself
+        XCTAssertFalse(LockPolicy.shouldLock(enabled: true, backgroundedAt: now.addingTimeInterval(60), now: now, timeoutMinutes: -3))
+    }
+    func testScamHints() {
+        XCTAssertNotNil(ScamHints.check(name: "Paytm Cashback", note: ""))
+        XCTAssertNotNil(ScamHints.check(name: "Shop", note: "Claim your REFUND"))
+        XCTAssertNil(ScamHints.check(name: "Chai Point", note: "Table 4"))
+    }
+    func testBackupRoundTripKeepsOnlyKnownKeys() throws {
+        let file = try Backup.make(["payees": [["vpa": "a@x"]], "myName": "Asha", "smallPayments": true, "balance": 12345, "testPIN": "7391", "serverURL": "http://x"])
+        let text = String(decoding: file, as: UTF8.self)
+        XCTAssertFalse(text.contains("testPIN")); XCTAssertFalse(text.contains("serverURL")); XCTAssertFalse(text.contains("7391"))
+        let back = try Backup.read(file)
+        XCTAssertEqual(Set(back.keys), ["payees", "myName", "smallPayments", "balance"]); XCTAssertEqual(back["myName"] as? String, "Asha")
+    }
+    func testReadRefusesWrongShapeVersionAppAndSize() throws {
+        func f(_ d: [String: Any], version: Int = 1, app: String = "vayora-pay") throws -> Data { try JSONSerialization.data(withJSONObject: ["app": app, "version": version, "data": d]) }
+        XCTAssertThrowsError(try Backup.read(f(["balance": -5]))) { XCTAssertEqual($0 as? Backup.Failure, .badValue("balance")) }
+        XCTAssertThrowsError(try Backup.read(f(["smallPayments": 1]))) { XCTAssertEqual($0 as? Backup.Failure, .badValue("smallPayments")) }
+        XCTAssertThrowsError(try Backup.read(f(["payees": "not a list"]))) { XCTAssertEqual($0 as? Backup.Failure, .badValue("payees")) }
+        XCTAssertThrowsError(try Backup.read(f(["myName": String(repeating: "a", count: 200)])))
+        XCTAssertThrowsError(try Backup.read(f([:], version: 2))) { XCTAssertEqual($0 as? Backup.Failure, .wrongVersion) }
+        XCTAssertThrowsError(try Backup.read(f([:], app: "other"))) { XCTAssertEqual($0 as? Backup.Failure, .notBackup) }
+        XCTAssertThrowsError(try Backup.read(Data("nope".utf8))) { XCTAssertEqual($0 as? Backup.Failure, .notBackup) }
+        XCTAssertThrowsError(try Backup.read(Data(count: Backup.maxBytes + 1))) { XCTAssertEqual($0 as? Backup.Failure, .tooBig) }
+    }
+    func testReadDropsUnknownKeysSilently() throws {
+        let back = try Backup.read(JSONSerialization.data(withJSONObject: ["app": "vayora-pay", "version": 1, "data": ["testPIN": "9999", "balance": 5]]))
+        XCTAssertEqual(Set(back.keys), ["balance"])
+    }
+}

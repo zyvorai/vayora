@@ -241,4 +241,42 @@ final class Store: ObservableObject {
         let c = cal.dateComponents([.year, .month, .day], from: d)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
+
+    // MARK: Backup
+
+    private static let backupDataKeys = ["payees", "history", "reminders", "scheduled", "splits", "budgets", "categoryMemory", "jars", "vault", "autoPays"]
+
+    /// The phone's own data as a file: no PIN, no server address, no photos (they stay on the phone).
+    func exportBackup() -> Data? {
+        let d = UserDefaults.standard
+        var v: [String: Any] = [:]
+        for k in Self.backupDataKeys { if let data = d.data(forKey: k), let o = try? JSONSerialization.jsonObject(with: data) { v[k] = o } }
+        v["myName"] = myName; v["smallPayments"] = smallPayments; v["balance"] = balanceMinor
+        return try? Backup.make(v)
+    }
+
+    /// Replace this phone's data with a backup. Everything is checked first; a value that does not decode is skipped, not half-applied.
+    func restoreBackup(_ file: Data) -> Result<Int, Backup.Failure> {
+        let v: [String: Any]
+        do { v = try Backup.read(file) } catch { return .failure(error as? Backup.Failure ?? .notBackup) }
+        func decode<T: Decodable>(_ k: String, _ t: T.Type) -> T? {
+            guard let o = v[k], JSONSerialization.isValidJSONObject(o), let d = try? JSONSerialization.data(withJSONObject: o) else { return nil }
+            return try? JSONDecoder().decode(T.self, from: d)
+        }
+        var n = 0
+        if let x = decode("payees", PayeeBook.self) { payees = x; n += 1 }
+        if let x = decode("history", [Txn].self) { history = x; n += 1 }
+        if let x = decode("reminders", [BillReminder].self) { reminders = x; n += 1 }
+        if let x = decode("scheduled", [ScheduledPayment].self) { scheduled = x; n += 1 }
+        if let x = decode("splits", [SplitRecord].self) { splits = x; n += 1 }
+        if let x = decode("budgets", Budgets.self) { budgets = x; n += 1 }
+        if let x = decode("categoryMemory", CategoryMemory.self) { categoryMemory = x; n += 1 }
+        if let x = decode("jars", JarBook.self) { jars = x; n += 1 }
+        if let x = decode("vault", Vault.self) { vault = x; n += 1 }
+        if let x = decode("autoPays", [ApprovedMandate].self) { autoPays = x; n += 1 }
+        if let x = v["myName"] as? String { myName = x; n += 1 }
+        if let x = v["smallPayments"] as? Bool { smallPayments = x; n += 1 }
+        if let x = (v["balance"] as? NSNumber)?.int64Value { balanceMinor = x; n += 1 }
+        return .success(n)
+    }
 }
