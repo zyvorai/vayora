@@ -300,7 +300,10 @@ def main() -> int:
             }
         if "query" in took:
             props, required = build(*took["query"][:2])
+            have = {(p.get("name"), p.get("in")) for p in op["parameters"]}
             for n, sch in props.items():
+                if (n, "query") in have:  # already written by hand
+                    continue
                 op["parameters"].append(
                     {"name": n, "in": "query", "required": n in required, "schema": sch, "x-generated": True}
                 )

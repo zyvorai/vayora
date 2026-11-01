@@ -3199,13 +3199,6 @@ paths:
         required: false
         schema:
           type: integer
-      - name: days
-        in: query
-        required: false
-        schema:
-          type: integer
-          format: int64
-        x-generated: true
       responses:
         '200':
           description: OK
@@ -4958,12 +4951,6 @@ paths:
         required: true
         schema:
           type: string
-      - name: secret
-        in: query
-        required: true
-        schema:
-          type: string
-        x-generated: true
       responses:
         '200':
           description: SVG image
