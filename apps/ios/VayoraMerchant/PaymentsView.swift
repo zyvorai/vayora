@@ -198,6 +198,8 @@ struct MerchantSettings: View {
     @State private var setupMessage: String?
     @State private var closingDay = false
     @State private var seeRegulars = false
+    @State private var exporting = false
+    @State private var staffing = false
     @State private var newPIN = ""
     @State private var pinMessage: String?
     @AppStorage("soundbox") private var soundbox = "off"
@@ -233,6 +235,8 @@ struct MerchantSettings: View {
                                 }
                                 Text("A notification asking you to open the app and close the day.").vfont(12).foregroundStyle(VUI.textTertiary)
                                 Button { seeRegulars = true } label: { Label("Regulars", systemImage: "person.2.fill") }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                                Button { staffing = true } label: { Label("Staff", systemImage: "person.badge.clock") }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                                Button { exporting = true } label: { Label("Accountant export", systemImage: "tablecells") }.vfont(15, .semibold).foregroundStyle(VUI.mint)
                             }
                         }
                         GlassCard {
@@ -286,6 +290,8 @@ struct MerchantSettings: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $closingDay) { EndOfDayView().environmentObject(store) }
             .sheet(isPresented: $seeRegulars) { RegularsView().environmentObject(store) }
+            .sheet(isPresented: $exporting) { AccountantExportView().environmentObject(store) }
+            .sheet(isPresented: $staffing) { StaffView().environmentObject(store) }
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .merchant, hint: "Scan the setup QR") { text in
                     scanning = false

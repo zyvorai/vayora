@@ -34,6 +34,7 @@ struct CollectView: View {
                                         actionLabel: phase == .creating ? "Creating…" : "Show QR",
                                         onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() },
                                         onChip: { note = (note == $0 ? "" : $0) }, onShowQR: start)
+                    staffRow
                     helpers
                     if store.client == nil { Text("Add your API key in Settings first, or scan a setup QR.").font(.footnote).foregroundStyle(VUI.textSecondary).padding(.bottom, 8).background(VUI.ink) }
                 }
@@ -45,6 +46,14 @@ struct CollectView: View {
                                  customerMode: customerMode, note: note, onCustomerMode: toggleCustomer, onCancel: { reset() })
                 }
                 .task(id: attempt) { await poll(attempt, amt) }
+                .overlay(alignment: .bottomTrailing) {
+                    // send the QR to a customer who is not at the counter; the amount is in the image's caption
+                    if let img = QR.image(uri) {
+                        ShareLink(item: img, preview: SharePreview("Pay \(amt.display)", image: img)) {
+                            Label("Share QR", systemImage: "square.and.arrow.up").vfont(14, .semibold).foregroundStyle(VUI.ink).padding(.horizontal, 14).padding(.vertical, 10).background(VUI.mint, in: Capsule())
+                        }.padding(20).accessibilityHint("Shares the payment QR as an image")
+                    }
+                }
             case .paid(let m):
                 ResultScreen(kind: .paid, amount: m, to: note.isEmpty ? "this payment" : note, progress: resultProgress, brand: .merchant, paidTitle: "Received", doneLabel: "New payment", onDone: reset)
             case .failed(let why):
@@ -69,6 +78,20 @@ struct CollectView: View {
     }
 
     /// Repeat the last amount, and an optional tip on top. The tip is part of the payment, so the QR asks for the total.
+    @ViewBuilder var staffRow: some View {
+        if !store.staff.isEmpty, phase == .entering {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Text("On the till").vfont(12, .semibold).foregroundStyle(VUI.textTertiary)
+                    ForEach(store.staff, id: \.self) { n in
+                        Button { store.activeStaff = (store.activeStaff == n ? nil : n); Haptics.tick() } label: { chip(n, on: store.activeStaff == n) }.buttonStyle(PressScale())
+                            .accessibilityAddTraits(store.activeStaff == n ? .isSelected : [])
+                    }
+                }.padding(.horizontal, 20)
+            }
+            .padding(.vertical, 6).background(VUI.ink)
+        }
+    }
     @ViewBuilder var helpers: some View {
         let base = entry.money?.minor ?? 0
         if base > 0 || lastMinor > 0 {
@@ -127,6 +150,7 @@ struct CollectView: View {
         Task {
             do {
                 let intent = try await c.createIntent(amount: amt, note: note)
+                if let who = store.activeStaff { store.staffTags.tag(intent.id, as: who) }
                 let attempt = try await c.createUPIAttempt(intentId: intent.id)
                 guard let uri = attempt.upiURI else { phase = .error("This provider did not issue a UPI QR. Is upi_intent enabled?"); return }
                 phase = .waiting(intentId: intent.id, attemptId: attempt.id, uri: uri, amount: amt, started: Date())
