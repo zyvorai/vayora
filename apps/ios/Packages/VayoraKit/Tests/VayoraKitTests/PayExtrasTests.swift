@@ -549,3 +549,28 @@ final class VoiceCommandTests: XCTestCase {
         XCTAssertEqual(VoiceCommand.parse("pay Asha 200", payees: []), .noPayee("asha"))
     }
 }
+
+final class CircleTests: XCTestCase {
+    func testLinkRoundTripAndRefusals() throws {
+        let s = CirclePayload.make(id: "cir_abc123", primary: "Asha K", perPayment: Money(minor: 500_00), total: Money(minor: 2000_00))
+        let l = try CirclePayload.parse(s)
+        XCTAssertEqual(l.id, "cir_abc123"); XCTAssertEqual(l.primary, "Asha K"); XCTAssertEqual(l.perPayment.minor, 500_00); XCTAssertEqual(l.total.minor, 2000_00)
+        XCTAssertThrowsError(try CirclePayload.parse("upi://pay?pa=a@b")) { XCTAssertEqual($0 as? CirclePayload.Failure, .notCircle) }
+        XCTAssertThrowsError(try CirclePayload.parse("vayora://circle?id=../x&pn=A&per=1&total=2")) { XCTAssertEqual($0 as? CirclePayload.Failure, .badID) }
+        XCTAssertThrowsError(try CirclePayload.parse("vayora://circle?id=cir_abc123&pn=&per=1&total=2")) { XCTAssertEqual($0 as? CirclePayload.Failure, .badName) }
+        XCTAssertThrowsError(try CirclePayload.parse("vayora://circle?id=cir_abc123&pn=A&per=5&total=2")) { XCTAssertEqual($0 as? CirclePayload.Failure, .badAmount) }
+        XCTAssertThrowsError(try CirclePayload.parse("vayora://circle?id=cir_abc123&id=cir_zzz999&pn=A&per=1&total=2")) { XCTAssertEqual($0 as? CirclePayload.Failure, .duplicateParameter) }
+    }
+    func testDelegateCoverage() {
+        var r = CircleRecord(id: "cir_1", role: .delegate, other: "Asha", perPaymentMinor: 500_00, totalMinor: 800_00)
+        XCTAssertTrue(r.canCover(500_00)); XCTAssertFalse(r.canCover(500_01)); XCTAssertFalse(r.canCover(0))
+        r.remainingMinor = 300_00; XCTAssertFalse(r.canCover(400_00)); XCTAssertTrue(r.canCover(300_00))
+        r.status = "revoked"; XCTAssertFalse(r.canCover(1))
+        XCTAssertFalse(CircleRecord(id: "c", role: .primary, other: "x", perPaymentMinor: 1, totalMinor: 1).canCover(1))   // a primary does not pay through its own circle
+    }
+    func testCircleInfoDecodes() throws {
+        let j = #"{"circle_id":"cir_1","primary":"Asha","delegate":"Ravi","status":"active","max_per_payment_minor":50000,"total_limit_minor":80000,"used_minor":40000,"remaining_minor":40000,"spends":[{"attempt_id":"att_1","amount_minor":40000,"at":"2026-11-01T10:00:00Z"}]}"#
+        let c = try JSONDecoder().decode(CircleInfo.self, from: Data(j.utf8))
+        XCTAssertEqual(c.remainingMinor, 40000); XCTAssertEqual(c.spends.first?.attemptID, "att_1")
+    }
+}

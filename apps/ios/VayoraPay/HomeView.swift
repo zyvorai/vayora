@@ -47,7 +47,7 @@ struct HomeView: View {
                 .sheet(isPresented: Binding(get: { mandate != nil }, set: { if !$0 { mandate = nil } })) {
                     if let m = mandate { MandateApproveSheet(mandate: m.0, uri: m.1).environmentObject(store) }
                 }
-                .alert(scanError?.hasPrefix("Test server set") == true ? "Done" : "Can't read that code", isPresented: Binding(get: { scanError != nil }, set: { _ in scanError = nil })) {
+                .alert(scanError?.hasPrefix("Test server set") == true || scanError?.hasPrefix("Joined") == true ? "Done" : "Can't read that code", isPresented: Binding(get: { scanError != nil }, set: { _ in scanError = nil })) {
                     Button("OK", role: .cancel) {}
                 } message: { Text(scanError ?? "") }
         }
@@ -76,6 +76,10 @@ struct HomeView: View {
     /// A merchant UPI link goes through Vayora; a Vayora request QR (from Split) is a person-to-person test transfer.
     func open(_ text: String) {
         if let host = store.applySetup(text) { Haptics.success(); scanError = "Test server set to \(host)."; return }
+        if let link = try? CirclePayload.parse(text) {
+            Task { scanError = await store.joinCircle(link) ?? "Joined \(link.primary)'s circle. Find it under Bills, Circle." }
+            return
+        }
         if text.lowercased().hasPrefix("upi://mandate") {
             do { mandate = (try MandatePayload.parse(text), text) } catch { scanError = "That AutoPay code isn't valid: \(error)." }
             return
