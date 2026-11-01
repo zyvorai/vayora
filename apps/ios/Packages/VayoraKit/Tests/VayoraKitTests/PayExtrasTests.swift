@@ -719,3 +719,87 @@ final class WeeklyRecapTests: XCTestCase {
         XCTAssertTrue(r.lines[0].contains("1 payment."))
     }
 }
+final class DemoBankTests: XCTestCase {
+    func testAmountParsing() {
+        XCTAssertEqual(DemoBank.minor(fromUPIAmount: "250.00"), 25000)
+        XCTAssertEqual(DemoBank.minor(fromUPIAmount: "250.5"), 25050)
+        XCTAssertEqual(DemoBank.minor(fromUPIAmount: "1"), 100)
+        XCTAssertNil(DemoBank.minor(fromUPIAmount: "0"))
+        XCTAssertNil(DemoBank.minor(fromUPIAmount: "-5"))
+        XCTAssertNil(DemoBank.minor(fromUPIAmount: "1.234"))
+        XCTAssertNil(DemoBank.minor(fromUPIAmount: "abc"))
+        XCTAssertNil(DemoBank.minor(fromUPIAmount: nil))
+    }
+
+    /// The whole merchant story through the real client: collect, QR, customer pays, refund within bounds.
+    func testMerchantFlowThroughTheRealClient() async throws {
+        var clock = Date(timeIntervalSince1970: 1_700_000_000)
+        let bank = DemoBank(now: { clock }, customerPaysAfter: 4)
+        let c = VayoraClient.demoForTests(bank: bank)
+        let i = try await c.createIntent(amount: Money(minor: 25000), note: "Chai")
+        XCTAssertEqual(i.status, "requires_payment_method")
+        let a = try await c.createUPIAttempt(intentId: i.id)
+        XCTAssertNotNil(a.upiURI)
+        XCTAssertEqual(a.status, "pending")
+        clock.addTimeInterval(1)
+        let early = try await c.refreshAttempt(id: a.id)
+        XCTAssertEqual(early.status, "pending")
+        clock.addTimeInterval(5)
+        let paid = try await c.settle(id: i.id)
+        XCTAssertEqual(paid.status, "succeeded")
+        let st = try await c.refundState(id: i.id)
+        XCTAssertEqual(st?.remainingMinor, 25000)
+        _ = try await c.refund(intentId: i.id, amount: Money(minor: 10000), reason: "requested_by_customer")
+        do { _ = try await c.refund(intentId: i.id, amount: Money(minor: 20000), reason: nil); XCTFail("over-refund must fail") }
+        catch let e as APIError { XCTAssertEqual(e.status, 422) }
+        let after = try await c.refundState(id: i.id)
+        XCTAssertEqual(after?.refundedMinor, 10000)
+        let list = try await c.listIntents()
+        XCTAssertEqual(list.map(\.id), [i.id])
+    }
+
+    func testPayerPaysTheMerchantCode() async throws {
+        let bank = DemoBank(now: { Date() }, customerPaysAfter: 3600)
+        let c = VayoraClient.demoForTests(bank: bank)
+        let i = try await c.createIntent(amount: Money(minor: 5000), note: nil)
+        let a = try await c.createUPIAttempt(intentId: i.id)
+        let r = try await c.simPay(upiURI: a.upiURI!)
+        XCTAssertEqual(r.status, "captured")
+        let done = try await c.intent(id: i.id)
+        XCTAssertEqual(done.status, "succeeded")
+        let declined = try await c.simPay(upiURI: a.upiURI!, approve: false)
+        XCTAssertEqual(declined.status, "failed")
+    }
+
+    func testBadInputsAreRefused() async throws {
+        let c = VayoraClient.demoForTests(bank: DemoBank())
+        do { _ = try await c.createIntent(amount: Money(minor: 0), note: nil); XCTFail() } catch let e as APIError { XCTAssertEqual(e.status, 422) }
+        do { _ = try await c.simPay(upiURI: "https://evil.example/pay?am=5"); XCTFail() } catch let e as APIError { XCTAssertEqual(e.status, 422) }
+        do { _ = try await c.mandates(); XCTFail() } catch let e as APIError { XCTAssertEqual(e.code, "not_in_demo") }
+    }
+
+    func testCircleLimitsHold() async throws {
+        let c = VayoraClient.demoForTests(bank: DemoBank())
+        let id = try await c.simCircleCreate(primary: "Me", delegate: "Asha", perPayment: Money(minor: 20000), total: Money(minor: 30000))
+        let uri = { (m: String) in "upi://pay?pa=shop@x&pn=Shop&am=\(m)&cu=INR" }
+        let r1 = try await c.simCirclePay(circleID: id, upiURI: uri("150.00"))
+        XCTAssertEqual(r1.remainingMinor, 15000)
+        do { _ = try await c.simCirclePay(circleID: id, upiURI: uri("250.00")); XCTFail() } catch let e as APIError { XCTAssertEqual(e.code, "over_per_payment") }
+        do { _ = try await c.simCirclePay(circleID: id, upiURI: uri("160.00")); XCTFail() } catch let e as APIError { XCTAssertEqual(e.code, "over_total") }
+        let v = try await c.simCircleView(id: id)
+        XCTAssertEqual(v.usedMinor, 15000); XCTAssertEqual(v.spends.count, 1)
+        try await c.simCircleRevoke(id: id)
+        do { _ = try await c.simCirclePay(circleID: id, upiURI: uri("10.00")); XCTFail() } catch let e as APIError { XCTAssertEqual(e.status, 409) }
+    }
+
+    func testBadCircleLimits() async throws {
+        let c = VayoraClient.demoForTests(bank: DemoBank())
+        do { _ = try await c.simCircleCreate(primary: "Me", delegate: "A", perPayment: Money(minor: 500), total: Money(minor: 100)); XCTFail() }
+        catch let e as APIError { XCTAssertEqual(e.status, 422) }
+    }
+}
+
+extension VayoraClient {
+    /// Tests use a per-test bank, so the protocol looks the bank up by this registry instead of the shared one.
+    static func demoForTests(bank: DemoBank) -> VayoraClient { .demo(bank: bank) }
+}
