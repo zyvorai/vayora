@@ -65,7 +65,7 @@ export function LiveAccessForm({ org, mode }: { org: string; mode: "revoke" | "r
 }
 
 /** One waiting change: approve, or reject with the reason the merchant is shown. */
-export function ChangeForm({ id }: { id: string }) {
+export function ChangeForm({ id, kind, firstApprovalOnly }: { id: string; kind: "bank_account" | "profile"; firstApprovalOnly: boolean }) {
   const [state, action, pending] = useActionState(decideChange, undefined);
   const [note, setNote] = useState("");
   return (
@@ -74,8 +74,8 @@ export function ChangeForm({ id }: { id: string }) {
       <input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason (required to reject)" aria-label="Reason" type="text" />
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn small primary" name="decision" value="approve" disabled={pending}>Approve</button>
-        <button className="btn small" name="decision" value="reject" disabled={pending}>Reject and remove</button>
+        <button className="btn small primary" name="decision" value="approve" disabled={pending}>{firstApprovalOnly ? "Give the first approval" : "Approve"}</button>
+        <button className="btn small" name="decision" value="reject" disabled={pending}>{kind === "profile" ? "Reject" : "Reject and remove"}</button>
       </div>
     </form>
   );

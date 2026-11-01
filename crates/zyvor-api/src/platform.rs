@@ -69,6 +69,16 @@ pub fn second_reviewer_reasons(
     why
 }
 
+/// Why this change needs a second reviewer; empty when one is enough. `flagged` is what was unclear when the
+/// business made it. `never` waives it (there is no escalation for a change).
+pub fn change_second_reviewer_reasons(policy: TwoPerson, flagged: &[String]) -> Vec<String> {
+    match policy {
+        TwoPerson::Never => Vec::new(),
+        TwoPerson::Always => vec!["every approval needs two reviewers".to_string()],
+        TwoPerson::Flagged => flagged.to_vec(),
+    }
+}
+
 /// A Zyvor reviewer, identified by a key that is not a merchant API key.
 pub struct PlatformAuth {
     pub id: String,
@@ -659,9 +669,9 @@ pub async fn list_changes(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
-        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note
-         FROM live_changes c JOIN organisations o ON o.id = c.organisation_id
+    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>)> = sqlx::query_as(
+        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name
+         FROM live_changes c JOIN organisations o ON o.id = c.organisation_id LEFT JOIN platform_reviewers f ON f.id = c.first_approved_by
          WHERE ($1::text IS NULL OR c.status = $1) ORDER BY c.requested_at LIMIT 100",
     )
     .bind(&q.status)
@@ -673,6 +683,9 @@ pub async fn list_changes(
             "id": r.0, "organisation_id": r.1, "organisation": r.2, "kind": r.3, "summary": r.4,
             "status": r.5, "requested_by": r.6, "requested_at": r.7, "note": r.8,
             "due_at": due, "overdue": overdue, "sla_hours": s.change_sla_hours,
+            "stage": if r.5 == "pending" && r.10.is_some() { "awaiting_second" } else { "new" },
+            "first_approved_by": r.10,
+            "needs_second_because": change_second_reviewer_reasons(s.review_two_person, &r.9),
         })
     }).collect::<Vec<_>>() })))
 }
@@ -709,19 +722,60 @@ pub async fn decide_change(
             .await?;
     let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
-    let cur: Option<(String, String, String, String, String)> = sqlx::query_as(
-        "SELECT status, kind, ref_id, requested_by, summary FROM live_changes WHERE id = $1 FOR UPDATE",
+    #[allow(clippy::type_complexity)]
+    let cur: Option<(String, String, String, String, String, Vec<String>, Option<String>)> = sqlx::query_as(
+        "SELECT status, kind, ref_id, requested_by, summary, flagged_because, first_approved_by FROM live_changes WHERE id = $1 FOR UPDATE",
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, kind, ref_id, requested_by, summary) =
+    let (status, kind, ref_id, requested_by, summary, flagged, first_by) =
         cur.ok_or_else(|| ApiError::not_found("change"))?;
     if status != "pending" {
         return Err(ApiError::conflict(
             "not_pending",
             format!("this change is already {status}"),
         ));
+    }
+    // An approval that warrants it needs two different reviewers: the first is recorded and the change (and the hold
+    // on live payouts) stays as it is. Rejecting never needs two.
+    if approve {
+        let why = change_second_reviewer_reasons(s.review_two_person, &flagged);
+        if !why.is_empty() {
+            match first_by.as_deref() {
+                None => {
+                    sqlx::query("UPDATE live_changes SET first_approved_by = $2, first_approved_at = now(), first_note = $3 WHERE id = $1")
+                        .bind(&id)
+                        .bind(&p.id)
+                        .bind(note)
+                        .execute(&mut *tx)
+                        .await?;
+                    tenant::audit(
+                        &mut tx,
+                        &tid,
+                        &format!("zyvor:{}", p.name),
+                        "live_change.first_approval",
+                        Some(&ref_id),
+                        json!({ "kind": kind, "note": note, "needs_second_because": why }),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(Json(json!({
+                        "id": id, "status": "pending", "stage": "awaiting_second", "needs_second_because": why,
+                    })));
+                }
+                Some(f) if f == p.id => {
+                    return Err(ApiError::conflict(
+                        "second_reviewer_required",
+                        format!(
+                            "this approval needs a second, different reviewer ({})",
+                            why.join("; ")
+                        ),
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
     }
     let new = if approve { "approved" } else { "rejected" };
     sqlx::query("UPDATE live_changes SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE id = $1")

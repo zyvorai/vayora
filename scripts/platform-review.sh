@@ -81,7 +81,7 @@ import sys, json
 d = json.load(sys.stdin)
 if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
 for c in d["data"]:
-    print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]))
+    print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]) + (" [awaiting 2nd after " + c["first_approved_by"] + "]" if c.get("stage") == "awaiting_second" else (" [needs 2 reviewers]" if c.get("needs_second_because") and c["status"] == "pending" else "")))
 if not d["data"]: print("nothing here")' ;;
   change-approve) call POST "/v1/platform/changes/${2:?usage: change-approve <id> [note]}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"approve","note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "approved: payouts are no longer held for " + d["id"])' ;;
   change-reject)

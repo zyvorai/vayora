@@ -77,13 +77,13 @@ export async function decideChange(_: State, form: FormData): Promise<State> {
   const note = String(form.get("note") ?? "").trim();
   if (decision !== "approve" && decision !== "reject") return { error: "Choose approve or reject." };
   if (decision === "reject" && !note) return { error: "Say why. The merchant is shown this, and the account is removed." };
-  const r = await platform(key, "POST", `/changes/${encodeURIComponent(id)}/decision`, { decision, note: note || undefined });
+  const r = await platform<{ stage?: string }>(key, "POST", `/changes/${encodeURIComponent(id)}/decision`, { decision, note: note || undefined });
   if (!r.ok) {
     if (r.status === 401) redirect("/reviewer");
     return { error: r.message };
   }
   revalidatePath("/reviewer");
-  redirect(`/reviewer?status=pending&done=change_${decision}`);
+  redirect(`/reviewer?status=pending&done=${r.body.stage === "awaiting_second" ? "change_first_approval" : `change_${decision}`}`);
 }
 
 /** Ask for a second, different reviewer. The note is read by whoever gives the second approval. */
