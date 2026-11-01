@@ -507,6 +507,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/platform/rota", get(rota::show))
         .route("/platform/rota/me", axum::routing::put(rota::set_mine))
+        .route("/platform/rota/coverage", get(rota::coverage))
+        .route("/platform/rota/rebalance", post(platform::rebalance))
         .route(
             "/platform/rota/reviewers/{id}",
             axum::routing::put(rota::set_for),

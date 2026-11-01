@@ -1626,6 +1626,32 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/rota/coverage:
+    get:
+      summary: Zyvor reviewers only - for each coming local day (query days, 1 to 28, default 7) the windows with nobody working once shifts, leave and desk holidays are counted
+      tags:
+      - platform
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/rota/rebalance:
+    post:
+      summary: Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved and left
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/rota/reviewers/{id}:
     put:
       summary: Zyvor reviewers who are leads only - replace another reviewer's weekly shifts (same shape as rota/me). The reviewer is emailed that their hours changed, when they have an address. 403 for anyone who is not a lead; the operator makes a lead with `zyvor-api platform-reviewer lead <id>`
