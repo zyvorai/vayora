@@ -5,6 +5,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 ## 1 November 2026
+**Merchant: items, bills and sales by item (on-phone, test mode)**
+- A product list with optional GST lines, itemised totals on Collect, and top sellers. No server change.
+
 **Cashfree Subscriptions adapter for UPI AutoPay (mocked, unverified)**
 - Cashfree can now hold a mandate: create (an on-demand subscription plus a payer approval link), refresh, revoke, and debit (a `CHARGE` keyed by our attempt id, with an idempotency key derived from it). `mandates` is on for Cashfree. Built from Cashfree's public docs and tested only against a local mock HTTP server; **not run against Cashfree's sandbox**. Unclear points are marked `UNCLEAR` in the code and listed in the pull request.
 - A debit whose outcome is unknown is resolved by asking Cashfree for the charge (new `Provider::fetch_debit`, used by the refresh of an attempt that belongs to a mandate), never by sending it again; a charge Cashfree cannot find stays unknown rather than failed.

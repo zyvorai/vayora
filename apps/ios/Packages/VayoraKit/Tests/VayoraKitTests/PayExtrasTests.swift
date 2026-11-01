@@ -574,3 +574,74 @@ final class CircleTests: XCTestCase {
         XCTAssertEqual(c.remainingMinor, 40000); XCTAssertEqual(c.spends.first?.attemptID, "att_1")
     }
 }
+
+final class CatalogueTests: XCTestCase {
+    func testValidation() throws {
+        var c = Catalogue()
+        XCTAssertThrowsError(try c.add(Product(name: "  ", priceMinor: 100))) { XCTAssertEqual($0 as? Catalogue.Failure, .emptyName) }
+        XCTAssertThrowsError(try c.add(Product(name: "Tea", priceMinor: 0))) { XCTAssertEqual($0 as? Catalogue.Failure, .badPrice) }
+        XCTAssertThrowsError(try c.add(Product(name: "Tea", priceMinor: 100, gstPercent: 101))) { XCTAssertEqual($0 as? Catalogue.Failure, .badGST) }
+        XCTAssertThrowsError(try c.add(Product(name: String(repeating: "x", count: 41), priceMinor: 100))) { XCTAssertEqual($0 as? Catalogue.Failure, .nameTooLong) }
+        try c.add(Product(name: "Tea", priceMinor: 1000))
+        XCTAssertThrowsError(try c.add(Product(name: "tea ", priceMinor: 500))) { XCTAssertEqual($0 as? Catalogue.Failure, .duplicate) }
+        XCTAssertEqual(c.products.count, 1)
+    }
+    func testUpdateKeepsOwnName() throws {
+        var c = Catalogue(); let p = Product(name: "Tea", priceMinor: 1000); try c.add(p)
+        var q = p; q.priceMinor = 1200; try c.update(q)
+        XCTAssertEqual(c.products[0].priceMinor, 1200)
+    }
+    func testExclusiveGSTRoundsHalfUp() {
+        // 5% of Rs 10.10 = 50.5 paise -> 51
+        let l = BillLine(name: "x", quantity: 1, unitMinor: 1010, gstPercent: 5, gstInclusive: false)
+        XCTAssertEqual(l.parts.gst, 51); XCTAssertEqual(l.parts.gross, 1061); XCTAssertEqual(l.parts.net, 1010)
+        // 18% of Rs 100 = 1800 exactly
+        let m = BillLine(name: "y", quantity: 2, unitMinor: 5000, gstPercent: 18, gstInclusive: false)
+        XCTAssertEqual(m.parts.gst, 1800); XCTAssertEqual(m.parts.gross, 11800)
+    }
+    func testInclusiveGSTSplitsAndAddsBack() {
+        // Rs 118 with 18% inside: net 100, gst 18
+        let l = BillLine(name: "x", quantity: 1, unitMinor: 11800, gstPercent: 18, gstInclusive: true)
+        XCTAssertEqual(l.parts.net, 10000); XCTAssertEqual(l.parts.gst, 1800); XCTAssertEqual(l.parts.gross, 11800)
+        // an awkward one still adds back exactly
+        let m = BillLine(name: "y", quantity: 3, unitMinor: 3333, gstPercent: 12, gstInclusive: true)
+        XCTAssertEqual(m.parts.net + m.parts.gst, m.parts.gross); XCTAssertEqual(m.parts.gross, 9999)
+    }
+    func testNoGST() {
+        let l = BillLine(name: "x", quantity: 4, unitMinor: 250, gstPercent: nil, gstInclusive: false)
+        XCTAssertEqual(l.parts.gst, 0); XCTAssertEqual(l.parts.gross, 1000)
+        XCTAssertEqual(BillLine(name: "x", quantity: 1, unitMinor: 250, gstPercent: 0, gstInclusive: true).parts.gross, 250)
+    }
+    func testBillTotalsAndLines() {
+        var b = Bill(); let tea = Product(name: "Tea", priceMinor: 1000, gstPercent: 5), vada = Product(name: "Vada pav", priceMinor: 2000)
+        b.add(tea); b.add(tea); b.add(vada)
+        XCTAssertEqual(b.lines.count, 2); XCTAssertEqual(b.quantity(of: tea), 2)
+        XCTAssertEqual(b.netMinor, 4000); XCTAssertEqual(b.gstMinor, 100); XCTAssertEqual(b.totalMinor, 4100)
+        XCTAssertEqual(b.note(), "2 x Tea, 1 x Vada pav")
+        b.remove(tea); b.remove(tea)
+        XCTAssertEqual(b.quantity(of: tea), 0); XCTAssertEqual(b.totalMinor, 2000)
+    }
+    func testNoteIsCutWithMoreCount() {
+        var b = Bill()
+        for i in 0..<10 { b.add(Product(name: "Item number \(i)", priceMinor: 100)) }
+        let n = b.note(limit: 50)
+        XCTAssertLessThanOrEqual(n.count, 60); XCTAssertTrue(n.contains("more"))
+    }
+    func testQuantityIsCapped() {
+        var b = Bill(); let p = Product(name: "Pen", priceMinor: 100)
+        b.add(p, quantity: 5000); b.add(p, quantity: 5)
+        XCTAssertEqual(b.quantity(of: p), Bill.maxQuantity)
+    }
+    func testSalesByItemCountsOnlyPaidAndRecent() {
+        let t = Date(timeIntervalSince1970: 1_700_000_000)
+        let tea = BillLine(name: "Tea", quantity: 2, unitMinor: 1000, gstPercent: nil, gstInclusive: false)
+        let vada = BillLine(name: "Vada", quantity: 3, unitMinor: 2000, gstPercent: nil, gstInclusive: false)
+        let log = [BillRecord(intentID: "a", date: t, lines: [tea, vada]), BillRecord(intentID: "b", date: t, lines: [tea]),
+                   BillRecord(intentID: "old", date: t.addingTimeInterval(-86400 * 90), lines: [tea]), BillRecord(intentID: "unpaid", date: t, lines: [vada])]
+        let rows = SalesByItem.top(log, paid: ["a", "b", "old"], since: t.addingTimeInterval(-86400 * 7))
+        XCTAssertEqual(rows.map(\.name), ["Tea", "Vada"]) // 4 teas vs 3 vadas
+        XCTAssertEqual(rows[0].quantity, 4); XCTAssertEqual(rows[0].grossMinor, 4000); XCTAssertEqual(rows[1].quantity, 3)
+        XCTAssertTrue(SalesByItem.summary(rows, title: "Week").contains("Not a tax invoice"))
+        XCTAssertTrue(SalesByItem.summary([], title: "Week").contains("No itemised sales"))
+    }
+}
