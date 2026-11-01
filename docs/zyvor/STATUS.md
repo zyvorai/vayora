@@ -28,7 +28,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Branches, users, roles | ◐ | Records exist; no login/SSO; roles are not yet mapped to scopes automatically. |
 | Approval policies | ◐ | One policy: refund amount threshold. |
 | OpenAPI | ✅ | `openapi/zyvor.yaml`; a test fails if a route is undocumented. Schemas are summary-level. |
-| SDKs and CLI | ✅ TS · ◐ Python/Go | `@zyvor/node` (+ `zyvor` CLI) is complete; Python and Go are minimal (core calls + webhook verification). |
+| SDKs and CLI | ✅ TS · ◐ Python/Go | `@zyvor/node` (+ `zyvor` CLI) is complete. Python and Go now expose the same 136 operations (a Python test fails if one gets a method the other lacks) and cover most of the API: payments, refunds and approvals, reconciliation cases, billing, invoices, payouts and vendors, customers, mandates, coupons, milestones, instalments, disputes, collections, branches, keys, providers, live access, webhooks and the audit seal. They still lack the console-user and MFA calls, the assignable-branches list, the GST helpers beyond e-invoice drafts, and typed responses (they return plain dicts/maps). Neither is published to a registry. |
 | Sandbox simulator, webhook inspector, replay | ✅ | `zyvor-provider-mock`, `scripts/zyvor-sandbox.sh`, `/v1/inbox`, `/v1/outbox`, replay. API only, no UI. |
 | Kubernetes, Compose, Envoy TLS | ◐ | `helm lint`/`template` and `docker compose config` pass. **Not built or run** (no Docker daemon or cluster was available). |
 | Prometheus | ◐ | `/metrics` exposes queue depths and open cases. |

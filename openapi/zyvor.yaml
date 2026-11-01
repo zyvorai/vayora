@@ -43,6 +43,70 @@ paths:
         required: true
         schema:
           type: string
+  /v1/payment_attempts/{id}/refresh:
+    post:
+      summary: Ask the provider where an attempt stands now
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_attempts/{id}/cancel:
+    post:
+      summary: Cancel an attempt that has not been paid
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_attempts/{id}/capture:
+    post:
+      summary: Capture an authorised attempt (manual capture)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/provider_accounts/{provider}/enabled:
+    post:
+      summary: Turn a provider on or off for routing (send enabled true or false)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/payment_attempts/{id}/simulate_event:
     post:
       summary: Deliver the provider's late update for a pending simulated payment (test mode only)
@@ -1199,6 +1263,25 @@ paths:
         required: true
         schema:
           type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/provider_accounts:
+    get:
+      summary: Connected payment providers (admin)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Connect a payment provider (admin); credentials are encrypted and never returned
+      tags:
+      - payments
       responses:
         '200':
           description: OK
