@@ -13664,7 +13664,7 @@ async fn a_reviewer_with_an_address_is_emailed_when_something_is_given_to_them(p
         let (root, to) = (t.root.clone(), to.to_string());
         async move {
             sqlx::query_as::<_, (String, String)>(
-                "SELECT subject, body FROM mail_queue WHERE to_email = $1 ORDER BY created_at, id",
+                "SELECT subject, body FROM mail_queue WHERE to_email = $1 AND subject LIKE 'Yours to review%' ORDER BY created_at, id",
             )
             .bind(to)
             .fetch_all(&root)
@@ -13822,4 +13822,184 @@ async fn a_reviewer_with_an_address_is_emailed_when_something_is_given_to_them(p
     assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
     assert_eq!(mails("bala@desk.example").await.len(), 3);
     let _ = org4;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn the_holder_is_emailed_when_someone_takes_their_item_away(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st.clone());
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (_, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    // Bala has an address; Chitra does not
+    rv(
+        &b_key,
+        "PUT",
+        "/v1/platform/me".into(),
+        json!({ "email": "bala@desk.example" }),
+    )
+    .await;
+    let taken = |to: &str| {
+        let (root, to) = (t.root.clone(), to.to_string());
+        async move {
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT subject, body FROM mail_queue WHERE to_email = $1 AND subject LIKE 'No longer yours%' ORDER BY created_at, id",
+            )
+            .bind(to)
+            .fetch_all(&root)
+            .await
+            .unwrap()
+        }
+    };
+    let (mkey1, org1) = asks_for_live(&t, &app, "One Ltd", "o@one.in").await;
+    let (_, org2) = asks_for_live(&t, &app, "Two Ltd", "o@two2.in").await;
+    let (_, org3) = asks_for_live(&t, &app, "Three Ltd", "o@three.in").await;
+
+    // Bala holds one. A refused take-over tells nobody; the real one tells Bala who took it, and that it is Asha's now
+    rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    let (s, _) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert!(taken("bala@desk.example").await.is_empty());
+    let (s, _) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/assign"),
+        json!({ "to": "me", "take_over": true }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let m = taken("bala@desk.example").await;
+    assert_eq!(m.len(), 1, "{m:?}");
+    assert!(m[0].0.contains("One Ltd"), "{m:?}");
+    assert!(
+        m[0].1
+            .contains("Asha took the live access request from One Ltd from you."),
+        "{m:?}"
+    );
+
+    // giving your own item away, or releasing it, tells nobody: it was yours to do
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/assign"),
+        json!({ "to": null }),
+    )
+    .await;
+    assert_eq!(taken("bala@desk.example").await.len(), 1);
+
+    // taking Bala's item and handing it to Chitra, or back to the queue, says where it went
+    rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    let (_, chitra) = rv(&c_key, "GET", "/v1/platform/me".into(), Value::Null).await;
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/assign"),
+        json!({ "to": chitra["id"], "take_over": true }),
+    )
+    .await;
+    rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/reviews/{org3}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org3}/assign"),
+        json!({ "to": null, "take_over": true }),
+    )
+    .await;
+    let m = taken("bala@desk.example").await;
+    assert_eq!(m.len(), 3, "{m:?}");
+    assert!(m[1].1.contains("; Chitra has it now."), "{m:?}");
+    assert!(m[2].1.contains("; it is back in the queue."), "{m:?}");
+
+    // a holder with no address is not mailed (Chitra holds org2)
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org2}/assign"),
+        json!({ "to": "me", "take_over": true }),
+    )
+    .await;
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'No longer yours%'")
+            .await,
+        3
+    );
+
+    // a change: told by kind and business, no account details
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org1)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (sb, _) = common::raw(&app, &mkey1, None, "POST", "/v1/onboarding/bank_accounts", None,
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "111122223333" })).await;
+    assert_eq!(sb, StatusCode::CREATED);
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    let id = l["data"][0]["id"].as_str().unwrap().to_string();
+    rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/changes/{id}/assign"),
+        json!({ "to": "me" }),
+    )
+    .await;
+    rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/changes/{id}/assign"),
+        json!({ "to": "me", "take_over": true }),
+    )
+    .await;
+    let m = taken("bala@desk.example").await;
+    assert_eq!(m.len(), 4, "{m:?}");
+    assert!(
+        m[3].0.contains("a new bank account") && m[3].0.contains("One Ltd"),
+        "{m:?}"
+    );
+    assert!(
+        !m[3].1.contains("3333") && !m[3].1.contains("Kiran"),
+        "{m:?}"
+    );
 }

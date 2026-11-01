@@ -214,38 +214,79 @@ async fn tell_assignee(s: &AppState, to: &str, by: &str, what: &str, path: &str)
     }
 }
 
-/// `tell_assignee` for a live-access request.
-async fn tell_review_assignee(s: &AppState, to: &str, by: &str, org: &str) {
+/// What a live-access request is called in a mail, and where the desk shows it.
+async fn review_what(s: &AppState, org: &str) -> (String, String) {
     let name: Option<String> = sqlx::query_scalar("SELECT name FROM organisations WHERE id = $1")
         .bind(org)
         .fetch_optional(&s.pool)
         .await
         .unwrap_or(None);
-    let what = format!(
-        "the live access request from {}",
-        name.unwrap_or_else(|| org.to_string())
-    );
-    tell_assignee(s, to, by, &what, &format!("/review/{org}")).await;
+    (
+        format!(
+            "the live access request from {}",
+            name.unwrap_or_else(|| org.to_string())
+        ),
+        format!("/review/{org}"),
+    )
 }
 
-/// `tell_assignee` for a change (the kind, not the details).
-async fn tell_change_assignee(s: &AppState, to: &str, by: &str, change: &str) {
-    let row: Option<(String, String)> = sqlx::query_as(
+/// What a change is called in a mail (its kind, not its details), and where the desk shows it.
+async fn change_what(s: &AppState, change: &str) -> Option<(String, String)> {
+    let (name, kind): (String, String) = sqlx::query_as(
         "SELECT o.name, c.kind FROM live_changes c JOIN organisations o ON o.id = c.organisation_id WHERE c.id = $1",
     )
     .bind(change)
     .fetch_optional(&s.pool)
     .await
-    .unwrap_or(None);
-    let Some((name, kind)) = row else {
-        return;
-    };
+    .unwrap_or(None)?;
     let kind = match kind.as_str() {
         "bank_account" => "a new bank account",
         "profile" => "changed legal details",
         _ => "a change",
     };
-    tell_assignee(s, to, by, &format!("{kind} from {name}"), "").await;
+    Some((format!("{kind} from {name}"), String::new()))
+}
+
+/// `tell_assignee` for a live-access request.
+async fn tell_review_assignee(s: &AppState, to: &str, by: &str, org: &str) {
+    let (what, path) = review_what(s, org).await;
+    tell_assignee(s, to, by, &what, &path).await;
+}
+
+/// `tell_assignee` for a change.
+async fn tell_change_assignee(s: &AppState, to: &str, by: &str, change: &str) {
+    if let Some((what, path)) = change_what(s, change).await {
+        tell_assignee(s, to, by, &what, &path).await;
+    }
+}
+
+/// Tell the reviewer who held `what` that someone else took it (to another reviewer, `now` = their name, or back to the
+/// queue). Same rules as `tell_assignee`: only with an address, best effort, nothing sensitive.
+async fn tell_taken_from(s: &AppState, from: &str, by: &str, what: &str, now: Option<&str>) {
+    let addr: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT email FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(from)
+    .fetch_optional(&s.pool)
+    .await
+    .unwrap_or(None);
+    let Some(Some(addr)) = addr else {
+        return;
+    };
+    let now = match now {
+        Some(n) if n == by => ".".to_string(),
+        Some(n) => format!("; {n} has it now."),
+        None => "; it is back in the queue.".to_string(),
+    };
+    let body = format!(
+        "{by} took {what} from you{now} You do not need to do anything for it any more.\n\nThe desk: {}/reviewer\n",
+        s.console_url
+    );
+    if let Err(e) =
+        crate::mail::enqueue(&s.pool, &addr, &format!("No longer yours: {what}"), &body).await
+    {
+        tracing::warn!(error = %e, reviewer = %from, "could not queue the taken-over email");
+    }
 }
 
 pub async fn list_reviewers(pool: &PgPool) -> Result<Vec<(String, String, bool)>, sqlx::Error> {
@@ -937,6 +978,12 @@ pub async fn assign_change(
     if let Some(t) = target.as_deref().filter(|t| *t != p.id) {
         tell_change_assignee(&s, t, &p.name, &id).await;
     }
+    if took_over
+        && let Some(h) = holder.as_deref().filter(|h| Some(*h) != target.as_deref())
+        && let Some((what, _)) = change_what(&s, &id).await
+    {
+        tell_taken_from(&s, h, &p.name, &what, to_name.as_deref()).await;
+    }
     Ok(Json(
         json!({ "id": id, "assigned_to": target, "assigned_to_name": to_name }),
     ))
@@ -1396,6 +1443,13 @@ pub async fn assign(
     tx.commit().await?;
     if let Some(t) = target.as_deref().filter(|t| *t != p.id) {
         tell_review_assignee(&s, t, &p.name, &org).await;
+    }
+    if let Some(h) = holder
+        .as_deref()
+        .filter(|h| *h != p.id && Some(*h) != target.as_deref())
+    {
+        let (what, _) = review_what(&s, &org).await;
+        tell_taken_from(&s, h, &p.name, &what, to_name.as_deref()).await;
     }
     Ok(Json(
         json!({ "organisation_id": org, "assigned_to": target, "assigned_to_name": to_name }),
