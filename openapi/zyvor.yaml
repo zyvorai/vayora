@@ -19,6 +19,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent: {}
+                  attempts: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -35,6 +42,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -51,6 +62,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -67,6 +82,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -83,6 +102,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -99,6 +122,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: {}
+                  enabled: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -107,6 +137,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Toggle'
   /v1/payment_attempts/{id}/simulate_event:
     post:
       summary: Deliver the provider's late update for a pending simulated payment (test mode only)
@@ -121,8 +157,18 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptRow'
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulateEvent'
   /v1/refunds:
     get:
       summary: List refunds (filter status=failed for the failed-refund queue)
@@ -131,6 +177,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+                  has_more: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/refunds/{id}:
@@ -141,6 +194,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -157,6 +214,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -173,6 +234,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -189,6 +254,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -205,6 +274,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRow'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -221,6 +294,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/settlements/import:
@@ -233,6 +312,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportSettlement'
   /v1/settlements/sync:
     post:
       summary: Pull settlements from the provider
@@ -241,8 +326,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
   /v1/settlements/{id}/simulate_bank:
     post:
       summary: Add the bank credit a simulated settlement would produce (test mode only)
@@ -259,6 +356,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulateBank'
   /v1/settlements/{id}/explain:
     get:
       summary: Explain every rupee of a settlement
@@ -283,8 +386,21 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added: {}
+                  settlements_rechecked: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportBank'
   /v1/recon/cases:
     get:
       summary: List reconciliation cases
@@ -293,8 +409,34 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
   /v1/recon/cases/{id}/assign:
     post:
       summary: Assign a case
@@ -303,6 +445,14 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  assignee: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -311,6 +461,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Assign'
   /v1/recon/cases/{id}/resolve:
     post:
       summary: Resolve a case
@@ -319,6 +475,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -327,6 +490,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconResolve'
   /v1/recon/scan:
     post:
       summary: Find captured payments missing from settlements
@@ -335,6 +504,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  new_cases: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/analytics/cost:
@@ -345,6 +520,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  by_provider_method: {}
+                  suggestions: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/api_keys:
@@ -355,6 +537,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        branch_id: {}
+                        id: {}
+                        name: {}
+                        prefix: {}
+                        scopes: {}
+                        created_at: {}
+                        revoked_at: {}
+                        expires_at: {}
+                        last_used_at: {}
+                        allowed_cidrs: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -362,18 +564,48 @@ paths:
       tags:
       - admin
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  key: {}
+                  prefix: {}
+                  scopes: {}
+                  expires_at: {}
+                  allowed_cidrs: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewKey'
   /v1/api_keys/{id}/rotate:
     post:
       summary: Mint a replacement key; the old one expires after an overlap window
       tags:
       - keys
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  key: {}
+                  prefix: {}
+                  scopes: {}
+                  rotated_from: {}
+                  old_key_expires_in_hours: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -382,6 +614,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateBody'
   /v1/api_keys/{id}/revoke:
     post:
       summary: Revoke an API key
@@ -390,6 +628,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  revoked: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -406,17 +651,67 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        name: {}
+                        email: {}
+                        phone: {}
+                        external_ref: {}
+                        gstin: {}
+                        address1: {}
+                        location: {}
+                        pincode: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: external_ref
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
     post:
       summary: Create a customer
       tags:
       - customers
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
+                  email: {}
+                  phone: {}
+                  external_ref: {}
+                  gstin: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCustomer'
   /v1/customers/{id}:
     get:
       summary: Get a customer
@@ -425,6 +720,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
+                  email: {}
+                  phone: {}
+                  external_ref: {}
+                  gstin: {}
+                  address1: {}
+                  location: {}
+                  pincode: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -448,6 +757,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerPatch'
   /v1/branches:
     get:
       summary: Create or list branches
@@ -456,6 +771,18 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        name: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -463,20 +790,47 @@ paths:
       tags:
       - admin
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewBranch'
   /v1/users:
     post:
       summary: Create a user
       tags:
       - admin
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  email: {}
+                  role: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminNewUser'
   /v1/invoices:
     get:
       summary: Create or list invoices
@@ -485,6 +839,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        number: {}
+                        amount_minor:
+                          type: integer
+                        paid_minor:
+                          type: integer
+                        outstanding_minor:
+                          type: integer
+                        status: {}
+                        due_date: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -492,10 +866,28 @@ paths:
       tags:
       - invoices
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  number: {}
+                  amount_minor:
+                    type: integer
+                  tax_minor:
+                    type: integer
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewInvoice'
   /v1/invoices/{id}:
     get:
       summary: Get an invoice with allocations
@@ -504,6 +896,41 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  number: {}
+                  currency: {}
+                  amount_minor:
+                    type: integer
+                  tax_minor:
+                    type: integer
+                  external_ref: {}
+                  status: {}
+                  due_date: {}
+                  customer_id: {}
+                  place_of_supply: {}
+                  buyer_gstin: {}
+                  reverse_charge: {}
+                  issued_on: {}
+                  paid_minor:
+                    type: integer
+                  credited_minor:
+                    type: integer
+                  outstanding_minor:
+                    type: integer
+                  allocations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        intent_id: {}
+                        amount_minor:
+                          type: integer
+                        reference: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -520,8 +947,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of: {}
+                  data: {}
+                  total_outstanding_inr_minor:
+                    type: integer
+                  usd_rate_date: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: as_of
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/collections/promises:
     get:
       summary: Promises to pay with derived status (open, kept, broken, canceled)
@@ -530,18 +975,39 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/collections/dunning/run:
     post:
-      summary: Remind every overdue invoice with no live promise (repeat-safe); test mode may pass as_of to run as of another day
+      summary: Remind every overdue invoice with no live promise (repeat-safe); test mode may pass as_of to run as of another
+        day
       tags:
       - collections
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminded: {}
+                  drafts_created: {}
+                  draft_ids: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DunningBody'
   /v1/collections/drafts:
     get:
       summary: Reminder drafts waiting for a decision
@@ -550,16 +1016,37 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/collections/drafts/{id}/approve:
     post:
-      summary: "Approve a reminder draft (optionally edited): logs it and emits invoice.reminder"
+      summary: 'Approve a reminder draft (optionally edited): logs it and emits invoice.reminder'
       tags:
       - collections
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  reminder_id: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -568,6 +1055,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Approve'
   /v1/collections/drafts/{id}/reject:
     post:
       summary: Reject a reminder draft
@@ -576,6 +1069,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -590,8 +1090,19 @@ paths:
       tags:
       - collections
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  invoice_id: {}
+                  channel: {}
+                  message: {}
+                  source: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -600,6 +1111,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftReq'
   /v1/collections/promises/{id}/cancel:
     post:
       summary: Cancel a promise to pay
@@ -608,6 +1125,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -622,8 +1146,19 @@ paths:
       tags:
       - collections
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  invoice_id: {}
+                  promised_minor:
+                    type: integer
+                  promised_date: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -632,6 +1167,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPromise'
   /v1/invoices/{id}/reminders:
     get:
       summary: Reminder history for an invoice
@@ -640,6 +1181,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -653,8 +1200,16 @@ paths:
       tags:
       - collections
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  invoice_id: {}
+                  channel: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -663,6 +1218,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewReminder'
   /v1/plans:
     get:
       summary: Create or list billing plans
@@ -671,6 +1232,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        name: {}
+                        currency: {}
+                        amount_minor:
+                          type: integer
+                        interval_unit: {}
+                        interval_count: {}
+                        usage_unit_minor:
+                          type: integer
+                        active: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -678,10 +1259,26 @@ paths:
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
+                  amount_minor:
+                    type: integer
+                  interval_unit: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingNewPlan'
   /v1/subscriptions:
     get:
       summary: Create or list subscriptions
@@ -690,6 +1287,22 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        customer_id: {}
+                        plan_id: {}
+                        quantity: {}
+                        status: {}
+                        next_bill_date: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -697,10 +1310,24 @@ paths:
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  next_bill_date: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewSubscription'
   /v1/subscriptions/{id}/pause:
     post:
       summary: Pause a subscription
@@ -755,8 +1382,15 @@ paths:
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded: {}
+                  quantity: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -765,24 +1399,52 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewUsage'
   /v1/billing/run:
     post:
-      summary: Invoice every subscription that is due (idempotent per period); test mode may pass as_of to run as of another day
+      summary: Invoice every subscription that is due (idempotent per period); test mode may pass as_of to run as of another
+        day
       tags:
       - billing
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoices_created: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunBody'
   /v1/invoices/{id}/credit_notes:
     post:
       summary: Issue a credit note against an invoice
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  invoice_id: {}
+                  amount_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -791,6 +1453,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCreditNote'
   /v1/invoices/{id}/void:
     post:
       summary: Void an unpaid, uncredited invoice
@@ -799,6 +1467,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -815,6 +1490,16 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id: {}
+                  name: {}
+                  lines: {}
+                  balance_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -831,6 +1516,19 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  plan_id: {}
+                  quantity: {}
+                  proration_minor:
+                    type: integer
+                  proration_invoice_id: {}
+                  remaining_days: {}
+                  period_days: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -839,6 +1537,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePlan'
   /v1/milestones:
     get:
       summary: Create or list billing milestones
@@ -847,6 +1551,23 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        customer_id: {}
+                        name: {}
+                        amount_minor:
+                          type: integer
+                        status: {}
+                        invoice_id: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -854,10 +1575,23 @@ paths:
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewMilestone'
   /v1/milestones/{id}/complete:
     post:
       summary: Accept a milestone and invoice it (idempotent)
@@ -866,6 +1600,14 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  invoice_id: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -882,6 +1624,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -900,6 +1649,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CsvBody'
   /v1/disputes:
     get:
       summary: Open or list disputes (an open dispute holds the amount so it cannot be refunded)
@@ -908,6 +1663,24 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        attempt_id: {}
+                        amount_minor:
+                          type: integer
+                        reason: {}
+                        status: {}
+                        respond_by: {}
+                        evidence_count: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -915,10 +1688,25 @@ paths:
       tags:
       - disputes
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  amount_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewDispute'
   /v1/disputes/{id}/evidence:
     post:
       summary: Attach evidence (a note and a link to the document)
@@ -927,6 +1715,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -935,14 +1730,27 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewEvidence'
   /v1/disputes/{id}/resolve:
     post:
-      summary: "Record the outcome: won releases the hold, lost books the loss and re-opens the invoice"
+      summary: 'Record the outcome: won releases the hold, lost books the loss and re-opens the invoice'
       tags:
       - disputes
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -951,6 +1759,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputesResolve'
   /v1/settings:
     get:
       summary: Get or update settings (approval threshold, routing, outbound webhook)
@@ -959,6 +1773,22 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refund_approval_threshold_minor:
+                    type: integer
+                  routing: {}
+                  outbound_webhook_url: {}
+                  env: {}
+                  dunning: {}
+                  gst: {}
+                  payout_approval_threshold_minor:
+                    type: integer
+                  risk: {}
+                  webhook_events: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -968,8 +1798,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
   /v1/audit_events/seal:
     post:
       summary: Seal unsealed audit events into the tamper-evident chain
@@ -978,8 +1820,22 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sealed_events: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: min_age_seconds
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
   /v1/audit_events/verify:
     get:
       summary: Recompute the audit chain and report where it breaks
@@ -988,6 +1844,16 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
+                  seals_checked: {}
+                  broken_seal: {}
+                  events_range: {}
+                  reason: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/console/branches:
@@ -998,6 +1864,18 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        name: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/console/users:
@@ -1006,10 +1884,25 @@ paths:
       tags:
       - console_users
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  username: {}
+                  role: {}
+                  branch_id: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsoleUsersNewUser'
     get:
       summary: List console users
       tags:
@@ -1017,6 +1910,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/console/users/{id}/disable:
@@ -1059,6 +1958,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  ok: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1067,6 +1973,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPassword'
   /v1/console/users/{id}/mfa/begin:
     post:
       summary: Start TOTP enrolment
@@ -1075,6 +1987,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: {}
+                  otpauth_uri: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1091,6 +2010,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovery_codes: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1099,6 +2025,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Otp'
   /v1/console/users/{id}/mfa/reset:
     post:
       summary: Remove a user's second factor
@@ -1125,31 +2057,66 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
   /v1/signup:
     post:
-      summary: "Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)"
+      summary: 'Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)'
       tags:
       - signup
       security: []
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id: {}
+                  test_tenant: {}
+                  test_key: {}
+                  email: {}
+                  verification: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupIn'
   /v1/signup/verify:
     post:
-      summary: "Public: confirm the emailed verification token"
+      summary: 'Public: confirm the emailed verification token'
       tags:
       - signup
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id: {}
+                  verified: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyIn'
   /v1/console/login:
     post:
-      summary: "Public: sign in by signup email; returns the person and a 12-hour role-scoped session key"
+      summary: 'Public: sign in by signup email; returns the person and a 12-hour role-scoped session key'
       tags:
       - console_users
       security: []
@@ -1158,6 +2125,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginIn'
   /v1/console/switch_env:
     post:
       summary: Exchange a console session key for the same person's key in the other environment (live needs approved onboarding)
@@ -1166,8 +2139,23 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: {}
+                  session_key: {}
+                  tenant_id: {}
+                  env: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchIn'
   /v1/outbox/test:
     post:
       summary: Queue a `webhook.test` event for your webhook endpoint (needs a webhook URL in settings)
@@ -1176,63 +2164,133 @@ paths:
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/signup/resend:
     post:
-      summary: "Public: email a fresh verification link (always answers the same)"
+      summary: 'Public: email a fresh verification link (always answers the same)'
       tags:
       - signup
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendIn'
   /v1/invitations/lookup:
     post:
-      summary: "Public: who an invitation link is for"
+      summary: 'Public: who an invitation link is for'
       tags:
       - invitations
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email: {}
+                  organisation: {}
+                  role: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenIn'
   /v1/invitations/accept:
     post:
-      summary: "Public: accept an invitation by choosing a password"
+      summary: 'Public: accept an invitation by choosing a password'
       tags:
       - invitations
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email: {}
+                  joined: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptIn'
   /v1/password_reset/request:
     post:
-      summary: "Public: email a password reset link (always answers the same)"
+      summary: 'Public: email a password reset link (always answers the same)'
       tags:
       - password_reset
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRequestIn'
   /v1/password_reset/confirm:
     post:
-      summary: "Public: set a new password with the emailed token"
+      summary: 'Public: set a new password with the emailed token'
       tags:
       - password_reset
       security: []
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetConfirmIn'
   /v1/console/invitations:
     post:
       summary: Email someone a one-time link to join this organisation (admin)
@@ -1241,8 +2299,23 @@ paths:
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  email: {}
+                  role: {}
+                  expires_at: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteIn'
     get:
       summary: Invitations nobody has accepted yet (admin)
       tags:
@@ -1250,6 +2323,21 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        email: {}
+                        role: {}
+                        expires_at: {}
+                        invited_by: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/console/invitations/{id}/revoke:
@@ -1266,6 +2354,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  revoked: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/provider_accounts:
@@ -1276,6 +2371,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -1283,13 +2384,28 @@ paths:
       tags:
       - payments
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  provider: {}
+                  updated: {}
+                  webhook_url: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProviderAccount'
   /v1/provider_accounts/{provider}/check:
     post:
-      summary: "Ask the provider whether it accepts this account's credentials (read-only; a refusal is `ok: false`)"
+      summary: 'Ask the provider whether it accepts this account''s credentials (read-only; a refusal is `ok: false`)'
       tags:
       - providers
       parameters:
@@ -1301,33 +2417,77 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: {}
+                  ok: {}
+                  detail: {}
+                  env: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/mandates:
     post:
       summary: Create a UPI AutoPay mandate for the payer to approve
-      description: 'Body: customer_id, max_amount_minor (per debit), frequency (daily, weekly, fortnightly, monthly, bimonthly, quarterly, half_yearly, yearly or as_presented), start_date, end_date, optional provider and external_ref. Needs a connected provider that supports mandates (today only the simulator); otherwise 422 no_route. Requires an Idempotency-Key. The response carries the authorization link the payer approves. The limit and notice rules are configurable (ZYVOR_MANDATE_MAX_MINOR, ZYVOR_MANDATE_NOTICE_HOURS) and must be checked against the current NPCI circular and your provider before live use.'
+      description: 'Body: customer_id, max_amount_minor (per debit), frequency (daily, weekly, fortnightly, monthly, bimonthly,
+        quarterly, half_yearly, yearly or as_presented), start_date, end_date, optional provider and external_ref. Needs a
+        connected provider that supports mandates (today only the simulator); otherwise 422 no_route. Requires an Idempotency-Key.
+        The response carries the authorization link the payer approves. The limit and notice rules are configurable (ZYVOR_MANDATE_MAX_MINOR,
+        ZYVOR_MANDATE_NOTICE_HOURS) and must be checked against the current NPCI circular and your provider before live use.'
       tags:
       - mandates
       parameters:
-      - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
       responses:
         '201':
           description: The mandate, pending the payer's approval
         '422':
           description: Invalid limit, dates, currency or no provider supports mandates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewMandate'
     get:
       summary: List mandates
-      description: 'Filter by status or customer_id.'
+      description: Filter by status or customer_id.
       tags:
       - mandates
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: customer_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/mandates/run:
     post:
       summary: Run the mandate pass for this tenant now
-      description: 'Expires ended mandates, emits due pre-debit notices, sends the debits that are due and settles those in flight. The worker does this on its own; this is a sandbox and test aid. The in-process simulator only works when the API itself runs the pass.'
+      description: Expires ended mandates, emits due pre-debit notices, sends the debits that are due and settles those in
+        flight. The worker does this on its own; this is a sandbox and test aid. The in-process simulator only works when
+        the API itself runs the pass.
       tags:
       - mandates
       responses:
@@ -1339,23 +2499,43 @@ paths:
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate: {}
+                  debits: {}
         '404':
           description: Not found
   /v1/mandates/{id}/refresh:
     post:
       summary: Ask the provider where the mandate stands
-      description: 'Moves our record to what the provider reports (approved, declined, revoked by the payer). Never undoes a merchant pause.'
+      description: Moves our record to what the provider reports (approved, declined, revoked by the payer). Never undoes
+        a merchant pause.
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
-          description: The mandate
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MandateRow'
         '409':
           description: The mandate is not in a state that allows this
         '404':
@@ -1363,14 +2543,22 @@ paths:
   /v1/mandates/{id}/pause:
     post:
       summary: Pause a mandate (a merchant hold)
-      description: 'No debit goes out while paused. The provider and the payer''s mandate are unchanged.'
+      description: No debit goes out while paused. The provider and the payer's mandate are unchanged.
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
-          description: The mandate
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MandateRow'
         '409':
           description: The mandate is not in a state that allows this
         '404':
@@ -1381,10 +2569,18 @@ paths:
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
-          description: The mandate
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MandateRow'
         '409':
           description: The mandate is not in a state that allows this
         '404':
@@ -1392,14 +2588,23 @@ paths:
   /v1/mandates/{id}/revoke:
     post:
       summary: Revoke a mandate
-      description: 'Stops debiting first, cancels debits not yet sent, then asks the provider; a provider failure is recorded on the mandate, not hidden.'
+      description: Stops debiting first, cancels debits not yet sent, then asks the provider; a provider failure is recorded
+        on the mandate, not hidden.
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
-          description: The mandate
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MandateRow'
         '409':
           description: The mandate is not in a state that allows this
         '404':
@@ -1407,12 +2612,22 @@ paths:
   /v1/mandates/{id}/debits:
     post:
       summary: Schedule a debit on a mandate
-      description: 'Body: amount_minor, due_date (India time), optional invoice_id. Refused with 422 exceeds_mandate_limit, outside_mandate_dates or notice_too_short (the payer must be told at least the notice window ahead), and 409 period_already_debited or debit_exists. A mandate is never debited twice for one day. Requires an Idempotency-Key.'
+      description: 'Body: amount_minor, due_date (India time), optional invoice_id. Refused with 422 exceeds_mandate_limit,
+        outside_mandate_dates or notice_too_short (the payer must be told at least the notice window ahead), and 409 period_already_debited
+        or debit_exists. A mandate is never debited twice for one day. Requires an Idempotency-Key.'
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
-      - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
       responses:
         '201':
           description: The scheduled debit
@@ -1420,55 +2635,109 @@ paths:
           description: Not active, or a debit already exists in that period
         '422':
           description: Over the limit, outside the dates, or too soon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewDebit'
     get:
       summary: List a mandate's debits
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         '404':
           description: Not found
   /v1/subscriptions/{id}/mandate:
     post:
       summary: Link a mandate to a subscription so its invoices are collected automatically
-      description: 'Body: mandate_id, or null to unlink. When the mandate is active, each invoice the subscription raises is scheduled as a debit on its due date (or the earliest date the notice allows) and marked paid when the debit is captured. Otherwise the invoice stays open for the usual reminders.'
+      description: 'Body: mandate_id, or null to unlink. When the mandate is active, each invoice the subscription raises
+        is scheduled as a debit on its due date (or the earliest date the notice allows) and marked paid when the debit is
+        captured. Otherwise the invoice stays open for the usual reminders.'
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  mandate_id: {}
         '422':
           description: The mandate belongs to a different customer
         '404':
           description: Not found
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkMandate'
   /v1/sim/mandate:
     post:
       summary: Approve or decline the simulator's UPI mandate (test mode only)
-      description: 'Body: upi_uri (the upi://mandate link from the mandate authorization) and approve. Answers 404 unless the server was started with ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
+      description: 'Body: upi_uri (the upi://mandate link from the mandate authorization) and approve. Answers 404 unless
+        the server was started with ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
       tags:
       - mandates
       responses:
         '200':
-          description: The mandate status the payer chose
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         '404':
           description: Not enabled on this server
         '409':
           description: Nothing pending for this link
         '422':
           description: Not a simulator mandate link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Decide'
   /v1/sim/mandate/{id}:
     get:
       summary: What the payer's bank shows about a simulated mandate (test mode only)
-      description: 'Returns the mandate status, its per-debit limit and the debits the simulated bank took. Upcoming debits are not shown: Zyvor emits the pre-debit notice to the merchant and does not deliver it to the payer. Answers 404 unless ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
+      description: 'Returns the mandate status, its per-debit limit and the debits the simulated bank took. Upcoming debits
+        are not shown: Zyvor emits the pre-debit notice to the merchant and does not deliver it to the payer. Answers 404
+        unless ZYVOR_SIM_PAYER=1. Only touches the in-process simulator.'
       tags:
       - mandates
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: The payer's view
@@ -1482,32 +2751,61 @@ paths:
       - mandates
       responses:
         '200':
-          description: Revoked
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         '404':
           description: Not enabled on this server
         '409':
           description: No live mandate with that id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimMandateRevoke'
   /v1/sim/circle:
     post:
       summary: Open a simulated circle, where a delegate may pay from a primary payer's account up to a limit (test mode only)
-      description: 'Body: primary, delegate, max_per_payment_minor, total_limit_minor. Answers 404 unless ZYVOR_SIM_PAYER=1. Only the in-process simulator; no money moves. The real rules of UPI Circle are not verified here.'
+      description: 'Body: primary, delegate, max_per_payment_minor, total_limit_minor. Answers 404 unless ZYVOR_SIM_PAYER=1.
+        Only the in-process simulator; no money moves. The real rules of UPI Circle are not verified here.'
       tags:
       - sandbox
       responses:
         '201':
-          description: The circle id
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  circle_id: {}
         '404':
           description: Not enabled on this server
         '422':
           description: Invalid names or limits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Create'
   /v1/sim/circle/{id}:
     get:
       summary: What the primary payer's bank shows about a simulated circle (test mode only)
-      description: 'Returns the limits, what was spent and the payments behind it. Answers 404 unless ZYVOR_SIM_PAYER=1.'
+      description: Returns the limits, what was spent and the payments behind it. Answers 404 unless ZYVOR_SIM_PAYER=1.
       tags:
       - sandbox
       parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: The circle as the primary sees it
@@ -1521,37 +2819,83 @@ paths:
       - sandbox
       responses:
         '200':
-          description: Revoked
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         '404':
           description: Not enabled on this server
         '409':
           description: No live circle with that id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimCircleRevoke'
   /v1/sim/circle/pay:
     post:
       summary: A delegate pays a sandbox UPI payload through a simulated circle (test mode only)
-      description: 'Body: circle_id and upi_uri. The amount is read from the payment, never from the request, and the per-payment and total limits are checked before anything is approved. Answers 404 unless ZYVOR_SIM_PAYER=1.'
+      description: 'Body: circle_id and upi_uri. The amount is read from the payment, never from the request, and the per-payment
+        and total limits are checked before anything is approved. Answers 404 unless ZYVOR_SIM_PAYER=1.'
       tags:
       - sandbox
       responses:
         '200':
-          description: The payment status and what is left of the circle
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
+                  remaining_minor:
+                    type: integer
         '404':
           description: Not enabled on this server, or unknown circle
         '409':
           description: Circle revoked, already paid, or nothing pending for this QR
         '422':
           description: Not a simulator payload, or over the circle's limits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimCirclePay'
   /v1/sim/pay:
     post:
-      summary: A simulated payer approves or declines a sandbox UPI payload (test environments, off unless ZYVOR_SIM_PAYER=1; only the in-process simulator)
+      summary: Pay or decline the simulator's UPI payload (test mode only)
+      description: 'Body: {"upi_uri": "upi://pay?pa=sandbox@zyvor-sim&tn=<attempt_id>...", "approve": true}. Lets a test payer
+        app complete a payment against the in-process simulator without a bank. Answers 404 unless the server was started
+        with ZYVOR_SIM_PAYER=1. 422 not_a_sim_payment when the payee is not the simulator or the input is not a UPI link;
+        409 nothing_to_pay when the attempt is not waiting for a payer. Never touches a real provider.'
       tags:
-      - sandbox
-      security: []
+      - payments
       responses:
         '200':
           description: OK
-        4XX:
-          $ref: '#/components/responses/Error'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
+        '404':
+          description: Not enabled on this server
+        '409':
+          description: The attempt is not waiting for a payer
+        '422':
+          description: Not a simulator UPI payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimPayPay'
   /v1/console/logout:
     post:
       summary: End this console session now (revokes the session key; an ordinary API key is untouched)
@@ -1560,11 +2904,19 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {}
+                  ended: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/live_access:
     get:
-      summary: Where this business stands on live access (not_requested, pending, approved, rejected, with the reviewer's note)
+      summary: Where this business stands on live access (not_requested, pending, approved, rejected, with the reviewer's
+        note)
       tags:
       - live_access
       responses:
@@ -1577,25 +2929,48 @@ paths:
       tags:
       - live_access
       responses:
-        '200':
-          description: OK
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews:
     get:
-      summary: "Zyvor reviewers only (a zp_ key): live-access requests, optionally filtered by status"
+      summary: 'Zyvor reviewers only (a zp_ key): live-access requests, optionally filtered by status'
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: assigned
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/platform/reviews/{organisation_id}:
     get:
-      summary: "Zyvor reviewers only: what the business submitted and the checks that ran (no secrets)"
+      summary: 'Zyvor reviewers only: what the business submitted and the checks that ran (no secrets)'
       tags:
       - platform
       parameters:
@@ -1611,7 +2986,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/decision:
     post:
-      summary: "Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)"
+      summary: 'Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)'
       tags:
       - platform
       parameters:
@@ -1623,11 +2998,27 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id: {}
+                  status: {}
+                  stage: {}
+                  needs_second_because: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Decision'
   /v1/platform/reviews/{organisation_id}/revoke:
     post:
-      summary: "Zyvor reviewers only: take live mode away from an approved business (a note is required and shown to the merchant). Its live side keeps reading and refunding but takes no new payments and moves no money out"
+      summary: 'Zyvor reviewers only: take live mode away from an approved business (a note is required and shown to the merchant).
+        Its live side keeps reading and refunding but takes no new payments and moves no money out'
       tags:
       - platform
       parameters:
@@ -1641,9 +3032,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revocation'
   /v1/platform/reviews/{organisation_id}/restore:
     post:
-      summary: "Zyvor reviewers only: give live mode back to a business whose access was revoked (a different reviewer than the one who revoked it, unless ZYVOR_REVIEW_TWO_PERSON=never)"
+      summary: 'Zyvor reviewers only: give live mode back to a business whose access was revoked (a different reviewer than
+        the one who revoked it, unless ZYVOR_REVIEW_TWO_PERSON=never)'
       tags:
       - platform
       parameters:
@@ -1657,9 +3055,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revocation'
   /v1/platform/reviews/{organisation_id}/assign:
     post:
-      summary: 'Zyvor reviewers only: give a pending review to one reviewer (to: me, or a reviewer id), or hand it back (to absent). While it is held only the holder can decide it; take_over: true changes that on purpose'
+      summary: 'Zyvor reviewers only: give a pending review to one reviewer (to: me, or a reviewer id), or hand it back (to
+        absent). While it is held only the holder can decide it; take_over: true changes that on purpose'
       tags:
       - platform
       parameters:
@@ -1671,11 +3076,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id: {}
+                  assigned_to: {}
+                  assigned_to_name: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Assignment'
   /v1/platform/reviews/{organisation_id}/escalate:
     post:
-      summary: "Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown to them)"
+      summary: 'Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown
+        to them)'
       tags:
       - platform
       parameters:
@@ -1687,31 +3107,90 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id: {}
+                  status: {}
+                  escalated: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Escalation'
   /v1/platform/rota:
     get:
-      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (an IANA time zone or a fixed UTC offset; the response names the zone and today's offset), who is on duty now, upcoming leave and desk holidays, and whether anyone has set hours
+      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (an IANA time zone or
+        a fixed UTC offset; the response names the zone and today's offset), who is on duty now, upcoming leave and desk holidays,
+        and whether anyone has set hours
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {}
+                  i_am_lead: {}
+                  utc_offset_minutes: {}
+                  timezone: {}
+                  local_now: {}
+                  local_date: {}
+                  on_duty_now: {}
+                  holiday_today: {}
+                  reviewers: {}
+                  days_off:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        reviewer_id: {}
+                        reviewer: {}
+                        desk: {}
+                        mine: {}
+                        removable: {}
+                        first_day: {}
+                        last_day: {}
+                        note: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/rota/me:
     put:
-      summary: Zyvor reviewers only - replace the caller's weekly shifts (weekday mon..sun, start and end as HH:MM, end after start, up to 24:00). An empty list clears them
+      summary: Zyvor reviewers only - replace the caller's weekly shifts (weekday mon..sun, start and end as HH:MM, end after
+        start, up to 24:00). An empty list clears them
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shifts: {}
+                  on_duty: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotaIn'
   /v1/platform/rota/coverage:
     get:
-      summary: Zyvor reviewers only - for each coming local day (query days, 1 to 28, default 7) the windows with nobody working once shifts, leave and desk holidays are counted
+      summary: Zyvor reviewers only - for each coming local day (query days, 1 to 28, default 7) the windows with nobody working
+        once shifts, leave and desk holidays are counted
       tags:
       - platform
       parameters:
@@ -1720,24 +3199,58 @@ paths:
         required: false
         schema:
           type: integer
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured: {}
+                  days: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/rota/rebalance:
     post:
-      summary: "Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). With `even: true` in the body it then evens out the on-duty reviewers: while the most-loaded holds two or more than the least-loaded, the item given to them most recently moves to the least-loaded (never the first approver), at most 50 moves. Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved, evened and left"
+      summary: 'Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today
+        to the on-duty reviewer holding the fewest (never the first approver). With `even: true` in the body it then evens
+        out the on-duty reviewers: while the most-loaded holds two or more than the least-loaded, the item given to them most
+        recently moves to the least-loaded (never the first approver), at most 50 moves. Audited as the lead''s; both people
+        are emailed. 409 when nobody is on duty. Returns moved, evened and left'
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moved: {}
+                  evened: {}
+                  left: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebalanceIn'
   /v1/platform/rota/reviewers/{id}:
     put:
-      summary: Zyvor reviewers who are leads only - replace another reviewer's weekly shifts (same shape as rota/me). The reviewer is emailed that their hours changed, when they have an address. 403 for anyone who is not a lead; the operator makes a lead with `zyvor-api platform-reviewer lead <id>`
+      summary: Zyvor reviewers who are leads only - replace another reviewer's weekly shifts (same shape as rota/me). The
+        reviewer is emailed that their hours changed, when they have an address. 403 for anyone who is not a lead; the operator
+        makes a lead with `zyvor-api platform-reviewer lead <id>`
       tags:
       - platform
       parameters:
@@ -1749,20 +3262,46 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviewer: {}
+                  name: {}
+                  shifts: {}
+                  on_duty: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotaIn'
   /v1/platform/me:
     get:
-      summary: Zyvor reviewers only - who the key belongs to and the address they are emailed at when something is given to them
+      summary: Zyvor reviewers only - who the key belongs to and the address they are emailed at when something is given to
+        them
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
+                  email: {}
         4XX:
           $ref: '#/components/responses/Error'
     put:
-      summary: Zyvor reviewers only - set (or, with an empty or absent email, clear) the address the caller is emailed at when a review or change is given to them, by another reviewer or by automatic assignment. The previous holder is told when another reviewer takes the item from them. Claiming one yourself sends nothing
+      summary: Zyvor reviewers only - set (or, with an empty or absent email, clear) the address the caller is emailed at
+        when a review or change is given to them, by another reviewer or by automatic assignment. The previous holder is told
+        when another reviewer takes the item from them. Claiming one yourself sends nothing
       tags:
       - platform
       responses:
@@ -1770,16 +3309,41 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeIn'
   /v1/platform/rota/days_off:
     post:
-      summary: Zyvor reviewers only - book leave for the caller (from, optional to, both YYYY-MM-DD in the desk's time and inclusive; optional note), or a holiday for the whole desk with desk true. Whoever is on leave, or anyone on a desk holiday, is not on duty and is skipped by automatic assignment
+      summary: Zyvor reviewers only - book leave for the caller (from, optional to, both YYYY-MM-DD in the desk's time and
+        inclusive; optional note), or a holiday for the whole desk with desk true. Whoever is on leave, or anyone on a desk
+        holiday, is not on duty and is skipped by automatic assignment
       tags:
       - platform
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  desk: {}
+                  reviewer_id: {}
+                  first_day: {}
+                  last_day: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DayOffIn'
   /v1/platform/rota/days_off/{id}:
     delete:
       summary: Zyvor reviewers only - remove the caller's own leave, or any desk holiday
@@ -1794,21 +3358,73 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  deleted: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/changes:
     get:
-      summary: "Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status"
+      summary: 'Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered
+        by status'
       tags:
       - platform
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        organisation_id: {}
+                        organisation: {}
+                        kind: {}
+                        summary: {}
+                        status: {}
+                        requested_by: {}
+                        requested_at: {}
+                        note: {}
+                        due_at: {}
+                        overdue: {}
+                        sla_hours: {}
+                        stage: {}
+                        first_approved_by: {}
+                        first_approved_by_me: {}
+                        needs_second_because: {}
+                        escalation_note: {}
+                        assigned_to: {}
+                        assigned_to_name: {}
+                        assigned_to_me: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: assigned
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/platform/changes/{id}/assign:
     post:
-      summary: Zyvor reviewers only - give a pending change to one reviewer (to - me, or a reviewer id), or hand it back (to absent). While it is held only the holder can decide it; take_over true changes that on purpose
+      summary: Zyvor reviewers only - give a pending change to one reviewer (to - me, or a reviewer id), or hand it back (to
+        absent). While it is held only the holder can decide it; take_over true changes that on purpose
       tags:
       - platform
       parameters:
@@ -1820,11 +3436,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  assigned_to: {}
+                  assigned_to_name: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Assignment'
   /v1/platform/changes/{id}/escalate:
     post:
-      summary: Zyvor reviewers only - ask for a second, different reviewer on a pending change (a note says why and is shown to them)
+      summary: Zyvor reviewers only - ask for a second, different reviewer on a pending change (a note says why and is shown
+        to them)
       tags:
       - platform
       parameters:
@@ -1836,11 +3467,26 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  escalated: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Escalation'
   /v1/platform/changes/{id}/decision:
     post:
-      summary: "Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves it pending), or reject it with a note (the account is removed and the merchant is told why)"
+      summary: 'Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves
+        it pending), or reject it with a note (the account is removed and the merchant is told why)'
       tags:
       - platform
       parameters:
@@ -1852,8 +3498,23 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  stage: {}
+                  needs_second_because: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeDecision'
   /v1/invoices/{id}/einvoice:
     get:
       summary: DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice; lists what is missing; not submitted, no IRN
@@ -1862,6 +3523,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft: {}
+                  note: {}
+                  Version: {}
+                  TranDtls: {}
+                  DocDtls: {}
+                  SellerDtls: {}
+                  BuyerDtls: {}
+                  ItemList: {}
+                  ValDtls: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1878,6 +3553,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id: {}
+                  number: {}
+                  place_of_supply: {}
+                  buyer_gstin: {}
+                  total_minor:
+                    type: integer
+                  tax_minor:
+                    type: integer
+                  lines: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1894,18 +3583,60 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: {}
+                  period: {}
+                  gstin: {}
+                  legal_name: {}
+                  b2b:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        buyer_gstin: {}
+                        invoices: {}
+                  b2cl: {}
+                  b2cs: {}
+                  cdnr: {}
+                  cdnur: {}
+                  hsn: {}
+                  totals: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: period
+        in: query
+        required: true
+        schema:
+          type: string
+        x-generated: true
   /v1/vendors:
     post:
       summary: Add a vendor you pay
       tags:
       - payouts
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  name: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewVendor'
     get:
       summary: List vendors (bank details masked)
       tags:
@@ -1913,6 +3644,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/vendors/{id}/details:
@@ -1923,6 +3660,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  details: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1941,6 +3685,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPayout'
     get:
       summary: List payouts
       tags:
@@ -1948,8 +3698,21 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/payouts/{id}:
     get:
       summary: Retrieve a payout
@@ -2014,6 +3777,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Paid'
   /v1/payouts/{id}/cancel:
     post:
       summary: Cancel a payout that has not been paid
@@ -2038,6 +3807,18 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: {}
+                        description: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/installment_plans:
@@ -2050,6 +3831,12 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallmentsNewPlan'
   /v1/installment_plans/{id}:
     get:
       summary: An instalment plan with each instalment's invoice and how much is paid
@@ -2072,10 +3859,25 @@ paths:
       tags:
       - fx
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  currency: {}
+                  rate: {}
+                  as_of: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRate'
     get:
       summary: Recorded exchange rates
       tags:
@@ -2083,6 +3885,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/fx/convert:
@@ -2093,8 +3901,44 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  amount_minor:
+                    type: integer
+                  currency: {}
+                  rate: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: amount_minor
+        in: query
+        required: true
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+        x-generated: true
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+        x-generated: true
+      - name: as_of
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/fx/exposure:
     get:
       summary: Open dollar invoices valued at the rate when raised and at the report date (reporting only)
@@ -2103,8 +3947,34 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of: {}
+                  rate_date: {}
+                  outstanding_usd_minor:
+                    type: integer
+                  complete: {}
+                  booked_inr_minor:
+                    type: integer
+                  current_inr_minor:
+                    type: integer
+                  unrealised_inr_minor:
+                    type: integer
+                  note: {}
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: as_of
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/vendors/{id}/balance:
     get:
       summary: What a vendor is owed from split payments, and what is free to pay out
@@ -2113,6 +3983,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vendor_id: {}
+                  balances: {}
+                  awaiting_capture_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2127,20 +4006,49 @@ paths:
       tags:
       - payouts
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {}
+                  already_existed: {}
+                  new_total_minor:
+                    type: integer
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkPayouts'
   /v1/coupons:
     post:
       summary: Create a coupon (percent or flat) redeemable on fixed-amount payment links
       tags:
       - coupons
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  code: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCoupon'
     get:
       summary: List coupons with usage and status
       tags:
@@ -2148,6 +4056,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/coupons/{id}/deactivate:
@@ -2158,6 +4072,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2168,12 +4089,61 @@ paths:
           type: string
   /v1/onboarding:
     get:
-      summary: "Onboarding status: profile (PAN masked), documents and bank accounts"
+      summary: 'Onboarding status: profile (PAN masked), documents and bank accounts'
       tags:
       - onboarding
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automated_checks: {}
+                  review_reasons: {}
+                  checks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {}
+                        subject: {}
+                        outcome: {}
+                        detail: {}
+                  status: {}
+                  profile:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        legal_name: {}
+                        business_type: {}
+                        pan: {}
+                        gstin: {}
+                        address: {}
+                        submitted_by: {}
+                        reviewed_by: {}
+                        review_note: {}
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        kind: {}
+                        reference: {}
+                        status: {}
+                  bank_accounts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        holder_name: {}
+                        ifsc: {}
+                        account_last4: {}
+                        verified: {}
         4XX:
           $ref: '#/components/responses/Error'
     put:
@@ -2183,38 +4153,98 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileIn'
   /v1/onboarding/profile_change:
     post:
-      summary: Ask Zyvor to change business details that were already approved (legal name, type, PAN, GSTIN, address, plus a reason). The new values are checked now, then wait for a Zyvor reviewer; until one decides nothing changes and live payouts are held. One request can wait at a time.
+      summary: Ask Zyvor to change business details that were already approved (legal name, type, PAN, GSTIN, address, plus
+        a reason). The new values are checked now, then wait for a Zyvor reviewer; until one decides nothing changes and live
+        payouts are held. One request can wait at a time.
       tags:
       - onboarding
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
+                  summary: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileChangeIn'
   /v1/onboarding/documents:
     post:
       summary: Add a document reference (the file itself stays in your store)
       tags:
       - onboarding
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocIn'
   /v1/onboarding/bank_accounts:
     post:
       summary: Add a bank account (only the last four digits are kept)
       tags:
       - onboarding
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  account_last4: {}
+                  check:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        outcome: {}
+                        detail: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankIn'
   /v1/onboarding/bank_accounts/{id}/verify:
     post:
       summary: Confirm a bank account (a different person from whoever added it)
@@ -2223,6 +4253,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  verified: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2239,6 +4276,14 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
+                  automatic: {}
+                  reasons: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/onboarding/review:
@@ -2249,18 +4294,44 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Review'
   /v1/counters:
     post:
       summary: Create a counter (till, desk, stall) within a branch
       tags:
       - counters
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  branch_id: {}
+                  name: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCounter'
     get:
       summary: List counters, optionally for one branch
       tags:
@@ -2268,8 +4339,29 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        branch_id: {}
+                        name: {}
+                        active: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: branch_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/counters/{id}/deactivate:
     post:
       summary: Switch a counter off and cancel its QR links
@@ -2278,6 +4370,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  active: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2294,6 +4393,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch: {}
+                  from: {}
+                  to: {}
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2302,26 +4410,72 @@ paths:
         required: true
         schema:
           type: string
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/cash_entries:
     post:
       summary: Record cash taken, handed back or put in the till (never edited; correct with an opposite entry)
       tags:
       - closing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCash'
   /v1/closings:
     post:
-      summary: "Close a branch day: expected cash and digital totals against the counted cash"
+      summary: 'Close a branch day: expected cash and digital totals against the counted cash'
       tags:
       - closing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  expected_cash_minor:
+                    type: integer
+                  counted_cash_minor:
+                    type: integer
+                  difference_minor:
+                    type: integer
+                  digital: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewClosing'
     get:
       summary: List closings
       tags:
@@ -2329,8 +4483,27 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: branch_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/closings/{id}/signoff:
     post:
       summary: Sign off a closing (a different person from whoever counted)
@@ -2339,6 +4512,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2349,12 +4529,22 @@ paths:
           type: string
   /v1/payment_intents/{id}/timeline:
     get:
-      summary: One ordered story of a payment (attempts, webhooks, ledger, settlement, refunds, disputes) with where it stands now
+      summary: One ordered story of a payment (attempts, webhooks, ledger, settlement, refunds, disputes) with where it stands
+        now
       tags:
       - payments
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_id: {}
+                  status: {}
+                  standing: {}
+                  events: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2365,22 +4555,74 @@ paths:
           type: string
   /v1/insights/cashflow:
     get:
-      summary: What is owed by due week, overdue, promised, payouts waiting and the recent receipts run-rate (a schedule, not a prediction)
+      summary: What is owed by due week, overdue, promised, payouts waiting and the recent receipts run-rate (a schedule,
+        not a prediction)
       tags:
       - insights
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of: {}
+                  currency: {}
+                  weeks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        starts: {}
+                        due_minor:
+                          type: integer
+                  overdue_minor:
+                    type: integer
+                  due_later_minor:
+                    type: integer
+                  no_due_date_minor:
+                    type: integer
+                  promised_minor:
+                    type: integer
+                  payouts_waiting_minor:
+                    type: integer
+                  daily_receipts_run_rate_minor:
+                    type: integer
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: weeks
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
   /v1/insights/refund_anomalies:
     get:
-      summary: "Refund patterns worth a look: a spike against the usual rate, or one person behind most refunds"
+      summary: 'Refund patterns worth a look: a spike against the usual rate, or one person behind most refunds'
       tags:
       - insights
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refunds_last_7_days: {}
+                  weekly_average_before: {}
+                  flags:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: {}
+                        message: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/recon/cases/{id}/suggestions:
@@ -2391,6 +4633,17 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id: {}
+                  kind: {}
+                  summary: {}
+                  evidence: {}
+                  next_steps: {}
+                  note: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2407,6 +4660,22 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        actor: {}
+                        action: {}
+                        subject: {}
+                        detail: {}
+                        created_at: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/export:
@@ -2427,6 +4696,23 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        type: {}
+                        status: {}
+                        attempts: {}
+                        last_error: {}
+                        payload: {}
+                        created_at: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/outbox/{id}/replay:
@@ -2437,6 +4723,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2453,6 +4746,22 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {}
+                        provider: {}
+                        event_id: {}
+                        kind: {}
+                        outcome: {}
+                        received_at: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/payment_links:
@@ -2461,10 +4770,27 @@ paths:
       tags:
       - payment_links
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  token: {}
+                  currency: {}
+                  path: {}
+                  max_uses: {}
+                  expires_at: {}
         4XX:
           $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLink'
     get:
       summary: List payment links with usage and status
       tags:
@@ -2472,6 +4798,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/payment_links/{id}/qr.svg:
@@ -2498,6 +4830,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2514,6 +4853,29 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant: {}
+                  description: {}
+                  amount_minor:
+                    type: integer
+                  discount_minor:
+                    type: integer
+                  fee_minor:
+                    type: integer
+                  total_minor:
+                    type: integer
+                  coupon_applied: {}
+                  currency: {}
+                  status: {}
+                  open_amount: {}
+                  min_amount_minor:
+                    type: integer
+                  max_amount_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -2528,14 +4890,31 @@ paths:
         required: true
         schema:
           type: string
+      - name: coupon
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/checkout/links/{tenant_id}/{token}/start:
     post:
-      summary: "Open a payment link: mints a payment intent for this payer"
+      summary: 'Open a payment link: mints a payment intent for this payer'
       tags:
       - checkout
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent_id: {}
+                  client_secret: {}
+                  amount_minor:
+                    type: integer
+                  currency: {}
+                  path: {}
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -2550,39 +4929,50 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartBody'
   /v1/checkout/{tenant_id}/{intent_id}/upi-qr.svg:
     get:
       summary: QR code (SVG) of the latest pending attempt's provider-issued UPI payload
-      description: Authorised by the intent's client secret. 404 when there is no pending UPI QR / intent attempt. The payload is encoded exactly as issued.
+      description: Authorised by the intent's client secret. 404 when there is no pending UPI QR / intent attempt. The payload
+        is encoded exactly as issued.
       tags:
       - checkout
       parameters:
-      - {name: tenant_id, in: path, required: true, schema: {type: string}}
-      - {name: intent_id, in: path, required: true, schema: {type: string}}
-      - {name: secret, in: query, required: true, schema: {type: string}}
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: secret
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: secret
+        in: query
+        required: true
+        schema:
+          type: string
+        x-generated: true
       responses:
         '200':
           description: SVG image
           content:
             image/svg+xml:
-              schema: {type: string}
+              schema:
+                type: string
         '404':
           description: Unknown intent, wrong secret, or nothing to show
-  /v1/sim/pay:
-    post:
-      summary: Pay or decline the simulator's UPI payload (test mode only)
-      description: 'Body: {"upi_uri": "upi://pay?pa=sandbox@zyvor-sim&tn=<attempt_id>...", "approve": true}. Lets a test payer app complete a payment against the in-process simulator without a bank. Answers 404 unless the server was started with ZYVOR_SIM_PAYER=1. 422 not_a_sim_payment when the payee is not the simulator or the input is not a UPI link; 409 nothing_to_pay when the attempt is not waiting for a payer. Never touches a real provider.'
-      tags:
-      - payments
-      responses:
-        '200':
-          description: The attempt's status after the payer acted (captured or failed)
-        '404':
-          description: Not enabled on this server
-        '409':
-          description: The attempt is not waiting for a payer
-        '422':
-          description: Not a simulator UPI payload
   /v1/checkout/{tenant_id}/{intent_id}:
     get:
       summary: Public checkout session (client-secret authorised)
@@ -2591,6 +4981,20 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant: {}
+                  amount_minor:
+                    type: integer
+                  currency: {}
+                  description: {}
+                  status: {}
+                  phase: {}
+                  methods: {}
+                  upi_flow: {}
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -2605,9 +5009,15 @@ paths:
         required: true
         schema:
           type: string
+      - name: secret
+        in: query
+        required: true
+        schema:
+          type: string
+        x-generated: true
   /v1/payment_intents:
     post:
-      summary: "Create a payment intent (amount in minor units; requires an Idempotency-Key)"
+      summary: Create a payment intent (amount in minor units; requires an Idempotency-Key)
       tags:
       - payments
       responses:
@@ -2617,18 +5027,69 @@ paths:
           $ref: '#/components/responses/Error'
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntent'
     get:
-      summary: "List payments, newest first (query: status, q, limit, starting_after)"
+      summary: 'List payments, newest first (query: status, q, limit, starting_after)'
       tags:
       - payments
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+                  has_more: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: starting_after
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: branch_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: counter_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
   /v1/payment_intents/{id}/attempts:
     post:
-      summary: "Start a payment attempt on an intent (body: method, vpa; requires an Idempotency-Key)"
+      summary: 'Start a payment attempt on an intent (body: method, vpa; requires an Idempotency-Key)'
       tags:
       - payments
       responses:
@@ -2643,9 +5104,16 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAttempt'
   /v1/payment_intents/{id}/refunds:
     post:
-      summary: "Refund a captured payment, in full or in part (body: amount_minor, reason, external_ref; requires an Idempotency-Key; may wait for a second person's approval)"
+      summary: 'Refund a captured payment, in full or in part (body: amount_minor, reason, external_ref; requires an Idempotency-Key;
+        may wait for a second person''s approval)'
       tags:
       - payments
       responses:
@@ -2660,9 +5128,15 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefund'
   /v1/checkout/{tenant_id}/{intent_id}/attempts:
     post:
-      summary: "Public checkout: the payer starts an attempt (authorised by the intent's client secret)"
+      summary: 'Public checkout: the payer starts an attempt (authorised by the intent''s client secret)'
       tags:
       - checkout
       responses:
@@ -2682,14 +5156,26 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayRequest'
   /v1/webhooks/{provider}/{tenant_id}:
     post:
-      summary: "A provider's webhook to Zyvor (authenticated by its signature, not an API key)"
+      summary: A provider's webhook to Zyvor (authenticated by its signature, not an API key)
       tags:
       - webhooks
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {}
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -2706,12 +5192,22 @@ paths:
           type: string
   /v1/provider_accounts/{provider}:
     put:
-      summary: "Store these credentials for the provider, replacing the account if there is one (how a simulator account becomes a real one); secrets are never returned"
+      summary: Store these credentials for the provider, replacing the account if there is one (how a simulator account becomes
+        a real one); secrets are never returned
       tags:
       - payments
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {}
+                  provider: {}
+                  enabled: {}
+                  replaced: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2720,6 +5216,12 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProviderAccount'
 components:
   securitySchemes:
     bearer:
@@ -2836,7 +5338,9 @@ components:
           type:
           - object
           - 'null'
-          description: 'What the payer must do next: `{"type":"upi_intent","uri":"upi://pay?..."}` (a provider-issued payload; show it as a QR or open it as an intent, never edit it), `upi_collect`, or `hosted_checkout`. Showing or opening it is not proof of payment.'
+          description: 'What the payer must do next: `{"type":"upi_intent","uri":"upi://pay?..."}` (a provider-issued payload;
+            show it as a QR or open it as an intent, never edit it), `upi_collect`, or `hosted_checkout`. Showing or opening
+            it is not proof of payment.'
         refunded_minor:
           type: integer
         reserved_refund_minor:
@@ -2867,3 +5371,1645 @@ components:
           type:
           - string
           - 'null'
+    SimPayPay:
+      type: object
+      x-generated: true
+      properties:
+        upi_uri:
+          type: string
+        approve:
+          type: boolean
+      required:
+      - upi_uri
+    SimMandateRevoke:
+      type: object
+      x-generated: true
+      properties:
+        mandate_id:
+          type: string
+      required:
+      - mandate_id
+    Decide:
+      type: object
+      x-generated: true
+      properties:
+        upi_uri:
+          type: string
+        approve:
+          type: boolean
+      required:
+      - upi_uri
+    SimCircleRevoke:
+      type: object
+      x-generated: true
+      properties:
+        circle_id:
+          type: string
+      required:
+      - circle_id
+    SimCirclePay:
+      type: object
+      x-generated: true
+      properties:
+        circle_id:
+          type: string
+        upi_uri:
+          type: string
+      required:
+      - circle_id
+      - upi_uri
+    Create:
+      type: object
+      x-generated: true
+      properties:
+        primary:
+          type: string
+        delegate:
+          type: string
+        max_per_payment_minor:
+          type: integer
+          format: int64
+        total_limit_minor:
+          type: integer
+          format: int64
+      required:
+      - primary
+      - delegate
+      - max_per_payment_minor
+      - total_limit_minor
+    VerifyIn:
+      type: object
+      x-generated: true
+      properties:
+        token:
+          type: string
+      required:
+      - token
+    SwitchIn:
+      type: object
+      x-generated: true
+      properties:
+        env:
+          type: string
+      required:
+      - env
+    SignupIn:
+      type: object
+      x-generated: true
+      properties:
+        organisation_name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+      required:
+      - organisation_name
+      - email
+      - password
+    ResendIn:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+      required:
+      - email
+    LoginIn:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        otp:
+          type: string
+      required:
+      - email
+      - password
+    RotaIn:
+      type: object
+      x-generated: true
+      properties:
+        shifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShiftIn'
+      required:
+      - shifts
+    ShiftIn:
+      type: object
+      x-generated: true
+      properties:
+        weekday:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+      required:
+      - weekday
+      - start
+      - end
+    DayOffIn:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        note:
+          type: string
+        desk:
+          type: boolean
+        reviewer:
+          type: string
+      required:
+      - from
+    CoverageQ:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int64
+    RemindersListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+    DraftReq:
+      type: object
+      x-generated: true
+      properties:
+        channel:
+          type: string
+        tone:
+          type: string
+        ai:
+          type: boolean
+    Approve:
+      type: object
+      x-generated: true
+      properties:
+        message:
+          type: string
+    CreateRefund:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        external_ref:
+          type: string
+    SyncRequest:
+      type: object
+      x-generated: true
+      properties:
+        provider:
+          type: string
+        date:
+          type: string
+          format: date
+      required:
+      - provider
+      - date
+    SimulateBank:
+      type: object
+      x-generated: true
+      properties:
+        short_minor:
+          type: integer
+          format: int64
+    ReconResolve:
+      type: object
+      x-generated: true
+      properties:
+        resolution:
+          type: string
+      required:
+      - resolution
+    ImportSettlement:
+      type: object
+      x-generated: true
+      properties:
+        provider:
+          type: string
+        provider_ref:
+          type: string
+        utr:
+          type: string
+        currency:
+          type: string
+        settled_on:
+          type: string
+          format: date
+        net_minor:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportItem'
+      required:
+      - provider
+      - provider_ref
+      - settled_on
+      - items
+    ImportItem:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: object
+        provider_ref:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        description:
+          type: string
+      required:
+      - kind
+      - amount_minor
+    ImportBank:
+      type: object
+      x-generated: true
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BankLine'
+      required:
+      - lines
+    BankLine:
+      type: object
+      x-generated: true
+      properties:
+        posted_on:
+          type: string
+          format: date
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        narration:
+          type: string
+        utr:
+          type: string
+      required:
+      - posted_on
+      - amount_minor
+    CaseQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        kind:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    Assign:
+      type: object
+      x-generated: true
+      properties:
+        assignee:
+          type: string
+      required:
+      - assignee
+    Revocation:
+      type: object
+      x-generated: true
+      properties:
+        note:
+          type: string
+    RebalanceIn:
+      type: object
+      x-generated: true
+      properties:
+        even:
+          type: boolean
+    MeIn:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+    PlatformListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        assigned:
+          type: string
+    Escalation:
+      type: object
+      x-generated: true
+      properties:
+        note:
+          type: string
+    Decision:
+      type: object
+      x-generated: true
+      properties:
+        decision:
+          type: string
+        note:
+          type: string
+      required:
+      - decision
+    ChangeDecision:
+      type: object
+      x-generated: true
+      properties:
+        decision:
+          type: string
+        note:
+          type: string
+      required:
+      - decision
+    Assignment:
+      type: object
+      x-generated: true
+      properties:
+        to:
+          type: string
+        take_over:
+          type: boolean
+    Paid:
+      type: object
+      x-generated: true
+      properties:
+        bank_ref:
+          type: string
+      required:
+      - bank_ref
+    NewVendor:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        external_ref:
+          type: string
+        account_number:
+          type: string
+        ifsc:
+          type: string
+        vpa:
+          type: string
+      required:
+      - name
+    NewPayout:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        purpose:
+          type: string
+        external_ref:
+          type: string
+        from_balance:
+          type: boolean
+      required:
+      - vendor_id
+      - amount_minor
+      - purpose
+    PayoutsListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+    BulkPayouts:
+      type: object
+      x-generated: true
+      properties:
+        payouts:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewPayout'
+      required:
+      - payouts
+    SimulateEvent:
+      type: object
+      x-generated: true
+      properties:
+        outcome:
+          type: string
+      required:
+      - outcome
+    PaymentsListQuery:
+      type: object
+      x-generated: true
+      properties:
+        limit:
+          type: integer
+          format: int64
+        starting_after:
+          type: string
+        status:
+          type: string
+        branch_id:
+          type: string
+        counter_id:
+          type: string
+        q:
+          type: string
+    CreateIntent:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        customer_id:
+          type: string
+        invoice_id:
+          type: string
+        branch_id:
+          type: string
+        counter_id:
+          type: string
+        capture_method:
+          type: string
+        allowed_providers:
+          type: array
+          items:
+            type: string
+        external_ref:
+          type: string
+        description:
+          type: string
+        metadata: {}
+        splits:
+          type: array
+          items:
+            type: object
+      required:
+      - amount_minor
+      - currency
+    CreateAttempt:
+      type: object
+      x-generated: true
+      properties:
+        method:
+          type: string
+        vpa:
+          type: string
+        return_url:
+          type: string
+        upi_flow:
+          type: string
+      required:
+      - method
+    StartBody:
+      type: object
+      x-generated: true
+      properties:
+        coupon:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+    NewLink:
+      type: object
+      x-generated: true
+      properties:
+        description:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        invoice_id:
+          type: string
+        customer_id:
+          type: string
+        branch_id:
+          type: string
+        counter_id:
+          type: string
+        open_amount:
+          type: boolean
+        min_amount_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+        max_uses:
+          type: integer
+          format: int32
+        expires_at:
+          type: string
+          format: date-time
+        splits:
+          type: array
+          items:
+            type: object
+        convenience_fee_bp:
+          type: integer
+          format: int32
+    CouponQuery:
+      type: object
+      x-generated: true
+      properties:
+        coupon:
+          type: string
+    Review:
+      type: object
+      x-generated: true
+      properties:
+        decision:
+          type: string
+        note:
+          type: string
+      required:
+      - decision
+    ProfileIn:
+      type: object
+      x-generated: true
+      properties:
+        legal_name:
+          type: string
+        business_type:
+          type: string
+        pan:
+          type: string
+        gstin:
+          type: string
+        address:
+          type: string
+      required:
+      - legal_name
+      - business_type
+      - pan
+      - address
+    ProfileChangeIn:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+      required:
+      - reason
+    DocIn:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: string
+        reference:
+          type: string
+      required:
+      - kind
+      - reference
+    BankIn:
+      type: object
+      x-generated: true
+      properties:
+        holder_name:
+          type: string
+        ifsc:
+          type: string
+        account_number:
+          type: string
+      required:
+      - holder_name
+      - ifsc
+      - account_number
+    NewMandate:
+      type: object
+      x-generated: true
+      properties:
+        customer_id:
+          type: string
+        max_amount_minor:
+          type: integer
+          format: int64
+        frequency:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        currency:
+          type: string
+        provider:
+          type: string
+        external_ref:
+          type: string
+      required:
+      - customer_id
+      - max_amount_minor
+      - frequency
+      - end_date
+    NewDebit:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        due_date:
+          type: string
+          format: date
+        invoice_id:
+          type: string
+      required:
+      - amount_minor
+      - due_date
+    MandatesListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        customer_id:
+          type: string
+    LinkMandate:
+      type: object
+      x-generated: true
+      properties:
+        mandate_id:
+          type: string
+    InstallmentsNewPlan:
+      type: object
+      x-generated: true
+      properties:
+        customer_id:
+          type: string
+        name:
+          type: string
+        total_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        instalments:
+          type: integer
+          format: int32
+        first_due_date:
+          type: string
+          format: date
+        every_unit:
+          type: string
+        every:
+          type: integer
+          format: int32
+        number_prefix:
+          type: string
+        external_ref:
+          type: string
+      required:
+      - customer_id
+      - name
+      - total_minor
+      - instalments
+      - first_due_date
+      - number_prefix
+    CashQuery:
+      type: object
+      x-generated: true
+      properties:
+        weeks:
+          type: integer
+          format: int64
+    PeriodQuery:
+      type: object
+      x-generated: true
+      properties:
+        period:
+          type: string
+      required:
+      - period
+    NewRate:
+      type: object
+      x-generated: true
+      properties:
+        currency:
+          type: string
+        rate:
+          type: string
+        as_of:
+          type: string
+          format: date
+        note:
+          type: string
+      required:
+      - currency
+      - rate
+    ExposureQuery:
+      type: object
+      x-generated: true
+      properties:
+        as_of:
+          type: string
+          format: date
+    ConvertQuery:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        from:
+          type: string
+        to:
+          type: string
+        as_of:
+          type: string
+          format: date
+      required:
+      - amount_minor
+      - from
+      - to
+    DisputesResolve:
+      type: object
+      x-generated: true
+      properties:
+        outcome:
+          type: string
+      required:
+      - outcome
+    NewEvidence:
+      type: object
+      x-generated: true
+      properties:
+        note:
+          type: string
+        url:
+          type: string
+      required:
+      - note
+    NewDispute:
+      type: object
+      x-generated: true
+      properties:
+        attempt_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        provider_ref:
+          type: string
+        respond_by:
+          type: string
+          format: date
+      required:
+      - attempt_id
+      - reason
+    NewCoupon:
+      type: object
+      x-generated: true
+      properties:
+        code:
+          type: string
+        kind:
+          type: string
+        value:
+          type: integer
+          format: int64
+        max_uses:
+          type: integer
+          format: int32
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - kind
+      - value
+    SummaryQuery:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+    NewCounter:
+      type: object
+      x-generated: true
+      properties:
+        branch_id:
+          type: string
+        name:
+          type: string
+      required:
+      - branch_id
+      - name
+    CounterQuery:
+      type: object
+      x-generated: true
+      properties:
+        branch_id:
+          type: string
+    Otp:
+      type: object
+      x-generated: true
+      properties:
+        otp:
+          type: string
+      required:
+      - otp
+    ConsoleUsersNewUser:
+      type: object
+      x-generated: true
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+        branch_id:
+          type: string
+      required:
+      - username
+      - password
+      - role
+    NewPassword:
+      type: object
+      x-generated: true
+      properties:
+        password:
+          type: string
+      required:
+      - password
+    Login:
+      type: object
+      x-generated: true
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        otp:
+          type: string
+      required:
+      - username
+      - password
+    NewReminder:
+      type: object
+      x-generated: true
+      properties:
+        channel:
+          type: string
+        message:
+          type: string
+      required:
+      - channel
+    NewPromise:
+      type: object
+      x-generated: true
+      properties:
+        promised_minor:
+          type: integer
+          format: int64
+        promised_date:
+          type: string
+          format: date
+        note:
+          type: string
+      required:
+      - promised_minor
+      - promised_date
+    DunningBody:
+      type: object
+      x-generated: true
+      properties:
+        min_days_overdue:
+          type: integer
+          format: int64
+        repeat_after_days:
+          type: integer
+          format: int64
+        channel:
+          type: string
+        as_of:
+          type: string
+          format: date
+    AgeingQuery:
+      type: object
+      x-generated: true
+      properties:
+        as_of:
+          type: string
+          format: date
+    NewClosing:
+      type: object
+      x-generated: true
+      properties:
+        branch_id:
+          type: string
+        day:
+          type: string
+          format: date
+        counted_cash_minor:
+          type: integer
+          format: int64
+        note:
+          type: string
+      required:
+      - branch_id
+      - day
+      - counted_cash_minor
+    NewCash:
+      type: object
+      x-generated: true
+      properties:
+        branch_id:
+          type: string
+        counter_id:
+          type: string
+        kind:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        note:
+          type: string
+      required:
+      - branch_id
+      - kind
+      - amount_minor
+    ClosingQuery:
+      type: object
+      x-generated: true
+      properties:
+        branch_id:
+          type: string
+        status:
+          type: string
+    SecretQuery:
+      type: object
+      x-generated: true
+      properties:
+        secret:
+          type: string
+      required:
+      - secret
+    PayRequest:
+      type: object
+      x-generated: true
+      properties:
+        secret:
+          type: string
+        method:
+          type: string
+        vpa:
+          type: string
+        return_url:
+          type: string
+        upi_flow:
+          type: string
+      required:
+      - secret
+      - method
+    RunBody:
+      type: object
+      x-generated: true
+      properties:
+        as_of:
+          type: string
+          format: date
+    NewUsage:
+      type: object
+      x-generated: true
+      properties:
+        quantity:
+          type: integer
+          format: int64
+        note:
+          type: string
+        reference:
+          type: string
+      required:
+      - quantity
+    NewSubscription:
+      type: object
+      x-generated: true
+      properties:
+        customer_id:
+          type: string
+        plan_id:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+        start_date:
+          type: string
+          format: date
+      required:
+      - customer_id
+      - plan_id
+    BillingNewPlan:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        interval_unit:
+          type: string
+        interval_count:
+          type: integer
+          format: int32
+        usage_unit_minor:
+          type: integer
+          format: int64
+        due_days:
+          type: integer
+          format: int32
+      required:
+      - name
+      - amount_minor
+      - interval_unit
+    NewMilestone:
+      type: object
+      x-generated: true
+      properties:
+        customer_id:
+          type: string
+        name:
+          type: string
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        due_days:
+          type: integer
+          format: int32
+        external_ref:
+          type: string
+      required:
+      - customer_id
+      - name
+      - amount_minor
+    NewCreditNote:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        reason:
+          type: string
+      required:
+      - amount_minor
+      - reason
+    CustomerQuery:
+      type: object
+      x-generated: true
+      properties:
+        external_ref:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    ChangePlan:
+      type: object
+      x-generated: true
+      properties:
+        plan_id:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+      required:
+      - plan_id
+    CsvBody:
+      type: object
+      x-generated: true
+      properties:
+        csv:
+          type: string
+      required:
+      - csv
+    SealQuery:
+      type: object
+      x-generated: true
+      properties:
+        min_age_seconds:
+          type: integer
+          format: int64
+    Toggle:
+      type: object
+      x-generated: true
+      properties:
+        enabled:
+          type: boolean
+      required:
+      - enabled
+    Settings:
+      type: object
+      x-generated: true
+      properties:
+        refund_approval_threshold_minor:
+          type: integer
+          format: int64
+        routing: {}
+        outbound_webhook_url:
+          type: string
+        outbound_webhook_secret:
+          type: string
+        payout_approval_threshold_minor:
+          type: integer
+          format: int64
+        webhook_events:
+          type: array
+          items:
+            type: string
+        dunning:
+          $ref: '#/components/schemas/DunningPolicy'
+        gst:
+          $ref: '#/components/schemas/GstProfile'
+        risk:
+          type: object
+    GstProfile:
+      type: object
+      x-generated: true
+      properties:
+        gstin:
+          type: string
+        legal_name:
+          type: string
+        address1:
+          type: string
+        location:
+          type: string
+        pincode:
+          type: string
+      required:
+      - gstin
+    DunningPolicy:
+      type: object
+      x-generated: true
+      properties:
+        enabled:
+          type: boolean
+        channel:
+          type: string
+        min_days_overdue:
+          type: integer
+          format: int32
+        repeat_after_days:
+          type: integer
+          format: int32
+        requires_approval:
+          type: boolean
+    RotateBody:
+      type: object
+      x-generated: true
+      properties:
+        overlap_hours:
+          type: integer
+          format: int64
+    AdminNewUser:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+      required:
+      - email
+      - role
+    NewProviderAccount:
+      type: object
+      x-generated: true
+      properties:
+        provider:
+          type: string
+        label:
+          type: string
+        credentials: {}
+        webhook_secret:
+          type: string
+        base_url:
+          type: string
+      required:
+      - credentials
+      - webhook_secret
+    NewKey:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: object
+        allowed_cidrs:
+          type: array
+          items:
+            type: string
+        branch_id:
+          type: string
+      required:
+      - name
+      - scopes
+    NewInvoice:
+      type: object
+      x-generated: true
+      properties:
+        customer_id:
+          type: string
+        number:
+          type: string
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        tax_minor:
+          type: integer
+          format: int64
+        external_ref:
+          type: string
+        due_date:
+          type: string
+          format: date
+        lines:
+          type: array
+          items:
+            type: object
+        place_of_supply:
+          type: string
+        buyer_gstin:
+          type: string
+        reverse_charge:
+          type: boolean
+      required:
+      - number
+    NewCustomer:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        external_ref:
+          type: string
+        gstin:
+          type: string
+        address1:
+          type: string
+        location:
+          type: string
+        pincode:
+          type: string
+      required:
+      - name
+    NewBranch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+      required:
+      - name
+    CustomerPatch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        gstin:
+          type: string
+        address1:
+          type: string
+        location:
+          type: string
+        pincode:
+          type: string
+    TokenIn:
+      type: object
+      x-generated: true
+      properties:
+        token:
+          type: string
+      required:
+      - token
+    ResetRequestIn:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+      required:
+      - email
+    ResetConfirmIn:
+      type: object
+      x-generated: true
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+      required:
+      - token
+      - password
+    InviteIn:
+      type: object
+      x-generated: true
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+        branch_id:
+          type: string
+      required:
+      - email
+      - role
+    AcceptIn:
+      type: object
+      x-generated: true
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+      required:
+      - token
+      - password
+    RefundRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        attempt_id:
+          type: string
+        intent_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        external_ref:
+          type: string
+        requested_by:
+          type: string
+        approved_by:
+          type: string
+        provider_refund_ref:
+          type: string
+        failure_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - attempt_id
+      - intent_id
+      - amount_minor
+      - currency
+      - status
+      - requested_by
+      - created_at
+      - updated_at
+    IntentRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        customer_id:
+          type: string
+        invoice_id:
+          type: string
+        branch_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        status:
+          type: string
+        capture_method:
+          type: string
+        allowed_providers:
+          type: array
+          items:
+            type: string
+        external_ref:
+          type: string
+        description:
+          type: string
+        metadata: {}
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - amount_minor
+      - currency
+      - status
+      - capture_method
+      - metadata
+      - created_at
+      - updated_at
+    AttemptRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        intent_id:
+          type: string
+        provider:
+          type: string
+        method:
+          type: string
+        status:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        provider_order_ref:
+          type: string
+        provider_payment_ref:
+          type: string
+        failure_reason:
+          type: string
+        route: {}
+        client_action: {}
+        refunded_minor:
+          type: integer
+          format: int64
+        reserved_refund_minor:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - intent_id
+      - provider
+      - method
+      - status
+      - amount_minor
+      - currency
+      - route
+      - refunded_minor
+      - reserved_refund_minor
+      - created_at
+      - updated_at
+    MandateRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        customer_id:
+          type: string
+        currency:
+          type: string
+        max_amount_minor:
+          type: integer
+          format: int64
+        frequency:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          type: string
+        provider:
+          type: string
+        provider_mandate_ref:
+          type: string
+        authorization: {}
+        failure_reason:
+          type: string
+        revoked_by:
+          type: string
+        external_ref:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - customer_id
+      - currency
+      - max_amount_minor
+      - frequency
+      - start_date
+      - end_date
+      - status
+      - provider
+      - created_at
+      - updated_at
+    DebitRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        mandate_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        due_date:
+          type: string
+          format: date
+        notified_at:
+          type: string
+          format: date-time
+        invoice_id:
+          type: string
+        state:
+          type: string
+        attempt_id:
+          type: string
+        retry_no:
+          type: integer
+          format: int32
+        failure_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - mandate_id
+      - amount_minor
+      - currency
+      - due_date
+      - state
+      - retry_no
+      - created_at
