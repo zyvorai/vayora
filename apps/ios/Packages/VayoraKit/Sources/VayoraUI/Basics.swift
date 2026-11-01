@@ -117,8 +117,12 @@ public struct ParticleBurst: View {
                 let a = Double(i) * 2.399963 // golden angle: even spread, no clumps
                 let speed = 60 + Double((i * 37) % 90)
                 let t = progress
-                let x = centre.x + CGFloat(cos(a) * speed * t * 1.2)
-                let y = centre.y + CGFloat(sin(a) * speed * t * 1.2 + 70 * t * t)
+                // kept as small steps: one long expression times out the type checker on some Swift versions
+                let dx: Double = cos(a) * speed * t * 1.2
+                let dy: Double = sin(a) * speed * t * 1.2
+                let drop: Double = 70 * t * t
+                let x: CGFloat = centre.x + CGFloat(dx)
+                let y: CGFloat = centre.y + CGFloat(dy + drop)
                 let fade = max(0, 1 - max(0, t - 0.55) / 0.45)
                 guard fade > 0 else { continue }
                 var c = ctx
