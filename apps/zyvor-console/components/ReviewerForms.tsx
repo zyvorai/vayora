@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { assignReview, changeLiveAccess, decideChange, decideReview, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
+import { assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, reviewerSignIn } from "@/lib/reviewer-actions";
 
 export function ReviewerSignIn() {
   const [state, action, pending] = useActionState(reviewerSignIn, undefined);
@@ -108,6 +108,21 @@ export function AssignForm({ org, holder, mine }: { org: string; holder: string 
       {holder && !mine && <button className="btn small" name="how" value="take_over" disabled={pending}>{pending ? "…" : `Take it from ${holder}`}</button>}
       {state?.error && <span className="note bad" role="alert">{state.error}</span>}
       {state?.ok && <span className="note ok" role="status">{state.ok}</span>}
+    </form>
+  );
+}
+
+/** For a change no rule flagged that still deserves a second pair of eyes. */
+export function EscalateChangeForm({ id }: { id: string }) {
+  const [state, action, pending] = useActionState(escalateChange, undefined);
+  const [note, setNote] = useState("");
+  return (
+    <form action={action} style={{ display: "grid", gap: 8 }}>
+      <input type="hidden" name="id" value={id} />
+      <input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why a second reviewer should look" aria-label="Why a second reviewer should look" type="text" />
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small" disabled={pending}>{pending ? "…" : "Ask for a second reviewer"}</button></div>
     </form>
   );
 }

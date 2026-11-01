@@ -79,7 +79,7 @@ Assignment is a courtesy that stops duplicated work, not an access control: any 
 live-access requests, not bank-account changes.
 
 **Not built:** a reviewer's working hours or on-call rota, assigning bank-account changes, automatic assignment, and a
-assigning changes, and an escalation for changes (a revoke is one person on purpose; giving access back needs two).
+and assigning changes (a revoke is one person on purpose; giving access back needs two).
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -133,7 +133,9 @@ and **who it is** (its legal details, below).
   ran, a bank/PAN/GSTIN check did not pass). Under `ZYVOR_REVIEW_TWO_PERSON=flagged` (default) a flagged change needs two
   different reviewers: the first approval is recorded and the change stays pending, so **payouts stay held**; a
   different reviewer completes it (`second_reviewer_required` otherwise). `always` asks for two on every change, `never`
-  on none. Rejecting is always one reviewer. There is no escalation for changes.
+  on none. Rejecting is always one reviewer. A reviewer can also **escalate** any pending change that nothing flagged
+  (`scripts/platform-review.sh change-escalate <id> "why"`, or "Not sure?" on the change in the queue); that counts under
+  every policy, `never` included, and the second reviewer reads the note.
 - the gauge `zyvor_live_changes_pending` counts waiting changes; the alert `ZyvorLiveChangeWaiting` fires after 4 hours.
 
 **What this does not do:** it does not re-run KYC. Zyvor keeps only the last four digits of a PAN, so it cannot re-check

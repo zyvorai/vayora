@@ -52,4 +52,4 @@ export type ReviewDetail = {
 /** How a check outcome is shown: only a pass is green. */
 export const outcomeTone = (o: string): "ok" | "bad" | "warn" => (o === "pass" ? "ok" : o === "fail" ? "bad" : "warn");
 
-export type ChangeRow = { id: string; organisation_id: string; organisation: string; kind: "bank_account" | "profile"; summary: string; status: "pending" | "approved" | "rejected"; requested_by: string; requested_at: string; note: string | null; stage: "new" | "awaiting_second"; first_approved_by: string | null; needs_second_because: string[]; due_at: string; overdue: boolean; sla_hours: number };
+export type ChangeRow = { id: string; organisation_id: string; organisation: string; kind: "bank_account" | "profile"; summary: string; status: "pending" | "approved" | "rejected"; requested_by: string; requested_at: string; note: string | null; stage: "new" | "awaiting_second"; first_approved_by: string | null; needs_second_because: string[]; due_at: string; overdue: boolean; escalation_note: string | null; sla_hours: number };

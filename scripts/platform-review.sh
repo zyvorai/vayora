@@ -16,6 +16,7 @@
 #   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
 #   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account, or new legal details)
 #   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
+#   ... change-escalate <id> "why"             ask for a second, different reviewer on a pending change (note required)
 #   ... change-reject <id> "why"               removes the account; the merchant is shown why (note required)
 #
 # Never prints the key.
@@ -84,8 +85,11 @@ for c in d["data"]:
     print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]) + (" [awaiting 2nd after " + c["first_approved_by"] + "]" if c.get("stage") == "awaiting_second" else (" [needs 2 reviewers]" if c.get("needs_second_because") and c["status"] == "pending" else "")))
 if not d["data"]: print("nothing here")' ;;
   change-approve) call POST "/v1/platform/changes/${2:?usage: change-approve <id> [note]}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"approve","note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "approved: payouts are no longer held for " + d["id"])' ;;
+  change-escalate)
+    if [ -z "${3:-}" ]; then echo "say why:  $0 change-escalate <id> \"why\"" >&2; exit 2; fi
+    call POST "/v1/platform/changes/${2:?usage: change-escalate <id> \"why\"}/escalate" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "escalated: a second reviewer must approve " + d["id"])' ;;
   change-reject)
     if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
-  *) sed -n '2,24p' "$0"; exit 1 ;;
+  *) sed -n '2,22p' "$0"; exit 1 ;;
 esac

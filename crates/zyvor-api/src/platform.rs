@@ -70,13 +70,22 @@ pub fn second_reviewer_reasons(
 }
 
 /// Why this change needs a second reviewer; empty when one is enough. `flagged` is what was unclear when the
-/// business made it. `never` waives it (there is no escalation for a change).
-pub fn change_second_reviewer_reasons(policy: TwoPerson, flagged: &[String]) -> Vec<String> {
-    match policy {
-        TwoPerson::Never => Vec::new(),
-        TwoPerson::Always => vec!["every approval needs two reviewers".to_string()],
-        TwoPerson::Flagged => flagged.to_vec(),
+/// business made it. A reviewer's escalation counts under every policy, `never` included.
+pub fn change_second_reviewer_reasons(
+    policy: TwoPerson,
+    flagged: &[String],
+    escalated: bool,
+) -> Vec<String> {
+    let mut why = Vec::new();
+    if escalated {
+        why.push("a reviewer asked for a second opinion".to_string());
     }
+    match policy {
+        TwoPerson::Never => {}
+        TwoPerson::Always => why.push("every approval needs two reviewers".to_string()),
+        TwoPerson::Flagged => why.extend(flagged.iter().cloned()),
+    }
+    why
 }
 
 /// A Zyvor reviewer, identified by a key that is not a merchant API key.
@@ -669,8 +678,8 @@ pub async fn list_changes(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>)> = sqlx::query_as(
-        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name
+    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>, bool, Option<String>)> = sqlx::query_as(
+        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name, c.escalated_by IS NOT NULL, c.escalated_note
          FROM live_changes c JOIN organisations o ON o.id = c.organisation_id LEFT JOIN platform_reviewers f ON f.id = c.first_approved_by
          WHERE ($1::text IS NULL OR c.status = $1) ORDER BY c.requested_at LIMIT 100",
     )
@@ -685,9 +694,67 @@ pub async fn list_changes(
             "due_at": due, "overdue": overdue, "sla_hours": s.change_sla_hours,
             "stage": if r.5 == "pending" && r.10.is_some() { "awaiting_second" } else { "new" },
             "first_approved_by": r.10,
-            "needs_second_because": change_second_reviewer_reasons(s.review_two_person, &r.9),
+            "needs_second_because": change_second_reviewer_reasons(s.review_two_person, &r.9, r.11),
+            "escalation_note": r.12,
         })
     }).collect::<Vec<_>>() })))
+}
+
+/// `POST /v1/platform/changes/{id}/escalate`: ask for a second, different reviewer on a pending change that no rule
+/// flagged. The note says why; the second reviewer reads it. Payouts stay held either way.
+pub async fn escalate_change(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(id): Path<String>,
+    Json(b): Json<Escalation>,
+) -> Result<Json<Value>, ApiError> {
+    let Some(note) = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
+        return Err(ApiError::invalid(
+            "note_required",
+            "say why a second reviewer should look; they will read it",
+        ));
+    };
+    let tid: Option<String> =
+        sqlx::query_scalar("SELECT tenant_id FROM live_changes WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&s.pool)
+            .await?;
+    let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, bool, String)> = sqlx::query_as(
+        "SELECT status, escalated_by IS NOT NULL, ref_id FROM live_changes WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, already, ref_id) = cur.ok_or_else(|| ApiError::not_found("change"))?;
+    if status != "pending" {
+        return Err(ApiError::conflict(
+            "not_pending",
+            format!("this change is already {status}"),
+        ));
+    }
+    if !already {
+        sqlx::query("UPDATE live_changes SET escalated_by = $2, escalated_note = $3 WHERE id = $1")
+            .bind(&id)
+            .bind(&p.id)
+            .bind(note)
+            .execute(&mut *tx)
+            .await?;
+        tenant::audit(
+            &mut tx,
+            &tid,
+            &format!("zyvor:{}", p.name),
+            "live_change.escalated",
+            Some(&ref_id),
+            json!({ "note": note }),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "status": "pending", "escalated": true }),
+    ))
 }
 
 /// `POST /v1/platform/changes/{id}/decision`: approve, or reject with a note (the account is then removed and the
@@ -723,13 +790,13 @@ pub async fn decide_change(
     let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
     #[allow(clippy::type_complexity)]
-    let cur: Option<(String, String, String, String, String, Vec<String>, Option<String>)> = sqlx::query_as(
-        "SELECT status, kind, ref_id, requested_by, summary, flagged_because, first_approved_by FROM live_changes WHERE id = $1 FOR UPDATE",
+    let cur: Option<(String, String, String, String, String, Vec<String>, Option<String>, bool)> = sqlx::query_as(
+        "SELECT status, kind, ref_id, requested_by, summary, flagged_because, first_approved_by, escalated_by IS NOT NULL FROM live_changes WHERE id = $1 FOR UPDATE",
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, kind, ref_id, requested_by, summary, flagged, first_by) =
+    let (status, kind, ref_id, requested_by, summary, flagged, first_by, escalated) =
         cur.ok_or_else(|| ApiError::not_found("change"))?;
     if status != "pending" {
         return Err(ApiError::conflict(
@@ -740,7 +807,7 @@ pub async fn decide_change(
     // An approval that warrants it needs two different reviewers: the first is recorded and the change (and the hold
     // on live payouts) stays as it is. Rejecting never needs two.
     if approve {
-        let why = change_second_reviewer_reasons(s.review_two_person, &flagged);
+        let why = change_second_reviewer_reasons(s.review_two_person, &flagged, escalated);
         if !why.is_empty() {
             match first_by.as_deref() {
                 None => {

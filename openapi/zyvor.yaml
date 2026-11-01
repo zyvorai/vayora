@@ -1562,6 +1562,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/changes/{id}/escalate:
+    post:
+      summary: Zyvor reviewers only - ask for a second, different reviewer on a pending change (a note says why and is shown to them)
+      tags:
+      - platform
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/changes/{id}/decision:
     post:
       summary: Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves it pending), or reject it with a note (the account is removed and the merchant is told why)
