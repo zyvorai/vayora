@@ -134,6 +134,120 @@ pub async fn create_reviewer(pool: &PgPool, name: &str) -> Result<(String, Strin
     Ok((id, key))
 }
 
+/// Set (or clear, with `None`) the address a reviewer is told about assignments at. Returns false for an unknown
+/// reviewer; an address that is not one is an `Err(())`.
+pub async fn set_reviewer_email(
+    pool: &PgPool,
+    id: &str,
+    email: Option<&str>,
+) -> Result<bool, ApiError> {
+    let email = email
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| !e.is_empty());
+    if email
+        .as_deref()
+        .is_some_and(|e| !crate::signup::valid_email(e))
+    {
+        return Err(ApiError::invalid(
+            "invalid_email",
+            "that is not an email address like asha@example.com",
+        ));
+    }
+    let done = sqlx::query(
+        "UPDATE platform_reviewers SET email = $2 WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(id)
+    .bind(email)
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// `GET /v1/platform/me`: who the key belongs to and where they are told about assignments.
+pub async fn me(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Value>, ApiError> {
+    let email: Option<String> =
+        sqlx::query_scalar("SELECT email FROM platform_reviewers WHERE id = $1")
+            .bind(&p.id)
+            .fetch_one(&s.pool)
+            .await?;
+    Ok(Json(json!({ "id": p.id, "name": p.name, "email": email })))
+}
+
+#[derive(Deserialize)]
+pub struct MeIn {
+    /// An address, or absent / empty to stop the emails.
+    email: Option<String>,
+}
+
+/// `PUT /v1/platform/me`: set or clear the address you are told about assignments at.
+pub async fn set_me(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Json(b): Json<MeIn>,
+) -> Result<Json<Value>, ApiError> {
+    set_reviewer_email(&s.pool, &p.id, b.email.as_deref()).await?;
+    me(State(s), p).await
+}
+
+/// Tell a reviewer by email that `what` was given to them, if they have an address. Best effort: a mail that cannot
+/// be queued is logged, never an error for the assignment. Says nothing sensitive: the business's name and what kind
+/// of thing it is, with a link to the desk.
+async fn tell_assignee(s: &AppState, to: &str, by: &str, what: &str, path: &str) {
+    let addr: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT email FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(to)
+    .fetch_optional(&s.pool)
+    .await
+    .unwrap_or(None);
+    let Some(Some(addr)) = addr else {
+        return;
+    };
+    let body = format!(
+        "{by} gave you {what}. Only you can decide it now; if you cannot, hand it back or ask someone to take it over.\n\nOpen it: {}/reviewer{path}\n",
+        s.console_url
+    );
+    if let Err(e) =
+        crate::mail::enqueue(&s.pool, &addr, &format!("Yours to review: {what}"), &body).await
+    {
+        tracing::warn!(error = %e, reviewer = %to, "could not queue the assignment email");
+    }
+}
+
+/// `tell_assignee` for a live-access request.
+async fn tell_review_assignee(s: &AppState, to: &str, by: &str, org: &str) {
+    let name: Option<String> = sqlx::query_scalar("SELECT name FROM organisations WHERE id = $1")
+        .bind(org)
+        .fetch_optional(&s.pool)
+        .await
+        .unwrap_or(None);
+    let what = format!(
+        "the live access request from {}",
+        name.unwrap_or_else(|| org.to_string())
+    );
+    tell_assignee(s, to, by, &what, &format!("/review/{org}")).await;
+}
+
+/// `tell_assignee` for a change (the kind, not the details).
+async fn tell_change_assignee(s: &AppState, to: &str, by: &str, change: &str) {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT o.name, c.kind FROM live_changes c JOIN organisations o ON o.id = c.organisation_id WHERE c.id = $1",
+    )
+    .bind(change)
+    .fetch_optional(&s.pool)
+    .await
+    .unwrap_or(None);
+    let Some((name, kind)) = row else {
+        return;
+    };
+    let kind = match kind.as_str() {
+        "bank_account" => "a new bank account",
+        "profile" => "changed legal details",
+        _ => "a change",
+    };
+    tell_assignee(s, to, by, &format!("{kind} from {name}"), "").await;
+}
+
 pub async fn list_reviewers(pool: &PgPool) -> Result<Vec<(String, String, bool)>, sqlx::Error> {
     sqlx::query_as(
         "SELECT id, name, disabled_at IS NOT NULL FROM platform_reviewers ORDER BY created_at",
@@ -820,6 +934,9 @@ pub async fn assign_change(
     )
     .await?;
     tx.commit().await?;
+    if let Some(t) = target.as_deref().filter(|t| *t != p.id) {
+        tell_change_assignee(&s, t, &p.name, &id).await;
+    }
     Ok(Json(
         json!({ "id": id, "assigned_to": target, "assigned_to_name": to_name }),
     ))
@@ -1135,6 +1252,9 @@ pub async fn auto_assign(s: &AppState) -> Result<usize, ApiError> {
             }
         }
         tx.commit().await?;
+        if won {
+            tell_review_assignee(s, &to, "The rota", &org).await;
+        }
     }
     let changes: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
         "SELECT id, tenant_id, ref_id, first_approved_by FROM live_changes WHERE status = 'pending' AND assigned_to IS NULL ORDER BY requested_at LIMIT 50",
@@ -1169,6 +1289,9 @@ pub async fn auto_assign(s: &AppState) -> Result<usize, ApiError> {
             }
         }
         tx.commit().await?;
+        if won {
+            tell_change_assignee(s, &to, "The rota", &id).await;
+        }
     }
     Ok(done)
 }
@@ -1271,6 +1394,9 @@ pub async fn assign(
     )
     .await?;
     tx.commit().await?;
+    if let Some(t) = target.as_deref().filter(|t| *t != p.id) {
+        tell_review_assignee(&s, t, &p.name, &org).await;
+    }
     Ok(Json(
         json!({ "organisation_id": org, "assigned_to": target, "assigned_to_name": to_name }),
     ))

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { DayOffForm, RemoveDayOff, RotaForm } from "@/components/ReviewerForms";
+import { DayOffForm, EmailForm, RemoveDayOff, RotaForm } from "@/components/ReviewerForms";
 import { platform, requireReviewerSurface, reviewerKey } from "@/lib/reviewer";
 import { DAYS, offsetLabel, type RotaView } from "@/lib/rota";
 
@@ -13,6 +13,7 @@ export default async function Rota() {
     return <div className="note bad" role="alert">{r.message}</div>;
   }
   const v = r.body;
+  const me = await platform<{ email: string | null }>(key, "GET", "/me");
   const mine = v.reviewers.find((x) => x.me);
   // the form edits one shift per day; a rota set through the API with split shifts would be flattened by it, so say so instead
   const split = !!mine && DAYS.some((d) => mine.shifts.filter((s) => s.weekday === d).length > 1);
@@ -57,6 +58,11 @@ export default async function Rota() {
         )}
         <p className="fine">Days are in the desk&apos;s time and include both ends. Someone on leave, and everyone on a holiday, is not on duty and is skipped by automatic assignment. Anything they already hold stays with them.</p>
         <DayOffForm today={v.local_date} />
+      </section>
+      <section className="card" style={{ marginBottom: 16 }}>
+        <h2>Email me when something is given to me</h2>
+        <p className="fine">When someone gives you a request or change, or the rota does, we email you the business&apos;s name and a link; nothing more. Leave it empty for no emails. Mail only leaves where the API has an SMTP address set.</p>
+        {me.ok ? <EmailForm email={me.body.email} /> : <div className="note bad" role="alert">{me.message}</div>}
       </section>
       <section className="card">
         <h2>Your hours</h2>

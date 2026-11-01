@@ -122,7 +122,17 @@ a disabled reviewer's items are re-given on the next cycle, and the audit log re
 only by its holder, so an auto-assigned item waits for that person; if they are away, someone takes it over
 (`take-over`, or "Take it from ..."). A reviewer who goes off duty keeps what they hold.
 
-**Not built:** emailing whoever is on duty (reviewers have no email address on file), a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
+**Assignment emails.** A reviewer who has given an address (the Rota page, `scripts/platform-review.sh email you@example.com`,
+`PUT /v1/platform/me`, or `zyvor-api platform-reviewer add "Name" you@example.com`) is emailed when a request or change is
+**given to them**: by another reviewer (including a take-over that lands on them) or by automatic assignment. Claiming
+one yourself sends nothing, and a reviewer with no address, or whose address was cleared, gets nothing. The mail names
+who gave it, the business and (for a change) only the kind (a new bank account, changed legal details), with a link to the
+desk; no account or identity details. It goes through the same mail queue as every other email, so it leaves only where
+the API's SMTP address is set (otherwise it is logged), and a mail that cannot be queued is logged, never an error for the
+assignment. Nobody is emailed that something was taken from them, and nothing is sent when a held item goes overdue to
+anyone but `ZYVOR_REVIEW_ALERT_EMAIL`.
+
+**Not built:** emailing someone whose item was taken over, a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back
@@ -230,6 +240,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Emailing the on-duty reviewer, re-balancing held items (the rota with leave, desk holidays and a daylight-saving time zone, assignment, automatic assignment, the clock and the second reviewer exist; see above).
+- Telling a holder their item was taken over, re-balancing held items (the rota with leave, desk holidays and a daylight-saving time zone, assignment, automatic assignment, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.

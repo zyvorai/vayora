@@ -1626,6 +1626,25 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/me:
+    get:
+      summary: Zyvor reviewers only - who the key belongs to and the address they are emailed at when something is given to them
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Zyvor reviewers only - set (or, with an empty or absent email, clear) the address the caller is emailed at when a review or change is given to them, by another reviewer or by automatic assignment. Claiming one yourself sends nothing
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/rota/days_off:
     post:
       summary: Zyvor reviewers only - book leave for the caller (from, optional to, both YYYY-MM-DD in the desk's time and inclusive; optional note), or a holiday for the whole desk with desk true. Whoever is on leave, or anyone on a desk holiday, is not on duty and is skipped by automatic assignment

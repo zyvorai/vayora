@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { addDayOff, assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, removeDayOff, reviewerSignIn, saveRota } from "@/lib/reviewer-actions";
+import { addDayOff, assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, removeDayOff, reviewerSignIn, saveMyEmail, saveRota } from "@/lib/reviewer-actions";
 import { DAYS, type RotaShift } from "@/lib/rota";
 
 export function ReviewerSignIn() {
@@ -181,6 +181,20 @@ export function RemoveDayOff({ id }: { id: string }) {
       <input type="hidden" name="id" value={id} />
       <button className="btn small" disabled={pending}>{pending ? "…" : "Remove"}</button>
       {state?.error && <span className="fine" role="alert"> {state.error}</span>}
+    </form>
+  );
+}
+
+/** Where to be told that something was given to you; empty stops the emails. Controlled, so a refusal keeps what was typed. */
+export function EmailForm({ email }: { email: string | null }) {
+  const [state, action, pending] = useActionState(saveMyEmail, undefined);
+  const [v, setV] = useState(email ?? "");
+  return (
+    <form action={action} style={{ display: "grid", gap: 10, maxWidth: 420 }}>
+      <div><label className="f" htmlFor="my-email">Your email</label><input id="my-email" type="email" name="email" autoComplete="email" value={v} onChange={(e) => setV(e.target.value)} placeholder="you@example.com" /></div>
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button></div>
     </form>
   );
 }

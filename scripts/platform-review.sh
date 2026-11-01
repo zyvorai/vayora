@@ -17,6 +17,7 @@
 #   ... rota                                  who is on duty now and everyone's weekly hours (the desk's local time)
 #   ... leave 2026-12-24 [2026-12-31] ["why"]   book your leave (inclusive days, the desk's time); leave-remove <id> takes it back
 #   ... holiday 2026-12-25 [2026-12-25] ["why"] a desk holiday: nobody is on duty; holiday-remove <id> lifts it
+#   ... email you@example.com | none            where you are emailed when something is given to you (none stops it)
 #   ... rota-set "mon-fri 09:00-18:00" ["sat 10:00-14:00" ...]   replace your hours; days are mon, mon-fri or mon,wed; "none" clears them
 #   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
 #   ... changes [status] [me|none|<reviewer id>]   what live businesses changed after approval (a new bank account, or new legal details)
@@ -94,6 +95,9 @@ for r in d["reviewers"]:
     print("%-20s %s%s  %s" % (r["name"], "(you) " if r["me"] else "", "ON DUTY" if r["on_duty"] else ("ON LEAVE" if r.get("on_leave") else ""), hours))
 for o in d.get("days_off", []):
     print("%s  %s to %s  %s%s" % (o["id"], o["first_day"], o["last_day"], "desk holiday" if o["desk"] else o["reviewer"], "  " + o["note"] if o["note"] else ""))' ;;
+  email)
+    [ -n "${2:-}" ] || { echo "usage: $0 email you@example.com   (or: none)" >&2; exit 2; }
+    call PUT "/v1/platform/me" "$(python3 -c 'import sys,json; print(json.dumps({"email": None if sys.argv[1] == "none" else sys.argv[1]}))' "$2")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else ("you will be emailed at " + d["email"] if d.get("email") else "you will not be emailed"))' ;;
   leave|holiday)
     [ -n "${2:-}" ] || { echo "usage: $0 $1 <first day YYYY-MM-DD> [last day] [\"why\"]" >&2; exit 2; }
     body="$(python3 -c '
@@ -147,5 +151,5 @@ if not d["data"]: print("nothing here")' ;;
   change-reject)
     if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
-  *) sed -n "2,27p" "$0"; exit 1 ;;
+  *) sed -n "2,28p" "$0"; exit 1 ;;
 esac
