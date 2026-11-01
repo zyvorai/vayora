@@ -40,6 +40,7 @@ pub mod recon;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
+pub mod rota;
 pub mod signup;
 pub mod sim_mandate;
 pub mod sim_pay;
@@ -107,6 +108,8 @@ pub struct AppState {
     pub review_two_person: platform::TwoPerson,
     /// Who is emailed once when a request waits past its target (`ZYVOR_REVIEW_ALERT_EMAIL`); nobody when unset.
     pub review_alert_email: Option<String>,
+    /// The review desk's offset from UTC in minutes, for the rota (`ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330).
+    pub review_utc_offset_minutes: i32,
 }
 
 pub use crypto::Crypto;
@@ -139,6 +142,7 @@ impl AppState {
             change_sla_hours: 4,
             review_two_person: platform::TwoPerson::Flagged,
             review_alert_email: None,
+            review_utc_offset_minutes: 330,
         }
     }
 
@@ -153,6 +157,13 @@ impl AppState {
         };
         if let Some(v) = hours("ZYVOR_REVIEW_SLA_HOURS") {
             self.review_sla_hours = v;
+        }
+        if let Some(v) = std::env::var("ZYVOR_REVIEW_UTC_OFFSET_MINUTES")
+            .ok()
+            .and_then(|v| v.trim().parse::<i32>().ok())
+            .filter(|v| (-720..=840).contains(v))
+        {
+            self.review_utc_offset_minutes = v;
         }
         if let Some(v) = hours("ZYVOR_CHANGE_SLA_HOURS") {
             self.change_sla_hours = v;
@@ -469,6 +480,8 @@ pub fn app(state: AppState) -> Router {
             "/platform/reviews/{organisation_id}/decision",
             post(platform::decide),
         )
+        .route("/platform/rota", get(rota::show))
+        .route("/platform/rota/me", axum::routing::put(rota::set_mine))
         .route("/platform/changes", get(platform::list_changes))
         .route(
             "/platform/changes/{id}/assign",
@@ -625,8 +638,9 @@ async fn metrics(axum::extract::State(s): axum::extract::State<AppState>) -> Str
     let live = platform::pending_count(&s.pool).await;
     let changes = platform::pending_changes(&s.pool).await;
     let (access_overdue, changes_overdue, oldest) = platform::overdue(&s).await;
+    let on_duty = rota::on_duty_count(&s).await;
     let (mail_pending, mail_dead) = mail::counts(&s.pool).await;
     format!(
-        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n# TYPE zyvor_live_changes_pending gauge\nzyvor_live_changes_pending {changes}\n# TYPE zyvor_live_access_overdue gauge\nzyvor_live_access_overdue {access_overdue}\n# TYPE zyvor_live_changes_overdue gauge\nzyvor_live_changes_overdue {changes_overdue}\n# TYPE zyvor_review_oldest_pending_seconds gauge\nzyvor_review_oldest_pending_seconds {oldest}\n"
+        "# TYPE zyvor_mail_pending gauge\nzyvor_mail_pending {mail_pending}\n# TYPE zyvor_mail_dead gauge\nzyvor_mail_dead {mail_dead}\n# TYPE zyvor_outbox_pending gauge\nzyvor_outbox_pending {pending}\n# TYPE zyvor_outbox_dead gauge\nzyvor_outbox_dead {dead}\n# TYPE zyvor_recon_cases_open gauge\nzyvor_recon_cases_open {cases}\n# TYPE zyvor_live_access_pending gauge\nzyvor_live_access_pending {live}\n# TYPE zyvor_live_changes_pending gauge\nzyvor_live_changes_pending {changes}\n# TYPE zyvor_live_access_overdue gauge\nzyvor_live_access_overdue {access_overdue}\n# TYPE zyvor_live_changes_overdue gauge\nzyvor_live_changes_overdue {changes_overdue}\n# TYPE zyvor_review_oldest_pending_seconds gauge\nzyvor_review_oldest_pending_seconds {oldest}\n# TYPE zyvor_review_on_duty gauge\nzyvor_review_on_duty {on_duty}\n"
     )
 }

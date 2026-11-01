@@ -2,6 +2,7 @@ import { Chip } from "@/components/Chip";
 import { AssignForm, ChangeForm, EscalateChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
 import { dueLabel } from "@/lib/due";
 import { platform, requireReviewerSurface, reviewerKey, type ChangeRow, type ReviewRow } from "@/lib/reviewer";
+import type { RotaView } from "@/lib/rota";
 
 const FILTERS = ["pending", "approved", "rejected", "revoked"] as const;
 
@@ -43,11 +44,18 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
   // would loop; a server page cannot clear the cookie, so ask for a key again. Signing in sets a fresh cookie.
   if (!r.ok && r.status === 401) return <SignInCard notice="The API no longer accepts your key; it may have been disabled. Sign in with a key that works." />;
   const rows = r.ok ? r.body.data : [];
+  const rota = await platform<RotaView>(key, "GET", "/rota");
   const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", `/changes?status=pending${assigned ? `&assigned=${assigned}` : ""}`) : null;
   const changes = ch?.ok ? ch.body.data : [];
   return (
     <>
       <div className="head"><div><h1>Live access requests</h1><p className="lede">Oldest first. Open one to see what the business submitted and the checks that ran.</p></div></div>
+      {rota.ok && (
+        <p className="fine" style={{ marginBottom: 12 }}>
+          {!rota.body.configured ? "No rota yet. " : rota.body.on_duty_now.length ? <>On duty now: <strong>{rota.body.on_duty_now.join(", ")}</strong>. </> : <strong style={{ color: "var(--bad)" }}>Nobody is on duty now. </strong>}
+          <a href="/reviewer/rota">Rota</a>
+        </p>
+      )}
       {q.done && <div className="note ok" role="status" style={{ marginBottom: 16 }}>{DONE[q.done] ?? "Done."}</div>}
       {!r.ok && <div className="note bad" role="alert" style={{ marginBottom: 16 }}>{r.message}</div>}
       {changes.length > 0 && (

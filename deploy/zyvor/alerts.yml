@@ -23,6 +23,10 @@ groups:
         expr: zyvor_live_changes_overdue > 0
         for: 5m
         annotations: { summary: "A live business's new bank account has waited past ZYVOR_CHANGE_SLA_HOURS (default 4) and its live payouts are held." }
+      - alert: ZyvorReviewQueueUnattended
+        expr: zyvor_review_on_duty == 0 and on() (zyvor_live_access_pending + zyvor_live_changes_pending) > 0
+        for: 15m
+        annotations: { summary: "Reviews or changes are waiting and nobody on the rota is on duty. (-1 means no hours are set, which does not alert.)" }
       - alert: ZyvorMetricsUnavailable
         expr: zyvor_outbox_pending < 0 or zyvor_mail_dead < 0
         for: 5m

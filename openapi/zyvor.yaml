@@ -1552,6 +1552,26 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/rota:
+    get:
+      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (a fixed UTC offset), who is on duty now, and whether anyone has set hours
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/rota/me:
+    put:
+      summary: Zyvor reviewers only - replace the caller's weekly shifts (weekday mon..sun, start and end as HH:MM, end after start, up to 24:00). An empty list clears them
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/changes:
     get:
       summary: Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status

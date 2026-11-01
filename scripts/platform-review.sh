@@ -14,6 +14,8 @@
 #   ... take-over <organisation_id>            take it from the reviewer holding it
 #   ... assign <organisation_id> <reviewer id> give it to another reviewer
 #   ... change-claim|change-release|change-take-over <id>, change-assign <id> <reviewer id>   the same for a change
+#   ... rota                                  who is on duty now and everyone's weekly hours (the desk's local time)
+#   ... rota-set "mon-fri 09:00-18:00" ["sat 10:00-14:00" ...]   replace your hours; days are mon, mon-fri or mon,wed; "none" clears them
 #   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
 #   ... changes [status] [me|none|<reviewer id>]   what live businesses changed after approval (a new bank account, or new legal details)
 #   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
@@ -76,6 +78,38 @@ if d.get("note"): print("last note  :", d["note"])' ;;
       assign) body="$(python3 -c 'import sys,json; print(json.dumps({"to":sys.argv[1],"take_over":True}))' "${3:?usage: $1 <id> <reviewer id>}")" ;;
     esac
     call POST "/v1/platform/$what/$id/assign" "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else (d.get("organisation_id") or d["id"]) + (" is held by " + d["assigned_to_name"] if d.get("assigned_to_name") else " is back in the queue"))' ;;
+  rota)
+    call GET "/v1/platform/rota" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
+h = d["utc_offset_minutes"]
+print("desk time UTC%s%d:%02d, now %s" % ("-" if h < 0 else "+", abs(h) // 60, abs(h) % 60, d["local_now"]))
+print("on duty now:", ", ".join(d["on_duty_now"]) if d["on_duty_now"] else ("NOBODY" if d["configured"] else "(no hours set yet)"))
+for r in d["reviewers"]:
+    hours = "; ".join("%s %s-%s" % (x["weekday"], x["start"], x["end"]) for x in r["shifts"]) or "no hours"
+    print("%-20s %s%s  %s" % (r["name"], "(you) " if r["me"] else "", "ON DUTY" if r["on_duty"] else "", hours))' ;;
+  rota-set)
+    shift
+    [ "$#" -ge 1 ] || { echo "usage: $0 rota-set \"mon-fri 09:00-18:00\" [\"sat 10:00-14:00\" ...]   (or: none)" >&2; exit 2; }
+    body="$(python3 -c '
+import sys, json
+days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+shifts = []
+for spec in sys.argv[1:]:
+    if spec.strip().lower() == "none": continue
+    try:
+        which, hours = spec.split()
+        start, end = hours.split("-")
+        if "-" in which:
+            a, b = which.split("-"); picked = days[days.index(a):days.index(b) + 1]
+        else:
+            picked = [d.strip() for d in which.split(",")]
+    except ValueError:
+        sys.exit("cannot read %r: write it like \"mon-fri 09:00-18:00\"" % spec)
+    for d in picked: shifts.append({"weekday": d, "start": start, "end": end})
+print(json.dumps({"shifts": shifts}))' "$@")" || exit 2
+    call PUT "/v1/platform/rota/me" "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "saved %d shift(s); you are %s now" % (d["shifts"], "ON DUTY" if d["on_duty"] else "off duty"))' ;;
   escalate)
     if [ -z "${3:-}" ]; then echo "say why:  $0 escalate <organisation_id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: escalate <organisation_id> \"why\"}/escalate" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "escalated: a second reviewer must approve " + d["organisation_id"])' ;;
@@ -94,5 +128,5 @@ if not d["data"]: print("nothing here")' ;;
   change-reject)
     if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
-  *) sed -n '2,23p' "$0"; exit 1 ;;
+  *) sed -n '2,25p' "$0"; exit 1 ;;
 esac

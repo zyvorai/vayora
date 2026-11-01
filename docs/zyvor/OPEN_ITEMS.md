@@ -190,3 +190,4 @@ translations for the new pages (`apps/zyvor-checkout` shows the approach).
 | `ZYVOR_REVIEW_SLA_HOURS` | API, Worker | Target for answering a live-access request (default 24). A target, not a promise |
 | `ZYVOR_CHANGE_SLA_HOURS` | API, Worker | Target for a live business's new bank account, whose payouts are held meanwhile (default 4) |
 | `ZYVOR_REVIEW_ALERT_EMAIL` | Worker | Emailed once for each request or change that passes its target; nothing is sent when unset |
+| `ZYVOR_REVIEW_UTC_OFFSET_MINUTES` | API | The review desk's offset from UTC in minutes for the reviewer rota (default 330 = India; no daylight saving; -720 to 840) |

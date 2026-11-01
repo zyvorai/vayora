@@ -23,7 +23,7 @@ export async function reviewerKey(): Promise<string | null> {
 export type PlatformResult<T> = { ok: true; body: T } | { ok: false; status: number; message: string };
 
 /** A call to the platform endpoints with the reviewer's key. */
-export async function platform<T>(key: string, method: "GET" | "POST", path: string, payload?: unknown): Promise<PlatformResult<T>> {
+export async function platform<T>(key: string, method: "GET" | "POST" | "PUT", path: string, payload?: unknown): Promise<PlatformResult<T>> {
   try {
     const r = await fetch(`${process.env.ZYVOR_API_URL ?? "http://localhost:8080"}/v1/platform${path}`, {
       method,
