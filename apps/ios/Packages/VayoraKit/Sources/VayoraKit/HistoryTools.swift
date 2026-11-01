@@ -3,8 +3,10 @@ import Foundation
 /// One line of history in a neutral shape, so filtering and export are testable without the app's types.
 public struct HistoryRow: Equatable, Sendable {
     public let date: Date, name: String, payee: String, amountMinor: Int64, paid: Bool, category: SpendCategory, note: String, kind: String
-    public init(date: Date, name: String, payee: String, amountMinor: Int64, paid: Bool, category: SpendCategory, note: String, kind: String) {
-        self.date = date; self.name = name; self.payee = payee; self.amountMinor = amountMinor; self.paid = paid; self.category = category; self.note = note; self.kind = kind
+    /// Words you gave the payment yourself (receipts vault). Searched like the note.
+    public let tags: [String]
+    public init(date: Date, name: String, payee: String, amountMinor: Int64, paid: Bool, category: SpendCategory, note: String, kind: String, tags: [String] = []) {
+        self.date = date; self.name = name; self.payee = payee; self.amountMinor = amountMinor; self.paid = paid; self.category = category; self.note = note; self.kind = kind; self.tags = tags
     }
 }
 
@@ -20,7 +22,7 @@ public struct HistoryFilter: Equatable, Sendable {
     public func apply(_ rows: [HistoryRow], calendar: Calendar = .current) -> [HistoryRow] {
         let q = text.trimmingCharacters(in: .whitespaces)
         return rows.filter { r in
-            if !q.isEmpty, !(r.name + " " + r.payee + " " + r.note).localizedCaseInsensitiveContains(q) { return false }
+            if !q.isEmpty, !(r.name + " " + r.payee + " " + r.note + " " + r.tags.joined(separator: " ")).localizedCaseInsensitiveContains(q) { return false }
             if let c = category, r.category != c { return false }
             switch outcome { case .all: break; case .paid: if !r.paid { return false }; case .failed: if r.paid { return false } }
             if let f = from, r.date < calendar.startOfDay(for: f) { return false }

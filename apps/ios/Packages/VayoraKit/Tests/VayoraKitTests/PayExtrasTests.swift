@@ -390,3 +390,64 @@ final class JarTests: XCTestCase {
         try b.deposit(j.id, 150_00, wallet: &w); XCTAssertEqual(b.jars[0].fraction, 1); XCTAssertTrue(b.jars[0].reached)
     }
 }
+
+final class VaultTests: XCTestCase {
+    func testTagParsing() {
+        XCTAssertEqual(Vault.parseTags("Trip, office lunch #tax;TRIP"), ["trip", "office", "lunch", "tax"])
+        XCTAssertEqual(Vault.parseTags("###, ,"), [])
+        XCTAssertEqual(Vault.parseTags((1...12).map { "t\($0)" }.joined(separator: " ")).count, Vault.maxTags)
+        XCTAssertEqual(Vault.parseTags(String(repeating: "a", count: 50)).first?.count, Vault.maxTagLength)
+    }
+    func testEntriesAreRemovedWhenEmptyAndNoteIsCapped() {
+        var v = Vault(); v.setNote("p1", "  Birthday gift "); v.setTags("p1", "gift"); XCTAssertEqual(v.entry("p1").note, "Birthday gift"); XCTAssertEqual(v.entry("p1").tags, ["gift"])
+        v.setNote("p1", ""); v.setTags("p1", ""); XCTAssertTrue(v.entries.isEmpty)
+        v.setNote("p2", String(repeating: "x", count: 500)); XCTAssertEqual(v.entry("p2").note.count, Vault.maxNoteLength)
+    }
+    func testPhotoNameCannotClimbOutOfTheFolder() {
+        var v = Vault()
+        for bad in ["../x.jpg", "/etc/passwd", "a/b.jpg", ".hidden", "a..jpg", "x.tar.gz", "", String(repeating: "a", count: 90), "naïve.jpg"] { v.setPhoto("p", bad); XCTAssertNil(v.entry("p").photo, bad) }
+        v.setPhoto("p", "3F2A-9b.jpg"); XCTAssertEqual(v.entry("p").photo, "3F2A-9b.jpg")
+    }
+    func testTagsAreSearchable() {
+        let r = HistoryRow(date: Date(), name: "Shop", payee: "s@x", amountMinor: 1, paid: true, category: .shopping, note: "", kind: "", tags: ["birthday"])
+        var f = HistoryFilter(); f.text = "birthday"; XCTAssertEqual(f.apply([r]).count, 1)
+        f.text = "wedding"; XCTAssertEqual(f.apply([r]).count, 0)
+    }
+    func testMonthReportOnlyPaidInThatMonth() {
+        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        func d(_ m: Int, _ day: Int) -> Date { c.date(from: DateComponents(year: 2026, month: m, day: day, hour: 12))! }
+        func r(_ date: Date, _ minor: Int64, _ cat: SpendCategory, paid: Bool = true) -> HistoryRow { HistoryRow(date: date, name: "n", payee: "p@x", amountMinor: minor, paid: paid, category: cat, note: "", kind: "") }
+        let rep = MonthReport.make([r(d(10, 20), 100, .food), r(d(10, 2), 300, .travel), r(d(9, 30), 999, .food), r(d(10, 5), 500, .food, paid: false)], month: d(10, 15), calendar: c)
+        XCTAssertEqual(rep.title, "October 2026"); XCTAssertEqual(rep.totalMinor, 400); XCTAssertEqual(rep.lines.map(\.amountMinor), [300, 100]); XCTAssertEqual(rep.byCategory.first?.category, .travel)
+    }
+}
+
+final class ItemSplitTests: XCTestCase {
+    func testSharesAlwaysAddUpToTheTotal() {
+        let items = [ItemSplit.Item(name: "Pizza", amountMinor: 100_01, people: [0, 1, 2]), ItemSplit.Item(name: "Wine", amountMinor: 55_55, people: [1]), ItemSplit.Item(name: "Tip", amountMinor: 10_00, people: [])]
+        let s = ItemSplit.shares(items, peopleCount: 3)
+        XCTAssertEqual(s.reduce(0, +), 100_01 + 55_55 + 10_00)
+        // pizza 100.01 / 3 = 33.33 r2 (people 0 and 1 get the extra paisa); tip 10.00 / 3 = 3.33 r1 (person 0 gets it)
+        XCTAssertEqual(s[1], 33_34 + 55_55 + 3_33)
+    }
+    func testRemainderPaiseGoToTheFirstPeople() {
+        XCTAssertEqual(ItemSplit.shares([.init(name: "x", amountMinor: 10, people: [0, 1, 2])], peopleCount: 3), [4, 3, 3])
+    }
+    func testBadAssignmentsAreIgnoredSafely() {
+        XCTAssertEqual(ItemSplit.shares([.init(name: "x", amountMinor: 100, people: [7])], peopleCount: 2), [0, 0])
+        XCTAssertEqual(ItemSplit.shares([.init(name: "x", amountMinor: -5, people: [0])], peopleCount: 1), [0])
+        XCTAssertTrue(ItemSplit.shares([], peopleCount: 0).isEmpty)
+    }
+}
+
+final class ItemisedRecordTests: XCTestCase {
+    func testOwedUsesEachPersonsOwnShare() {
+        var r = SplitRecord(date: Date(), note: "x", totalMinor: 1000, owing: [("Asha", 300), ("Ravi", 450)])
+        XCTAssertEqual(r.owedMinor, 750); r.members[0].paid = true; XCTAssertEqual(r.owedMinor, 450); r.members[1].paid = true; XCTAssertTrue(r.isSettled)
+    }
+    func testOldRecordsWithoutPerMemberSharesStillDecode() throws {
+        let old = try JSONEncoder().encode(SplitRecord(date: Date(), note: "x", totalMinor: 900, shareMinor: 300, people: 3))
+        let r = try JSONDecoder().decode(SplitRecord.self, from: old)
+        XCTAssertEqual(r.owedMinor, 600)
+    }
+}

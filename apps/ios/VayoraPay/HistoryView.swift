@@ -7,6 +7,7 @@ struct HistoryView: View {
     @State private var filter = HistoryFilter()
     @State private var open: Txn?
     @State private var exportURL: URL?
+    @State private var reportURL: URL?
 
     var query: String { filter.text }
     /// A question like "food last week" or "more than 500 this month": answered with a total above the list.
@@ -88,6 +89,11 @@ struct HistoryView: View {
                         HStack {
                             Text("History").vfont(28, .bold).foregroundStyle(VUI.textPrimary)
                             Spacer()
+                            if let report = reportURL {
+                                ShareLink(item: report) { Label("PDF", systemImage: "doc.richtext").vfont(14, .semibold).foregroundStyle(VUI.violet) }
+                            } else if !rows.isEmpty {
+                                Button { let r = MonthReport.make(store.historyRows, month: Date()); reportURL = MonthPDF.make(r) } label: { Label("Month PDF", systemImage: "doc.richtext").vfont(14, .semibold).foregroundStyle(VUI.violet) }
+                            }
                             if let exportURL {
                                 ShareLink(item: exportURL) { Label("Share CSV", systemImage: "square.and.arrow.up").vfont(14, .semibold).foregroundStyle(VUI.violet) }
                             } else if !rows.isEmpty {
@@ -146,6 +152,7 @@ struct Receipt: View {
                             row("To", who); row("UPI ID", txn.payee); row("Reference", txn.note); row("Date", txn.date.formatted(date: .abbreviated, time: .shortened))
                         }
                     }
+                    VaultCard(id: txn.id.uuidString)
                     if !txn.isAutoPay {
                         GlassCard {
                             HStack {

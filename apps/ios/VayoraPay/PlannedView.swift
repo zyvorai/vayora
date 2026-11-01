@@ -7,6 +7,7 @@ struct PlannedView: View {
     @EnvironmentObject var store: Store
     @State private var adding = false
     @State private var paying: ScheduledPayment?
+    @State private var splittingByItem = false
     @State private var historyBefore = 0
     @State private var justPaid: ScheduledPayment?
 
@@ -49,13 +50,14 @@ struct PlannedView: View {
                     Text("Found from your own history. It only suggests; nothing is set up for you.").vfont(12).foregroundStyle(VUI.textTertiary)
                 }
                 section("Splits") {
+                    Button { splittingByItem = true } label: { Label("Split by item", systemImage: "list.bullet.rectangle") }.vfont(15, .semibold).foregroundStyle(VUI.violet)
                     if store.splits.isEmpty { Text("Split a bill from Home and track who has paid you back.").vfont(14).foregroundStyle(VUI.textSecondary) }
                     ForEach($store.splits) { $s in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack { Text("\(Money(minor: s.totalMinor).display) · \(s.date.formatted(date: .abbreviated, time: .omitted))").vfont(15, .semibold).foregroundStyle(VUI.textPrimary); Spacer()
                                 StatusPill(s.isSettled ? "Settled" : "\(Money(minor: s.owedMinor).display) owed", s.isSettled ? .success : .warn) }
                             ForEach($s.members) { $m in
-                                Toggle(isOn: $m.paid) { Text("\(m.name) · \(Money(minor: s.shareMinor).display)").vfont(14).foregroundStyle(VUI.textSecondary) }.tint(VUI.mint)
+                                Toggle(isOn: $m.paid) { Text("\(m.name) · \(Money(minor: s.share(of: m)).display)").vfont(14).foregroundStyle(VUI.textSecondary) }.tint(VUI.mint)
                             }
                         }
                     }
@@ -66,6 +68,7 @@ struct PlannedView: View {
         }
         .background(VUI.ink)
         .sheet(isPresented: $adding) { PlanPaymentSheet().environmentObject(store) }
+        .sheet(isPresented: $splittingByItem) { ItemSplitView().environmentObject(store) }
         .sheet(item: $paying, onDismiss: markPaid) { p in
             PaySheet(payload: UPIPayload(payee: p.vpa, name: p.name, amount: Money(minor: p.amountMinor), note: p.note), transfer: true).environmentObject(store)
         }
