@@ -1077,6 +1077,102 @@ pub async fn decide_change(
     Ok(Json(json!({ "id": id, "status": new })))
 }
 
+/// Give every waiting, unheld request and change to an on-duty reviewer: the one holding the fewest, the longest-serving
+/// on a tie, and never the reviewer who already gave the first approval. Does nothing unless `ZYVOR_REVIEW_AUTO_ASSIGN`
+/// is on, nobody has set hours, or nobody is on duty (the items then stay in the "nobody's" queue). Returns how many
+/// were assigned. It only fills empty slots: it never moves an item someone holds, and anyone can still take one over.
+pub async fn auto_assign(s: &AppState) -> Result<usize, ApiError> {
+    if !s.review_auto_assign {
+        return Ok(0);
+    }
+    let on_duty = crate::rota::on_duty_ids(s).await;
+    if on_duty.is_empty() {
+        return Ok(0);
+    }
+    let mut load: Vec<(String, i64)> = Vec::new();
+    for id in &on_duty {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM live_access WHERE assigned_to = $1 AND status = 'pending')
+                  + (SELECT count(*) FROM live_changes WHERE assigned_to = $1 AND status = 'pending')",
+        )
+        .bind(id)
+        .fetch_one(&s.pool)
+        .await?;
+        load.push((id.clone(), n));
+    }
+    let mut done = 0;
+    let reviews: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT organisation_id, first_approved_by FROM live_access WHERE status = 'pending' AND assigned_to IS NULL ORDER BY requested_at LIMIT 50",
+    )
+    .fetch_all(&s.pool)
+    .await?;
+    for (org, first) in reviews {
+        let Some(to) = crate::rota::pick(&load, first.as_deref()) else {
+            continue;
+        };
+        let tid = test_tenant_of(s, &org).await?;
+        let mut tx = tenant::begin(&s.pool, &tid).await?;
+        let won = sqlx::query("UPDATE live_access SET assigned_to = $2, assigned_at = now() WHERE organisation_id = $1 AND status = 'pending' AND assigned_to IS NULL")
+            .bind(&org)
+            .bind(&to)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+            == 1;
+        if won {
+            tenant::audit(
+                &mut tx,
+                &tid,
+                "system:rota",
+                "live_access.assigned",
+                None,
+                json!({ "to": to, "auto": true }),
+            )
+            .await?;
+            done += 1;
+            if let Some(l) = load.iter_mut().find(|(i, _)| *i == to) {
+                l.1 += 1;
+            }
+        }
+        tx.commit().await?;
+    }
+    let changes: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, tenant_id, ref_id, first_approved_by FROM live_changes WHERE status = 'pending' AND assigned_to IS NULL ORDER BY requested_at LIMIT 50",
+    )
+    .fetch_all(&s.pool)
+    .await?;
+    for (id, tid, ref_id, first) in changes {
+        let Some(to) = crate::rota::pick(&load, first.as_deref()) else {
+            continue;
+        };
+        let mut tx = tenant::begin(&s.pool, &tid).await?;
+        let won = sqlx::query("UPDATE live_changes SET assigned_to = $2, assigned_at = now() WHERE id = $1 AND status = 'pending' AND assigned_to IS NULL")
+            .bind(&id)
+            .bind(&to)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+            == 1;
+        if won {
+            tenant::audit(
+                &mut tx,
+                &tid,
+                "system:rota",
+                "live_change.assigned",
+                Some(&ref_id),
+                json!({ "to": to, "auto": true }),
+            )
+            .await?;
+            done += 1;
+            if let Some(l) = load.iter_mut().find(|(i, _)| *i == to) {
+                l.1 += 1;
+            }
+        }
+        tx.commit().await?;
+    }
+    Ok(done)
+}
+
 /// When a request is due and whether it is already late; only a pending one can be late.
 fn sla(
     asked: chrono::DateTime<chrono::Utc>,

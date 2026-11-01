@@ -13137,3 +13137,206 @@ async fn the_rota_shows_who_is_on_duty_and_feeds_the_unattended_gauge(pool: PgPo
     assert_eq!(t.count("SELECT count(*) FROM reviewer_shifts").await, 0);
     assert_eq!(zyvor_api::rota::on_duty_count(&t.state).await, -1);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn waiting_items_go_to_the_on_duty_reviewer_holding_the_fewest(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    st.review_auto_assign = true;
+    let app = zyvor_api::app(st.clone());
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (_, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let held_by = |org: &str| {
+        let (root, org) = (t.root.clone(), org.to_string());
+        async move {
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT assigned_to FROM live_access WHERE organisation_id = $1",
+            )
+            .bind(org)
+            .fetch_one(&root)
+            .await
+            .unwrap()
+        }
+    };
+    let (_, org1) = asks_for_live(&t, &app, "One Ltd", "o@one.in").await;
+    let (_, org2) = asks_for_live(&t, &app, "Two Ltd", "o@two2.in").await;
+    let (_, org3) = asks_for_live(&t, &app, "Three Ltd", "o@three.in").await;
+
+    // nobody has set hours: nothing happens
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 0);
+    // hours set but the setting is off: nothing happens either
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    for k in [&a_key, &b_key] {
+        let (s, _) = rv(
+            k,
+            "PUT",
+            "/v1/platform/rota/me".into(),
+            json!({ "shifts": all_week }),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let mut off = st.clone();
+    off.review_auto_assign = false;
+    assert_eq!(zyvor_api::platform::auto_assign(&off).await.unwrap(), 0);
+    assert_eq!(held_by(&org1).await, None);
+
+    // on: three items spread over the two on-duty reviewers (Chitra has no hours), oldest reviewer first on a tie
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 3);
+    assert_eq!(held_by(&org1).await.as_deref(), Some(a_id.as_str()));
+    assert_eq!(held_by(&org2).await.as_deref(), Some(b_id.as_str()));
+    assert_eq!(held_by(&org3).await.as_deref(), Some(a_id.as_str()));
+    // a second pass has nothing to do, and the work is on the record as the rota's
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 0);
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.assigned' AND actor = 'system:rota'").await, 3);
+    // the holder is who can decide it; Chitra, off the rota, cannot
+    let (s, b) = rv(
+        &c_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("assigned_to_other"))
+    );
+
+    // Asha's first approval releases org1; it must go to Bala, not back to her
+    let (s, b) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org1}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b}"
+    );
+    assert_eq!(held_by(&org1).await, None);
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    assert_eq!(held_by(&org1).await.as_deref(), Some(b_id.as_str()));
+
+    // a reviewer who is disabled hands their items back, and they are given to whoever is left
+    assert!(
+        zyvor_api::platform::disable_reviewer(&t.state.pool, &b_id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(held_by(&org2).await, None);
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    assert_eq!(held_by(&org2).await.as_deref(), Some(a_id.as_str()));
+    // org1 needs someone other than Asha for its second approval, and only Asha is left: it waits unassigned
+    assert_eq!(held_by(&org1).await, None);
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_waiting_change_is_given_to_an_on_duty_reviewer_other_than_its_first_approver(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    st.review_auto_assign = true;
+    let app = zyvor_api::app(st.clone());
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (mkey, org) = asks_for_live(&t, &app, "Change Co", "o@changeco.in").await;
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (s, _) = common::raw(&app, &mkey, None, "POST", "/v1/onboarding/bank_accounts", None,
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "111122223333" })).await;
+    assert_eq!(s, StatusCode::CREATED);
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    for k in [&a_key, &b_key] {
+        rv(
+            k,
+            "PUT",
+            "/v1/platform/rota/me".into(),
+            json!({ "shifts": all_week }),
+        )
+        .await;
+    }
+    let holder = || {
+        let root = t.root.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<String>>("SELECT assigned_to FROM live_changes")
+                .fetch_one(&root)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    assert_eq!(holder().await.as_deref(), Some(a_id.as_str()));
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_change.assigned' AND actor = 'system:rota'").await, 1);
+
+    // no bank check ran, so Asha's approval is only the first; the second must go to Bala
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    let id = l["data"][0]["id"].as_str().unwrap().to_string();
+    let (s, b) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/changes/{id}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b}"
+    );
+    assert_eq!(holder().await, None);
+    assert_eq!(zyvor_api::platform::auto_assign(&st).await.unwrap(), 1);
+    assert_eq!(holder().await.as_deref(), Some(b_id.as_str()));
+    let (s, b) = rv(
+        &b_key,
+        "POST",
+        format!("/v1/platform/changes/{id}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b}"
+    );
+}
