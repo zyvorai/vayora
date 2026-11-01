@@ -110,7 +110,11 @@ pub struct AppState {
     /// Who is emailed once when a request waits past its target (`ZYVOR_REVIEW_ALERT_EMAIL`); nobody when unset.
     pub review_alert_email: Option<String>,
     /// The review desk's offset from UTC in minutes, for the rota (`ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330).
+    /// Used when no time zone is set.
     pub review_utc_offset_minutes: i32,
+    /// The review desk's IANA time zone, for the rota (`ZYVOR_REVIEW_TIMEZONE`, for example `Europe/London`). It follows
+    /// daylight saving; when set it wins over the fixed offset.
+    pub review_timezone: Option<chrono_tz::Tz>,
     /// Give each new request and change to an on-duty reviewer, the one holding the fewest (`ZYVOR_REVIEW_AUTO_ASSIGN`).
     pub review_auto_assign: bool,
 }
@@ -146,6 +150,7 @@ impl AppState {
             review_two_person: platform::TwoPerson::Flagged,
             review_alert_email: None,
             review_utc_offset_minutes: 330,
+            review_timezone: None,
             review_auto_assign: false,
         }
     }
@@ -168,6 +173,16 @@ impl AppState {
             .filter(|v| (-720..=840).contains(v))
         {
             self.review_utc_offset_minutes = v;
+        }
+        if let Ok(v) = std::env::var("ZYVOR_REVIEW_TIMEZONE") {
+            match v.trim().parse::<chrono_tz::Tz>() {
+                Ok(tz) => self.review_timezone = Some(tz),
+                Err(_) if v.trim().is_empty() => {}
+                Err(_) => tracing::warn!(
+                    value = %v.trim(),
+                    "ZYVOR_REVIEW_TIMEZONE is not an IANA zone name like Europe/London; using the fixed offset"
+                ),
+            }
         }
         if let Ok(v) = std::env::var("ZYVOR_REVIEW_AUTO_ASSIGN") {
             self.review_auto_assign = matches!(

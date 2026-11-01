@@ -2,7 +2,7 @@
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export type RotaShift = { weekday: (typeof DAYS)[number]; start: string; end: string };
 export type RotaView = {
-  configured: boolean; utc_offset_minutes: number; local_now: string; local_date: string; on_duty_now: string[];
+  configured: boolean; utc_offset_minutes: number; timezone: string | null; local_now: string; local_date: string; on_duty_now: string[];
   holiday_today: string | null;
   reviewers: { id: string; name: string; me: boolean; on_duty: boolean; on_leave: boolean; shifts: RotaShift[] }[];
   days_off: DayOff[];

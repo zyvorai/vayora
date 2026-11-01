@@ -1,5 +1,6 @@
-//! When Zyvor's reviewers are working. Each reviewer sets weekly shifts in the review desk's local time (a fixed
-//! UTC offset, `ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330 = India; there is no daylight saving). The rota shows
+//! When Zyvor's reviewers are working. Each reviewer sets weekly shifts in the review desk's local time: an IANA zone
+//! (`ZYVOR_REVIEW_TIMEZONE`, for example `Europe/London`, which follows daylight saving) or, when none is set, a fixed
+//! UTC offset (`ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330 = India). The rota shows
 //! who is on duty now and feeds a gauge so an unattended queue is noticed. It informs: an off-duty reviewer can still
 //! decide anything, because a late approval is a smaller problem than a request nobody could act on.
 //!
@@ -12,7 +13,7 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Offset, Timelike, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use zyvor_core::new_id;
@@ -40,9 +41,26 @@ pub fn fmt_hm(min: i16) -> String {
     format!("{:02}:{:02}", min / 60, min % 60)
 }
 
-/// Whether any of these shifts covers `now`, given the desk's offset from UTC in minutes.
-pub fn on_duty(shifts: &[Shift], now: DateTime<Utc>, offset_minutes: i32) -> bool {
-    let local = now + Duration::minutes(i64::from(offset_minutes));
+/// The desk's wall clock at `now`: in its time zone when one is set (daylight saving included), else at the fixed offset.
+pub fn desk_local(s: &AppState, now: DateTime<Utc>) -> NaiveDateTime {
+    match s.review_timezone {
+        Some(tz) => now.with_timezone(&tz).naive_local(),
+        None => (now + Duration::minutes(i64::from(s.review_utc_offset_minutes))).naive_local(),
+    }
+}
+
+/// The desk's offset from UTC at `now`, in minutes (it moves with daylight saving when a zone is set).
+pub fn desk_offset_minutes(s: &AppState, now: DateTime<Utc>) -> i32 {
+    match s.review_timezone {
+        Some(tz) => now.with_timezone(&tz).offset().fix().local_minus_utc() / 60,
+        None => s.review_utc_offset_minutes,
+    }
+}
+
+/// Whether any of these shifts covers the desk's wall clock `local`. In a zone with daylight saving a shift is
+/// wall-clock: 09:00-18:00 stays 09:00-18:00 when the clocks change, so the hour that does not exist (spring) is
+/// never on a shift and the hour that happens twice (autumn) is covered both times.
+pub fn on_duty(shifts: &[Shift], local: NaiveDateTime) -> bool {
     let weekday = local.weekday().num_days_from_monday() as i16;
     let minute = (local.hour() * 60 + local.minute()) as i16;
     shifts
@@ -103,8 +121,8 @@ impl Away {
 }
 
 /// The local day `now` falls on in the desk's time.
-fn local_day(now: DateTime<Utc>, offset_minutes: i32) -> NaiveDate {
-    (now + Duration::minutes(i64::from(offset_minutes))).date_naive()
+fn local_day(s: &AppState, now: DateTime<Utc>) -> NaiveDate {
+    desk_local(s, now).date()
 }
 
 /// Who is away on `day`. A database error counts as nobody away, so a hiccup does not empty the desk.
@@ -140,10 +158,11 @@ pub async fn on_duty_ids(s: &AppState) -> Vec<String> {
         return Vec::new();
     };
     let now = Utc::now();
-    let away = away_on(s, local_day(now, s.review_utc_offset_minutes)).await;
+    let local_now = desk_local(s, now);
+    let away = away_on(s, local_day(s, now)).await;
     people
         .into_iter()
-        .filter(|(id, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id))
+        .filter(|(id, _, sh)| on_duty(sh, local_now) && !away.covers(id))
         .map(|(id, _, _)| id)
         .collect()
 }
@@ -162,11 +181,10 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
     let now = Utc::now();
     let people = people(&s).await?;
     let configured = people.iter().any(|(_, _, sh)| !sh.is_empty());
-    let local = now + Duration::minutes(i64::from(s.review_utc_offset_minutes));
-    let today = local.date_naive();
+    let local_now = desk_local(&s, now);
+    let today = local_now.date();
     let away = away_on(&s, today).await;
-    let working =
-        |id: &str, sh: &[Shift]| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id);
+    let working = |id: &str, sh: &[Shift]| on_duty(sh, local_now) && !away.covers(id);
     let days_off: Vec<(
         String,
         Option<String>,
@@ -196,8 +214,9 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
         .collect();
     Ok(Json(json!({
         "configured": configured,
-        "utc_offset_minutes": s.review_utc_offset_minutes,
-        "local_now": local.format("%a %H:%M").to_string(),
+        "utc_offset_minutes": desk_offset_minutes(&s, now),
+        "timezone": s.review_timezone.map(|z| z.name()),
+        "local_now": local_now.format("%a %H:%M").to_string(),
         "local_date": today.to_string(),
         "on_duty_now": people.iter().filter(|(id, _, sh)| working(id, sh)).map(|(_, n, _)| n.clone()).collect::<Vec<_>>(),
         "holiday_today": away.holiday,
@@ -273,9 +292,9 @@ pub async fn set_mine(
     }
     tx.commit().await?;
     let now = Utc::now();
-    let away = away_on(&s, local_day(now, s.review_utc_offset_minutes)).await;
+    let away = away_on(&s, local_day(&s, now)).await;
     Ok(Json(
-        json!({ "shifts": parsed.len(), "on_duty": on_duty(&parsed, now, s.review_utc_offset_minutes) && !away.covers(&p.id) }),
+        json!({ "shifts": parsed.len(), "on_duty": on_duty(&parsed, desk_local(&s, now)) && !away.covers(&p.id) }),
     ))
 }
 
@@ -307,7 +326,7 @@ pub async fn add_day_off(
         Some(t) => day(t)?,
         None => first,
     };
-    let today = local_day(Utc::now(), s.review_utc_offset_minutes);
+    let today = local_day(&s, Utc::now());
     if last < first {
         return Err(bad("the last day is before the first".into()));
     }
@@ -390,10 +409,11 @@ pub async fn on_duty_count(s: &AppState) -> i64 {
         return -1;
     }
     let now = Utc::now();
-    let away = away_on(s, local_day(now, s.review_utc_offset_minutes)).await;
+    let local_now = desk_local(s, now);
+    let away = away_on(s, local_day(s, now)).await;
     people
         .iter()
-        .filter(|(id, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id))
+        .filter(|(id, _, sh)| on_duty(sh, local_now) && !away.covers(id))
         .count() as i64
 }
 
@@ -404,6 +424,19 @@ mod tests {
 
     fn at(y: i32, m: u32, d: u32, h: u32, mi: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(y, m, d, h, mi, 0).unwrap()
+    }
+
+    /// `on_duty` at a UTC instant for a desk on a fixed offset.
+    fn fixed(shifts: &[Shift], now: DateTime<Utc>, offset_minutes: i32) -> bool {
+        on_duty(
+            shifts,
+            (now + Duration::minutes(i64::from(offset_minutes))).naive_utc(),
+        )
+    }
+
+    /// `on_duty` at a UTC instant for a desk in a time zone.
+    fn zoned(shifts: &[Shift], now: DateTime<Utc>, tz: chrono_tz::Tz) -> bool {
+        on_duty(shifts, now.with_timezone(&tz).naive_local())
     }
 
     #[test]
@@ -427,13 +460,13 @@ mod tests {
             end_min: 1080,
         }];
         // 09:00 IST is 03:30 UTC
-        assert!(on_duty(&mon, at(2026, 11, 2, 3, 30), 330));
-        assert!(!on_duty(&mon, at(2026, 11, 2, 3, 29), 330));
+        assert!(fixed(&mon, at(2026, 11, 2, 3, 30), 330));
+        assert!(!fixed(&mon, at(2026, 11, 2, 3, 29), 330));
         // 17:59 IST is on, 18:00 IST is off
-        assert!(on_duty(&mon, at(2026, 11, 2, 12, 29), 330));
-        assert!(!on_duty(&mon, at(2026, 11, 2, 12, 30), 330));
+        assert!(fixed(&mon, at(2026, 11, 2, 12, 29), 330));
+        assert!(!fixed(&mon, at(2026, 11, 2, 12, 30), 330));
         // Tuesday has no shift
-        assert!(!on_duty(&mon, at(2026, 11, 3, 5, 0), 330));
+        assert!(!fixed(&mon, at(2026, 11, 3, 5, 0), 330));
     }
 
     #[test]
@@ -450,10 +483,10 @@ mod tests {
             end_min: 1440,
         }];
         let t = at(2026, 11, 1, 22, 0);
-        assert!(on_duty(&early_mon, t, 330));
-        assert!(!on_duty(&sun, t, 330));
+        assert!(fixed(&early_mon, t, 330));
+        assert!(!fixed(&sun, t, 330));
         // and with no offset it is still Sunday
-        assert!(on_duty(&sun, t, 0));
+        assert!(fixed(&sun, t, 0));
     }
 
     #[test]
@@ -476,5 +509,49 @@ mod tests {
             "the first approver alone cannot be the second"
         );
         assert_eq!(pick(&[], None), None);
+    }
+
+    #[test]
+    fn a_zone_moves_the_shift_in_utc_when_the_clocks_change_but_not_on_the_wall() {
+        // London, Monday 09:00-18:00 wall clock. BST began on Sunday 2026-03-29, so the same shift sits an hour earlier in UTC.
+        let tz = chrono_tz::Europe::London;
+        let mon = [Shift {
+            weekday: 0,
+            start_min: 540,
+            end_min: 1080,
+        }];
+        // Monday 2026-03-23, GMT: 09:00 local is 09:00 UTC
+        assert!(!zoned(&mon, at(2026, 3, 23, 8, 59), tz));
+        assert!(zoned(&mon, at(2026, 3, 23, 9, 0), tz));
+        // Monday 2026-03-30, BST: 09:00 local is 08:00 UTC
+        assert!(!zoned(&mon, at(2026, 3, 30, 7, 59), tz));
+        assert!(zoned(&mon, at(2026, 3, 30, 8, 0), tz));
+        assert!(zoned(&mon, at(2026, 3, 30, 16, 59), tz));
+        assert!(!zoned(&mon, at(2026, 3, 30, 17, 0), tz));
+        // a fixed UTC+0 desk would have got the 30th wrong by an hour
+        assert!(!fixed(&mon, at(2026, 3, 30, 8, 0), 0));
+    }
+
+    #[test]
+    fn the_hour_that_does_not_exist_is_never_on_and_the_one_that_repeats_is_on_both_times() {
+        let tz = chrono_tz::Europe::London;
+        // 2026-03-29: 01:00-02:00 does not exist. A shift 01:00-02:00 never matches anything that day.
+        let gap = [Shift {
+            weekday: 6,
+            start_min: 60,
+            end_min: 120,
+        }];
+        for h in 0..24 {
+            assert!(!zoned(&gap, at(2026, 3, 29, h, 30), tz), "{h}");
+        }
+        // 2026-10-25: 01:00-02:00 happens twice (01:00 BST, then 01:00 GMT): on both times
+        let twice = [Shift {
+            weekday: 6,
+            start_min: 60,
+            end_min: 120,
+        }];
+        assert!(zoned(&twice, at(2026, 10, 25, 0, 30), tz), "first 01:30");
+        assert!(zoned(&twice, at(2026, 10, 25, 1, 30), tz), "second 01:30");
+        assert!(!zoned(&twice, at(2026, 10, 25, 2, 30), tz));
     }
 }

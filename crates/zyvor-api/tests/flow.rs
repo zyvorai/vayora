@@ -13489,6 +13489,80 @@ async fn leave_and_desk_holidays_take_reviewers_off_the_rota(pool: PgPool) {
     assert_eq!(r["days_off"], json!([]));
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_desk_time_zone_decides_the_local_day_and_offset_and_wins_over_the_fixed_offset(
+    pool: PgPool,
+) {
+    use chrono::{Offset, TimeZone};
+    let t = setup(pool).await;
+    let tz = chrono_tz::Pacific::Auckland;
+    let mut st = t.state.clone();
+    st.review_utc_offset_minutes = -300; // would be a different day for hours of every day; the zone must win
+    st.review_timezone = Some(tz);
+    let app = zyvor_api::app(st.clone());
+    let (_, key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let call = |m: &'static str, p: &str, b: Value| {
+        let (app, k, p) = (app.clone(), key.clone(), p.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let now = chrono::Utc::now();
+    let local = now.with_timezone(&tz);
+    let want_offset = tz
+        .offset_from_utc_datetime(&now.naive_utc())
+        .fix()
+        .local_minus_utc()
+        / 60;
+
+    let (st1, r) = call("GET", "/v1/platform/rota", Value::Null).await;
+    assert_eq!(st1, StatusCode::OK, "{r}");
+    assert_eq!(r["timezone"], "Pacific/Auckland");
+    assert_eq!(
+        r["utc_offset_minutes"], want_offset,
+        "the offset is the zone's right now"
+    );
+    assert_eq!(r["local_date"], local.format("%Y-%m-%d").to_string());
+
+    // leave is booked against the zone's day: today there is accepted, yesterday there is already over
+    let day = |plus: i64| {
+        (local + chrono::Duration::days(plus))
+            .format("%Y-%m-%d")
+            .to_string()
+    };
+    let (ok, b) = call(
+        "POST",
+        "/v1/platform/rota/days_off",
+        json!({ "from": day(0) }),
+    )
+    .await;
+    assert_eq!(ok, StatusCode::CREATED, "{b}");
+    let (bad, b) = call(
+        "POST",
+        "/v1/platform/rota/days_off",
+        json!({ "from": day(-2), "to": day(-1) }),
+    )
+    .await;
+    assert_eq!(bad, StatusCode::UNPROCESSABLE_ENTITY, "{b}");
+
+    // without a zone the same API reports no timezone and the fixed offset
+    let plain = zyvor_api::app(t.state.clone());
+    let (_, r) = common::raw(
+        &plain,
+        &key,
+        None,
+        "GET",
+        "/v1/platform/rota",
+        None,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(r["timezone"], Value::Null);
+    assert_eq!(r["utc_offset_minutes"], t.state.review_utc_offset_minutes);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 #[sqlx::test(migrations = "./migrations")]
 async fn a_simulated_settlement_nets_off_a_refund_processed_the_same_day(pool: PgPool) {
     let t = setup(pool).await;
