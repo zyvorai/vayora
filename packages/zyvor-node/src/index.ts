@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse } from "./types.js";
+import type { GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -196,7 +196,7 @@ export class Zyvor {
     explain: (id: string) => this.req<{ narrative: string; difference_minor: number; difference_breakdown: { reason: string; amount_minor: number }[]; [k: string]: unknown }>("GET", `/v1/settlements/${encodeURIComponent(id)}/explain`),
     sync: (provider: string, date: string) => this.req<{ imported: string[] }>("POST", "/v1/settlements/sync", { provider, date }),
     /** Test mode: add the bank credit a simulated settlement would produce, optionally `shortMinor` less than its net. */
-    simulateBank: (id: string, shortMinor = 0) => this.req<Record<string, unknown>>("POST", `/v1/settlements/${encodeURIComponent(id)}/simulate_bank`, { short_minor: shortMinor }),
+    simulateBank: (id: string, shortMinor = 0) => this.req<PostSettlementsByIdSimulateBankResponse>("POST", `/v1/settlements/${encodeURIComponent(id)}/simulate_bank`, { short_minor: shortMinor }),
   };
 
   readonly cases = {
@@ -286,7 +286,7 @@ export class Zyvor {
     /** Schedule a debit for an India-time day far enough ahead for the payer's notice. */
     scheduleDebit: (id: string, p: { amountMinor: number; dueDate: string; invoiceId?: string; idempotencyKey?: string }) => {
       if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
-      return this.req<Record<string, unknown>>("POST", `/v1/mandates/${encodeURIComponent(id)}/debits`, { amount_minor: p.amountMinor, due_date: p.dueDate, invoice_id: p.invoiceId }, key(p.idempotencyKey));
+      return this.req<PostMandatesByIdDebitsResponse>("POST", `/v1/mandates/${encodeURIComponent(id)}/debits`, { amount_minor: p.amountMinor, due_date: p.dueDate, invoice_id: p.invoiceId }, key(p.idempotencyKey));
     },
     debits: (id: string) => this.req<GetMandatesByIdDebitsResponse>("GET", `/v1/mandates/${encodeURIComponent(id)}/debits`),
     /** Sandbox aid: run the mandate pass now (the worker does this on its own). */
@@ -334,7 +334,7 @@ export class Zyvor {
     /** Split an agreed total into dated invoices: exact (remainder on the last), all or nothing, idempotent by `externalRef`. */
     create: (p: { customerId: string; name: string; totalMinor: number; instalments: number; firstDueDate: string; numberPrefix: string; everyUnit?: "month" | "day"; every?: number; currency?: string; externalRef?: string }) =>
       this.req<{ id: string; remaining_minor: number; invoices: { invoice_id: string; number: string; amount_minor: number; due_date: string }[] }>("POST", "/v1/installment_plans", { customer_id: p.customerId, name: p.name, total_minor: p.totalMinor, instalments: p.instalments, first_due_date: p.firstDueDate, number_prefix: p.numberPrefix, every_unit: p.everyUnit, every: p.every, currency: p.currency, external_ref: p.externalRef }),
-    retrieve: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/installment_plans/${encodeURIComponent(id)}`),
+    retrieve: (id: string) => this.req<GetInstallmentPlansByIdResponse>("GET", `/v1/installment_plans/${encodeURIComponent(id)}`),
   };
 
   readonly gst = {

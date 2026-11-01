@@ -56,7 +56,7 @@ type DebitRow struct {
 
 type DeletePlatformRotaDaysOffByIdResponse struct {
 	ID      string `json:"id"`
-	Deleted any    `json:"deleted"`
+	Deleted bool   `json:"deleted"`
 }
 
 type GetAnalyticsCostResponse struct {
@@ -122,7 +122,7 @@ type GetCheckoutByTenantIdByIntentIdResponse struct {
 	Merchant    *string `json:"merchant"`
 	AmountMinor int64   `json:"amount_minor"`
 	Currency    string  `json:"currency"`
-	Description any     `json:"description"`
+	Description *string `json:"description"`
 	Status      string  `json:"status"`
 	Phase       any     `json:"phase"`
 	Methods     []any   `json:"methods"`
@@ -131,7 +131,7 @@ type GetCheckoutByTenantIdByIntentIdResponse struct {
 
 type GetCheckoutLinksByTenantIdByTokenResponse struct {
 	Merchant       *string `json:"merchant"`
-	Description    any     `json:"description"`
+	Description    *string `json:"description"`
 	AmountMinor    int64   `json:"amount_minor"`
 	DiscountMinor  int64   `json:"discount_minor"`
 	FeeMinor       int64   `json:"fee_minor"`
@@ -139,9 +139,9 @@ type GetCheckoutLinksByTenantIdByTokenResponse struct {
 	CouponApplied  any     `json:"coupon_applied"`
 	Currency       string  `json:"currency"`
 	Status         string  `json:"status"`
-	OpenAmount     any     `json:"open_amount"`
-	MinAmountMinor int64   `json:"min_amount_minor"`
-	MaxAmountMinor int64   `json:"max_amount_minor"`
+	OpenAmount     bool    `json:"open_amount"`
+	MinAmountMinor *int64  `json:"min_amount_minor"`
+	MaxAmountMinor *int64  `json:"max_amount_minor"`
 }
 
 type GetClosingsResponse struct {
@@ -149,10 +149,10 @@ type GetClosingsResponse struct {
 }
 
 type GetCollectionsAgeingResponse struct {
-	AsOf                     any    `json:"as_of"`
-	Data                     []any  `json:"data"`
-	TotalOutstandingInrMinor *int64 `json:"total_outstanding_inr_minor"`
-	UsdRateDate              any    `json:"usd_rate_date"`
+	AsOf                     *string `json:"as_of"`
+	Data                     []any   `json:"data"`
+	TotalOutstandingInrMinor *int64  `json:"total_outstanding_inr_minor"`
+	UsdRateDate              *string `json:"usd_rate_date"`
 }
 
 type GetCollectionsDraftsResponse struct {
@@ -204,15 +204,15 @@ type GetCouponsResponse struct {
 }
 
 type GetCustomersByIdResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Phone       any    `json:"phone"`
-	ExternalRef any    `json:"external_ref"`
-	GSTIN       any    `json:"gstin"`
-	Address1    any    `json:"address1"`
-	Location    any    `json:"location"`
-	Pincode     any    `json:"pincode"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Email       string  `json:"email"`
+	Phone       *string `json:"phone"`
+	ExternalRef *string `json:"external_ref"`
+	GSTIN       *string `json:"gstin"`
+	Address1    *string `json:"address1"`
+	Location    *string `json:"location"`
+	Pincode     *string `json:"pincode"`
 }
 
 type GetCustomersByIdStatementResponse struct {
@@ -249,7 +249,7 @@ type GetDisputesResponseDataItem struct {
 	Reason        string  `json:"reason"`
 	Status        string  `json:"status"`
 	RespondBy     *string `json:"respond_by"`
-	EvidenceCount any     `json:"evidence_count"`
+	EvidenceCount int64   `json:"evidence_count"`
 }
 
 type GetEventsCatalogueResponse struct {
@@ -257,8 +257,8 @@ type GetEventsCatalogueResponse struct {
 }
 
 type GetEventsCatalogueResponseDataItem struct {
-	Type        any `json:"type"`
-	Description any `json:"description"`
+	Type        any     `json:"type"`
+	Description *string `json:"description"`
 }
 
 type GetFxConvertResponse struct {
@@ -268,15 +268,15 @@ type GetFxConvertResponse struct {
 }
 
 type GetFxExposureResponse struct {
-	AsOf                any   `json:"as_of"`
-	RateDate            any   `json:"rate_date"`
-	OutstandingUsdMinor int64 `json:"outstanding_usd_minor"`
-	Complete            any   `json:"complete"`
-	BookedInrMinor      int64 `json:"booked_inr_minor"`
-	CurrentInrMinor     int64 `json:"current_inr_minor"`
-	UnrealisedInrMinor  int64 `json:"unrealised_inr_minor"`
-	Note                any   `json:"note"`
-	Data                any   `json:"data"`
+	AsOf                *string `json:"as_of"`
+	RateDate            *string `json:"rate_date"`
+	OutstandingUsdMinor int64   `json:"outstanding_usd_minor"`
+	Complete            any     `json:"complete"`
+	BookedInrMinor      int64   `json:"booked_inr_minor"`
+	CurrentInrMinor     int64   `json:"current_inr_minor"`
+	UnrealisedInrMinor  int64   `json:"unrealised_inr_minor"`
+	Note                string  `json:"note"`
+	Data                any     `json:"data"`
 }
 
 type GetFxRatesResponse struct {
@@ -284,15 +284,15 @@ type GetFxRatesResponse struct {
 }
 
 type GetGstGstr1Response struct {
-	Note      any                          `json:"note"`
+	Note      string                       `json:"note"`
 	Period    any                          `json:"period"`
-	GSTIN     any                          `json:"gstin"`
-	LegalName any                          `json:"legal_name"`
+	GSTIN     *string                      `json:"gstin"`
+	LegalName *string                      `json:"legal_name"`
 	B2b       []GetGstGstr1ResponseB2bItem `json:"b2b"`
 	B2cl      any                          `json:"b2cl"`
 	B2cs      any                          `json:"b2cs"`
-	Cdnr      any                          `json:"cdnr"`
-	Cdnur     any                          `json:"cdnur"`
+	Cdnr      []any                        `json:"cdnr"`
+	Cdnur     []any                        `json:"cdnur"`
 	Hsn       any                          `json:"hsn"`
 	Totals    any                          `json:"totals"`
 }
@@ -316,7 +316,7 @@ type GetInboxResponseDataItem struct {
 }
 
 type GetInsightsCashflowResponse struct {
-	AsOf                      any                                    `json:"as_of"`
+	AsOf                      *string                                `json:"as_of"`
 	Currency                  string                                 `json:"currency"`
 	Weeks                     []GetInsightsCashflowResponseWeeksItem `json:"weeks"`
 	OverdueMinor              int64                                  `json:"overdue_minor"`
@@ -325,7 +325,7 @@ type GetInsightsCashflowResponse struct {
 	PromisedMinor             int64                                  `json:"promised_minor"`
 	PayoutsWaitingMinor       int64                                  `json:"payouts_waiting_minor"`
 	DailyReceiptsRunRateMinor int64                                  `json:"daily_receipts_run_rate_minor"`
-	Note                      any                                    `json:"note"`
+	Note                      string                                 `json:"note"`
 }
 
 type GetInsightsCashflowResponseWeeksItem struct {
@@ -334,37 +334,50 @@ type GetInsightsCashflowResponseWeeksItem struct {
 }
 
 type GetInsightsRefundAnomaliesResponse struct {
-	RefundsLast7Days    any                                           `json:"refunds_last_7_days"`
+	RefundsLast7Days    int64                                         `json:"refunds_last_7_days"`
 	WeeklyAverageBefore any                                           `json:"weekly_average_before"`
 	Flags               []GetInsightsRefundAnomaliesResponseFlagsItem `json:"flags"`
-	Note                any                                           `json:"note"`
+	Note                string                                        `json:"note"`
 }
 
 type GetInsightsRefundAnomaliesResponseFlagsItem struct {
-	Code    any `json:"code"`
-	Message any `json:"message"`
+	Code    string  `json:"code"`
+	Message *string `json:"message"`
+}
+
+type GetInstallmentPlansByIdResponse struct {
+	ID             string  `json:"id"`
+	CustomerID     *string `json:"customer_id"`
+	Name           string  `json:"name"`
+	TotalMinor     int64   `json:"total_minor"`
+	Currency       string  `json:"currency"`
+	Instalments    any     `json:"instalments"`
+	ExternalRef    *string `json:"external_ref"`
+	SettledMinor   int64   `json:"settled_minor"`
+	RemainingMinor int64   `json:"remaining_minor"`
+	Invoices       []any   `json:"invoices"`
 }
 
 type GetInvoicesByIdEinvoiceResponse struct {
-	Draft      any   `json:"draft"`
-	Note       any   `json:"note"`
-	Version    any   `json:"Version"`
-	TranDtls   any   `json:"TranDtls"`
-	DocDtls    any   `json:"DocDtls"`
-	SellerDtls any   `json:"SellerDtls"`
-	BuyerDtls  any   `json:"BuyerDtls"`
-	ItemList   []any `json:"ItemList"`
-	ValDtls    any   `json:"ValDtls"`
+	Draft      bool   `json:"draft"`
+	Note       string `json:"note"`
+	Version    string `json:"Version"`
+	TranDtls   any    `json:"TranDtls"`
+	DocDtls    any    `json:"DocDtls"`
+	SellerDtls any    `json:"SellerDtls"`
+	BuyerDtls  any    `json:"BuyerDtls"`
+	ItemList   []any  `json:"ItemList"`
+	ValDtls    any    `json:"ValDtls"`
 }
 
 type GetInvoicesByIdLinesResponse struct {
-	InvoiceID     string `json:"invoice_id"`
-	Number        string `json:"number"`
-	PlaceOfSupply any    `json:"place_of_supply"`
-	BuyerGSTIN    any    `json:"buyer_gstin"`
-	TotalMinor    int64  `json:"total_minor"`
-	TaxMinor      int64  `json:"tax_minor"`
-	Lines         []any  `json:"lines"`
+	InvoiceID     string  `json:"invoice_id"`
+	Number        string  `json:"number"`
+	PlaceOfSupply *string `json:"place_of_supply"`
+	BuyerGSTIN    *string `json:"buyer_gstin"`
+	TotalMinor    int64   `json:"total_minor"`
+	TaxMinor      int64   `json:"tax_minor"`
+	Lines         []any   `json:"lines"`
 }
 
 type GetInvoicesByIdRemindersResponse struct {
@@ -377,14 +390,14 @@ type GetInvoicesByIdResponse struct {
 	Currency         string                                   `json:"currency"`
 	AmountMinor      int64                                    `json:"amount_minor"`
 	TaxMinor         int64                                    `json:"tax_minor"`
-	ExternalRef      any                                      `json:"external_ref"`
+	ExternalRef      *string                                  `json:"external_ref"`
 	Status           string                                   `json:"status"`
-	DueDate          any                                      `json:"due_date"`
+	DueDate          *string                                  `json:"due_date"`
 	CustomerID       *string                                  `json:"customer_id"`
-	PlaceOfSupply    any                                      `json:"place_of_supply"`
-	BuyerGSTIN       any                                      `json:"buyer_gstin"`
-	ReverseCharge    any                                      `json:"reverse_charge"`
-	IssuedOn         any                                      `json:"issued_on"`
+	PlaceOfSupply    *string                                  `json:"place_of_supply"`
+	BuyerGSTIN       *string                                  `json:"buyer_gstin"`
+	ReverseCharge    bool                                     `json:"reverse_charge"`
+	IssuedOn         string                                   `json:"issued_on"`
 	PaidMinor        int64                                    `json:"paid_minor"`
 	CreditedMinor    int64                                    `json:"credited_minor"`
 	OutstandingMinor int64                                    `json:"outstanding_minor"`
@@ -448,17 +461,17 @@ type GetOnboardingResponse struct {
 }
 
 type GetOnboardingResponseBankAccountsItem struct {
-	ID           string `json:"id"`
-	HolderName   any    `json:"holder_name"`
-	Ifsc         any    `json:"ifsc"`
-	AccountLast4 any    `json:"account_last4"`
-	Verified     bool   `json:"verified"`
+	ID           string  `json:"id"`
+	HolderName   any     `json:"holder_name"`
+	Ifsc         any     `json:"ifsc"`
+	AccountLast4 *string `json:"account_last4"`
+	Verified     bool    `json:"verified"`
 }
 
 type GetOnboardingResponseChecksItem struct {
 	Kind    string `json:"kind"`
 	Subject any    `json:"subject"`
-	Outcome any    `json:"outcome"`
+	Outcome string `json:"outcome"`
 	Detail  any    `json:"detail"`
 }
 
@@ -470,14 +483,14 @@ type GetOnboardingResponseDocumentsItem struct {
 }
 
 type GetOnboardingResponseProfileItem struct {
-	LegalName    any `json:"legal_name"`
-	BusinessType any `json:"business_type"`
-	PAN          any `json:"pan"`
-	GSTIN        any `json:"gstin"`
-	Address      any `json:"address"`
-	SubmittedBy  any `json:"submitted_by"`
-	ReviewedBy   any `json:"reviewed_by"`
-	ReviewNote   any `json:"review_note"`
+	LegalName    *string `json:"legal_name"`
+	BusinessType any     `json:"business_type"`
+	PAN          string  `json:"pan"`
+	GSTIN        *string `json:"gstin"`
+	Address      any     `json:"address"`
+	SubmittedBy  any     `json:"submitted_by"`
+	ReviewedBy   any     `json:"reviewed_by"`
+	ReviewNote   any     `json:"review_note"`
 }
 
 type GetOutboxResponse struct {
@@ -534,6 +547,21 @@ type GetPaymentLinksResponse struct {
 	Data []any `json:"data"`
 }
 
+type GetPayoutsByIdResponse struct {
+	ID          string  `json:"id"`
+	VendorID    *string `json:"vendor_id"`
+	AmountMinor int64   `json:"amount_minor"`
+	Currency    string  `json:"currency"`
+	Status      string  `json:"status"`
+	Purpose     any     `json:"purpose"`
+	ExternalRef *string `json:"external_ref"`
+	RequestedBy any     `json:"requested_by"`
+	ApprovedBy  any     `json:"approved_by"`
+	PaidBy      any     `json:"paid_by"`
+	BankRef     any     `json:"bank_ref"`
+	CreatedAt   *string `json:"created_at"`
+}
+
 type GetPayoutsResponse struct {
 	Data any `json:"data"`
 }
@@ -565,15 +593,15 @@ type GetPlatformChangesResponseDataItem struct {
 	Summary            any     `json:"summary"`
 	Status             string  `json:"status"`
 	RequestedBy        any     `json:"requested_by"`
-	RequestedAt        any     `json:"requested_at"`
-	Note               any     `json:"note"`
-	DueAt              any     `json:"due_at"`
+	RequestedAt        *string `json:"requested_at"`
+	Note               *string `json:"note"`
+	DueAt              *string `json:"due_at"`
 	Overdue            any     `json:"overdue"`
 	SlaHours           any     `json:"sla_hours"`
 	Stage              string  `json:"stage"`
 	FirstApprovedBy    any     `json:"first_approved_by"`
 	FirstApprovedByMe  any     `json:"first_approved_by_me"`
-	NeedsSecondBecause any     `json:"needs_second_because"`
+	NeedsSecondBecause *string `json:"needs_second_because"`
 	EscalationNote     any     `json:"escalation_note"`
 	AssignedTo         any     `json:"assigned_to"`
 	AssignedToName     any     `json:"assigned_to_name"`
@@ -584,6 +612,12 @@ type GetPlatformMeResponse struct {
 	ID    string  `json:"id"`
 	Name  string  `json:"name"`
 	Email *string `json:"email"`
+}
+
+type GetPlatformReviewsByOrganisationIdResponse struct {
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
+	Detail  any    `json:"detail"`
 }
 
 type GetPlatformReviewsResponse struct {
@@ -600,8 +634,8 @@ type GetPlatformRotaResponse struct {
 	IAmLead          any                                  `json:"i_am_lead"`
 	UtcOffsetMinutes any                                  `json:"utc_offset_minutes"`
 	Timezone         any                                  `json:"timezone"`
-	LocalNow         any                                  `json:"local_now"`
-	LocalDate        any                                  `json:"local_date"`
+	LocalNow         string                               `json:"local_now"`
+	LocalDate        string                               `json:"local_date"`
 	OnDutyNow        any                                  `json:"on_duty_now"`
 	HolidayToday     any                                  `json:"holiday_today"`
 	Reviewers        []any                                `json:"reviewers"`
@@ -615,8 +649,8 @@ type GetPlatformRotaResponseDaysOffItem struct {
 	Desk       any     `json:"desk"`
 	Mine       any     `json:"mine"`
 	Removable  any     `json:"removable"`
-	FirstDay   any     `json:"first_day"`
-	LastDay    any     `json:"last_day"`
+	FirstDay   string  `json:"first_day"`
+	LastDay    string  `json:"last_day"`
 	Note       string  `json:"note"`
 }
 
@@ -630,7 +664,7 @@ type GetReconCasesByIdSuggestionsResponse struct {
 	Summary   string   `json:"summary"`
 	Evidence  []any    `json:"evidence"`
 	NextSteps []string `json:"next_steps"`
-	Note      any      `json:"note"`
+	Note      string   `json:"note"`
 }
 
 type GetReconCasesResponse struct {
@@ -660,15 +694,31 @@ type GetRefundsResponse struct {
 }
 
 type GetSettingsResponse struct {
-	RefundApprovalThresholdMinor int64 `json:"refund_approval_threshold_minor"`
-	Routing                      any   `json:"routing"`
-	OutboundWebhookURL           any   `json:"outbound_webhook_url"`
-	Env                          any   `json:"env"`
-	Dunning                      any   `json:"dunning"`
-	Gst                          any   `json:"gst"`
-	PayoutApprovalThresholdMinor int64 `json:"payout_approval_threshold_minor"`
-	Risk                         any   `json:"risk"`
-	WebhookEvents                any   `json:"webhook_events"`
+	RefundApprovalThresholdMinor int64   `json:"refund_approval_threshold_minor"`
+	Routing                      any     `json:"routing"`
+	OutboundWebhookURL           *string `json:"outbound_webhook_url"`
+	Env                          string  `json:"env"`
+	Dunning                      any     `json:"dunning"`
+	Gst                          any     `json:"gst"`
+	PayoutApprovalThresholdMinor int64   `json:"payout_approval_threshold_minor"`
+	Risk                         any     `json:"risk"`
+	WebhookEvents                any     `json:"webhook_events"`
+}
+
+type GetSettlementsByIdExplainResponse struct {
+	Settlement          any   `json:"settlement"`
+	Payments            []any `json:"payments"`
+	Refunds             []any `json:"refunds"`
+	Adjustments         []any `json:"adjustments"`
+	Fees                any   `json:"fees"`
+	Arithmetic          any   `json:"arithmetic"`
+	ExpectedMinor       int64 `json:"expected_minor"`
+	ReceivedMinor       int64 `json:"received_minor"`
+	DifferenceMinor     int64 `json:"difference_minor"`
+	DifferenceBreakdown any   `json:"difference_breakdown"`
+	BankMatch           any   `json:"bank_match"`
+	Cases               []any `json:"cases"`
+	Narrative           bool  `json:"narrative"`
 }
 
 type GetSettlementsResponse struct {
@@ -739,29 +789,41 @@ type MandateRow struct {
 	UpdatedAt          string  `json:"updated_at"`
 }
 
+type PatchCustomersByIdResponse struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Email       string  `json:"email"`
+	Phone       *string `json:"phone"`
+	ExternalRef *string `json:"external_ref"`
+	GSTIN       *string `json:"gstin"`
+	Address1    *string `json:"address1"`
+	Location    *string `json:"location"`
+	Pincode     *string `json:"pincode"`
+}
+
 type PostApiKeysByIdRevokeResponse struct {
 	ID      string `json:"id"`
 	Revoked bool   `json:"revoked"`
 }
 
 type PostApiKeysByIdRotateResponse struct {
-	ID                   string `json:"id"`
-	Key                  any    `json:"key"`
-	Prefix               any    `json:"prefix"`
-	Scopes               any    `json:"scopes"`
-	RotatedFrom          string `json:"rotated_from"`
-	OldKeyExpiresInHours any    `json:"old_key_expires_in_hours"`
-	Note                 any    `json:"note"`
+	ID                   string   `json:"id"`
+	Key                  string   `json:"key"`
+	Prefix               string   `json:"prefix"`
+	Scopes               []string `json:"scopes"`
+	RotatedFrom          string   `json:"rotated_from"`
+	OldKeyExpiresInHours int64    `json:"old_key_expires_in_hours"`
+	Note                 string   `json:"note"`
 }
 
 type PostApiKeysResponse struct {
-	ID           string `json:"id"`
-	Key          any    `json:"key"`
-	Prefix       any    `json:"prefix"`
-	Scopes       any    `json:"scopes"`
-	ExpiresAt    any    `json:"expires_at"`
-	AllowedCidrs any    `json:"allowed_cidrs"`
-	Note         any    `json:"note"`
+	ID           string   `json:"id"`
+	Key          string   `json:"key"`
+	Prefix       string   `json:"prefix"`
+	Scopes       []string `json:"scopes"`
+	ExpiresAt    any      `json:"expires_at"`
+	AllowedCidrs []string `json:"allowed_cidrs"`
+	Note         string   `json:"note"`
 }
 
 type PostAuditEventsSealResponse struct {
@@ -769,12 +831,12 @@ type PostAuditEventsSealResponse struct {
 }
 
 type PostBankStatementsImportResponse struct {
-	Added                any `json:"added"`
-	SettlementsRechecked any `json:"settlements_rechecked"`
+	Added                int64 `json:"added"`
+	SettlementsRechecked int64 `json:"settlements_rechecked"`
 }
 
 type PostBillingRunResponse struct {
-	InvoicesCreated any `json:"invoices_created"`
+	InvoicesCreated int64 `json:"invoices_created"`
 }
 
 type PostBranchesResponse struct {
@@ -810,7 +872,7 @@ type PostCheckoutLinksByTenantIdByTokenStartResponse struct {
 	ClientSecret string `json:"client_secret"`
 	AmountMinor  int64  `json:"amount_minor"`
 	Currency     string `json:"currency"`
-	Path         any    `json:"path"`
+	Path         string `json:"path"`
 }
 
 type PostClosingsByIdSignoffResponse struct {
@@ -839,14 +901,19 @@ type PostCollectionsDraftsByIdRejectResponse struct {
 }
 
 type PostCollectionsDunningRunResponse struct {
-	Reminded      any `json:"reminded"`
-	DraftsCreated any `json:"drafts_created"`
-	DraftIds      any `json:"draft_ids"`
+	Reminded      int64    `json:"reminded"`
+	DraftsCreated int64    `json:"drafts_created"`
+	DraftIds      []string `json:"draft_ids"`
 }
 
 type PostCollectionsPromisesByIdCancelResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+type PostConsoleAuthenticateResponse struct {
+	User        any `json:"user"`
+	MfaEnrolled any `json:"mfa_enrolled"`
 }
 
 type PostConsoleInvitationsByIdRevokeResponse struct {
@@ -870,17 +937,32 @@ type PostConsoleSwitchEnvResponse struct {
 	User       any    `json:"user"`
 	SessionKey any    `json:"session_key"`
 	TenantID   string `json:"tenant_id"`
-	Env        any    `json:"env"`
+	Env        string `json:"env"`
+}
+
+type PostConsoleUsersByIdDisableResponse struct {
+	ID string `json:"id"`
+	Ok bool   `json:"ok"`
+}
+
+type PostConsoleUsersByIdEnableResponse struct {
+	ID string `json:"id"`
+	Ok bool   `json:"ok"`
 }
 
 type PostConsoleUsersByIdMfaBeginResponse struct {
-	Secret     any `json:"secret"`
-	OtpauthUri any `json:"otpauth_uri"`
+	Secret     any    `json:"secret"`
+	OtpauthUri string `json:"otpauth_uri"`
 }
 
 type PostConsoleUsersByIdMfaConfirmResponse struct {
 	RecoveryCodes []string `json:"recovery_codes"`
-	Note          any      `json:"note"`
+	Note          string   `json:"note"`
+}
+
+type PostConsoleUsersByIdMfaResetResponse struct {
+	ID string `json:"id"`
+	Ok bool   `json:"ok"`
 }
 
 type PostConsoleUsersByIdPasswordResponse struct {
@@ -897,13 +979,13 @@ type PostConsoleUsersResponse struct {
 
 type PostCountersByIdDeactivateResponse struct {
 	ID     string `json:"id"`
-	Active any    `json:"active"`
+	Active bool   `json:"active"`
 }
 
 type PostCountersResponse struct {
-	ID       string  `json:"id"`
-	BranchID *string `json:"branch_id"`
-	Name     string  `json:"name"`
+	ID       string `json:"id"`
+	BranchID string `json:"branch_id"`
+	Name     string `json:"name"`
 }
 
 type PostCouponsByIdDeactivateResponse struct {
@@ -913,16 +995,16 @@ type PostCouponsByIdDeactivateResponse struct {
 
 type PostCouponsResponse struct {
 	ID   string `json:"id"`
-	Code any    `json:"code"`
+	Code string `json:"code"`
 }
 
 type PostCustomersResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Phone       any    `json:"phone"`
-	ExternalRef any    `json:"external_ref"`
-	GSTIN       any    `json:"gstin"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Email       *string `json:"email"`
+	Phone       *string `json:"phone"`
+	ExternalRef *string `json:"external_ref"`
+	GSTIN       *string `json:"gstin"`
 }
 
 type PostDisputesByIdEvidenceResponse struct {
@@ -942,15 +1024,28 @@ type PostDisputesResponse struct {
 }
 
 type PostFxRatesResponse struct {
-	ID       string `json:"id"`
-	Currency string `json:"currency"`
-	Rate     any    `json:"rate"`
-	AsOf     any    `json:"as_of"`
+	ID       string  `json:"id"`
+	Currency string  `json:"currency"`
+	Rate     any     `json:"rate"`
+	AsOf     *string `json:"as_of"`
+}
+
+type PostInstallmentPlansResponse struct {
+	ID             string  `json:"id"`
+	CustomerID     *string `json:"customer_id"`
+	Name           string  `json:"name"`
+	TotalMinor     int64   `json:"total_minor"`
+	Currency       string  `json:"currency"`
+	Instalments    any     `json:"instalments"`
+	ExternalRef    *string `json:"external_ref"`
+	SettledMinor   int64   `json:"settled_minor"`
+	RemainingMinor int64   `json:"remaining_minor"`
+	Invoices       []any   `json:"invoices"`
 }
 
 type PostInvitationsAcceptResponse struct {
 	Email  string `json:"email"`
-	Joined any    `json:"joined"`
+	Joined bool   `json:"joined"`
 }
 
 type PostInvitationsLookupResponse struct {
@@ -969,23 +1064,23 @@ type PostInvoicesByIdPromisesResponse struct {
 	ID            string `json:"id"`
 	InvoiceID     string `json:"invoice_id"`
 	PromisedMinor int64  `json:"promised_minor"`
-	PromisedDate  any    `json:"promised_date"`
+	PromisedDate  string `json:"promised_date"`
 	Status        string `json:"status"`
 }
 
 type PostInvoicesByIdRemindersDraftResponse struct {
-	ID        string `json:"id"`
-	InvoiceID string `json:"invoice_id"`
-	Channel   any    `json:"channel"`
-	Message   any    `json:"message"`
-	Source    any    `json:"source"`
-	Status    string `json:"status"`
+	ID        string  `json:"id"`
+	InvoiceID string  `json:"invoice_id"`
+	Channel   string  `json:"channel"`
+	Message   *string `json:"message"`
+	Source    string  `json:"source"`
+	Status    string  `json:"status"`
 }
 
 type PostInvoicesByIdRemindersResponse struct {
 	ID        string `json:"id"`
 	InvoiceID string `json:"invoice_id"`
-	Channel   any    `json:"channel"`
+	Channel   string `json:"channel"`
 }
 
 type PostInvoicesByIdVoidResponse struct {
@@ -1003,6 +1098,21 @@ type PostInvoicesResponse struct {
 
 type PostLiveAccessResponse struct {
 	Status string `json:"status"`
+}
+
+type PostMandatesByIdDebitsResponse struct {
+	ID            string  `json:"id"`
+	MandateID     string  `json:"mandate_id"`
+	AmountMinor   int64   `json:"amount_minor"`
+	Currency      string  `json:"currency"`
+	DueDate       string  `json:"due_date"`
+	NotifiedAt    *string `json:"notified_at"`
+	InvoiceID     *string `json:"invoice_id"`
+	State         string  `json:"state"`
+	AttemptID     *string `json:"attempt_id"`
+	RetryNo       int64   `json:"retry_no"`
+	FailureReason *string `json:"failure_reason"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 type PostMandatesByIdPauseResponse struct {
@@ -1081,6 +1191,25 @@ type PostMandatesByIdRevokeResponse struct {
 	UpdatedAt          string  `json:"updated_at"`
 }
 
+type PostMandatesResponse struct {
+	ID                 string  `json:"id"`
+	CustomerID         string  `json:"customer_id"`
+	Currency           string  `json:"currency"`
+	MaxAmountMinor     int64   `json:"max_amount_minor"`
+	Frequency          string  `json:"frequency"`
+	StartDate          string  `json:"start_date"`
+	EndDate            string  `json:"end_date"`
+	Status             string  `json:"status"`
+	Provider           string  `json:"provider"`
+	ProviderMandateRef *string `json:"provider_mandate_ref"`
+	Authorization      any     `json:"authorization"`
+	FailureReason      *string `json:"failure_reason"`
+	RevokedBy          *string `json:"revoked_by"`
+	ExternalRef        *string `json:"external_ref"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+}
+
 type PostMilestonesByIdCancelResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
@@ -1104,13 +1233,13 @@ type PostOnboardingBankAccountsByIdVerifyResponse struct {
 
 type PostOnboardingBankAccountsResponse struct {
 	ID           string                                        `json:"id"`
-	AccountLast4 any                                           `json:"account_last4"`
+	AccountLast4 *string                                       `json:"account_last4"`
 	Check        []PostOnboardingBankAccountsResponseCheckItem `json:"check"`
 }
 
 type PostOnboardingBankAccountsResponseCheckItem struct {
-	Outcome any `json:"outcome"`
-	Detail  any `json:"detail"`
+	Outcome string `json:"outcome"`
+	Detail  any    `json:"detail"`
 }
 
 type PostOnboardingDocumentsResponse struct {
@@ -1129,7 +1258,7 @@ type PostOnboardingReviewResponse struct {
 
 type PostOnboardingSubmitResponse struct {
 	Status    string `json:"status"`
-	Automatic any    `json:"automatic"`
+	Automatic bool   `json:"automatic"`
 	Reasons   any    `json:"reasons"`
 }
 
@@ -1287,26 +1416,72 @@ type PostPaymentLinksByIdCancelResponse struct {
 }
 
 type PostPaymentLinksResponse struct {
-	ID        string `json:"id"`
-	Token     any    `json:"token"`
-	Currency  string `json:"currency"`
-	Path      any    `json:"path"`
-	MaxUses   any    `json:"max_uses"`
-	ExpiresAt any    `json:"expires_at"`
+	ID        string  `json:"id"`
+	Token     any     `json:"token"`
+	Currency  string  `json:"currency"`
+	Path      string  `json:"path"`
+	MaxUses   *int64  `json:"max_uses"`
+	ExpiresAt *string `json:"expires_at"`
 }
 
 type PostPayoutsBulkResponse struct {
-	Count          any   `json:"count"`
+	Count          int64 `json:"count"`
 	AlreadyExisted any   `json:"already_existed"`
 	NewTotalMinor  int64 `json:"new_total_minor"`
 	Data           any   `json:"data"`
+}
+
+type PostPayoutsByIdApproveResponse struct {
+	PayoutID    *string `json:"payout_id"`
+	AmountMinor int64   `json:"amount_minor"`
+}
+
+type PostPayoutsByIdCancelResponse struct {
+	ID          string  `json:"id"`
+	VendorID    *string `json:"vendor_id"`
+	AmountMinor int64   `json:"amount_minor"`
+	Currency    string  `json:"currency"`
+	Status      string  `json:"status"`
+	Purpose     any     `json:"purpose"`
+	ExternalRef *string `json:"external_ref"`
+	RequestedBy any     `json:"requested_by"`
+	ApprovedBy  any     `json:"approved_by"`
+	PaidBy      any     `json:"paid_by"`
+	BankRef     any     `json:"bank_ref"`
+	CreatedAt   *string `json:"created_at"`
+}
+
+type PostPayoutsByIdMarkPaidResponse struct {
+	ID          string  `json:"id"`
+	VendorID    *string `json:"vendor_id"`
+	AmountMinor int64   `json:"amount_minor"`
+	Currency    string  `json:"currency"`
+	Status      string  `json:"status"`
+	Purpose     any     `json:"purpose"`
+	ExternalRef *string `json:"external_ref"`
+	RequestedBy any     `json:"requested_by"`
+	ApprovedBy  any     `json:"approved_by"`
+	PaidBy      any     `json:"paid_by"`
+	BankRef     any     `json:"bank_ref"`
+	CreatedAt   *string `json:"created_at"`
+}
+
+type PostPayoutsByIdRejectResponse struct {
+	PayoutID    *string `json:"payout_id"`
+	AmountMinor int64   `json:"amount_minor"`
+}
+
+type PostPayoutsResponse struct {
+	PayoutID    string `json:"payout_id"`
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
 }
 
 type PostPlansResponse struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	AmountMinor  int64  `json:"amount_minor"`
-	IntervalUnit any    `json:"interval_unit"`
+	IntervalUnit string `json:"interval_unit"`
 }
 
 type PostPlatformChangesByIdAssignResponse struct {
@@ -1316,10 +1491,10 @@ type PostPlatformChangesByIdAssignResponse struct {
 }
 
 type PostPlatformChangesByIdDecisionResponse struct {
-	ID                 string `json:"id"`
-	Status             string `json:"status"`
-	Stage              string `json:"stage"`
-	NeedsSecondBecause any    `json:"needs_second_because"`
+	ID                 string  `json:"id"`
+	Status             string  `json:"status"`
+	Stage              string  `json:"stage"`
+	NeedsSecondBecause *string `json:"needs_second_because"`
 }
 
 type PostPlatformChangesByIdEscalateResponse struct {
@@ -1335,10 +1510,10 @@ type PostPlatformReviewsByOrganisationIdAssignResponse struct {
 }
 
 type PostPlatformReviewsByOrganisationIdDecisionResponse struct {
-	OrganisationID     string `json:"organisation_id"`
-	Status             string `json:"status"`
-	Stage              string `json:"stage"`
-	NeedsSecondBecause any    `json:"needs_second_because"`
+	OrganisationID     string  `json:"organisation_id"`
+	Status             string  `json:"status"`
+	Stage              string  `json:"stage"`
+	NeedsSecondBecause *string `json:"needs_second_because"`
 }
 
 type PostPlatformReviewsByOrganisationIdEscalateResponse struct {
@@ -1347,12 +1522,22 @@ type PostPlatformReviewsByOrganisationIdEscalateResponse struct {
 	Escalated      bool   `json:"escalated"`
 }
 
+type PostPlatformReviewsByOrganisationIdRestoreResponse struct {
+	OrganisationID *string `json:"organisation_id"`
+	Status         string  `json:"status"`
+}
+
+type PostPlatformReviewsByOrganisationIdRevokeResponse struct {
+	OrganisationID *string `json:"organisation_id"`
+	Status         string  `json:"status"`
+}
+
 type PostPlatformRotaDaysOffResponse struct {
 	ID         string  `json:"id"`
-	Desk       any     `json:"desk"`
+	Desk       bool    `json:"desk"`
 	ReviewerID *string `json:"reviewer_id"`
-	FirstDay   any     `json:"first_day"`
-	LastDay    any     `json:"last_day"`
+	FirstDay   string  `json:"first_day"`
+	LastDay    string  `json:"last_day"`
 	Note       string  `json:"note"`
 }
 
@@ -1366,7 +1551,7 @@ type PostProviderAccountsByProviderCheckResponse struct {
 	Provider string `json:"provider"`
 	Ok       bool   `json:"ok"`
 	Detail   any    `json:"detail"`
-	Env      any    `json:"env"`
+	Env      string `json:"env"`
 }
 
 type PostProviderAccountsByProviderEnabledResponse struct {
@@ -1378,13 +1563,13 @@ type PostProviderAccountsResponse struct {
 	ID         string `json:"id"`
 	Provider   string `json:"provider"`
 	Updated    any    `json:"updated"`
-	WebhookURL any    `json:"webhook_url"`
+	WebhookURL string `json:"webhook_url"`
 }
 
 type PostReconCasesByIdAssignResponse struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
-	Assignee any    `json:"assignee"`
+	Assignee string `json:"assignee"`
 }
 
 type PostReconCasesByIdResolveResponse struct {
@@ -1393,7 +1578,7 @@ type PostReconCasesByIdResolveResponse struct {
 }
 
 type PostReconScanResponse struct {
-	NewCases any `json:"new_cases"`
+	NewCases int64 `json:"new_cases"`
 }
 
 type PostRefundsByIdApproveResponse struct {
@@ -1468,8 +1653,29 @@ type PostSettingsResponse struct {
 	Ok bool `json:"ok"`
 }
 
+type PostSettlementsByIdSimulateBankResponse struct {
+	Added                int64 `json:"added"`
+	SettlementsRechecked int64 `json:"settlements_rechecked"`
+}
+
+type PostSettlementsImportResponse struct {
+	Settlement          any   `json:"settlement"`
+	Payments            []any `json:"payments"`
+	Refunds             []any `json:"refunds"`
+	Adjustments         []any `json:"adjustments"`
+	Fees                any   `json:"fees"`
+	Arithmetic          any   `json:"arithmetic"`
+	ExpectedMinor       int64 `json:"expected_minor"`
+	ReceivedMinor       int64 `json:"received_minor"`
+	DifferenceMinor     int64 `json:"difference_minor"`
+	DifferenceBreakdown any   `json:"difference_breakdown"`
+	BankMatch           any   `json:"bank_match"`
+	Cases               []any `json:"cases"`
+	Narrative           bool  `json:"narrative"`
+}
+
 type PostSettlementsSyncResponse struct {
-	Imported any `json:"imported"`
+	Imported int64 `json:"imported"`
 }
 
 type PostSignupResendResponse struct {
@@ -1481,7 +1687,7 @@ type PostSignupResponse struct {
 	TestTenant     any     `json:"test_tenant"`
 	TestKey        any     `json:"test_key"`
 	Email          string  `json:"email"`
-	Verification   any     `json:"verification"`
+	Verification   string  `json:"verification"`
 }
 
 type PostSignupVerifyResponse struct {
@@ -1514,14 +1720,19 @@ type PostSimPayResponse struct {
 	Status string `json:"status"`
 }
 
+type PostSubscriptionsByIdCancelResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 type PostSubscriptionsByIdChangePlanResponse struct {
 	ID                 string  `json:"id"`
-	PlanID             *string `json:"plan_id"`
-	Quantity           any     `json:"quantity"`
+	PlanID             string  `json:"plan_id"`
+	Quantity           int64   `json:"quantity"`
 	ProrationMinor     bool    `json:"proration_minor"`
 	ProrationInvoiceID *string `json:"proration_invoice_id"`
-	RemainingDays      any     `json:"remaining_days"`
-	PeriodDays         any     `json:"period_days"`
+	RemainingDays      int64   `json:"remaining_days"`
+	PeriodDays         int64   `json:"period_days"`
 }
 
 type PostSubscriptionsByIdMandateResponse struct {
@@ -1529,15 +1740,25 @@ type PostSubscriptionsByIdMandateResponse struct {
 	MandateID *string `json:"mandate_id"`
 }
 
+type PostSubscriptionsByIdPauseResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type PostSubscriptionsByIdResumeResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 type PostSubscriptionsByIdUsageResponse struct {
-	Recorded any `json:"recorded"`
-	Quantity any `json:"quantity"`
+	Recorded int64 `json:"recorded"`
+	Quantity int64 `json:"quantity"`
 }
 
 type PostSubscriptionsResponse struct {
-	ID           string `json:"id"`
-	Status       string `json:"status"`
-	NextBillDate any    `json:"next_bill_date"`
+	ID           string  `json:"id"`
+	Status       string  `json:"status"`
+	NextBillDate *string `json:"next_bill_date"`
 }
 
 type PostUsersResponse struct {
@@ -1559,15 +1780,21 @@ type PutOnboardingResponse struct {
 	Status string `json:"status"`
 }
 
+type PutPlatformMeResponse struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Email *string `json:"email"`
+}
+
 type PutPlatformRotaMeResponse struct {
-	Shifts any `json:"shifts"`
-	OnDuty any `json:"on_duty"`
+	Shifts int64 `json:"shifts"`
+	OnDuty any   `json:"on_duty"`
 }
 
 type PutPlatformRotaReviewersByIdResponse struct {
 	Reviewer string `json:"reviewer"`
 	Name     string `json:"name"`
-	Shifts   any    `json:"shifts"`
+	Shifts   int64  `json:"shifts"`
 	OnDuty   any    `json:"on_duty"`
 }
 
