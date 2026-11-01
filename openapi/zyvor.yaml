@@ -554,7 +554,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/collections/drafts/{id}/approve:
     post:
-      summary: Approve a reminder draft (optionally edited): logs it and emits invoice.reminder
+      summary: "Approve a reminder draft (optionally edited): logs it and emits invoice.reminder"
       tags:
       - collections
       responses:
@@ -937,7 +937,7 @@ paths:
           type: string
   /v1/disputes/{id}/resolve:
     post:
-      summary: Record the outcome: won releases the hold, lost books the loss and re-opens the invoice
+      summary: "Record the outcome: won releases the hold, lost books the loss and re-opens the invoice"
       tags:
       - disputes
       responses:
@@ -1127,7 +1127,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/signup:
     post:
-      summary: Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)
+      summary: "Public: create an organisation with test and live tenants, a first admin user and a test key (shown once)"
       tags:
       - signup
       security: []
@@ -1138,7 +1138,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/signup/verify:
     post:
-      summary: Public: confirm the emailed verification token
+      summary: "Public: confirm the emailed verification token"
       tags:
       - signup
       security: []
@@ -1149,7 +1149,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/console/login:
     post:
-      summary: Public: sign in by signup email; returns the person and a 12-hour role-scoped session key
+      summary: "Public: sign in by signup email; returns the person and a 12-hour role-scoped session key"
       tags:
       - console_users
       security: []
@@ -1180,7 +1180,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/signup/resend:
     post:
-      summary: Public: email a fresh verification link (always answers the same)
+      summary: "Public: email a fresh verification link (always answers the same)"
       tags:
       - signup
       security: []
@@ -1191,7 +1191,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/invitations/lookup:
     post:
-      summary: Public: who an invitation link is for
+      summary: "Public: who an invitation link is for"
       tags:
       - invitations
       security: []
@@ -1202,7 +1202,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/invitations/accept:
     post:
-      summary: Public: accept an invitation by choosing a password
+      summary: "Public: accept an invitation by choosing a password"
       tags:
       - invitations
       security: []
@@ -1213,7 +1213,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/password_reset/request:
     post:
-      summary: Public: email a password reset link (always answers the same)
+      summary: "Public: email a password reset link (always answers the same)"
       tags:
       - password_reset
       security: []
@@ -1224,7 +1224,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/password_reset/confirm:
     post:
-      summary: Public: set a new password with the emailed token
+      summary: "Public: set a new password with the emailed token"
       tags:
       - password_reset
       security: []
@@ -1289,7 +1289,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/provider_accounts/{provider}/check:
     post:
-      summary: Ask the provider whether it accepts this account's credentials (read-only; a refusal is `ok: false`)
+      summary: "Ask the provider whether it accepts this account's credentials (read-only; a refusal is `ok: false`)"
       tags:
       - providers
       parameters:
@@ -1585,7 +1585,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews:
     get:
-      summary: Zyvor reviewers only (a zp_ key): live-access requests, optionally filtered by status
+      summary: "Zyvor reviewers only (a zp_ key): live-access requests, optionally filtered by status"
       tags:
       - platform
       responses:
@@ -1595,7 +1595,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}:
     get:
-      summary: Zyvor reviewers only: what the business submitted and the checks that ran (no secrets)
+      summary: "Zyvor reviewers only: what the business submitted and the checks that ran (no secrets)"
       tags:
       - platform
       parameters:
@@ -1611,7 +1611,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/decision:
     post:
-      summary: Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)
+      summary: "Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)"
       tags:
       - platform
       parameters:
@@ -1627,7 +1627,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/revoke:
     post:
-      summary: Zyvor reviewers only: take live mode away from an approved business (a note is required and shown to the merchant). Its live side keeps reading and refunding but takes no new payments and moves no money out
+      summary: "Zyvor reviewers only: take live mode away from an approved business (a note is required and shown to the merchant). Its live side keeps reading and refunding but takes no new payments and moves no money out"
       tags:
       - platform
       parameters:
@@ -1643,7 +1643,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/restore:
     post:
-      summary: Zyvor reviewers only: give live mode back to a business whose access was revoked (a different reviewer than the one who revoked it, unless ZYVOR_REVIEW_TWO_PERSON=never)
+      summary: "Zyvor reviewers only: give live mode back to a business whose access was revoked (a different reviewer than the one who revoked it, unless ZYVOR_REVIEW_TWO_PERSON=never)"
       tags:
       - platform
       parameters:
@@ -1675,7 +1675,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/escalate:
     post:
-      summary: Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown to them)
+      summary: "Zyvor reviewers only: ask for a second, different reviewer on a pending review (a note says why and is shown to them)"
       tags:
       - platform
       parameters:
@@ -1727,7 +1727,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/rota/rebalance:
     post:
-      summary: Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). With `even: true` in the body it then evens out the on-duty reviewers: while the most-loaded holds two or more than the least-loaded, the item given to them most recently moves to the least-loaded (never the first approver), at most 50 moves. Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved, evened and left
+      summary: "Zyvor reviewers who are leads only - move every pending request and change held by a reviewer on leave today to the on-duty reviewer holding the fewest (never the first approver). With `even: true` in the body it then evens out the on-duty reviewers: while the most-loaded holds two or more than the least-loaded, the item given to them most recently moves to the least-loaded (never the first approver), at most 50 moves. Audited as the lead's; both people are emailed. 409 when nobody is on duty. Returns moved, evened and left"
       tags:
       - platform
       responses:
@@ -1798,7 +1798,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/changes:
     get:
-      summary: Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status
+      summary: "Zyvor reviewers only: changes a business made after Zyvor approved it (a new bank account), optionally filtered by status"
       tags:
       - platform
       responses:
@@ -1840,7 +1840,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/changes/{id}/decision:
     post:
-      summary: Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves it pending), or reject it with a note (the account is removed and the merchant is told why)
+      summary: "Zyvor reviewers only: approve a change (a flagged one needs two different reviewers; the first approval leaves it pending), or reject it with a note (the account is removed and the merchant is told why)"
       tags:
       - platform
       parameters:
@@ -2168,7 +2168,7 @@ paths:
           type: string
   /v1/onboarding:
     get:
-      summary: Onboarding status: profile (PAN masked), documents and bank accounts
+      summary: "Onboarding status: profile (PAN masked), documents and bank accounts"
       tags:
       - onboarding
       responses:
@@ -2314,7 +2314,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/closings:
     post:
-      summary: Close a branch day: expected cash and digital totals against the counted cash
+      summary: "Close a branch day: expected cash and digital totals against the counted cash"
       tags:
       - closing
       responses:
@@ -2375,7 +2375,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/insights/refund_anomalies:
     get:
-      summary: Refund patterns worth a look: a spike against the usual rate, or one person behind most refunds
+      summary: "Refund patterns worth a look: a spike against the usual rate, or one person behind most refunds"
       tags:
       - insights
       responses:
@@ -2530,7 +2530,7 @@ paths:
           type: string
   /v1/checkout/links/{tenant_id}/{token}/start:
     post:
-      summary: Open a payment link: mints a payment intent for this payer
+      summary: "Open a payment link: mints a payment intent for this payer"
       tags:
       - checkout
       responses:
