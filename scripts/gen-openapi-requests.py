@@ -181,10 +181,10 @@ def schema_of(ty: str, known: dict, seen=None):
 def main() -> int:
     check = "--check" in sys.argv
     lib = (SRC / "lib.rs").read_text()
-    per_file = {f.stem: structs(f.read_text()) for f in SRC.glob("*.rs")}
-    fn_src = {f.stem: f.read_text() for f in SRC.glob("*.rs")}
+    per_file = {f.stem: structs(f.read_text()) for f in sorted(SRC.glob("*.rs"))}
+    fn_src = {f.stem: f.read_text() for f in sorted(SRC.glob("*.rs"))}
     rows = {}  # Serialize structs that handlers return as they are
-    for f in SRC.glob("*.rs"):
+    for f in sorted(SRC.glob("*.rs")):
         for n, fl in structs(f.read_text(), "Serialize").items():
             if n.endswith("Row"):
                 rows[n] = (f.stem, fl)
@@ -309,7 +309,7 @@ def main() -> int:
 
     out = yaml.dump(spec, sort_keys=False, width=120)
     if check:
-        if SPEC.read_text() != out:
+        if yaml.safe_load(SPEC.read_text()) != yaml.safe_load(out):  # content, not formatting
             print("openapi/zyvor.yaml is out of date: run scripts/gen-openapi-requests.py")
             return 1
         return 0

@@ -6777,34 +6777,39 @@ components:
       required:
       - token
       - password
-    RefundRow:
+    MandateRow:
       type: object
       x-generated: true
       properties:
         id:
           type: string
-        attempt_id:
+        customer_id:
           type: string
-        intent_id:
-          type: string
-        amount_minor:
-          type: integer
-          format: int64
         currency:
           type: string
+        max_amount_minor:
+          type: integer
+          format: int64
+        frequency:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
         status:
           type: string
-        reason:
+        provider:
+          type: string
+        provider_mandate_ref:
+          type: string
+        authorization: {}
+        failure_reason:
+          type: string
+        revoked_by:
           type: string
         external_ref:
-          type: string
-        requested_by:
-          type: string
-        approved_by:
-          type: string
-        provider_refund_ref:
-          type: string
-        failure_reason:
           type: string
         created_at:
           type: string
@@ -6814,14 +6819,58 @@ components:
           format: date-time
       required:
       - id
-      - attempt_id
-      - intent_id
-      - amount_minor
+      - customer_id
       - currency
+      - max_amount_minor
+      - frequency
+      - start_date
+      - end_date
       - status
-      - requested_by
+      - provider
       - created_at
       - updated_at
+    DebitRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        mandate_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        due_date:
+          type: string
+          format: date
+        notified_at:
+          type: string
+          format: date-time
+        invoice_id:
+          type: string
+        state:
+          type: string
+        attempt_id:
+          type: string
+        retry_no:
+          type: integer
+          format: int32
+        failure_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - mandate_id
+      - amount_minor
+      - currency
+      - due_date
+      - state
+      - retry_no
+      - created_at
     IntentRow:
       type: object
       x-generated: true
@@ -6919,39 +6968,34 @@ components:
       - reserved_refund_minor
       - created_at
       - updated_at
-    MandateRow:
+    RefundRow:
       type: object
       x-generated: true
       properties:
         id:
           type: string
-        customer_id:
+        attempt_id:
           type: string
-        currency:
+        intent_id:
           type: string
-        max_amount_minor:
+        amount_minor:
           type: integer
           format: int64
-        frequency:
+        currency:
           type: string
-        start_date:
-          type: string
-          format: date
-        end_date:
-          type: string
-          format: date
         status:
           type: string
-        provider:
-          type: string
-        provider_mandate_ref:
-          type: string
-        authorization: {}
-        failure_reason:
-          type: string
-        revoked_by:
+        reason:
           type: string
         external_ref:
+          type: string
+        requested_by:
+          type: string
+        approved_by:
+          type: string
+        provider_refund_ref:
+          type: string
+        failure_reason:
           type: string
         created_at:
           type: string
@@ -6961,55 +7005,11 @@ components:
           format: date-time
       required:
       - id
-      - customer_id
-      - currency
-      - max_amount_minor
-      - frequency
-      - start_date
-      - end_date
-      - status
-      - provider
-      - created_at
-      - updated_at
-    DebitRow:
-      type: object
-      x-generated: true
-      properties:
-        id:
-          type: string
-        mandate_id:
-          type: string
-        amount_minor:
-          type: integer
-          format: int64
-        currency:
-          type: string
-        due_date:
-          type: string
-          format: date
-        notified_at:
-          type: string
-          format: date-time
-        invoice_id:
-          type: string
-        state:
-          type: string
-        attempt_id:
-          type: string
-        retry_no:
-          type: integer
-          format: int32
-        failure_reason:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-      required:
-      - id
-      - mandate_id
+      - attempt_id
+      - intent_id
       - amount_minor
       - currency
-      - due_date
-      - state
-      - retry_no
+      - status
+      - requested_by
       - created_at
+      - updated_at
