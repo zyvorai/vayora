@@ -7,6 +7,10 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("faceIDLock") private var lock = false
     @State private var confirmReset = false
+    @State private var scanning = false
+    @State private var budgeting = false
+    @State private var receiving = false
+    @State private var setupMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +25,9 @@ struct SettingsView: View {
                                 TextField("http://192.168.1.10:8080", text: $store.serverURL)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).foregroundStyle(VUI.textPrimary)
                                     .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                Button { scanning = true } label: { Label("Scan setup QR", systemImage: "qrcode.viewfinder") }
+                                    .vfont(15, .semibold).foregroundStyle(VUI.violet)
+                                if let setupMessage { Text(setupMessage).vfont(13).foregroundStyle(VUI.textSecondary) }
                                 Text("Needs a Vayora API started with ZYVOR_SIM_PAYER=1.").vfont(13).foregroundStyle(VUI.textSecondary)
                             }
                         }
@@ -31,6 +38,17 @@ struct SettingsView: View {
                                 SecureField("Test PIN (4 digits)", text: $store.testPIN).keyboardType(.numberPad).foregroundStyle(VUI.textPrimary)
                                     .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 Text("A local test PIN, not a UPI PIN.").vfont(13).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Budgets and receiving", systemImage: "chart.pie.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                let s = store.budgetStatuses
+                                Text(s.isEmpty ? "No limits set." : s.map { "\($0.category.title) \(Int($0.fraction * 100))%" }.joined(separator: " · ")).vfont(13).foregroundStyle(VUI.textSecondary)
+                                HStack(spacing: 18) {
+                                    Button { budgeting = true } label: { Label("Budgets", systemImage: "slider.horizontal.3") }
+                                    Button { receiving = true } label: { Label("Receive", systemImage: "qrcode") }
+                                }.vfont(15, .semibold).foregroundStyle(VUI.violet)
                             }
                         }
                         GlassCard {
@@ -66,6 +84,18 @@ struct SettingsView: View {
             }
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $budgeting) { BudgetsView().environmentObject(store) }
+            .sheet(isPresented: $receiving) { ReceiveView().environmentObject(store) }
+            .fullScreenCover(isPresented: $scanning) {
+                ScannerView(brand: .pay, hint: "Scan the setup QR") { text in
+                    scanning = false
+                    if let p = try? SetupPayload.parse(text) {
+                        store.serverURL = p.server.absoluteString
+                        setupMessage = "Set up for \(p.server.host ?? "server")."
+                        Haptics.success()
+                    } else { setupMessage = "That is not a Vayora setup QR." }
+                } onCancel: { scanning = false }
+            }
             .confirmationDialog("Reset balance to ₹10,000 and clear history?", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Reset", role: .destructive) { store.resetWallet() }
             }

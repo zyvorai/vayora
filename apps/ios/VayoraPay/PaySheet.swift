@@ -40,6 +40,7 @@ struct PaySheet: View {
                         pin.clear(); pinError = false
                         withAnimation(VUI.spring) { step = .pin }
                     }
+                    .overlay(alignment: .top) { budgetBanner(amount) }
                 }
             case .pin:
                 PinScreen(filled: pin.digits.count, error: pinError, shake: shake, onDigit: { digit($0) }, onDelete: { pin.delete(); pinError = false })
@@ -61,6 +62,17 @@ struct PaySheet: View {
         .background(VUI.ink)
         .preferredColorScheme(.dark)
         .interactiveDismissDisabled(step == .working)
+    }
+
+    /// A heads-up, never a block: this payment would take a category near or over its monthly limit.
+    @ViewBuilder func budgetBanner(_ amount: Money) -> some View {
+        let cat = SpendCategory.guess(name: payload.name, note: payload.note, transfer: transfer)
+        if let w = BudgetCheck.warning(adding: amount.minor, to: cat, entries: store.spendEntries, budgets: store.budgets, now: Date()) {
+            Label(w.level == .over ? "This puts \(cat.title) \(Money(minor: w.spentMinor - w.limitMinor).display) over your budget" : "\(cat.title) will be at \(Int(w.fraction * 100))% of your budget",
+                  systemImage: "exclamationmark.triangle.fill")
+                .vfont(13, .semibold).foregroundStyle(VUI.amber).padding(.horizontal, 14).padding(.vertical, 8)
+                .background(VUI.amber.opacity(0.16), in: Capsule()).padding(.top, 58)
+        }
     }
 
     var closable: Bool { switch step { case .working, .done: false; default: true } }

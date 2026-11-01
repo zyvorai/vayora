@@ -77,4 +77,6 @@ MainActor.assumeIsolated {
     render("ap-m-qr-active", MandateQRScreen(customer: "Ravi", cap: Money(minor: 500_000), frequency: "Every month", until: "1 Nov 2027", qr: mqr, status: .active, approved: 1))
     render("ap-m-detail", MandateDetailScreen(name: "Ravi Kumar", cap: Money(minor: 500_000), line: "Every month · until 1 Nov 2027", status: .active, debits: deb, scrolls: false))
     render("ap-m-new", NewAutoPayDetailsScreen(name: .constant("Ravi Kumar"), frequency: .constant(.monthly), months: .constant(12), canContinue: true))
+    render("m-today-hourly", MerchantTodayScreen(collected: Money(minor: 49900), count: 4, average: Money(minor: 12475), trend: [0, 80, 120, 120, 499, 499, 499], rows: mrows, scrolls: false,
+                                                 hourly: HourlyBars.Model(hours: Array(9...15), minor: [0, 12_000, 18_500, 0, 9_400, 0, 10_000])), size: CGSize(width: 393, height: 1000))
 }

@@ -45,6 +45,7 @@ final class Store: ObservableObject {
     @Published var autoPays: [ApprovedMandate] { didSet { if let d = try? JSONEncoder().encode(autoPays) { UserDefaults.standard.set(d, forKey: "autoPays") } } }
     @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
     @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders) } } }
+    @Published var budgets: Budgets { didSet { if let d = try? JSONEncoder().encode(budgets) { UserDefaults.standard.set(d, forKey: "budgets") } } }
     @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
     @Published var myName: String { didSet { UserDefaults.standard.set(myName, forKey: "myName") } }
     /// Where split requests ask to be paid. Made once per install; a test ID, not a bank account.
@@ -61,6 +62,7 @@ final class Store: ObservableObject {
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []
+        budgets = (d.data(forKey: "budgets")).flatMap { try? JSONDecoder().decode(Budgets.self, from: $0) } ?? Budgets()
         autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
         payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()
         reminders = (d.data(forKey: "reminders")).flatMap { try? JSONDecoder().decode([BillReminder].self, from: $0) } ?? []
@@ -84,6 +86,12 @@ final class Store: ObservableObject {
     var spendEntries: [SpendEntry] {
         history.map { SpendEntry(amountMinor: $0.amountMinor, category: SpendCategory(rawValue: $0.category ?? "") ?? .other, date: $0.date, paid: $0.status == .success) }
     }
+
+    var historyRows: [HistoryRow] {
+        history.map { HistoryRow(date: $0.date, name: $0.name, payee: $0.payee, amountMinor: $0.amountMinor, paid: $0.status == .success,
+                                 category: SpendCategory(rawValue: $0.category ?? "") ?? .other, note: $0.note, kind: $0.kind ?? "") }
+    }
+    var budgetStatuses: [BudgetStatus] { BudgetCheck.statuses(spendEntries, budgets: budgets, now: Date()) }
 
     /// A test transfer to a person. The money moves between **test wallets on this phone**; Vayora's server and ledger are not involved.
     func transfer(_ p: UPIPayload, amount: Money) -> Outcome {
@@ -149,6 +157,13 @@ final class Store: ObservableObject {
                         .init(name: "am", value: amount.decimalString), .init(name: "cu", value: "INR"),
                         .init(name: "tn", value: p.note)]
         return c.string ?? ""
+    }
+
+    /// A setup QR (`vayora://setup`) sets the test server. Returns the host when it was one, so any scanner can accept it.
+    func applySetup(_ text: String) -> String? {
+        guard let p = try? SetupPayload.parse(text) else { return nil }
+        serverURL = p.server.absoluteString
+        return p.server.host ?? "server"
     }
 
     // MARK: AutoPay

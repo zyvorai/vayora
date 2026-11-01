@@ -106,9 +106,9 @@ public struct QRHeroScreen: View {
 
 /// Today at a glance, then the ledger of payments.
 public struct MerchantTodayScreen: View {
-    let collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool, error: String?, onOpen: (PaymentRowModel) -> Void
-    public init(collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool = true, error: String? = nil, onOpen: @escaping (PaymentRowModel) -> Void = { _ in }) {
-        self.collected = collected; self.count = count; self.average = average; self.trend = trend; self.rows = rows; self.scrolls = scrolls; self.error = error; self.onOpen = onOpen
+    let collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool, error: String?, hourly: HourlyBars.Model?, onOpen: (PaymentRowModel) -> Void
+    public init(collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool = true, error: String? = nil, hourly: HourlyBars.Model? = nil, onOpen: @escaping (PaymentRowModel) -> Void = { _ in }) {
+        self.collected = collected; self.count = count; self.average = average; self.trend = trend; self.rows = rows; self.scrolls = scrolls; self.error = error; self.hourly = hourly; self.onOpen = onOpen
     }
     public var body: some View {
         ZStack {
@@ -130,6 +130,7 @@ public struct MerchantTodayScreen: View {
                     }
                 }
             }
+            if let hourly, hourly.hasMoney { HourlyBars(model: hourly) }
             if let error { Text(error).vfont(14).foregroundStyle(VUI.coral) }
             Text("Recent").vfont(20, .bold).foregroundStyle(VUI.textPrimary)
             if rows.isEmpty && error == nil { Text("No payments yet. Create one on the Collect tab.").vfont(15).foregroundStyle(VUI.textSecondary) }
@@ -158,4 +159,38 @@ public struct MerchantTodayScreen: View {
     }
     func icon(_ s: PaymentRowModel.State) -> String { switch s { case .succeeded: "arrow.down.left"; case .processing: "hourglass"; case .refunded, .partRefunded: "arrow.uturn.backward"; case .failed: "xmark" } }
     func tint(_ s: PaymentRowModel.State) -> Color { switch s { case .succeeded: VUI.mint; case .processing: VUI.textSecondary; case .refunded, .partRefunded: VUI.amber; case .failed: VUI.coral } }
+}
+
+
+/// Money taken per hour today, as bars. The busiest hour is named in words so it does not rely on colour or height alone.
+public struct HourlyBars: View {
+    public struct Model: Equatable, Sendable {
+        public let hours: [Int], minor: [Int64]   // parallel: the hour (0...23) and the money taken in it
+        public init(hours: [Int], minor: [Int64]) { self.hours = hours; self.minor = minor }
+        public var hasMoney: Bool { minor.contains { $0 > 0 } }
+        public var busiest: (hour: Int, minor: Int64)? {
+            guard let m = minor.max(), m > 0, let i = minor.firstIndex(of: m) else { return nil }
+            return (hours[i], m)
+        }
+    }
+    let model: Model
+    public init(model: Model) { self.model = model }
+    public var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("By the hour").vfont(14, .medium).foregroundStyle(VUI.textSecondary)
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(Array(model.hours.enumerated()), id: \.offset) { i, h in
+                        VStack(spacing: 4) {
+                            let top = Double(model.minor.max() ?? 1)
+                            Capsule().fill(model.minor[i] > 0 ? VUI.mint : VUI.hairline).frame(width: 16, height: max(4, 64 * Double(model.minor[i]) / max(top, 1)))
+                            Text(HourlyTotals.label(h)).font(.system(size: 9)).foregroundStyle(VUI.textTertiary)
+                        }.frame(maxWidth: .infinity)
+                    }
+                }.frame(height: 84, alignment: .bottom).accessibilityHidden(true)
+                if let b = model.busiest { Text("Busiest hour: \(HourlyTotals.label(b.hour)), \(Money(minor: b.minor).display)").vfont(13).foregroundStyle(VUI.textSecondary) }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
 }

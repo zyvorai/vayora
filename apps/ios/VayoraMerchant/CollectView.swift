@@ -12,6 +12,8 @@ struct CollectView: View {
     @State private var customerMode = false
     @State private var resultProgress = 0.0
     @State private var savedBrightness: CGFloat?
+    @State private var tipPercent = 0
+    @AppStorage("lastAmountMinor") private var lastMinor = 0
 
     enum Phase: Equatable {
         case entering, creating
@@ -31,6 +33,7 @@ struct CollectView: View {
                                         actionLabel: phase == .creating ? "Creating…" : "Show QR",
                                         onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() },
                                         onChip: { note = (note == $0 ? "" : $0) }, onShowQR: start)
+                    helpers
                     if store.client == nil { Text("Add your API key in Settings first, or scan a setup QR.").font(.footnote).foregroundStyle(VUI.textSecondary).padding(.bottom, 8).background(VUI.ink) }
                 }
             case .waiting(_, let attempt, let uri, let amt, let started):
@@ -57,8 +60,39 @@ struct CollectView: View {
         .onDisappear { endCustomerMode() }
     }
 
+    /// Repeat the last amount, and an optional tip on top. The tip is part of the payment, so the QR asks for the total.
+    @ViewBuilder var helpers: some View {
+        let base = entry.money?.minor ?? 0
+        if base > 0 || lastMinor > 0 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if base == 0, lastMinor > 0 {
+                        Button { repeatLast() } label: { chip("Repeat \(Money(minor: Int64(lastMinor)).display)", on: false) }.buttonStyle(PressScale())
+                    }
+                    if base > 0 {
+                        ForEach([0] + Tip.percents, id: \.self) { p in
+                            Button { tipPercent = p; Haptics.tick() } label: {
+                                chip(p == 0 ? "No tip" : "Tip \(p)% · \(Money(minor: Tip.amount(base: base, percent: p)).display)", on: tipPercent == p)
+                            }.buttonStyle(PressScale()).accessibilityAddTraits(tipPercent == p ? .isSelected : [])
+                        }
+                    }
+                }.padding(.horizontal, 20)
+            }
+            .padding(.vertical, 8).background(VUI.ink)
+        }
+    }
+    func chip(_ t: String, on: Bool) -> some View {
+        Text(t).vfont(13, .semibold).foregroundStyle(on ? VUI.ink : VUI.textSecondary).padding(.horizontal, 14).padding(.vertical, 8)
+            .background(on ? AnyShapeStyle(VUI.emerald) : AnyShapeStyle(.white.opacity(0.08)), in: Capsule())
+    }
+    func repeatLast() {
+        entry.clear()
+        for ch in Money(minor: Int64(lastMinor)).decimalString { if let d = ch.wholeNumberValue { entry.digit(d) } else if ch == "." { entry.point() } }
+        Haptics.tick()
+    }
+
     func reset() {
-        endCustomerMode(); entry.clear(); note = ""; phase = .entering
+        endCustomerMode(); entry.clear(); note = ""; tipPercent = 0; phase = .entering
     }
 
     func toggleCustomer() { customerMode ? endCustomerMode() : beginCustomerMode() }
@@ -76,7 +110,11 @@ struct CollectView: View {
     }
 
     func start() {
-        guard let amt = entry.money, let c = store.client else { return }
+        guard let base = entry.money, let c = store.client else { return }
+        let tip = Tip.amount(base: base.minor, percent: tipPercent)
+        let amt = Money(minor: base.minor + tip)
+        if tip > 0 { note = (note.isEmpty ? "" : note + " · ") + "incl. tip \(Money(minor: tip).display)" }
+        lastMinor = Int(base.minor)
         phase = .creating
         Task {
             do {

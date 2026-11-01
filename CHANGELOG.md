@@ -21,6 +21,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
 - Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
 
+**Pay and Merchant extras (on-phone, test mode)**
+- Pay: monthly budgets with a warning on the review screen, History filters and CSV export, and a "Receive" QR with no amount. Merchant: tips on the keypad, repeat last amount, takings by the hour, and a shareable receipt. No server change.
+
 **AutoPay screens in the iOS apps**
 - Pay: scan a mandate QR, review, slide and PIN to approve; an AutoPay list inside Bills with debits taken, and stop. Merchant: an AutoPay tab to create (with QR), schedule debits, pause, resume, revoke, and a sandbox Run now.
 - `GET /v1/sim/mandate/{id}` (simulated payer's view of a mandate and the debits it took; off unless `ZYVOR_SIM_PAYER=1`). The simulated mandate link now carries the start and end dates.
