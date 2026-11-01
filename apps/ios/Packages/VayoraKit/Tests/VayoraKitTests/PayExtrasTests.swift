@@ -451,3 +451,30 @@ final class ItemisedRecordTests: XCTestCase {
         XCTAssertEqual(r.owedMinor, 600)
     }
 }
+
+final class PaymentsCSVTests: XCTestCase {
+    var c: Calendar { PaymentsCSV.ist }
+    func at(_ d: Int, _ h: Int, _ m: Int = 0) -> Date { c.date(from: DateComponents(year: 2026, month: 10, day: d, hour: h, minute: m))! }
+    func test_IST_day_even_near_midnight() {
+        // 23:50 IST on the 30th is 18:20 UTC the same day; 00:10 IST on the 31st is 18:40 UTC on the 30th
+        let rows = [PaymentCSVRow(date: at(30, 23, 50), id: "a", amountMinor: 100_00, status: "succeeded", refundedMinor: 0), PaymentCSVRow(date: at(31, 0, 10), id: "b", amountMinor: 50_00, status: "succeeded", refundedMinor: 0)]
+        let d = PaymentsCSV.daily(rows)
+        XCTAssertTrue(d.contains("2026-10-30,1,100.00,0.00,100.00")); XCTAssertTrue(d.contains("2026-10-31,1,50.00,0.00,50.00"))
+    }
+    func testDailyNetsRefundsAndSkipsUnpaid() {
+        let rows = [PaymentCSVRow(date: at(30, 10), id: "a", amountMinor: 300_00, status: "succeeded", refundedMinor: 100_00), PaymentCSVRow(date: at(30, 11), id: "b", amountMinor: 900_00, status: "failed", refundedMinor: 0),
+                    PaymentCSVRow(date: at(30, 12), id: "c", amountMinor: 50_00, status: "succeeded", refundedMinor: 999_00)]
+        XCTAssertTrue(PaymentsCSV.daily(rows).contains("2026-10-30,2,350.00,150.00,200.00"))   // an over-refund is capped at the payment
+    }
+    func testPaymentsFileShapeAndFormulaGuard() {
+        let r = PaymentCSVRow(date: at(30, 9, 5), id: "=cmd|' /C calc'!A0", amountMinor: 12_50, status: "succeeded", refundedMinor: 2_50)
+        let csv = PaymentsCSV.payments([r])
+        XCTAssertTrue(csv.hasPrefix("date_ist,time_ist,payment_id,amount_inr,status,refunded_inr,net_inr\n"))
+        XCTAssertTrue(csv.contains("2026-10-30,09:05,'=cmd|' /C calc'!A0,12.50,succeeded,2.50,10.00"))
+        XCTAssertEqual(csv.split(separator: "\n").count, 2)
+    }
+    func testOldestFirst() {
+        let csv = PaymentsCSV.payments([PaymentCSVRow(date: at(31, 9), id: "late", amountMinor: 1, status: "succeeded", refundedMinor: 0), PaymentCSVRow(date: at(30, 9), id: "early", amountMinor: 1, status: "succeeded", refundedMinor: 0)])
+        XCTAssertLessThan(csv.range(of: "early")!.lowerBound, csv.range(of: "late")!.lowerBound)
+    }
+}
