@@ -110,6 +110,8 @@ pub struct AppState {
     pub review_alert_email: Option<String>,
     /// The review desk's offset from UTC in minutes, for the rota (`ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330).
     pub review_utc_offset_minutes: i32,
+    /// Give each new request and change to an on-duty reviewer, the one holding the fewest (`ZYVOR_REVIEW_AUTO_ASSIGN`).
+    pub review_auto_assign: bool,
 }
 
 pub use crypto::Crypto;
@@ -143,6 +145,7 @@ impl AppState {
             review_two_person: platform::TwoPerson::Flagged,
             review_alert_email: None,
             review_utc_offset_minutes: 330,
+            review_auto_assign: false,
         }
     }
 
@@ -164,6 +167,12 @@ impl AppState {
             .filter(|v| (-720..=840).contains(v))
         {
             self.review_utc_offset_minutes = v;
+        }
+        if let Ok(v) = std::env::var("ZYVOR_REVIEW_AUTO_ASSIGN") {
+            self.review_auto_assign = matches!(
+                v.trim().to_lowercase().as_str(),
+                "1" | "true" | "on" | "yes"
+            );
         }
         if let Some(v) = hours("ZYVOR_CHANGE_SLA_HOURS") {
             self.change_sla_hours = v;

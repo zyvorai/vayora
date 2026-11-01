@@ -24,6 +24,9 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
     if let Err(e) = crate::platform::notify_overdue(s).await {
         tracing::warn!(error = ?e.message, "could not check the review queue against its targets");
     }
+    if let Err(e) = crate::platform::auto_assign(s).await {
+        tracing::warn!(error = ?e.message, "could not assign waiting reviews to the reviewers on duty");
+    }
     let older = s.resolve_after.as_secs_f64();
     for (tid, env) in tenants {
         // 1. outcomes we don't know yet: ask the provider, never re-send

@@ -66,12 +66,10 @@ async fn all_shifts(s: &AppState) -> Result<Vec<(String, String, Shift)>, ApiErr
         .collect())
 }
 
-/// `GET /v1/platform/rota`: every active reviewer's weekly shifts and whether they are on duty now.
-pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Value>, ApiError> {
-    let now = Utc::now();
-    let rows = all_shifts(&s).await?;
+/// Every active reviewer with their shifts (none for a reviewer who has set no hours), oldest reviewer first.
+pub async fn people(s: &AppState) -> Result<Vec<(String, String, Vec<Shift>)>, ApiError> {
     let mut people: Vec<(String, String, Vec<Shift>)> = Vec::new();
-    for (id, name, sh) in rows {
+    for (id, name, sh) in all_shifts(s).await? {
         if people.last().is_none_or(|(i, _, _)| *i != id) {
             people.push((id, name, Vec::new()));
         }
@@ -80,6 +78,35 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
             people.last_mut().unwrap().2.push(sh);
         }
     }
+    Ok(people)
+}
+
+/// The ids of the reviewers on duty now, oldest first; empty when nobody has set hours or nobody is working.
+pub async fn on_duty_ids(s: &AppState) -> Vec<String> {
+    let Ok(people) = people(s).await else {
+        return Vec::new();
+    };
+    let now = Utc::now();
+    people
+        .into_iter()
+        .filter(|(_, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes))
+        .map(|(id, _, _)| id)
+        .collect()
+}
+
+/// Who gets the next item: the on-duty reviewer holding the fewest, the one who has been here longest on a tie, never
+/// `exclude` (the first approver cannot give the second approval). `load` is in that seniority order.
+pub fn pick(load: &[(String, i64)], exclude: Option<&str>) -> Option<String> {
+    load.iter()
+        .filter(|(id, _)| Some(id.as_str()) != exclude)
+        .min_by_key(|(_, n)| *n)
+        .map(|(id, _)| id.clone())
+}
+
+/// `GET /v1/platform/rota`: every active reviewer's weekly shifts and whether they are on duty now.
+pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Value>, ApiError> {
+    let now = Utc::now();
+    let people = people(&s).await?;
     let configured = people.iter().any(|(_, _, sh)| !sh.is_empty());
     let local = now + Duration::minutes(i64::from(s.review_utc_offset_minutes));
     let reviewers: Vec<Value> = people
@@ -171,24 +198,16 @@ pub async fn set_mine(
 /// How many active reviewers are on duty now, or `-1` when nobody has set any hours (the rota is not in use, so an
 /// empty desk means nothing) or the database could not be asked.
 pub async fn on_duty_count(s: &AppState) -> i64 {
-    let Ok(rows) = all_shifts(s).await else {
+    let Ok(people) = people(s).await else {
         return -1;
     };
-    let now = Utc::now();
-    let mut by: Vec<(String, Vec<Shift>)> = Vec::new();
-    for (id, _, sh) in rows {
-        if by.last().is_none_or(|(i, _)| *i != id) {
-            by.push((id, Vec::new()));
-        }
-        if sh.end_min > 0 {
-            by.last_mut().unwrap().1.push(sh);
-        }
-    }
-    if by.iter().all(|(_, sh)| sh.is_empty()) {
+    if people.iter().all(|(_, _, sh)| sh.is_empty()) {
         return -1;
     }
-    by.iter()
-        .filter(|(_, sh)| on_duty(sh, now, s.review_utc_offset_minutes))
+    let now = Utc::now();
+    people
+        .iter()
+        .filter(|(_, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes))
         .count() as i64
 }
 
@@ -249,5 +268,27 @@ mod tests {
         assert!(!on_duty(&sun, t, 330));
         // and with no offset it is still Sunday
         assert!(on_duty(&sun, t, 0));
+    }
+
+    #[test]
+    fn the_least_loaded_reviewer_gets_the_next_one_and_never_the_excluded() {
+        let load = vec![
+            ("a".to_string(), 2),
+            ("b".to_string(), 1),
+            ("c".to_string(), 1),
+        ];
+        assert_eq!(
+            pick(&load, None).as_deref(),
+            Some("b"),
+            "fewest first, then the longest-serving"
+        );
+        assert_eq!(pick(&load, Some("b")).as_deref(), Some("c"));
+        assert_eq!(pick(&load, Some("a")).as_deref(), Some("b"));
+        assert_eq!(
+            pick(&[("a".to_string(), 0)], Some("a")),
+            None,
+            "the first approver alone cannot be the second"
+        );
+        assert_eq!(pick(&[], None), None);
     }
 }

@@ -99,8 +99,18 @@ on duty now; `rota-set none` clears yours). The queue shows "On duty now: ..." o
   is not in use, so an empty desk means nothing). Alert `ZyvorReviewQueueUnattended` fires when it is 0 for 15 minutes
   while requests or changes are waiting.
 
-**Not built:** automatic assignment by the rota, emailing whoever is on duty (reviewers have no email address on file),
-holidays and leave, daylight saving, and a lead setting other people's hours. (A revoke is one person on purpose; giving
+**Automatic assignment** (`ZYVOR_REVIEW_AUTO_ASSIGN=1` on the **worker**, off by default). Each worker cycle gives every
+waiting request and change that nobody holds to an **on-duty** reviewer: the one holding the fewest pending items, the
+longest-serving on a tie, and never the reviewer who already gave the first approval (so the second look goes to someone
+else, and waits unassigned if only the first approver is on duty). It does nothing when nobody has set hours or nobody is
+on duty; those items stay in the "Nobody's" queue. It only fills empty slots: it never moves something a person holds,
+a disabled reviewer's items are re-given on the next cycle, and the audit log records it as `system:rota`
+(`live_access.assigned` / `live_change.assigned` with `auto: true`). **Mind the trade-off:** a held item can be decided
+only by its holder, so an auto-assigned item waits for that person; if they are away, someone takes it over
+(`take-over`, or "Take it from ..."). A reviewer who goes off duty keeps what they hold.
+
+**Not built:** emailing whoever is on duty (reviewers have no email address on file), holidays and leave, daylight
+saving, a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back
@@ -208,6 +218,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Automatic assignment, emailing the on-duty reviewer, holidays and leave, daylight saving (the rota, assignment, the clock and the second reviewer exist; see above).
+- Emailing the on-duty reviewer, holidays and leave, daylight saving, re-balancing held items (the rota, assignment, automatic assignment, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.
