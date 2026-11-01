@@ -497,6 +497,9 @@ export const createCoupon = async (_: FormState, f: FormData): Promise<FormState
 export const deactivateCoupon = async (_: FormState, f: FormData) => run(["/links"], (z) => z.coupons.deactivate(id(f)));
 
 const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
+export const requestProfileChange = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.requestProfileChange({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address"), reason: text(f, "reason") }), "admin");
+
 export const saveProfile = async (_: FormState, f: FormData) =>
   run(["/onboarding"], (z) => z.onboarding.saveProfile({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address") }), "admin");
 export const addOnboardingDoc = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.addDocument({ kind: text(f, "kind"), reference: text(f, "reference") }), "admin");

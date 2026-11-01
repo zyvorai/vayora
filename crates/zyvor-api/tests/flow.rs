@@ -12071,3 +12071,180 @@ async fn the_reviewer_who_took_live_mode_away_cannot_alone_give_it_back(pool: Pg
     let (s4, _) = common::raw(&app2, &a_key, None, "POST", &restore, None, json!({})).await;
     assert_eq!(s4, StatusCode::OK);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn an_approved_business_changes_its_legal_details_only_when_zyvor_agrees(pool: PgPool) {
+    let t = setup(pool).await;
+    let app = t.app.clone();
+    let (_, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let rv = |m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), rkey.clone());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (mkey, org) = asks_for_live(&t, &app, "Name Ltd", "o@name.in").await;
+    // the fixture's PAN ending is not one a real PAN can have; make it match the PAN used below
+    sqlx::query("UPDATE merchant_profiles SET pan_last4 = '234F'")
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (s0, _) = rv(
+        "POST",
+        format!("/v1/platform/reviews/{org}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(s0, StatusCode::OK);
+    // open live so both environments hold a copy of the details
+    let (s1, live) = common::raw(
+        &app,
+        &mkey,
+        None,
+        "POST",
+        "/v1/console/switch_env",
+        None,
+        json!({ "env": "live" }),
+    )
+    .await;
+    assert_eq!(s1, StatusCode::OK, "{live}");
+    // switching environments ends the session; sign in again
+    let relogin = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "o@name.in", "password": "correct horse battery" }),
+        )
+        .await;
+    let mkey: String = relogin["session_key"].as_str().unwrap().into();
+    let ask = |b: Value| {
+        let (app, k) = (app.clone(), mkey.clone());
+        async move {
+            common::raw(
+                &app,
+                &k,
+                None,
+                "POST",
+                "/v1/onboarding/profile_change",
+                None,
+                b,
+            )
+            .await
+        }
+    };
+    let new = json!({ "legal_name": "Name Private Limited", "business_type": "private_limited", "pan": "ABCPE1234F", "address": "Mumbai 400001", "reason": "converted to a private limited company" });
+
+    // the profile cannot be edited directly any more, and an empty reason or an unchanged form is refused
+    let (st, _) = common::raw(
+        &app,
+        &mkey,
+        None,
+        "PUT",
+        "/v1/onboarding",
+        None,
+        new.clone(),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    let (st, b) = ask(json!({ "legal_name": "Name Ltd", "business_type": "private_limited", "pan": "ABCPE1234F", "address": "Pune 411001", "reason": "no real change" })).await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("no_change")),
+        "{b}"
+    );
+    let mut short = new.clone();
+    short["reason"] = json!("x");
+    assert_eq!(ask(short).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // a real request waits; nothing changes yet; a second one is refused
+    let (st, b) = ask(new.clone()).await;
+    assert_eq!(st, StatusCode::CREATED, "{b}");
+    assert!(
+        b["summary"].as_str().unwrap().contains("Mumbai 400001"),
+        "{b}"
+    );
+    assert_eq!(ask(new.clone()).await.1["error"]["code"], "change_pending");
+    let name = |env: &'static str| {
+        let (root, org) = (t.root.clone(), org.clone());
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT legal_name FROM merchant_profiles m JOIN tenants t ON t.id = m.tenant_id WHERE t.organisation_id = $1 AND t.env = $2")
+                .bind(org)
+                .bind(env)
+                .fetch_one(&root)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(
+        (name("test").await, name("live").await),
+        ("Name Ltd".into(), "Name Ltd".into())
+    );
+    let (_, l) = rv(
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (
+            l["data"].as_array().unwrap().len(),
+            l["data"][0]["kind"].clone()
+        ),
+        (1, json!("profile"))
+    );
+    let id = l["data"][0]["id"].as_str().unwrap().to_string();
+
+    // rejecting keeps the old details and lets them ask again
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/changes/{id}/decision"),
+        json!({ "decision": "reject", "note": "send the incorporation certificate" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("rejected")),
+        "{b}"
+    );
+    assert_eq!(
+        (name("test").await, name("live").await),
+        ("Name Ltd".into(), "Name Ltd".into())
+    );
+    let (st, b) = ask(new.clone()).await;
+    assert_eq!(st, StatusCode::CREATED, "{b}");
+    let id2 = b["id"].as_str().unwrap().to_string();
+
+    // approving puts the new details in both environments, and says so on the record
+    let (st, b) = rv(
+        "POST",
+        format!("/v1/platform/changes/{id2}/decision"),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b}"
+    );
+    assert_eq!(
+        (name("test").await, name("live").await),
+        ("Name Private Limited".into(), "Name Private Limited".into())
+    );
+    let addr: String = sqlx::query_scalar("SELECT m.address FROM merchant_profiles m JOIN tenants t ON t.id = m.tenant_id WHERE t.organisation_id = $1 AND t.env = 'live'")
+        .bind(&org)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(addr, "Mumbai 400001");
+    assert_eq!(
+        t.count(
+            "SELECT count(*) FROM audit_events WHERE action = 'onboarding.profile_change_requested'"
+        )
+        .await,
+        2
+    );
+    assert_eq!(zyvor_api::platform::pending_changes(&t.state.pool).await, 0);
+    let (_, d) = rv("GET", format!("/v1/platform/reviews/{org}"), Value::Null).await;
+    assert_eq!(d["profile"]["legal_name"], "Name Private Limited");
+}

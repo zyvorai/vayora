@@ -314,6 +314,9 @@ export class Zyvor {
     get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[]; /** `true` when the deployment runs identity and bank checks itself */ automated_checks: boolean; /** why a submission went to a person */ review_reasons: string[]; checks: { kind: "pan" | "gstin" | "bank"; subject: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[] }>("GET", "/v1/onboarding"),
     saveProfile: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string }) =>
       this.req("PUT", "/v1/onboarding", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address }),
+    /** After approval the details are locked; ask Zyvor to change them. Nothing changes (and live payouts are held) until a reviewer decides. */
+    requestProfileChange: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string; reason: string }) =>
+      this.req<{ id: string; status: "pending"; summary: string }>("POST", "/v1/onboarding/profile_change", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address, reason: p.reason }),
     addDocument: (p: { kind: string; reference: string }) => this.req<{ id: string }>("POST", "/v1/onboarding/documents", p),
     addBankAccount: (p: { holderName: string; ifsc: string; accountNumber: string }) =>
       this.req<{ id: string; account_last4: string; check: { outcome: "pass" | "fail" | "inconclusive"; detail: string } | null }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
@@ -475,7 +478,7 @@ export class Zyvor {
 
   /** Zyvor reviews every business before live mode opens. Ask once your business details are approved. */
   readonly liveAccess = {
-    get: () => this.req<{ status: "not_requested" | "pending" | "approved" | "rejected" | "revoked"; note: string | null; requested_at?: string; reviewed_at?: string | null; round?: number; /** when to expect an answer: a target, not a guarantee */ expected_by?: string | null; sla_hours?: number; onboarding_approved: boolean; /** changes made after approval that Zyvor reviews (a new bank account); payouts are held while one is pending */ changes?: { id: string; kind: "bank_account"; summary: string; status: "pending" | "approved" | "rejected"; note: string | null; expected_by?: string | null }[] }>("GET", "/v1/live_access"),
+    get: () => this.req<{ status: "not_requested" | "pending" | "approved" | "rejected" | "revoked"; note: string | null; requested_at?: string; reviewed_at?: string | null; round?: number; /** when to expect an answer: a target, not a guarantee */ expected_by?: string | null; sla_hours?: number; onboarding_approved: boolean; /** changes made after approval that Zyvor reviews (a new bank account, new legal details); payouts are held while one is pending */ changes?: { id: string; kind: "bank_account" | "profile"; summary: string; status: "pending" | "approved" | "rejected"; note: string | null; expected_by?: string | null }[] }>("GET", "/v1/live_access"),
     request: () => this.req<{ status: "pending" | "approved" }>("POST", "/v1/live_access"),
   };
 

@@ -14,7 +14,7 @@
 #   ... take-over <organisation_id>            take it from the reviewer holding it
 #   ... assign <organisation_id> <reviewer id> give it to another reviewer
 #   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
-#   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account)
+#   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account, or new legal details)
 #   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
 #   ... change-reject <id> "why"               removes the account; the merchant is shown why (note required)
 #

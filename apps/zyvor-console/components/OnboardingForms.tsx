@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
-import { addBankAccount, addOnboardingDoc, reviewOnboarding, saveProfile, type FormState } from "@/lib/actions";
+import { addBankAccount, addOnboardingDoc, requestProfileChange, reviewOnboarding, saveProfile, type FormState } from "@/lib/actions";
 
 function Card({ action, children, cta }: { action: (s: FormState, f: FormData) => Promise<FormState>; children: ReactNode; cta: string }) {
   const [state, run, pending] = useActionState(action, undefined);
@@ -31,6 +31,20 @@ export function ProfileForm() {
       <label className="field" style={{ flex: "0 1 140px" }}>PAN<input name="pan" maxLength={10} autoCapitalize="characters" placeholder="ABCDE1234F" required /></label>
       <label className="field" style={{ flex: "0 1 190px" }}>GSTIN (optional)<input name="gstin" maxLength={15} autoCapitalize="characters" /></label>
       <label className="field" style={{ flex: "1 1 100%" }}>Registered address<input name="address" required /></label>
+    </Card>
+  );
+}
+
+/** After approval the details are locked; this asks Zyvor to change them. The PAN is asked again because it is checked and only its last four digits are kept. */
+export function ProfileChangeForm({ current }: { current: { legal_name: string; business_type: string; gstin: string | null; address: string } }) {
+  return (
+    <Card action={requestProfileChange} cta="Ask Zyvor to change these">
+      <label className="field" style={{ flex: "1 1 200px" }}>Legal name<input name="legal_name" defaultValue={current.legal_name} required /></label>
+      <label className="field" style={{ flex: "0 1 180px" }}>Business type<select name="business_type" defaultValue={current.business_type}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+      <label className="field" style={{ flex: "0 1 140px" }}>PAN<input name="pan" maxLength={10} autoCapitalize="characters" placeholder="ABCDE1234F" required /></label>
+      <label className="field" style={{ flex: "0 1 190px" }}>GSTIN (optional)<input name="gstin" maxLength={15} autoCapitalize="characters" defaultValue={current.gstin ?? ""} /></label>
+      <label className="field" style={{ flex: "1 1 100%" }}>Registered address<input name="address" defaultValue={current.address} required /></label>
+      <label className="field" style={{ flex: "1 1 100%" }}>Why are they changing?<input name="reason" required minLength={5} placeholder="e.g. converted to a private limited company" /></label>
     </Card>
   );
 }

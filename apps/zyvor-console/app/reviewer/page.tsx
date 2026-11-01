@@ -50,7 +50,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
           <div style={{ display: "grid", gap: 14 }}>
             {changes.map((c) => (
               <div key={c.id} style={{ display: "grid", gap: 6, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", alignItems: "start" }}>
-                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>: new bank account<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div><div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
+                <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>{c.kind === "profile" ? ": change to legal details" : ": new bank account"}<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div><div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
                 <ChangeForm id={c.id} />
               </div>
             ))}

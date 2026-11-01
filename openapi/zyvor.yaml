@@ -1893,6 +1893,16 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/onboarding/profile_change:
+    post:
+      summary: Ask Zyvor to change business details that were already approved (legal name, type, PAN, GSTIN, address, plus a reason). The new values are checked now, then wait for a Zyvor reviewer; until one decides nothing changes and live payouts are held. One request can wait at a time.
+      tags:
+      - onboarding
+      responses:
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/onboarding/documents:
     post:
       summary: Add a document reference (the file itself stays in your store)

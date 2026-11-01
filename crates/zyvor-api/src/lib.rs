@@ -518,6 +518,10 @@ pub fn app(state: AppState) -> Router {
             "/onboarding",
             get(onboarding::get_onboarding).put(onboarding::put_profile),
         )
+        .route(
+            "/onboarding/profile_change",
+            post(onboarding::request_profile_change),
+        )
         .route("/onboarding/documents", post(onboarding::add_document))
         .route(
             "/onboarding/bank_accounts",

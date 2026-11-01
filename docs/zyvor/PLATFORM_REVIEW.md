@@ -109,9 +109,9 @@ revoking does not sign anyone out; and a business is frozen as a whole, not per 
 
 ## Re-review: changes after approval
 
-Once Zyvor has approved a business, its details are locked, so the one thing it can still change is **where its money
-can go**: a new bank account. That is re-reviewed by Zyvor, not only by a second person in the merchant's own
-organisation:
+Once Zyvor has approved a business, its details are locked. Two things can still change, and both are re-reviewed by
+Zyvor, not only by a second person in the merchant's own organisation: **where its money can go** (a new bank account)
+and **who it is** (its legal details, below).
 
 - adding a bank account to an approved business records a **change** (`live_changes`: who, when, bank, IFSC, last four
   digits; no account number) and **holds that business's live payouts** (`change_awaiting_review`, 409) until a reviewer
@@ -121,6 +121,14 @@ organisation:
   the account, emails the merchant the reason and releases the hold. The record of what it was stays.
 - the merchant sees "Zyvor is reviewing a change you made" on Onboarding and by `GET /v1/live_access` (`changes`),
   and is emailed the decision. Audit actions and webhook events: `live_change.approved` / `live_change.rejected`.
+- **Legal details.** An admin of an approved business can ask to change its legal name, business type, PAN, GSTIN or
+  address (`POST /v1/onboarding/profile_change`, the "Need to change these details?" section on Onboarding), with a
+  reason. The new values get the same PAN and GSTIN checks as any others, then wait as a change of kind `profile`: the
+  reviewer sees what changes (old to new), the reason and the checks' outcome. **Until a reviewer decides nothing
+  changes and live payouts are held** (the same hold as for a bank account). **Approve** writes the new details into
+  both the test and live copies; **reject** needs a reason and leaves the old ones. One request can wait at a time. Only
+  the last four digits of the PAN are kept, so the reviewer sees the PAN ending, not the PAN. A change of legal name
+  does not by itself check that the bank account holder still matches; look at the bank accounts on the review page.
 - the gauge `zyvor_live_changes_pending` counts waiting changes; the alert `ZyvorLiveChangeWaiting` fires after 4 hours.
 
 **What this does not do:** it does not re-run KYC. Zyvor keeps only the last four digits of a PAN, so it cannot re-check
@@ -172,5 +180,5 @@ When unsure, reject with a note that says exactly what would change your mind.
 ## Not built yet
 
 - Working hours and an on-call rota, and assigning bank-account changes (assignment of live-access requests, the clock and the second reviewer exist; see above).
-- Re-checking identity later (GSTIN status, name change) and a way for an approved business to ask for a change to
-  its legal details; today it can only add bank accounts, and those are re-reviewed (see above).
+- Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
+  but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.
