@@ -30,7 +30,7 @@ jobs:
         with: { go-version: "1.22" }
       - run: cd sdks/go && go vet ./... && go test ./...
       - run: cd sdks/python && PYTHONPATH=. python3 -m unittest test_zyvor
-      - name: The OpenAPI file parses and every operation has a summary and responses
+      - name: The OpenAPI file parses, every operation has a summary and responses, and it matches the router
         run: |
           pip install pyyaml
           python3 - <<'PY'
@@ -41,6 +41,7 @@ jobs:
           assert not bad, bad
           print(len(d["paths"]), "paths ok")
           PY
+          python3 scripts/check-openapi.py
   ios:
     runs-on: macos-latest
     steps:
