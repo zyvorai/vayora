@@ -123,6 +123,7 @@ struct HistoryView: View {
 }
 
 struct Receipt: View {
+    @EnvironmentObject var store: Store
     let txn: Txn
     @State private var progress = 0.0
     var ok: Bool { txn.status == .success }
@@ -143,6 +144,19 @@ struct Receipt: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             row("To", who); row("UPI ID", txn.payee); row("Reference", txn.note); row("Date", txn.date.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    }
+                    if !txn.isAutoPay {
+                        GlassCard {
+                            HStack {
+                                Label("Category", systemImage: "tag.fill").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                                Spacer()
+                                Picker("Category", selection: Binding(get: { SpendCategory(rawValue: store.history.first { $0.id == txn.id }?.category ?? txn.category ?? "") ?? .other },
+                                                                      set: { store.setCategory($0, forPayee: txn.payee) })) {
+                                    ForEach(SpendCategory.allCases, id: \.self) { Text($0.title).tag($0) }
+                                }.tint(VUI.violet)
+                            }
+                            Text("Changing it also changes your other payments to this UPI ID, and later ones.").vfont(12).foregroundStyle(VUI.textTertiary)
                         }
                     }
                     ShareLink(item: text) {
