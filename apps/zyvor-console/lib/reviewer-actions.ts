@@ -157,3 +157,39 @@ export async function saveRota(_: State, form: FormData): Promise<State> {
   revalidatePath("/reviewer");
   return { ok: shifts.length ? "Your hours are saved." : "Your hours are cleared; you are not on the rota." };
 }
+
+/** Book leave for the signed-in reviewer, or a holiday for the whole desk. */
+export async function addDayOff(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const from = String(form.get("from") ?? "").trim();
+  const to = String(form.get("to") ?? "").trim();
+  const note = String(form.get("note") ?? "").trim();
+  if (!from) return { error: "Pick the first day." };
+  const desk = form.get("desk") === "on";
+  const r = await platform(key, "POST", "/rota/days_off", { from, ...(to ? { to } : {}), ...(note ? { note } : {}), desk });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer/rota");
+  revalidatePath("/reviewer");
+  return { ok: desk ? "Holiday added: nobody is on duty those days." : "Leave booked: you are off the rota those days." };
+}
+
+/** Take back your own leave, or lift a desk holiday. */
+export async function removeDayOff(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const id = String(form.get("id") ?? "");
+  const r = await platform(key, "DELETE", `/rota/days_off/${encodeURIComponent(id)}`);
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer/rota");
+  revalidatePath("/reviewer");
+  return { ok: "Removed." };
+}

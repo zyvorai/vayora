@@ -95,6 +95,13 @@ on duty now; `rota-set none` clears yours). The queue shows "On duty now: ..." o
 - It **informs and never blocks**: an off-duty reviewer can still decide, and assignment, escalation, the clock and the
   second-reviewer rule ignore the rota. The review target (`ZYVOR_REVIEW_SLA_HOURS`) still counts wall-clock hours, not
   duty hours.
+- **Leave and holidays** sit on top of the weekly hours. Book your own leave (Rota page, or `scripts/platform-review.sh
+  leave 2026-12-24 2026-12-31 "why"`), or a **desk holiday** for everyone (tick the box, or `holiday 2026-12-25`);
+  `leave-remove <id>` / `holiday-remove <id>` take one back. Days are whole local days in the desk's time and include both
+  ends (a year at most, nothing already over). On leave, or on a holiday, a reviewer is not on duty however their shifts
+  read, so the gauge, the queue strip and automatic assignment all skip them. Anyone may add or lift a desk holiday; leave
+  is its owner's to remove. Like the hours it informs and never blocks, and what a reviewer already holds stays with them.
+  A holiday with requests waiting trips `ZyvorReviewQueueUnattended` like any other time nobody is on, which is the point.
 - Gauge `zyvor_review_on_duty`: how many active reviewers are on duty now, or **-1 when nobody has set hours** (the rota
   is not in use, so an empty desk means nothing). Alert `ZyvorReviewQueueUnattended` fires when it is 0 for 15 minutes
   while requests or changes are waiting.
@@ -218,6 +225,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Emailing the on-duty reviewer, holidays and leave, daylight saving, re-balancing held items (the rota, assignment, automatic assignment, the clock and the second reviewer exist; see above).
+- Emailing the on-duty reviewer, daylight saving, re-balancing held items (the rota with leave and desk holidays, assignment, automatic assignment, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.

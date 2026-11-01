@@ -1554,7 +1554,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/rota:
     get:
-      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (a fixed UTC offset), who is on duty now, and whether anyone has set hours
+      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (a fixed UTC offset), who is on duty now, upcoming leave and desk holidays, and whether anyone has set hours
       tags:
       - platform
       responses:
@@ -1567,6 +1567,32 @@ paths:
       summary: Zyvor reviewers only - replace the caller's weekly shifts (weekday mon..sun, start and end as HH:MM, end after start, up to 24:00). An empty list clears them
       tags:
       - platform
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/rota/days_off:
+    post:
+      summary: Zyvor reviewers only - book leave for the caller (from, optional to, both YYYY-MM-DD in the desk's time and inclusive; optional note), or a holiday for the whole desk with desk true. Whoever is on leave, or anyone on a desk holiday, is not on duty and is skipped by automatic assignment
+      tags:
+      - platform
+      responses:
+        '201':
+          description: Created
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/platform/rota/days_off/{id}:
+    delete:
+      summary: Zyvor reviewers only - remove the caller's own leave, or any desk holiday
+      tags:
+      - platform
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: OK

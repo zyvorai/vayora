@@ -2,9 +2,17 @@
 //! UTC offset, `ZYVOR_REVIEW_UTC_OFFSET_MINUTES`, default 330 = India; there is no daylight saving). The rota shows
 //! who is on duty now and feeds a gauge so an unattended queue is noticed. It informs: an off-duty reviewer can still
 //! decide anything, because a late approval is a smaller problem than a request nobody could act on.
+//!
+//! Days off sit on top of the weekly shifts: leave for one reviewer, or a desk holiday for everyone (whole local days,
+//! both ends inclusive). A reviewer on leave, or anyone on a holiday, is not on duty however their shifts read.
 
-use axum::{Json, extract::State};
-use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
+use std::collections::HashSet;
+
+use axum::{
+    Json,
+    extract::{Path, State},
+};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use zyvor_core::new_id;
@@ -81,15 +89,61 @@ pub async fn people(s: &AppState) -> Result<Vec<(String, String, Vec<Shift>)>, A
     Ok(people)
 }
 
+/// Who is away on one local day: the desk's holiday (its note) if there is one, and the reviewers on leave.
+#[derive(Default)]
+pub struct Away {
+    pub holiday: Option<String>,
+    pub on_leave: HashSet<String>,
+}
+
+impl Away {
+    pub fn covers(&self, reviewer: &str) -> bool {
+        self.holiday.is_some() || self.on_leave.contains(reviewer)
+    }
+}
+
+/// The local day `now` falls on in the desk's time.
+fn local_day(now: DateTime<Utc>, offset_minutes: i32) -> NaiveDate {
+    (now + Duration::minutes(i64::from(offset_minutes))).date_naive()
+}
+
+/// Who is away on `day`. A database error counts as nobody away, so a hiccup does not empty the desk.
+pub async fn away_on(s: &AppState, day: NaiveDate) -> Away {
+    let rows: Vec<(Option<String>, String)> = sqlx::query_as(
+        "SELECT reviewer_id, note FROM reviewer_days_off WHERE first_day <= $1 AND last_day >= $1",
+    )
+    .bind(day)
+    .fetch_all(&s.pool)
+    .await
+    .unwrap_or_default();
+    let mut away = Away::default();
+    for (who, note) in rows {
+        match who {
+            Some(id) => {
+                away.on_leave.insert(id);
+            }
+            None => {
+                away.holiday = Some(if note.is_empty() {
+                    "Holiday".into()
+                } else {
+                    note
+                });
+            }
+        }
+    }
+    away
+}
+
 /// The ids of the reviewers on duty now, oldest first; empty when nobody has set hours or nobody is working.
 pub async fn on_duty_ids(s: &AppState) -> Vec<String> {
     let Ok(people) = people(s).await else {
         return Vec::new();
     };
     let now = Utc::now();
+    let away = away_on(s, local_day(now, s.review_utc_offset_minutes)).await;
     people
         .into_iter()
-        .filter(|(_, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes))
+        .filter(|(id, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id))
         .map(|(id, _, _)| id)
         .collect()
 }
@@ -109,12 +163,33 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
     let people = people(&s).await?;
     let configured = people.iter().any(|(_, _, sh)| !sh.is_empty());
     let local = now + Duration::minutes(i64::from(s.review_utc_offset_minutes));
+    let today = local.date_naive();
+    let away = away_on(&s, today).await;
+    let working =
+        |id: &str, sh: &[Shift]| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id);
+    let days_off: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        NaiveDate,
+        NaiveDate,
+        String,
+    )> = sqlx::query_as(
+        "SELECT d.id, d.reviewer_id, r.name, d.first_day, d.last_day, d.note
+         FROM reviewer_days_off d LEFT JOIN platform_reviewers r ON r.id = d.reviewer_id
+         WHERE d.last_day >= $1 AND (d.reviewer_id IS NULL OR r.disabled_at IS NULL)
+         ORDER BY d.first_day, d.created_at",
+    )
+    .bind(today)
+    .fetch_all(&s.pool)
+    .await?;
     let reviewers: Vec<Value> = people
         .iter()
         .map(|(id, name, sh)| {
             json!({
                 "id": id, "name": name, "me": *id == p.id,
-                "on_duty": on_duty(sh, now, s.review_utc_offset_minutes),
+                "on_duty": working(id, sh),
+                "on_leave": away.on_leave.contains(id),
                 "shifts": sh.iter().map(|x| json!({ "weekday": DAYS[x.weekday as usize], "start": fmt_hm(x.start_min), "end": fmt_hm(x.end_min) })).collect::<Vec<_>>(),
             })
         })
@@ -123,8 +198,15 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
         "configured": configured,
         "utc_offset_minutes": s.review_utc_offset_minutes,
         "local_now": local.format("%a %H:%M").to_string(),
-        "on_duty_now": people.iter().filter(|(_, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes)).map(|(_, n, _)| n.clone()).collect::<Vec<_>>(),
+        "local_date": today.to_string(),
+        "on_duty_now": people.iter().filter(|(id, _, sh)| working(id, sh)).map(|(_, n, _)| n.clone()).collect::<Vec<_>>(),
+        "holiday_today": away.holiday,
         "reviewers": reviewers,
+        "days_off": days_off.iter().map(|(id, who, name, first, last, note)| json!({
+            "id": id, "reviewer_id": who, "reviewer": name, "desk": who.is_none(),
+            "mine": who.as_deref() == Some(p.id.as_str()),
+            "first_day": first.to_string(), "last_day": last.to_string(), "note": note,
+        })).collect::<Vec<_>>(),
     })))
 }
 
@@ -190,9 +272,112 @@ pub async fn set_mine(
             .await?;
     }
     tx.commit().await?;
+    let now = Utc::now();
+    let away = away_on(&s, local_day(now, s.review_utc_offset_minutes)).await;
     Ok(Json(
-        json!({ "shifts": parsed.len(), "on_duty": on_duty(&parsed, Utc::now(), s.review_utc_offset_minutes) }),
+        json!({ "shifts": parsed.len(), "on_duty": on_duty(&parsed, now, s.review_utc_offset_minutes) && !away.covers(&p.id) }),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct DayOffIn {
+    /// First day, `2026-12-25`.
+    from: String,
+    /// Last day, inclusive; the same day when absent.
+    to: Option<String>,
+    note: Option<String>,
+    /// A holiday for the whole desk rather than the caller's own leave.
+    #[serde(default)]
+    desk: bool,
+}
+
+/// `POST /v1/platform/rota/days_off`: book leave for the caller, or a desk holiday (`desk: true`) for everyone.
+pub async fn add_day_off(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Json(b): Json<DayOffIn>,
+) -> Result<(axum::http::StatusCode, Json<Value>), ApiError> {
+    let bad = |m: String| ApiError::invalid("invalid_day_off", m);
+    let day = |v: &str| {
+        NaiveDate::parse_from_str(v.trim(), "%Y-%m-%d")
+            .map_err(|_| bad(format!("{v:?} is not a day like 2026-12-25")))
+    };
+    let first = day(&b.from)?;
+    let last = match &b.to {
+        Some(t) => day(t)?,
+        None => first,
+    };
+    let today = local_day(Utc::now(), s.review_utc_offset_minutes);
+    if last < first {
+        return Err(bad("the last day is before the first".into()));
+    }
+    if last < today {
+        return Err(bad(format!(
+            "{last} is already over (it is {today} at the desk)"
+        )));
+    }
+    if (last - first).num_days() > 365 {
+        return Err(bad("at most a year at a time".into()));
+    }
+    let note = b.note.unwrap_or_default().trim().to_string();
+    if note.chars().count() > 200 {
+        return Err(bad("the note is at most 200 characters".into()));
+    }
+    let (upcoming,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM reviewer_days_off WHERE created_by = $1 AND last_day >= $2",
+    )
+    .bind(&p.id)
+    .bind(today)
+    .fetch_one(&s.pool)
+    .await?;
+    if upcoming >= 100 {
+        return Err(bad(
+            "100 upcoming days off already; remove some first".into()
+        ));
+    }
+    let id = new_id("off");
+    sqlx::query(
+        "INSERT INTO reviewer_days_off (id, reviewer_id, first_day, last_day, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
+    )
+    .bind(&id)
+    .bind((!b.desk).then_some(&p.id))
+    .bind(first)
+    .bind(last)
+    .bind(&note)
+    .bind(&p.id)
+    .execute(&s.pool)
+    .await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(json!({
+            "id": id, "desk": b.desk, "first_day": first.to_string(), "last_day": last.to_string(), "note": note,
+        })),
+    ))
+}
+
+/// `DELETE /v1/platform/rota/days_off/{id}`: take back your own leave, or any desk holiday. Someone else's leave is
+/// theirs to remove.
+pub async fn remove_day_off(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT reviewer_id FROM reviewer_days_off WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&s.pool)
+            .await?;
+    let (owner,) = row.ok_or_else(|| ApiError::not_found("day off"))?;
+    if owner.is_some_and(|o| o != p.id) {
+        return Err(ApiError::forbidden(
+            "that is another reviewer's leave; only they can remove it",
+        ));
+    }
+    sqlx::query("DELETE FROM reviewer_days_off WHERE id = $1")
+        .bind(&id)
+        .execute(&s.pool)
+        .await?;
+    Ok(Json(json!({ "id": id, "deleted": true })))
 }
 
 /// How many active reviewers are on duty now, or `-1` when nobody has set any hours (the rota is not in use, so an
@@ -205,9 +390,10 @@ pub async fn on_duty_count(s: &AppState) -> i64 {
         return -1;
     }
     let now = Utc::now();
+    let away = away_on(s, local_day(now, s.review_utc_offset_minutes)).await;
     people
         .iter()
-        .filter(|(_, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes))
+        .filter(|(id, _, sh)| on_duty(sh, now, s.review_utc_offset_minutes) && !away.covers(id))
         .count() as i64
 }
 
