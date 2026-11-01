@@ -79,7 +79,7 @@ Assignment is a courtesy that stops duplicated work, not an access control: any 
 live-access requests, not bank-account changes.
 
 **Not built:** a reviewer's working hours or on-call rota, assigning bank-account changes, automatic assignment, and a
-second reviewer for revokes or changes.
+second reviewer for bank-account changes (a revoke is one person on purpose; giving access back needs two).
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -100,7 +100,9 @@ payments already in flight, in-flight debits settling, webhooks and the audit tr
 The merchant sees a red bar on every live page and the reason on the Onboarding page, and is emailed. Their Test /
 Live switch is refused with `live_access_revoked`, and "Request live access" does not reopen it: only a reviewer can.
 **Give live mode back** (or `restore`) when what you asked for is fixed; it needs the business details to still be
-approved. Every step is audited (`live_access.revoked`, `.restored`) and raises the same webhook events.
+approved. **A different reviewer than the one who took it away has to give it back** (`second_reviewer_required`)
+unless `ZYVOR_REVIEW_TWO_PERSON=never`. Taking it away stays one person and immediate, because it protects; giving it
+back reopens the risk. Every step is audited (`live_access.revoked`, `.restored`) and raises the same webhook events.
 
 **Not covered:** money already with the provider is not clawed back or held here (do that at Razorpay or Cashfree);
 revoking does not sign anyone out; and a business is frozen as a whole, not per provider or per branch.

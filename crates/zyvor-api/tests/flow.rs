@@ -11978,3 +11978,96 @@ async fn a_review_is_held_by_one_reviewer_until_it_is_released_or_taken_over(poo
         (StatusCode::CONFLICT, json!("not_pending"))
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn the_reviewer_who_took_live_mode_away_cannot_alone_give_it_back(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st);
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (_, org) = asks_for_live(&t, &app, "Back Ltd", "o@back.in").await;
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org)
+        .execute(&t.root)
+        .await
+        .unwrap();
+
+    // taking it away is one person, at once
+    let (s1, b1) = rv(
+        &a_key,
+        "POST",
+        format!("/v1/platform/reviews/{org}/revoke"),
+        json!({ "note": "chargebacks" }),
+    )
+    .await;
+    assert_eq!(
+        (s1, b1["status"].clone()),
+        (StatusCode::OK, json!("revoked")),
+        "{b1}"
+    );
+    let (_, d) = rv(
+        &b_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (
+            d["restore_needs_other"].clone(),
+            d["reviewed_by_name"].clone()
+        ),
+        (json!(true), json!("Asha"))
+    );
+
+    // giving it back is not: not the same reviewer, but a different one
+    let restore = format!("/v1/platform/reviews/{org}/restore");
+    let (s2, b2) = rv(&a_key, "POST", restore.clone(), json!({})).await;
+    assert_eq!(
+        (s2, b2["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("second_reviewer_required")),
+        "{b2}"
+    );
+    let still: String =
+        sqlx::query_scalar("SELECT status FROM live_access WHERE organisation_id = $1")
+            .bind(&org)
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert_eq!(still, "revoked");
+    let (s3, b3) = rv(&b_key, "POST", restore.clone(), json!({})).await;
+    assert_eq!(
+        (s3, b3["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b3}"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_access.restored' AND actor = 'zyvor:Bala' AND detail->>'revoked_by' IS NOT NULL").await, 1);
+
+    // with the rule off, one reviewer may undo their own revoke
+    let mut st2 = t.state.clone();
+    st2.review_two_person = zyvor_api::platform::TwoPerson::Never;
+    let app2 = zyvor_api::app(st2);
+    common::raw(
+        &app2,
+        &a_key,
+        None,
+        "POST",
+        &format!("/v1/platform/reviews/{org}/revoke"),
+        None,
+        json!({ "note": "again" }),
+    )
+    .await;
+    let (s4, _) = common::raw(&app2, &a_key, None, "POST", &restore, None, json!({})).await;
+    assert_eq!(s4, StatusCode::OK);
+}

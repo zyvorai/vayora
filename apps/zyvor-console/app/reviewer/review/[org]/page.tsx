@@ -115,7 +115,7 @@ export default async function Review({ params }: { params: Promise<{ org: string
       {d.status === "revoked" && (
         <section className="card" style={{ marginTop: 16 }}>
           <h2>Give live mode back</h2>
-          <p className="fine">Only after what you asked for has been fixed. The business details must still be approved.</p>
+          <p className="fine">Only after what you asked for has been fixed. The business details must still be approved.{d.restore_needs_other ? ` ${d.reviewed_by_name ?? "The reviewer who took it away"} took it away, so a different reviewer has to give it back.` : ""}</p>
           <LiveAccessForm org={d.organisation_id} mode="restore" />
         </section>
       )}
