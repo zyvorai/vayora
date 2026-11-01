@@ -60,6 +60,12 @@ class Zyvor:
     def explain_settlement(self, settlement_id: str) -> dict:
         return self._req("GET", f"/v1/settlements/{settlement_id}/explain")
 
+    def simulate_payment_event(self, attempt_id: str, outcome: str) -> dict:
+        """Test organisations only: settle a pending simulated payment as "captured" or "failed", like a provider's late update."""
+        if outcome not in ("captured", "failed"):
+            raise ValueError("outcome must be captured or failed")
+        return self._req("POST", f"/v1/payment_attempts/{attempt_id}/simulate_event", {"outcome": outcome})
+
     def send_test_event(self) -> dict:
         """Queue a webhook.test event to the webhook URL set in Settings (admin key)."""
         return self._req("POST", "/v1/outbox/test", {})

@@ -273,6 +273,17 @@ func (c *Client) GetMandate(id string) (map[string]any, error) {
 	return out, err
 }
 
+// SimulatePaymentEvent (test organisations only) settles a pending simulated payment as "captured" or "failed",
+// like a provider's late update.
+func (c *Client) SimulatePaymentEvent(attemptID, outcome string) (map[string]any, error) {
+	if outcome != "captured" && outcome != "failed" {
+		return nil, fmt.Errorf("outcome must be captured or failed")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_attempts/"+attemptID+"/simulate_event", map[string]any{"outcome": outcome}, "", &out)
+	return out, err
+}
+
 // SendTestEvent queues a webhook.test event to the webhook URL set in Settings (admin key).
 func (c *Client) SendTestEvent() (map[string]any, error) {
 	var out map[string]any
