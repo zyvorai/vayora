@@ -12505,8 +12505,124 @@ async fn a_change_that_nothing_checked_needs_two_reviewers_and_a_clean_one_needs
 fn a_change_needs_two_reviewers_when_it_was_flagged_or_the_policy_says_always() {
     use zyvor_api::platform::{TwoPerson, change_second_reviewer_reasons as r};
     let f = vec!["no bank check ran".to_string()];
-    assert!(r(TwoPerson::Never, &f).is_empty());
-    assert_eq!(r(TwoPerson::Flagged, &f), f);
-    assert!(r(TwoPerson::Flagged, &[]).is_empty());
-    assert_eq!(r(TwoPerson::Always, &[]).len(), 1);
+    assert!(r(TwoPerson::Never, &f, false).is_empty());
+    assert_eq!(r(TwoPerson::Flagged, &f, false), f);
+    assert!(r(TwoPerson::Flagged, &[], false).is_empty());
+    assert_eq!(r(TwoPerson::Always, &[], false).len(), 1);
+    // an escalation counts even when the policy would not ask for two
+    assert_eq!(r(TwoPerson::Never, &[], true).len(), 1);
+    assert_eq!(r(TwoPerson::Flagged, &f, true).len(), 2);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_reviewer_can_ask_for_a_second_reviewer_on_a_change_nothing_flagged(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    st.kyc = Some(zyvor_api::kyc::Kyc::Simulator);
+    let app = zyvor_api::app(st);
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (_, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (mkey, org) = asks_for_live(&t, &app, "Hunch Ltd", "o@hunch.in").await;
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    // an account the bank check passes: one reviewer would be enough
+    let (st, b) = common::raw(&app, &mkey, None, "POST", "/v1/onboarding/bank_accounts", None,
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "555566667777" })).await;
+    assert_eq!(
+        (st, b["check"]["outcome"].clone()),
+        (StatusCode::CREATED, json!("pass")),
+        "{b}"
+    );
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        l["data"][0]["needs_second_because"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let id = l["data"][0]["id"].as_str().unwrap().to_string();
+    let esc = format!("/v1/platform/changes/{id}/escalate");
+    let decide = format!("/v1/platform/changes/{id}/decision");
+
+    // a reason is required; with one, it is shown and a single approval is no longer enough
+    let (s1, b1) = rv(&a_key, "POST", esc.clone(), json!({})).await;
+    assert_eq!(
+        (s1, b1["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("note_required"))
+    );
+    let (s2, _) = rv(
+        &a_key,
+        "POST",
+        esc.clone(),
+        json!({ "note": "the name on the cheque looks edited" }),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::OK);
+    let (_, l) = rv(
+        &b_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        l["data"][0]["needs_second_because"][0],
+        "a reviewer asked for a second opinion"
+    );
+    assert_eq!(
+        l["data"][0]["escalation_note"],
+        "the name on the cheque looks edited"
+    );
+    let (s3, b3) = rv(
+        &a_key,
+        "POST",
+        decide.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s3, b3["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b3}"
+    );
+    let (s4, b4) = rv(
+        &b_key,
+        "POST",
+        decide.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s4, b4["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b4}"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_change.escalated' AND actor = 'zyvor:Asha'").await, 1);
+
+    // a settled change cannot be escalated
+    let (s5, b5) = rv(&a_key, "POST", esc, json!({ "note": "too late" })).await;
+    assert_eq!(
+        (s5, b5["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("not_pending"))
+    );
 }

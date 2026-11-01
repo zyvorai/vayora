@@ -121,3 +121,20 @@ export async function assignReview(_: State, form: FormData): Promise<State> {
   revalidatePath("/reviewer");
   return { ok: how === "release" ? "Handed back to the queue." : "This review is yours. Nobody else can decide it until you hand it back." };
 }
+
+/** Ask for a second, different reviewer on a pending change no rule flagged. The note is read by whoever gives the second approval. */
+export async function escalateChange(_: State, form: FormData): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const id = String(form.get("id") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+  if (!note) return { error: "Say why. The second reviewer reads this." };
+  const r = await platform(key, "POST", `/changes/${encodeURIComponent(id)}/escalate`, { note });
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer");
+  return { ok: "Done. A different reviewer must now approve it too." };
+}
