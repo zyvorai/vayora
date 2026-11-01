@@ -679,3 +679,43 @@ final class ConnectionCheckTests: XCTestCase {
         }
     }
 }
+
+final class WeeklyRecapTests: XCTestCase {
+    var cal: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; c.firstWeekday = 2; return c }
+    func day(_ d: Int, _ h: Int = 10) -> Date { cal.date(from: DateComponents(year: 2026, month: 10, day: d, hour: h))! } // Oct 5 2026 is a Monday
+    func row(_ d: Int, _ amt: Int64, _ cat: SpendCategory = .food, name: String = "Shop", paid: Bool = true) -> HistoryRow {
+        HistoryRow(date: day(d), name: name, payee: "p@x", amountMinor: amt, paid: paid, category: cat, note: "", kind: "pay")
+    }
+    func testTotalsAndTopCategory() {
+        let r = WeeklyRecap.make([row(5, 10000), row(6, 30000, .travel, name: "Cab"), row(6, 5000, .food), row(7, 99999, paid: false)], weekContaining: day(7), now: day(7, 20), calendar: cal)
+        XCTAssertEqual(r.paidCount, 3); XCTAssertEqual(r.totalMinor, 45000)
+        XCTAssertEqual(r.topCategory?.category, .travel); XCTAssertEqual(r.biggest?.name, "Cab"); XCTAssertEqual(r.biggest?.minor, 30000)
+    }
+    func testQuietDaysCountOnlyDaysSoFar() {
+        let r = WeeklyRecap.make([row(5, 100), row(7, 100)], weekContaining: day(8), now: day(8, 12), calendar: cal)
+        XCTAssertEqual(r.daysCounted, 4); XCTAssertEqual(r.quietDays, 2) // Mon..Thu, paid Mon and Wed
+    }
+    func testPastWeekCountsAllSevenDays() {
+        let r = WeeklyRecap.make([row(5, 100)], weekContaining: day(6), now: day(20), calendar: cal)
+        XCTAssertEqual(r.daysCounted, 7); XCTAssertEqual(r.quietDays, 6)
+    }
+    func testComparisonWithPreviousWeek() {
+        let r = WeeklyRecap.make([row(5, 15000), row(29, 10000)].map { $0 }, weekContaining: day(5), now: day(9), calendar: cal)
+        XCTAssertNil(r.previousTotalMinor) // Oct 29 is later, not the week before
+        let r2 = WeeklyRecap.make([row(5, 15000), HistoryRow(date: cal.date(from: DateComponents(year: 2026, month: 9, day: 30, hour: 9))!, name: "A", payee: "p@x", amountMinor: 10000, paid: true, category: .food, note: "", kind: "pay")], weekContaining: day(5), now: day(9), calendar: cal)
+        XCTAssertEqual(r2.previousTotalMinor, 10000); XCTAssertEqual(r2.changePercent, 50)
+        XCTAssertTrue(r2.lines.contains { $0.contains("50% more") })
+    }
+    func testEmptyWeek() {
+        let r = WeeklyRecap.make([], weekContaining: day(7), now: day(7), calendar: cal)
+        XCTAssertTrue(r.isEmpty); XCTAssertEqual(r.lines, ["No payments this week yet."]); XCTAssertNil(r.changePercent)
+    }
+    func testFailedPaymentsAreNotSpending() {
+        let r = WeeklyRecap.make([row(5, 500, paid: false)], weekContaining: day(5), now: day(5), calendar: cal)
+        XCTAssertTrue(r.isEmpty)
+    }
+    func testSingularWording() {
+        let r = WeeklyRecap.make([row(5, 100)], weekContaining: day(5), now: day(5, 20), calendar: cal)
+        XCTAssertTrue(r.lines[0].contains("1 payment."))
+    }
+}
