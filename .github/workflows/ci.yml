@@ -30,9 +30,9 @@ jobs:
         with: { go-version: "1.22" }
       - run: cd sdks/go && go vet ./... && go test ./...
       - run: cd sdks/python && PYTHONPATH=. python3 -m unittest test_zyvor
-      - name: The OpenAPI file parses, every operation has a summary and responses, and it matches the router
+      - name: The OpenAPI file parses, every operation has a summary and responses, and it matches the router and the handlers
         run: |
-          pip install pyyaml
+          pip install pyyaml openapi-spec-validator
           python3 - <<'PY'
           import yaml
           d = yaml.safe_load(open("openapi/zyvor.yaml"))
@@ -42,6 +42,8 @@ jobs:
           print(len(d["paths"]), "paths ok")
           PY
           python3 scripts/check-openapi.py
+          python3 scripts/gen-openapi-requests.py --check
+          python3 -c "import yaml; from openapi_spec_validator import validate; validate(yaml.safe_load(open('openapi/zyvor.yaml')))"
   ios:
     runs-on: macos-latest
     steps:
