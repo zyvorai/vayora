@@ -86,7 +86,7 @@ import sys, json
 d = json.load(sys.stdin)
 if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
 h = d["utc_offset_minutes"]
-print("desk time UTC%s%d:%02d, now %s" % ("-" if h < 0 else "+", abs(h) // 60, abs(h) % 60, d["local_now"]))
+print("desk time %sUTC%s%d:%02d, now %s" % (d["timezone"] + ", " if d.get("timezone") else "", "-" if h < 0 else "+", abs(h) // 60, abs(h) % 60, d["local_now"]))
 if d.get("holiday_today"): print("HOLIDAY today:", d["holiday_today"])
 print("on duty now:", ", ".join(d["on_duty_now"]) if d["on_duty_now"] else ("NOBODY" if d["configured"] else "(no hours set yet)"))
 for r in d["reviewers"]:

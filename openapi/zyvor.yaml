@@ -1554,7 +1554,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/rota:
     get:
-      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (a fixed UTC offset), who is on duty now, upcoming leave and desk holidays, and whether anyone has set hours
+      summary: Zyvor reviewers only - every active reviewer's weekly hours in the desk's local time (an IANA time zone or a fixed UTC offset; the response names the zone and today's offset), who is on duty now, upcoming leave and desk holidays, and whether anyone has set hours
       tags:
       - platform
       responses:

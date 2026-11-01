@@ -19,7 +19,7 @@ export default async function Rota() {
   return (
     <>
       <p className="fine"><a href="/reviewer">← All requests</a></p>
-      <div className="head"><div><h1>Review rota</h1><p className="lede">Who is working, in the desk&apos;s time ({offsetLabel(v.utc_offset_minutes)}; it is {v.local_now} now). It tells people who to expect; it never stops anyone from deciding.</p></div></div>
+      <div className="head"><div><h1>Review rota</h1><p className="lede">Who is working, in the desk&apos;s time ({v.timezone ? `${v.timezone}, ` : ""}{offsetLabel(v.utc_offset_minutes)}; it is {v.local_now} now). It tells people who to expect; it never stops anyone from deciding.</p></div></div>
       <div className={`note ${v.on_duty_now.length ? "ok" : "warn"}`} role="status" style={{ marginBottom: 16 }}>
         {v.holiday_today ? <><strong>Desk holiday today ({v.holiday_today}).</strong> Nobody is on duty.</> : !v.configured ? "Nobody has set hours yet." : v.on_duty_now.length ? <>On duty now: <strong>{v.on_duty_now.join(", ")}</strong></> : <strong>Nobody is on duty now.</strong>}
       </div>

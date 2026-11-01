@@ -87,8 +87,14 @@ Each reviewer sets weekly hours in the review desk's local time: the **Rota** pa
 `scripts/platform-review.sh rota-set "mon-fri 09:00-18:00" "sat 10:00-14:00"` (`rota` shows everyone's hours and who is
 on duty now; `rota-set none` clears yours). The queue shows "On duty now: ..." or, in red, "Nobody is on duty now".
 
-- The desk's time is a **fixed UTC offset**, `ZYVOR_REVIEW_UTC_OFFSET_MINUTES` (default 330, India; set it on the API).
-  There is no daylight saving, so a desk that observes it changes the offset twice a year.
+- The desk's time is an **IANA time zone**, `ZYVOR_REVIEW_TIMEZONE` (for example `Europe/London` or `Asia/Kolkata`;
+  set it on the API **and the worker**, which uses it for automatic assignment). A zone follows daylight saving, and
+  shifts are wall-clock: 09:00-18:00 stays 09:00-18:00 when the clocks change. In the hour that does not exist (spring
+  forward) nobody's shift covers it, and in the hour that happens twice (fall back) a shift covers it both times. A
+  name the server does not know is ignored with a warning, and the fixed offset applies. Without a zone the desk uses
+  a **fixed UTC offset**, `ZYVOR_REVIEW_UTC_OFFSET_MINUTES` (default 330, India), which never changes with the seasons.
+  Leave and holiday days are days on the same clock. Shifts you saved keep their wall-clock hours when you move the
+  desk to a zone.
 - A shift that runs past midnight is two shifts (to 24:00, then from 00:00 the next day); the console form takes one
   shift a day, the script and `PUT /v1/platform/rota/me` take any number. Each reviewer sets only their own hours;
   disabling a reviewer removes theirs.
@@ -116,8 +122,7 @@ a disabled reviewer's items are re-given on the next cycle, and the audit log re
 only by its holder, so an auto-assigned item waits for that person; if they are away, someone takes it over
 (`take-over`, or "Take it from ..."). A reviewer who goes off duty keeps what they hold.
 
-**Not built:** emailing whoever is on duty (reviewers have no email address on file), holidays and leave, daylight
-saving, a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
+**Not built:** emailing whoever is on duty (reviewers have no email address on file), a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back
@@ -225,6 +230,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Emailing the on-duty reviewer, daylight saving, re-balancing held items (the rota with leave and desk holidays, assignment, automatic assignment, the clock and the second reviewer exist; see above).
+- Emailing the on-duty reviewer, re-balancing held items (the rota with leave, desk holidays and a daylight-saving time zone, assignment, automatic assignment, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.
