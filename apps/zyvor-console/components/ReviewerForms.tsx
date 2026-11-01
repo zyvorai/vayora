@@ -18,7 +18,7 @@ export function ReviewerSignIn() {
 }
 
 /** Reject needs a note, because the merchant is shown it; approve may carry one. */
-export function DecisionForm({ org, approveLabel = "Approve and open live mode" }: { org: string; approveLabel?: string }) {
+export function DecisionForm({ org, approveLabel = "Approve and open live mode", iApprovedFirst = false }: { org: string; approveLabel?: string; iApprovedFirst?: boolean }) {
   const [state, action, pending] = useActionState(decideReview, undefined);
   const [note, setNote] = useState("");
   return (
@@ -30,7 +30,7 @@ export function DecisionForm({ org, approveLabel = "Approve and open live mode" 
       </div>
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="btn primary" name="decision" value="approve" disabled={pending}>{pending ? "…" : approveLabel}</button>
+        {iApprovedFirst ? <span className="fine">You gave the first approval; a different reviewer gives the second. You can still reject.</span> : <button className="btn primary" name="decision" value="approve" disabled={pending}>{pending ? "…" : approveLabel}</button>}
         <button className="btn" name="decision" value="reject" disabled={pending}>Reject with note</button>
       </div>
     </form>
@@ -65,7 +65,7 @@ export function LiveAccessForm({ org, mode }: { org: string; mode: "revoke" | "r
 }
 
 /** One waiting change: approve, or reject with the reason the merchant is shown. */
-export function ChangeForm({ id, kind, firstApprovalOnly }: { id: string; kind: "bank_account" | "profile"; firstApprovalOnly: boolean }) {
+export function ChangeForm({ id, kind, firstApprovalOnly, iApprovedFirst = false }: { id: string; kind: "bank_account" | "profile"; firstApprovalOnly: boolean; iApprovedFirst?: boolean }) {
   const [state, action, pending] = useActionState(decideChange, undefined);
   const [note, setNote] = useState("");
   return (
@@ -74,7 +74,7 @@ export function ChangeForm({ id, kind, firstApprovalOnly }: { id: string; kind: 
       <input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason (required to reject)" aria-label="Reason" type="text" />
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn small primary" name="decision" value="approve" disabled={pending}>{firstApprovalOnly ? "Give the first approval" : "Approve"}</button>
+        {iApprovedFirst ? <span className="fine">You gave the first approval; a different reviewer completes it.</span> : <button className="btn small primary" name="decision" value="approve" disabled={pending}>{firstApprovalOnly ? "Give the first approval" : "Approve"}</button>}
         <button className="btn small" name="decision" value="reject" disabled={pending}>{kind === "profile" ? "Reject" : "Reject and remove"}</button>
       </div>
     </form>
@@ -104,7 +104,7 @@ export function AssignForm({ org, change, holder, mine }: { org?: string; change
       {org && <input type="hidden" name="org" value={org} />}
       {change && <input type="hidden" name="change" value={change} />}
       <span className="fine">{mine ? `You have this ${change ? "change" : "review"}.` : holder ? `${holder} has this ${change ? "change" : "review"}.` : `Nobody has this ${change ? "change" : "review"}.`}</span>
-      {!holder && <button className="btn small" name="how" value="claim" disabled={pending}>{pending ? "…" : "Take this review"}</button>}
+      {!holder && <button className="btn small" name="how" value="claim" disabled={pending}>{pending ? "…" : `Take this ${change ? "change" : "review"}`}</button>}
       {mine && <button className="btn small" name="how" value="release" disabled={pending}>{pending ? "…" : "Hand it back"}</button>}
       {holder && !mine && <button className="btn small" name="how" value="take_over" disabled={pending}>{pending ? "…" : `Take it from ${holder}`}</button>}
       {state?.error && <span className="note bad" role="alert">{state.error}</span>}

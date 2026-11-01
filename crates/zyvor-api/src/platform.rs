@@ -397,8 +397,8 @@ pub async fn list_reviews(
         Some(id) => (false, Some(id.to_string())),
     };
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32, bool, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round, l.escalated_by IS NOT NULL, f.name, l.assigned_to, a.name
+    let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>, i32, bool, Option<String>, Option<String>, Option<String>, bool)> = sqlx::query_as(
+        "SELECT l.organisation_id, o.name, l.status, l.requested_by, l.requested_at, l.round, l.escalated_by IS NOT NULL, f.name, l.assigned_to, a.name, COALESCE(l.first_approved_by = $4, false)
          FROM live_access l JOIN organisations o ON o.id = l.organisation_id LEFT JOIN platform_reviewers f ON f.id = l.first_approved_by
          LEFT JOIN platform_reviewers a ON a.id = l.assigned_to
          WHERE ($1::text IS NULL OR l.status = $1)
@@ -409,10 +409,13 @@ pub async fn list_reviews(
     .bind(&q.status)
     .bind(want_none)
     .bind(&want)
+    .bind(&p.id)
     .fetch_all(&s.pool)
     .await?;
     let mut out = Vec::new();
-    for (org, name, status, by, at, round, escalated, first, assignee, assignee_name) in rows {
+    for (org, name, status, by, at, round, escalated, first, assignee, assignee_name, first_me) in
+        rows
+    {
         let d = detail(&s, &org).await?;
         let checks = d["checks"].as_array().cloned().unwrap_or_default();
         let failed = checks.iter().filter(|x| x["outcome"] != "pass").count();
@@ -425,7 +428,7 @@ pub async fn list_reviews(
         );
         let (due, overdue) = sla(at, s.review_sla_hours, status == "pending");
         out.push(json!({ "organisation_id": org, "organisation": name, "status": status, "requested_by": by, "requested_at": at, "round": round, "legal_name": d["profile"]["legal_name"], "checks_failed": failed,
-            "stage": if status == "pending" && first.is_some() { "awaiting_second" } else { "new" }, "first_approved_by": first, "needs_second_because": why,
+            "stage": if status == "pending" && first.is_some() { "awaiting_second" } else { "new" }, "first_approved_by": first, "first_approved_by_me": first_me, "needs_second_because": why,
             "assigned_to": assignee, "assigned_to_name": assignee_name, "assigned_to_me": assignee.as_deref() == Some(p.id.as_str()),
             "due_at": due, "overdue": overdue, "sla_hours": s.review_sla_hours }));
     }
@@ -479,6 +482,15 @@ pub async fn show_review(
         "new"
     });
     d["first_approved_by"] = json!(first);
+    d["first_approved_by_me"] = json!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT COALESCE(first_approved_by = $2, false) FROM live_access WHERE organisation_id = $1"
+        )
+        .bind(&org)
+        .bind(&p.id)
+        .fetch_one(&s.pool)
+        .await?
+    );
     d["escalation_note"] = json!(esc_note);
     d["restore_needs_other"] =
         json!(status == "revoked" && restore_needs_other(s.review_two_person));
@@ -690,8 +702,8 @@ pub async fn list_changes(
         Some(id) => (false, Some(id.to_string())),
     };
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>, bool, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name, c.escalated_by IS NOT NULL, c.escalated_note, c.assigned_to, a.name
+    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>, bool, Option<String>, Option<String>, Option<String>, bool)> = sqlx::query_as(
+        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name, c.escalated_by IS NOT NULL, c.escalated_note, c.assigned_to, a.name, COALESCE(c.first_approved_by = $4, false)
          FROM live_changes c JOIN organisations o ON o.id = c.organisation_id LEFT JOIN platform_reviewers f ON f.id = c.first_approved_by
          LEFT JOIN platform_reviewers a ON a.id = c.assigned_to
          WHERE ($1::text IS NULL OR c.status = $1)
@@ -702,6 +714,7 @@ pub async fn list_changes(
     .bind(&q.status)
     .bind(want_none)
     .bind(&want)
+    .bind(&p.id)
     .fetch_all(&s.pool)
     .await?;
     Ok(Json(json!({ "data": rows.into_iter().map(|r| {
@@ -711,7 +724,7 @@ pub async fn list_changes(
             "status": r.5, "requested_by": r.6, "requested_at": r.7, "note": r.8,
             "due_at": due, "overdue": overdue, "sla_hours": s.change_sla_hours,
             "stage": if r.5 == "pending" && r.10.is_some() { "awaiting_second" } else { "new" },
-            "first_approved_by": r.10,
+            "first_approved_by": r.10, "first_approved_by_me": r.15,
             "needs_second_because": change_second_reviewer_reasons(s.review_two_person, &r.9, r.11),
             "escalation_note": r.12,
             "assigned_to": r.13, "assigned_to_name": r.14, "assigned_to_me": r.13.as_deref() == Some(p.id.as_str()),

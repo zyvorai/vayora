@@ -124,7 +124,7 @@ export default async function Review({ params }: { params: Promise<{ org: string
         <section className="card" style={{ marginTop: 16 }}>
           <h2>Your decision</h2>
           <p className="fine">Check that the legal name, PAN holder and bank account holder are the same party, that the documents exist and match, and that the business is one you will put on live rails.</p>
-          <DecisionForm org={d.organisation_id} approveLabel={d.stage === "awaiting_second" ? "Give the second approval and open live mode" : d.needs_second_because.length > 0 ? "Give the first approval" : undefined} />
+          <DecisionForm org={d.organisation_id} iApprovedFirst={d.stage === "awaiting_second" && d.first_approved_by_me} approveLabel={d.stage === "awaiting_second" ? "Give the second approval and open live mode" : d.needs_second_because.length > 0 ? "Give the first approval" : undefined} />
           {d.needs_second_because.length === 0 && (
             <details style={{ marginTop: 14 }}>
               <summary className="fine">Not sure? Ask for a second reviewer</summary>

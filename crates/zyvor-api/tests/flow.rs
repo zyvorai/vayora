@@ -11355,6 +11355,18 @@ async fn an_unusual_business_needs_two_different_reviewers_and_anyone_can_ask_fo
         (d["stage"].clone(), d["first_approved_by"].clone()),
         (json!("awaiting_second"), json!("Asha"))
     );
+    assert_eq!(d["first_approved_by_me"], false);
+    let (_, mine) = rv(
+        &a_key,
+        "GET",
+        format!("/v1/platform/reviews/{org}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        mine["first_approved_by_me"], true,
+        "the first approver is told the first approval is theirs"
+    );
     let (_, list) = rv(
         &b_key,
         "GET",
@@ -12399,6 +12411,15 @@ async fn a_change_that_nothing_checked_needs_two_reviewers_and_a_clean_one_needs
         ),
         (json!("awaiting_second"), json!("Asha"))
     );
+    assert_eq!(l["data"][0]["first_approved_by_me"], false);
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"][0]["first_approved_by_me"], true);
     let (s2, b2) = rv(
         &a_key,
         "POST",
