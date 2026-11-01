@@ -47,7 +47,11 @@ final class MerchantStore: ObservableObject {
         apiKey = Keychain.get("apiKey") ?? ""
     }
 
+    /// Built-in demo bank: no server, no key. Stored per phone.
+    @Published var demoMode: Bool = UserDefaults.standard.bool(forKey: "demoMode") { didSet { UserDefaults.standard.set(demoMode, forKey: "demoMode") } }
+
     var client: VayoraClient? {
+        if demoMode { return .demo() }
         guard !apiKey.isEmpty, let u = URL(string: serverURL) else { return nil }
         return VayoraClient(baseURL: u, apiKey: apiKey)
     }

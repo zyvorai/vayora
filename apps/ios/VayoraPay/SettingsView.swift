@@ -28,6 +28,8 @@ struct SettingsView: View {
                         Text("Settings").vfont(28, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
                         GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
+                                Toggle(isOn: $store.demoMode) { Label("Demo mode", systemImage: "play.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary) }.tint(VUI.violet)
+                                Text("Try the app with no server: a built-in test bank answers. Nothing is kept on a server and it resets when the app closes. Plans that need the real test server say so.").vfont(13).foregroundStyle(VUI.textSecondary)
                                 Label("Test server", systemImage: "server.rack").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 TextField("http://192.168.1.10:8080", text: $store.serverURL)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).foregroundStyle(VUI.textPrimary)

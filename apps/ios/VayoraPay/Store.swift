@@ -128,7 +128,10 @@ final class Store: ObservableObject {
         if let d = try? JSONEncoder().encode(history.prefix(200).map { $0 }) { UserDefaults.standard.set(d, forKey: "history") }
     }
 
-    var client: VayoraClient? { URL(string: serverURL).map { VayoraClient(baseURL: $0) } }
+    /// Built-in demo bank: no server. Stored per phone.
+    @Published var demoMode: Bool = UserDefaults.standard.bool(forKey: "demoMode") { didSet { UserDefaults.standard.set(demoMode, forKey: "demoMode") } }
+
+    var client: VayoraClient? { demoMode ? .demo() : URL(string: serverURL).map { VayoraClient(baseURL: $0) } }
     var balance: Money { Money(minor: balanceMinor) }
 
     var spentThisMonth: Int64 {

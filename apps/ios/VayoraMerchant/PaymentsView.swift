@@ -254,6 +254,12 @@ struct MerchantSettings: View {
                             }
                         }
                         GlassCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Toggle(isOn: $store.demoMode) { Label("Demo mode", systemImage: "play.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary) }.tint(VUI.mint)
+                                Text("Try the app with no server: a built-in test bank answers. A pretend customer pays a code a few seconds after you show it. Test money only; nothing is kept when the app closes. Features that need the real test server say so.").vfont(13).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                        GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 Label("Quick setup", systemImage: "qrcode.viewfinder").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 Button { scanning = true } label: {
