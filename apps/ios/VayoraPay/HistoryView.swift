@@ -8,6 +8,7 @@ struct HistoryView: View {
     @State private var open: Txn?
     @State private var exportURL: URL?
     @State private var reportURL: URL?
+    @State private var showRecap = false
 
     var query: String { filter.text }
     /// A question like "food last week" or "more than 500 this month": answered with a total above the list.
@@ -89,6 +90,7 @@ struct HistoryView: View {
                         HStack {
                             Text("History").vfont(28, .bold).foregroundStyle(VUI.textPrimary)
                             Spacer()
+                            Button { showRecap = true } label: { Label("Week", systemImage: "calendar").vfont(14, .semibold).foregroundStyle(VUI.violet) }
                             if let report = reportURL {
                                 ShareLink(item: report) { Label("PDF", systemImage: "doc.richtext").vfont(14, .semibold).foregroundStyle(VUI.violet) }
                             } else if !rows.isEmpty {
@@ -124,6 +126,7 @@ struct HistoryView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $open) { Receipt(txn: $0) }
+            .sheet(isPresented: $showRecap) { RecapView().environmentObject(store) }
         }
     }
 }
