@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage("faceIDLock") private var lock = false
     @State private var confirmReset = false
     @State private var scanning = false
+    @State private var budgeting = false
+    @State private var receiving = false
     @State private var setupMessage: String?
 
     var body: some View {
@@ -36,6 +38,17 @@ struct SettingsView: View {
                                 SecureField("Test PIN (4 digits)", text: $store.testPIN).keyboardType(.numberPad).foregroundStyle(VUI.textPrimary)
                                     .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 Text("A local test PIN, not a UPI PIN.").vfont(13).foregroundStyle(VUI.textSecondary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Budgets and receiving", systemImage: "chart.pie.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                let s = store.budgetStatuses
+                                Text(s.isEmpty ? "No limits set." : s.map { "\($0.category.title) \(Int($0.fraction * 100))%" }.joined(separator: " · ")).vfont(13).foregroundStyle(VUI.textSecondary)
+                                HStack(spacing: 18) {
+                                    Button { budgeting = true } label: { Label("Budgets", systemImage: "slider.horizontal.3") }
+                                    Button { receiving = true } label: { Label("Receive", systemImage: "qrcode") }
+                                }.vfont(15, .semibold).foregroundStyle(VUI.violet)
                             }
                         }
                         GlassCard {
@@ -71,6 +84,8 @@ struct SettingsView: View {
             }
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $budgeting) { BudgetsView().environmentObject(store) }
+            .sheet(isPresented: $receiving) { ReceiveView().environmentObject(store) }
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .pay, hint: "Scan the setup QR") { text in
                     scanning = false

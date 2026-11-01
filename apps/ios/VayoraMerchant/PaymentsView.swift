@@ -35,10 +35,23 @@ struct PaymentsView: View {
         return paid.reversed().map { i in run += Double(i.amountMinor - (refunds[i.id]?.refundedMinor ?? 0)) / 100; return run }
     }
 
+    /// Today's money by hour, over the hours that matter. Net of nothing: refunds show in the total, not here.
+    var hourly: HourlyBars.Model? {
+        let iso = ISO8601DateFormatter(), frac = ISO8601DateFormatter.withFraction
+        let pairs: [(Date, Int64)] = paid.compactMap { i in
+            guard let s = i.createdAt, let d = iso.date(from: s) ?? frac.date(from: s) else { return nil }
+            return (d, i.amountMinor)
+        }
+        let totals = HourlyTotals.make(pairs, day: Date())
+        guard totals.contains(where: { $0 > 0 }) else { return nil }
+        let w = HourlyTotals.window(totals)
+        return HourlyBars.Model(hours: Array(w), minor: w.map { totals[$0] })
+    }
+
     var body: some View {
         NavigationStack {
             MerchantTodayScreen(collected: collected, count: paid.count, average: Money(minor: paid.isEmpty ? 0 : collected.minor / Int64(paid.count)),
-                                trend: trend.count > 1 ? trend : [0, 0], rows: rows, error: error, onOpen: { r in open = items.first { $0.id == r.id } })
+                                trend: trend.count > 1 ? trend : [0, 0], rows: rows, error: error, hourly: hourly, onOpen: { r in open = items.first { $0.id == r.id } })
                 .refreshable { await load() }
                 .task { await load() }
                 .toolbar(.hidden, for: .navigationBar)
@@ -82,6 +95,11 @@ struct PaymentDetail: View {
     @State private var refunding = false
     @State private var confirm = false
 
+    var created: Date? {
+        guard let s = intent.createdAt else { return nil }
+        return ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter.withFraction.date(from: s)
+    }
+
     var pill: (String, StatusPill.Kind) {
         if let s = state, s.isFullyRefunded { return ("Refunded", .warn) }
         if let s = state, s.isPartlyRefunded { return ("Part refunded", .warn) }
@@ -100,6 +118,12 @@ struct PaymentDetail: View {
                             row("Payment", intent.id)
                             if let s = state, s.refundedMinor > 0 { row("Refunded", Money(minor: s.refundedMinor, currency: intent.currency).display) }
                         }
+                    }
+                    if intent.status == "succeeded" {
+                        ShareLink(item: ReceiptText.make(merchant: "", amount: intent.money, status: intent.status, id: intent.id, when: created, refundedMinor: state?.refundedMinor ?? 0)) {
+                            Label("Share receipt", systemImage: "square.and.arrow.up").vfont(17, .semibold).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
+                                .background(Brand.merchant.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        }.buttonStyle(PressScale())
                     }
                     if intent.status == "succeeded", let s = state {
                         if s.remainingMinor > 0 {
