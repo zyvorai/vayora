@@ -826,3 +826,27 @@ final class PaymentCardTests: XCTestCase {
     }
     func testMaskWithoutAtSign() { XCTAssertEqual(PaymentCardModel.masked("nonsense"), "a payee") }
 }
+final class RefundReasonTests: XCTestCase {
+    let t = Date(timeIntervalSince1970: 1_700_000_000)
+    func e(_ r: RefundReason, _ ago: Double = 0, note: String = "") -> RefundEntry { RefundEntry(intentID: "x", date: t.addingTimeInterval(-ago * 86400), amountMinor: 100, reason: r, note: note) }
+    func testServerValues() {
+        XCTAssertEqual(RefundReason.customerRequest.rawValue, "requested_by_customer")
+        XCTAssertEqual(RefundReason.other.rawValue, "requested_by_merchant") // what the app sent before reasons existed
+        XCTAssertEqual(Set(RefundReason.allCases.map(\.rawValue)).count, RefundReason.allCases.count)
+    }
+    func testCountsRecentOnlyMostCommonFirst() {
+        let log = [e(.wrongItem), e(.customerRequest), e(.customerRequest, 1), e(.quality, 30)]
+        let c = RefundPattern.counts(log, since: t.addingTimeInterval(-7 * 86400))
+        XCTAssertEqual(c.map(\.reason), [.customerRequest, .wrongItem]); XCTAssertEqual(c[0].count, 2)
+    }
+    func testLine() {
+        let log = [e(.customerRequest), e(.customerRequest), e(.wrongItem)]
+        XCTAssertEqual(RefundPattern.line(log, since: t.addingTimeInterval(-7 * 86400), days: 7, paidCount: 40), "3 refunds in 7 days (2 Customer asked, 1 Wrong item) out of 40 paid.")
+        XCTAssertNil(RefundPattern.line([], since: t, days: 7, paidCount: 5))
+        XCTAssertEqual(RefundPattern.line([e(.duplicate)], since: t.addingTimeInterval(-86400), days: 7, paidCount: 0), "1 refund in 7 days (1 Charged twice).")
+    }
+    func testNoteIsTrimmedAndCapped() {
+        XCTAssertEqual(e(.other, note: "  hi \n").note, "hi")
+        XCTAssertEqual(e(.other, note: String(repeating: "n", count: 500)).note.count, 200)
+    }
+}
