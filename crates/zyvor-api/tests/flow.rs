@@ -14074,3 +14074,149 @@ async fn a_simulated_day_of_only_refunds_has_no_bank_credit_to_add(pool: PgPool)
     assert_eq!(st, 422);
     assert_eq!(body["error"]["code"], "nothing_to_credit", "{body}");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_lead_can_set_another_reviewers_hours_and_nobody_else_can(pool: PgPool) {
+    let t = setup(pool).await;
+    let app = zyvor_api::app(t.state.clone());
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    zyvor_api::platform::set_reviewer_email(&t.state.pool, &b_id, Some("bala@zyvor.test"))
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let week = json!({ "shifts": [{ "weekday": "mon", "start": "09:00", "end": "17:00" }] });
+
+    // nobody is a lead until the operator says so: Bala cannot set Asha's hours, Asha cannot set Bala's
+    for (key, other) in [(&b_key, &a_id), (&a_key, &b_id)] {
+        let (st, b) = rv(
+            key,
+            "PUT",
+            format!("/v1/platform/rota/reviewers/{other}"),
+            week.clone(),
+        )
+        .await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{b}");
+    }
+    let (_, r) = rv(&a_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    assert_eq!(r["i_am_lead"], false, "{r}");
+
+    // the operator makes Asha a lead; an unknown reviewer is refused
+    assert!(
+        zyvor_api::platform::set_reviewer_lead(&t.state.pool, &a_id, true)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !zyvor_api::platform::set_reviewer_lead(&t.state.pool, "rev_nope", true)
+            .await
+            .unwrap()
+    );
+    let (_, r) = rv(&b_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    assert_eq!(r["i_am_lead"], false, "{r}");
+    assert_eq!(
+        r["reviewers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["lead"].clone())
+            .collect::<Vec<_>>(),
+        vec![json!(true), json!(false)],
+        "{r}"
+    );
+
+    // a lead sets Bala's hours; a bad shift or an unknown reviewer changes nothing
+    let (st, b) = rv(
+        &a_key,
+        "PUT",
+        format!("/v1/platform/rota/reviewers/{b_id}"),
+        json!({ "shifts": [{ "weekday": "mon", "start": "18:00", "end": "09:00" }] }),
+    )
+    .await;
+    assert_eq!(
+        (st, b["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("invalid_shift")),
+        "{b}"
+    );
+    let (st, _) = rv(
+        &a_key,
+        "PUT",
+        "/v1/platform/rota/reviewers/rev_nope".into(),
+        week.clone(),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (st, b) = rv(
+        &a_key,
+        "PUT",
+        format!("/v1/platform/rota/reviewers/{b_id}"),
+        week.clone(),
+    )
+    .await;
+    assert_eq!(
+        (st, b["name"].clone(), b["shifts"].clone()),
+        (StatusCode::OK, json!("Bala"), json!(1)),
+        "{b}"
+    );
+    let (_, r) = rv(&b_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    let bala = r["reviewers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["id"] == json!(b_id))
+        .unwrap();
+    assert_eq!(bala["shifts"].as_array().unwrap().len(), 1, "{r}");
+
+    // Bala is told, and the mail names Asha and the count only
+    let mails: Vec<(String, String)> = sqlx::query_as(
+        "SELECT subject, body FROM mail_queue WHERE to_email = 'bala@zyvor.test' ORDER BY created_at, id",
+    )
+    .fetch_all(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(mails.len(), 1, "{mails:?}");
+    assert!(
+        mails[0].1.contains("Asha changed your weekly hours"),
+        "{mails:?}"
+    );
+
+    // a lead can clear it, and setting their own hours this way sends no mail
+    let (st, b) = rv(
+        &a_key,
+        "PUT",
+        format!("/v1/platform/rota/reviewers/{b_id}"),
+        json!({ "shifts": [] }),
+    )
+    .await;
+    assert_eq!((st, b["shifts"].clone()), (StatusCode::OK, json!(0)), "{b}");
+    let (st, _) = rv(
+        &a_key,
+        "PUT",
+        format!("/v1/platform/rota/reviewers/{a_id}"),
+        week,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // stepping down takes the right away
+    assert!(
+        zyvor_api::platform::set_reviewer_lead(&t.state.pool, &a_id, false)
+            .await
+            .unwrap()
+    );
+    let (st, _) = rv(
+        &a_key,
+        "PUT",
+        format!("/v1/platform/rota/reviewers/{b_id}"),
+        json!({ "shifts": [] }),
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+}

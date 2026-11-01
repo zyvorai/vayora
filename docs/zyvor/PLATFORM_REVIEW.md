@@ -29,6 +29,7 @@ Reviewers are named people with their own key, so every decision says who made i
 zyvor-api platform-reviewer add "Asha Rao"      # prints the key once; only its hash is stored
 zyvor-api platform-reviewer list
 zyvor-api platform-reviewer disable rev_...     # their key stops working at once
+zyvor-api platform-reviewer lead rev_...        # a lead may set other reviewers' weekly hours; `unlead` takes it back
 ```
 
 k3s: `kubectl -n zyvor exec deploy/zyvor-api -- zyvor-api platform-reviewer add "Asha Rao"`.
@@ -135,7 +136,14 @@ Giving away or releasing your own item says nothing, and a holder with no addres
 held item goes overdue to anyone but `ZYVOR_REVIEW_ALERT_EMAIL`. A holder who is disabled, or whose item was released by
 their first approval or a decision, is not told: those are not someone taking it.
 
-**Not built:** a lead setting other people's hours, and re-balancing items already held. (A revoke is one person on purpose; giving
+**A lead can set other people's hours.** The operator makes a lead from the CLI (`platform-reviewer lead <id>`); a lead cannot
+promote anyone, and a reviewer cannot make themselves one. A lead replaces another reviewer's weekly shifts with
+`PUT /platform/rota/reviewers/{id}` (`rota-set rev_... "mon-fri 09:00-18:00"`); anyone else gets 403. The reviewer is emailed
+that their hours changed (who changed them and how many shifts, not the hours), when they have an address, and can change
+them back. A lead sets weekly hours only: leave stays each reviewer's own, and a desk holiday stays open to everyone. The
+change is logged by the API but not in the audit trail, which is per business and the rota belongs to no business.
+
+**Not built:** re-balancing items already held. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back

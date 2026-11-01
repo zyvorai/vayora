@@ -129,14 +129,15 @@ export function EscalateChangeForm({ id }: { id: string }) {
   );
 }
 
-/** The signed-in reviewer's weekly hours: one shift per day, in the review desk's local time. */
-export function RotaForm({ shifts }: { shifts: RotaShift[] }) {
+/** A reviewer's weekly hours: one shift per day, in the review desk's local time. `reviewer` is set by a lead for someone else. */
+export function RotaForm({ shifts, reviewer }: { shifts: RotaShift[]; reviewer?: string }) {
   const [state, action, pending] = useActionState(saveRota, undefined);
   const by = (d: string) => shifts.find((s) => s.weekday === d);
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(DAYS.map((d) => [d, !!by(d)])));
   const [hours, setHours] = useState<Record<string, { start: string; end: string }>>(() => Object.fromEntries(DAYS.map((d) => [d, { start: by(d)?.start ?? "09:00", end: by(d)?.end ?? "18:00" }])));
   return (
     <form action={action} style={{ display: "grid", gap: 10 }}>
+      {reviewer && <input type="hidden" name="reviewer" value={reviewer} />}
       {DAYS.map((d) => (
         <div key={d} style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <label style={{ width: 70, textTransform: "capitalize" }}><input type="checkbox" name={`${d}_on`} checked={on[d]} onChange={(e) => setOn({ ...on, [d]: e.target.checked })} /> {d}</label>
@@ -147,7 +148,7 @@ export function RotaForm({ shifts }: { shifts: RotaShift[] }) {
       ))}
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
-      <div><button className="btn small primary" disabled={pending}>{pending ? "…" : "Save my hours"}</button></div>
+      <div><button className="btn small primary" disabled={pending}>{pending ? "…" : reviewer ? "Save their hours" : "Save my hours"}</button></div>
     </form>
   );
 }

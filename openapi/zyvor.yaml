@@ -1626,6 +1626,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/rota/reviewers/{id}:
+    put:
+      summary: Zyvor reviewers who are leads only - replace another reviewer's weekly shifts (same shape as rota/me). The reviewer is emailed that their hours changed, when they have an address. 403 for anyone who is not a lead; the operator makes a lead with `zyvor-api platform-reviewer lead <id>`
+      tags:
+      - platform
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/me:
     get:
       summary: Zyvor reviewers only - who the key belongs to and the address they are emailed at when something is given to them

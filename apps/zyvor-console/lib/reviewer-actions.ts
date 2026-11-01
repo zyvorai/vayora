@@ -157,19 +157,21 @@ export async function saveMyEmail(_: State, form: FormData): Promise<State> {
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-/** Replace the signed-in reviewer's weekly hours: one shift per ticked day. */
+/** Replace a reviewer's weekly hours: one shift per ticked day. Your own, or (a lead only) another reviewer's. */
 export async function saveRota(_: State, form: FormData): Promise<State> {
   requireReviewerSurface();
   const key = await reviewerKey();
   if (!key) redirect("/reviewer");
   const shifts = DAY_KEYS.filter((d) => form.get(`${d}_on`) === "on").map((d) => ({ weekday: d, start: String(form.get(`${d}_start`) ?? ""), end: String(form.get(`${d}_end`) ?? "") }));
-  const r = await platform(key, "PUT", "/rota/me", { shifts });
+  const other = String(form.get("reviewer") ?? "");
+  const r = await platform(key, "PUT", other ? `/rota/reviewers/${encodeURIComponent(other)}` : "/rota/me", { shifts });
   if (!r.ok) {
     if (r.status === 401) redirect("/reviewer");
     return { error: r.message };
   }
   revalidatePath("/reviewer/rota");
   revalidatePath("/reviewer");
+  if (other) return { ok: shifts.length ? "Their hours are saved; they are emailed if they have an address." : "Their hours are cleared." };
   return { ok: shifts.length ? "Your hours are saved." : "Your hours are cleared; you are not on the rota." };
 }
 
