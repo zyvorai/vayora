@@ -273,6 +273,25 @@ func (c *Client) GetMandate(id string) (map[string]any, error) {
 	return out, err
 }
 
+// SyncSettlements pulls a provider's settlement file for a day (YYYY-MM-DD). On a test organisation, provider "sim"
+// builds one from the simulated payments.
+func (c *Client) SyncSettlements(provider, date string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/settlements/sync", map[string]any{"provider": provider, "date": date}, "", &out)
+	return out, err
+}
+
+// SimulateBankCredit (test organisations only) posts a simulated bank credit for a simulated settlement,
+// shortMinor less than due when positive.
+func (c *Client) SimulateBankCredit(id string, shortMinor int64) (map[string]any, error) {
+	if shortMinor < 0 {
+		return nil, fmt.Errorf("shortMinor cannot be negative")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/settlements/"+id+"/simulate_bank", map[string]any{"short_minor": shortMinor}, "", &out)
+	return out, err
+}
+
 // MandateAction is "refresh" (ask the provider where it stands), "pause", "resume" or "revoke".
 func (c *Client) MandateAction(id, action string) (map[string]any, error) {
 	switch action {

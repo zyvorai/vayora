@@ -146,6 +146,20 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             z.mandate_action("mnd_1", "delete")
 
+    def test_simulated_settlement_routes(self):
+        seen = []
+
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data)))
+            return FakeRes(b"{}")
+
+        z = Zyvor("k", opener=opener)
+        z.sync_settlements("sim", "2026-11-01"); z.simulate_bank_credit("stl_1", 5000)
+        self.assertEqual(seen, [("POST", "/v1/settlements/sync", {"provider": "sim", "date": "2026-11-01"}),
+                                ("POST", "/v1/settlements/stl_1/simulate_bank", {"short_minor": 5000})])
+        with self.assertRaises(ValueError):
+            z.simulate_bank_credit("stl_1", -1)
+
     def test_webhook(self):
         body = b'{"type":"payment.captured"}'
         sig = lambda t, s=b"whsec": f"t={t},v1=" + hmac.new(s, f"{t}.".encode() + body, hashlib.sha256).hexdigest()

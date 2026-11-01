@@ -60,6 +60,16 @@ class Zyvor:
     def explain_settlement(self, settlement_id: str) -> dict:
         return self._req("GET", f"/v1/settlements/{settlement_id}/explain")
 
+    def sync_settlements(self, provider: str, date: str) -> dict:
+        """Pull a provider's settlement file for a day (date is YYYY-MM-DD). On a test organisation, provider "sim" builds one from simulated payments."""
+        return self._req("POST", "/v1/settlements/sync", {"provider": provider, "date": date})
+
+    def simulate_bank_credit(self, settlement_id: str, short_minor: int = 0) -> dict:
+        """Test organisations only: post a simulated bank credit for a simulated settlement, optionally short_minor less than due."""
+        if short_minor < 0:
+            raise ValueError("short_minor cannot be negative")
+        return self._req("POST", f"/v1/settlements/{settlement_id}/simulate_bank", {"short_minor": short_minor})
+
 
     # ---- billing ----
     def create_plan(self, name: str, amount_minor: int, interval_unit: str, **extra) -> dict:
