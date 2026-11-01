@@ -135,7 +135,14 @@ struct Receipt: View {
     @EnvironmentObject var store: Store
     let txn: Txn
     @State private var progress = 0.0
+    @State private var cardImage: Image?
     var ok: Bool { txn.status == .success }
+    /// The shareable card as an image. The UPI ID is masked on it.
+    @MainActor func makeCard() -> Image? {
+        let m = PaymentCardModel(amount: txn.money, payeeName: txn.name, payeeVPA: txn.payee, note: txn.note, date: txn.date, paid: ok)
+        let r = ImageRenderer(content: PaymentCardView(m)); r.scale = 3
+        return r.uiImage.map { Image(uiImage: $0) }
+    }
     var who: String { txn.name.isEmpty ? txn.payee : txn.name }
     var text: String {
         "Vayora Pay (TEST) receipt\n\(txn.money.display) to \(who) (\(txn.payee))\n\(ok ? "Paid" : "Failed") · \(txn.date.formatted())\nNo real money moved."
@@ -169,6 +176,11 @@ struct Receipt: View {
                             Text("Changing it also changes your other payments to this UPI ID, and later ones.").vfont(12).foregroundStyle(VUI.textTertiary)
                         }
                     }
+                    if let card = cardImage {
+                        ShareLink(item: card, preview: SharePreview("Payment card", image: card)) {
+                            Label("Share as a card", systemImage: "photo").vfont(16, .semibold).foregroundStyle(VUI.violet).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        }
+                    }
                     ShareLink(item: text) {
                         Label("Share receipt", systemImage: "square.and.arrow.up").vfont(17, .semibold).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
                             .background(Brand.pay.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -180,7 +192,7 @@ struct Receipt: View {
         }
         .environment(\.colorScheme, .dark)
         .navigationTitle("Receipt").navigationBarTitleDisplayMode(.inline)
-        .onAppear { withAnimation(.easeOut(duration: 0.9)) { progress = 1 } }
+        .onAppear { withAnimation(.easeOut(duration: 0.9)) { progress = 1 }; if cardImage == nil { cardImage = makeCard() } }
     }
     func row(_ k: String, _ v: String) -> some View {
         HStack(alignment: .firstTextBaseline) { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).multilineTextAlignment(.trailing) }.vfont(15)

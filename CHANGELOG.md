@@ -13,6 +13,8 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - A weekly recap from the phone's own history. No server change.
 **Pay and Merchant: demo mode (on-phone, test mode)**
 - A built-in test bank so the apps work with no server. No server change.
+**Pay: shareable payment card (on-phone, test mode)**
+- A picture of a finished payment with the UPI ID masked. No server change.
 
 **Cashfree Subscriptions adapter for UPI AutoPay (mocked, unverified)**
 - Cashfree can now hold a mandate: create (an on-demand subscription plus a payer approval link), refresh, revoke, and debit (a `CHARGE` keyed by our attempt id, with an idempotency key derived from it). `mandates` is on for Cashfree. Built from Cashfree's public docs and tested only against a local mock HTTP server; **not run against Cashfree's sandbox**. Unclear points are marked `UNCLEAR` in the code and listed in the pull request.
