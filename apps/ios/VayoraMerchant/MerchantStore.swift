@@ -17,6 +17,14 @@ final class MerchantStore: ObservableObject {
     @Published var staff: [String] { didSet { UserDefaults.standard.set(staff, forKey: "staff") } }
     @Published var activeStaff: String? { didSet { UserDefaults.standard.set(activeStaff, forKey: "activeStaff") } }
     @Published var staffTags: RegularsBook { didSet { if let d = try? JSONEncoder().encode(staffTags) { UserDefaults.standard.set(d, forKey: "staffTags") } } }
+    /// What this shop sells, and the bills that became payments (newest last, capped) so sales can be grouped by item.
+    @Published var catalogue: Catalogue { didSet { if let d = try? JSONEncoder().encode(catalogue) { UserDefaults.standard.set(d, forKey: "catalogue") } } }
+    @Published var billLog: [BillRecord] { didSet { if let d = try? JSONEncoder().encode(billLog) { UserDefaults.standard.set(d, forKey: "billLog") } } }
+    func logBill(_ b: Bill, intentID: String) {
+        guard !b.isEmpty else { return }
+        billLog.append(BillRecord(intentID: intentID, date: Date(), lines: b.lines))
+        if billLog.count > 500 { billLog.removeFirst(billLog.count - 500) }
+    }
     var ownerPIN: String { get { Keychain.get("ownerPIN") ?? "" } set { Keychain.set(newValue, for: "ownerPIN") } }
 
     func syncReminder() { Task { await ClosingReminder.sync(enabled: closeReminder, minutes: closeMinutes) } }
@@ -25,6 +33,8 @@ final class MerchantStore: ObservableObject {
         let d = UserDefaults.standard
         cashierLocked = d.bool(forKey: "cashierLocked")
         regulars = (d.data(forKey: "regulars")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()
+        catalogue = (d.data(forKey: "catalogue")).flatMap { try? JSONDecoder().decode(Catalogue.self, from: $0) } ?? Catalogue()
+        billLog = (d.data(forKey: "billLog")).flatMap { try? JSONDecoder().decode([BillRecord].self, from: $0) } ?? []
         staff = d.stringArray(forKey: "staff") ?? []
         activeStaff = d.string(forKey: "activeStaff")
         staffTags = (d.data(forKey: "staffTags")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()

@@ -14,6 +14,9 @@ struct CollectView: View {
     @State private var savedBrightness: CGFloat?
     @State private var tipPercent = 0
     @State private var unlocking = false
+    @State private var bill = Bill()
+    @State private var billShown = false
+    @State private var billUsed: Bill?
     @AppStorage("lastAmountMinor") private var lastMinor = 0
 
     enum Phase: Equatable {
@@ -35,6 +38,7 @@ struct CollectView: View {
                                         onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() },
                                         onChip: { note = (note == $0 ? "" : $0) }, onShowQR: start)
                     staffRow
+                    itemsRow
                     helpers
                     if store.client == nil { Text("Add your API key in Settings first, or scan a setup QR.").font(.footnote).foregroundStyle(VUI.textSecondary).padding(.bottom, 8).background(VUI.ink) }
                 }
@@ -92,6 +96,22 @@ struct CollectView: View {
             .padding(.vertical, 6).background(VUI.ink)
         }
     }
+    /// Build the amount from items; the bill is kept with the payment so sales can be grouped by item.
+    @ViewBuilder var itemsRow: some View {
+        if phase == .entering, !store.catalogue.products.isEmpty {
+            HStack {
+                Button { billShown = true } label: { chip(billUsed == nil ? "Items" : "Items · \(Money(minor: billUsed?.totalMinor ?? 0).display)", on: billUsed != nil) }.buttonStyle(PressScale())
+                Spacer()
+            }.padding(.horizontal, 20).padding(.vertical, 6).background(VUI.ink)
+            .sheet(isPresented: $billShown) { BillSheet(bill: $bill, onUse: useBill).environmentObject(store) }
+        }
+    }
+    func useBill() {
+        guard !bill.isEmpty else { return }
+        entry.clear()
+        for ch in Money(minor: bill.totalMinor).decimalString { if let d = ch.wholeNumberValue { entry.digit(d) } else if ch == "." { entry.point() } }
+        note = bill.note(); billUsed = bill; Haptics.tick()
+    }
     @ViewBuilder var helpers: some View {
         let base = entry.money?.minor ?? 0
         if base > 0 || lastMinor > 0 {
@@ -123,7 +143,7 @@ struct CollectView: View {
     }
 
     func reset() {
-        endCustomerMode(); entry.clear(); note = ""; tipPercent = 0; phase = .entering
+        endCustomerMode(); entry.clear(); note = ""; tipPercent = 0; bill.clear(); billUsed = nil; phase = .entering
     }
 
     func toggleCustomer() { customerMode ? endCustomerMode() : beginCustomerMode() }
@@ -151,6 +171,8 @@ struct CollectView: View {
             do {
                 let intent = try await c.createIntent(amount: amt, note: note)
                 if let who = store.activeStaff { store.staffTags.tag(intent.id, as: who) }
+                // only a bill whose total is still the amount typed counts as itemised
+                if let b = billUsed, b.totalMinor == base.minor { store.logBill(b, intentID: intent.id) }
                 let attempt = try await c.createUPIAttempt(intentId: intent.id)
                 guard let uri = attempt.upiURI else { phase = .error("This provider did not issue a UPI QR. Is upi_intent enabled?"); return }
                 phase = .waiting(intentId: intent.id, attemptId: attempt.id, uri: uri, amount: amt, started: Date())
