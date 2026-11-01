@@ -25,6 +25,9 @@ final class MerchantStore: ObservableObject {
         billLog.append(BillRecord(intentID: intentID, date: Date(), lines: b.lines))
         if billLog.count > 500 { billLog.removeFirst(billLog.count - 500) }
     }
+    /// Refunds made from this phone, with the reason and note. Local records; the server also keeps the reason.
+    @Published var refundLog: [RefundEntry] { didSet { if let d = try? JSONEncoder().encode(refundLog) { UserDefaults.standard.set(d, forKey: "refundLog") } } }
+    func logRefund(_ e: RefundEntry) { refundLog.append(e); if refundLog.count > 500 { refundLog.removeFirst(refundLog.count - 500) } }
     var ownerPIN: String { get { Keychain.get("ownerPIN") ?? "" } set { Keychain.set(newValue, for: "ownerPIN") } }
 
     func syncReminder() { Task { await ClosingReminder.sync(enabled: closeReminder, minutes: closeMinutes) } }
@@ -35,6 +38,7 @@ final class MerchantStore: ObservableObject {
         regulars = (d.data(forKey: "regulars")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()
         catalogue = (d.data(forKey: "catalogue")).flatMap { try? JSONDecoder().decode(Catalogue.self, from: $0) } ?? Catalogue()
         billLog = (d.data(forKey: "billLog")).flatMap { try? JSONDecoder().decode([BillRecord].self, from: $0) } ?? []
+        refundLog = (d.data(forKey: "refundLog")).flatMap { try? JSONDecoder().decode([RefundEntry].self, from: $0) } ?? []
         staff = d.stringArray(forKey: "staff") ?? []
         activeStaff = d.string(forKey: "activeStaff")
         staffTags = (d.data(forKey: "staffTags")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()

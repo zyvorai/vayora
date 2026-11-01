@@ -54,6 +54,11 @@ struct PaymentsView: View {
                                 trend: trend.count > 1 ? trend : [0, 0], rows: rows, error: error, hourly: hourly, onOpen: { r in open = items.first { $0.id == r.id } })
                 .refreshable { await load() }
                 .task { await load() }
+                .safeAreaInset(edge: .top) {
+                    if let line = RefundPattern.line(store.refundLog, since: Date().addingTimeInterval(-7 * 86400), days: 7, paidCount: paid.count) {
+                        Text(line).vfont(12).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 6).background(VUI.ink)
+                    }
+                }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $open) { PaymentDetail(intent: $0) }
         }
@@ -94,6 +99,8 @@ struct PaymentDetail: View {
     @State private var message: String?
     @State private var refunding = false
     @State private var confirm = false
+    @State private var reason: RefundReason = .customerRequest
+    @State private var refundNote = ""
 
     /// A name for this payment, kept on the phone, with a running total in Settings, Regulars.
     @ViewBuilder var regularTag: some View {
@@ -145,6 +152,14 @@ struct PaymentDetail: View {
                     if intent.status == "succeeded" { regularTag }
                     if intent.status == "succeeded", !store.cashierLocked, let s = state {
                         if s.remainingMinor > 0 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Why").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                                    Spacer()
+                                    Picker("Why", selection: $reason) { ForEach(RefundReason.allCases, id: \.self) { Text($0.title).tag($0) } }.tint(VUI.mint)
+                                }
+                                TextField("Note (optional)", text: $refundNote).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).foregroundStyle(VUI.textPrimary)
+                            }
                             Button(role: .destructive) { confirm = true } label: {
                                 Text(s.isPartlyRefunded ? "Refund the remaining \(Money(minor: s.remainingMinor, currency: intent.currency).display)" : "Refund in full")
                                     .vfont(18, .semibold).foregroundStyle(VUI.coral).frame(maxWidth: .infinity).padding(.vertical, 17)
@@ -184,7 +199,8 @@ struct PaymentDetail: View {
         Task {
             defer { refunding = false }
             do {
-                let r = try await c.refund(intentId: intent.id, amount: Money(minor: remaining, currency: intent.currency), reason: "requested_by_merchant")
+                let r = try await c.refund(intentId: intent.id, amount: Money(minor: remaining, currency: intent.currency), reason: reason.rawValue)
+                store.logRefund(RefundEntry(intentID: intent.id, date: Date(), amountMinor: r.amountMinor, reason: reason, note: refundNote))
                 message = "Refund \(r.status)"; Haptics.success()
             } catch { message = error.localizedDescription; Haptics.error() }
             await reload()
