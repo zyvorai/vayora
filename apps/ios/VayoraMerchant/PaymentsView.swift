@@ -178,6 +178,8 @@ struct MerchantSettings: View {
     @EnvironmentObject var store: MerchantStore
     @State private var scanning = false
     @State private var setupMessage: String?
+    @State private var closingDay = false
+    @AppStorage("soundbox") private var soundbox = "off"
 
     var body: some View {
         NavigationStack {
@@ -186,6 +188,16 @@ struct MerchantSettings: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Settings").vfont(28, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Counter speaker", systemImage: "speaker.wave.2.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Picker("Speak", selection: $soundbox) { Text("Off").tag("off"); Text("English").tag("en"); Text("हिन्दी").tag("hi") }.pickerStyle(.segmented)
+                                Button("Hear it") { Soundbox.shared.speak(SoundboxPhrase.received(Money(minor: 250_00), language: soundbox == "hi" ? .hindi : .english), soundbox == "hi" ? .hindi : .english) }
+                                    .vfont(15, .semibold).foregroundStyle(VUI.mint).disabled(soundbox == "off")
+                                Text("Says the amount out loud when a payment is received. The phone's own voice; it plays even with the silent switch on.").vfont(12).foregroundStyle(VUI.textTertiary)
+                                Button { closingDay = true } label: { Label("End of day", systemImage: "moon.stars.fill") }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                            }
+                        }
                         GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 Label("Quick setup", systemImage: "qrcode.viewfinder").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
@@ -225,6 +237,7 @@ struct MerchantSettings: View {
             }
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $closingDay) { EndOfDayView().environmentObject(store) }
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .merchant, hint: "Scan the setup QR") { text in
                     scanning = false

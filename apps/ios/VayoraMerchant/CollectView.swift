@@ -133,6 +133,7 @@ struct CollectView: View {
         while !Task.isCancelled {
             if let a = try? await c.refreshAttempt(id: attemptId), a.isFinal {
                 endCustomerMode()
+                if a.isPaid { Soundbox.shared.announce(amt) }
                 phase = a.isPaid ? .paid(amt) : .failed(a.failureReason ?? "Declined")
                 a.isPaid ? Haptics.success() : Haptics.error()
                 return

@@ -214,3 +214,36 @@ final class SpendQueryTests: XCTestCase {
         _ = SpendQuery.parse("more than", now: now, calendar: cal); _ = SpendQuery.parse("last 99999 days", now: now, calendar: cal)
     }
 }
+
+final class SoundboxPhraseTests: XCTestCase {
+    func testEnglish() {
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 250_00), language: .english), "250 rupees received")
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 1_00), language: .english), "1 rupee received")
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 12_50), language: .english), "12 rupees and 50 paise received")
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 50), language: .english), "0 rupees and 50 paise received")
+    }
+    func testHindi() {
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 250_00), language: .hindi), "250 रुपये प्राप्त हुए")
+        XCTAssertEqual(SoundboxPhrase.received(Money(minor: 12_05), language: .hindi), "12 रुपये 5 पैसे प्राप्त हुए")
+    }
+    func testVoiceTags() { XCTAssertEqual(SoundboxPhrase.Language.hindi.rawValue, "hi-IN"); XCTAssertEqual(SoundboxPhrase.Language.english.rawValue, "en-IN") }
+}
+
+final class ClosingDecodeTests: XCTestCase {
+    func testClosingDecodesAndSaysShortOrOver() throws {
+        let j = #"{"id":"clo_1","expected_cash_minor":150000,"counted_cash_minor":149500,"difference_minor":-500,"digital":[{"method":"upi","payments":3,"gross_minor":9000,"refunded_minor":0,"net_minor":9000}],"status":"pending_signoff"}"#
+        let c = try JSONDecoder().decode(ClosingInfo.self, from: Data(j.utf8))
+        XCTAssertEqual(c.verdict, "Short"); XCTAssertEqual(c.digital.first?.netMinor, 9000); XCTAssertEqual(c.status, "pending_signoff")
+    }
+    func testVerdictWords() {
+        func v(_ d: Int64) -> String { ClosingInfo(id: "x", expectedCashMinor: 0, countedCashMinor: 0, differenceMinor: d, digital: [], status: "").verdict }
+        XCTAssertEqual(v(0), "Matches"); XCTAssertEqual(v(5), "Over"); XCTAssertEqual(v(-5), "Short")
+    }
+}
+
+final class BranchDecodeTests: XCTestCase {
+    func testBranchDecodes() throws {
+        let b = try JSONDecoder().decode(BranchInfo.self, from: Data(#"{"id":"br_1","name":"Main stall"}"#.utf8))
+        XCTAssertEqual(b.name, "Main stall")
+    }
+}
