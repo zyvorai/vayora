@@ -13,6 +13,7 @@ struct CollectView: View {
     @State private var resultProgress = 0.0
     @State private var savedBrightness: CGFloat?
     @State private var tipPercent = 0
+    @State private var unlocking = false
     @AppStorage("lastAmountMinor") private var lastMinor = 0
 
     enum Phase: Equatable {
@@ -53,6 +54,13 @@ struct CollectView: View {
             }
         }
         .background(VUI.ink)
+        .overlay(alignment: .topTrailing) {
+            if store.cashierLocked, phase == .entering {
+                Button { unlocking = true } label: { Label("Owner", systemImage: "lock.fill").vfont(13, .semibold).foregroundStyle(VUI.textSecondary).padding(.horizontal, 12).padding(.vertical, 7).background(.white.opacity(0.1), in: Capsule()) }
+                    .padding(.trailing, 16).padding(.top, 6)
+            }
+        }
+        .sheet(isPresented: $unlocking) { OwnerUnlock().environmentObject(store) }
         .animation(VUI.spring, value: phase)
         .onChange(of: phase) { _, new in
             if case .paid = new { resultProgress = 0; withAnimation(.easeOut(duration: 1.3)) { resultProgress = 1 } }

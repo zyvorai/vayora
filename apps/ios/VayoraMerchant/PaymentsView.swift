@@ -95,6 +95,23 @@ struct PaymentDetail: View {
     @State private var refunding = false
     @State private var confirm = false
 
+    /// A name for this payment, kept on the phone, with a running total in Settings, Regulars.
+    @ViewBuilder var regularTag: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Regular", systemImage: "person.fill").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                TextField("Name (optional)", text: Binding(get: { store.regulars.name(for: intent.id) ?? "" }, set: { store.regulars.tag(intent.id, as: $0) }))
+                    .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                let names = store.regulars.names.prefix(5)
+                if !names.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(names), id: \.self) { n in
+                        Button(n) { store.regulars.tag(intent.id, as: n) }.vfont(13, .semibold).foregroundStyle(VUI.mint).padding(.horizontal, 12).padding(.vertical, 6).background(VUI.mint.opacity(0.14), in: Capsule())
+                    } } }
+                }
+            }
+        }
+    }
+
     var created: Date? {
         guard let s = intent.createdAt else { return nil }
         return ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter.withFraction.date(from: s)
@@ -125,7 +142,8 @@ struct PaymentDetail: View {
                                 .background(Brand.merchant.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                         }.buttonStyle(PressScale())
                     }
-                    if intent.status == "succeeded", let s = state {
+                    if intent.status == "succeeded" { regularTag }
+                    if intent.status == "succeeded", !store.cashierLocked, let s = state {
                         if s.remainingMinor > 0 {
                             Button(role: .destructive) { confirm = true } label: {
                                 Text(s.isPartlyRefunded ? "Refund the remaining \(Money(minor: s.remainingMinor, currency: intent.currency).display)" : "Refund in full")
@@ -179,6 +197,9 @@ struct MerchantSettings: View {
     @State private var scanning = false
     @State private var setupMessage: String?
     @State private var closingDay = false
+    @State private var seeRegulars = false
+    @State private var newPIN = ""
+    @State private var pinMessage: String?
     @AppStorage("soundbox") private var soundbox = "off"
 
     var body: some View {
@@ -188,6 +209,32 @@ struct MerchantSettings: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Settings").vfont(28, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Cashier mode", systemImage: "person.badge.key.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                SecureField("Owner PIN (4 to 6 digits)", text: $newPIN).keyboardType(.numberPad).foregroundStyle(VUI.textPrimary)
+                                    .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                Button("Lock for cashier") {
+                                    guard PinGate.isValidPIN(newPIN) else { pinMessage = "Use 4 to 6 digits."; Haptics.error(); return }
+                                    store.ownerPIN = newPIN; newPIN = ""; pinMessage = nil; store.cashierLocked = true
+                                }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                                if let pinMessage { Text(pinMessage).vfont(13).foregroundStyle(VUI.coral) }
+                                Text("Hides AutoPay, Settings and refunds until you enter the PIN from the Collect screen. It is a convenience for a shared counter phone, not security: the key on this phone still opens everything.").vfont(12).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Closing reminder", systemImage: "bell.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Toggle("Remind me every day", isOn: $store.closeReminder).tint(VUI.mint).foregroundStyle(VUI.textPrimary)
+                                if store.closeReminder {
+                                    DatePicker("At", selection: Binding(get: { Calendar.current.date(bySettingHour: store.closeMinutes / 60, minute: store.closeMinutes % 60, second: 0, of: Date()) ?? Date() },
+                                                                       set: { let c = Calendar.current.dateComponents([.hour, .minute], from: $0); store.closeMinutes = (c.hour ?? 21) * 60 + (c.minute ?? 0) }),
+                                               displayedComponents: .hourAndMinute).vfont(16).foregroundStyle(VUI.textPrimary)
+                                }
+                                Text("A notification asking you to open the app and close the day.").vfont(12).foregroundStyle(VUI.textTertiary)
+                                Button { seeRegulars = true } label: { Label("Regulars", systemImage: "person.2.fill") }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                            }
+                        }
                         GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 Label("Counter speaker", systemImage: "speaker.wave.2.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
@@ -238,6 +285,7 @@ struct MerchantSettings: View {
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $closingDay) { EndOfDayView().environmentObject(store) }
+            .sheet(isPresented: $seeRegulars) { RegularsView().environmentObject(store) }
             .fullScreenCover(isPresented: $scanning) {
                 ScannerView(brand: .merchant, hint: "Scan the setup QR") { text in
                     scanning = false

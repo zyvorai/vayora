@@ -20,6 +20,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
 - Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
 
+**Merchant: cashier mode, closing reminder, regulars (on-phone, test mode)**
+- An owner-PIN cashier lock, a daily closing reminder, and per-name running totals. No server change. Counter tagging of payments is not built: the payment-intent API has no counter field.
+
 **Pay: planned payments, repeating payments, split tracker (on-phone, test mode)**
 - A Planned tab in Bills: payments you confirm on the day, repeating payments found in your history, and a hand-ticked split tracker. No server change.
 

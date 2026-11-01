@@ -291,3 +291,47 @@ final class PlannedTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ScheduledPayment.self, from: JSONEncoder().encode(p)), p)
     }
 }
+
+final class CashierGateTests: XCTestCase {
+    let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    func testPINShape() {
+        XCTAssertTrue(PinGate.isValidPIN("1234")); XCTAssertTrue(PinGate.isValidPIN("123456"))
+        XCTAssertFalse(PinGate.isValidPIN("123")); XCTAssertFalse(PinGate.isValidPIN("1234567")); XCTAssertFalse(PinGate.isValidPIN("12a4")); XCTAssertFalse(PinGate.isValidPIN("١٢٣٤"))
+    }
+    func testRightPINOpensAndResetsFailures() {
+        var g = PinGate()
+        XCTAssertFalse(g.attempt("0000", against: "1234", now: t0)); XCTAssertEqual(g.failures, 1)
+        XCTAssertTrue(g.attempt("1234", against: "1234", now: t0)); XCTAssertEqual(g.failures, 0)
+    }
+    func testFifthWrongLocksForThirtySecondsEvenForTheRightPIN() {
+        var g = PinGate()
+        for _ in 0..<5 { XCTAssertFalse(g.attempt("9999", against: "1234", now: t0)) }
+        XCTAssertTrue(g.isLocked(now: t0)); XCTAssertEqual(g.secondsLeft(now: t0), 30)
+        XCTAssertFalse(g.attempt("1234", against: "1234", now: t0.addingTimeInterval(10)))
+        XCTAssertFalse(g.isLocked(now: t0.addingTimeInterval(30)))
+        XCTAssertTrue(g.attempt("1234", against: "1234", now: t0.addingTimeInterval(31)))
+    }
+    func testAfterLockoutFailuresStartAgain() {
+        var g = PinGate()
+        for _ in 0..<5 { _ = g.attempt("x", against: "1234", now: t0) }
+        XCTAssertFalse(g.attempt("0000", against: "1234", now: t0.addingTimeInterval(40))); XCTAssertEqual(g.failures, 1)
+    }
+}
+
+final class RegularsTests: XCTestCase {
+    func testTotalsPerNameIgnoreCaseAndUnpaid() {
+        var b = RegularsBook()
+        b.tag("p1", as: " Ravi  Kumar "); b.tag("p2", as: "ravi kumar"); b.tag("p3", as: "Asha"); b.tag("p4", as: "Ravi Kumar")
+        let t = b.totals([("p1", 100, true), ("p2", 50, true), ("p3", 500, true), ("p4", 900, false), ("p9", 7, true)])
+        XCTAssertEqual(t.map(\.name), ["Asha", "Ravi Kumar"]); XCTAssertEqual(t[1].minor, 150); XCTAssertEqual(t[1].count, 2)
+    }
+    func testEmptyNameUntagsAndLongNameIsCut() {
+        var b = RegularsBook(); b.tag("p1", as: "Ravi"); b.tag("p1", as: "   "); XCTAssertNil(b.name(for: "p1"))
+        b.tag("p2", as: String(repeating: "a", count: 100)); XCTAssertEqual(b.name(for: "p2")?.count, 40)
+    }
+    func testNamesMostUsedFirstAndCodable() throws {
+        var b = RegularsBook(); b.tag("1", as: "Asha"); b.tag("2", as: "Ravi"); b.tag("3", as: "ravi")
+        XCTAssertEqual(b.names.first?.lowercased(), "ravi")
+        XCTAssertEqual(try JSONDecoder().decode(RegularsBook.self, from: JSONEncoder().encode(b)), b)
+    }
+}
