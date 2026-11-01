@@ -114,6 +114,16 @@ pub async fn ingest(
         } else {
             None
         };
+        // a refund line that names our refund (not the payment) still belongs to that refund's payment
+        let attempt = match (&attempt, &refund) {
+            (None, Some(rf)) => {
+                sqlx::query_scalar("SELECT attempt_id FROM refunds WHERE id = $1")
+                    .bind(rf)
+                    .fetch_optional(&mut *conn)
+                    .await?
+            }
+            _ => attempt,
+        };
         sqlx::query("INSERT INTO settlement_items (tenant_id, settlement_id, kind, provider_ref, attempt_id, refund_id, amount_minor, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
             .bind(tenant_id)
             .bind(&id)

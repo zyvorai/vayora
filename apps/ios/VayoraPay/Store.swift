@@ -42,6 +42,7 @@ final class Store: ObservableObject {
     @Published var balanceMinor: Int64 { didSet { UserDefaults.standard.set(balanceMinor, forKey: "balance") } }
     @Published var history: [Txn] { didSet { save() } }
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
+    @Published var circles: [CircleRecord] { didSet { if let d = try? JSONEncoder().encode(circles) { UserDefaults.standard.set(d, forKey: "circles") } } }
     @Published var autoPays: [ApprovedMandate] { didSet { if let d = try? JSONEncoder().encode(autoPays) { UserDefaults.standard.set(d, forKey: "autoPays") } } }
     @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
     @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders, scheduled: scheduled) } } }
@@ -73,6 +74,7 @@ final class Store: ObservableObject {
         vault = (d.data(forKey: "vault")).flatMap { try? JSONDecoder().decode(Vault.self, from: $0) } ?? Vault()
         jars = (d.data(forKey: "jars")).flatMap { try? JSONDecoder().decode(JarBook.self, from: $0) } ?? JarBook()
         budgets = (d.data(forKey: "budgets")).flatMap { try? JSONDecoder().decode(Budgets.self, from: $0) } ?? Budgets()
+        circles = (d.data(forKey: "circles")).flatMap { try? JSONDecoder().decode([CircleRecord].self, from: $0) } ?? []
         autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
         payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()
         reminders = (d.data(forKey: "reminders")).flatMap { try? JSONDecoder().decode([BillReminder].self, from: $0) } ?? []
@@ -112,13 +114,13 @@ final class Store: ObservableObject {
     }
 
     /// Records a finished payment: history, balance, the payee book and a category guess.
-    func settle(_ p: UPIPayload, amount: Money, outcome: Outcome, transfer: Bool, noPIN: Bool) {
+    func settle(_ p: UPIPayload, amount: Money, outcome: Outcome, transfer: Bool, noPIN: Bool, viaCircle: CircleRecord? = nil) {
         // an unclear outcome (checking, server away) is never recorded: nothing is known yet
         let ok: Bool
         switch outcome { case .paid: ok = true; case .declined: ok = false; case .unknown, .notAvailable: return }
         let cat = categoryMemory.resolve(vpa: p.payee, name: p.name, note: p.note, transfer: transfer)
         record(Txn(payee: p.payee, name: p.name, amountMinor: amount.minor, note: p.note, status: ok ? .success : .failed,
-                   kind: transfer ? "transfer" : nil, category: cat.rawValue, noPIN: noPIN ? true : nil))
+                   kind: viaCircle != nil ? "circle-out" : (transfer ? "transfer" : nil), category: cat.rawValue, noPIN: noPIN ? true : nil))
         if ok { payees.save(name: p.name, input: p.payee, paidAt: Date()) }
     }
 
@@ -137,7 +139,8 @@ final class Store: ObservableObject {
 
     func record(_ t: Txn) {
         history.insert(t, at: 0)
-        if t.status == .success { balanceMinor -= t.amountMinor }
+        // a payment made through someone else's circle comes out of their account, not this wallet
+        if t.status == .success && t.kind != "circle-out" { balanceMinor -= t.amountMinor }
     }
 
     func resetWallet() { balanceMinor = Store.startingBalance; history = []; jars = JarBook() }
@@ -165,12 +168,18 @@ final class Store: ObservableObject {
     /// reported as `.unknown` so the screen says "checking" instead of guessing.
     enum Outcome: Equatable { case paid, declined(String), unknown, notAvailable }
 
-    func pay(_ p: UPIPayload, amount: Money) async -> Outcome {
-        guard amount.minor <= balanceMinor else { return .declined("Not enough test balance") }
+    func pay(_ p: UPIPayload, amount: Money, circle: CircleRecord? = nil) async -> Outcome {
+        if circle == nil { guard amount.minor <= balanceMinor else { return .declined("Not enough test balance") } }
         guard let c = client else { return .notAvailable }
         do {
-            let r = try await c.simPay(upiURI: rebuildURI(p, amount: amount))
-            return r.status == "captured" ? .paid : .declined("Payment was not completed")
+            let uri = rebuildURI(p, amount: amount)
+            let status: String
+            if let circle {
+                let r = try await c.simCirclePay(circleID: circle.id, upiURI: uri)
+                if let i = circles.firstIndex(where: { $0.id == circle.id }) { circles[i].remainingMinor = r.remainingMinor }
+                status = r.status
+            } else { status = try await c.simPay(upiURI: uri).status }
+            return status == "captured" ? .paid : .declined("Payment was not completed")
         } catch let e as APIError where e.status == 404 {
             return .notAvailable
         } catch let e as APIError where e.status == 409 || e.status == 422 {
@@ -278,5 +287,60 @@ final class Store: ObservableObject {
         if let x = v["smallPayments"] as? Bool { smallPayments = x; n += 1 }
         if let x = (v["balance"] as? NSNumber)?.int64Value { balanceMinor = x; n += 1 }
         return .success(n)
+    }
+
+    // MARK: Circle (test mode)
+
+    private var meForCircle: String { myName.trimmingCharacters(in: .whitespaces).isEmpty ? "Me" : myName }
+
+    /// Let someone pay from this phone's account, up to a limit. The simulated bank keeps the books.
+    func createCircle(delegate: String, perPayment: Money, total: Money) async -> Result<CircleRecord, APIError> {
+        guard let c = client else { return .failure(APIError(status: 0, code: "no_server", message: "Set the test server in Settings first.")) }
+        do {
+            let id = try await c.simCircleCreate(primary: meForCircle, delegate: delegate, perPayment: perPayment, total: total)
+            let r = CircleRecord(id: id, role: .primary, other: delegate, perPaymentMinor: perPayment.minor, totalMinor: total.minor)
+            circles.insert(r, at: 0); return .success(r)
+        } catch let e as APIError { return .failure(e) }
+        catch { return .failure(APIError(status: 0, code: "network", message: "Couldn't reach the test server.")) }
+    }
+
+    /// Join a circle from its QR. Returns a message when it cannot be joined.
+    func joinCircle(_ link: CirclePayload.Link) async -> String? {
+        guard let c = client else { return "Set the test server in Settings first." }
+        if circles.contains(where: { $0.id == link.id }) { return "You are already part of that circle." }
+        do {
+            let v = try await c.simCircleView(id: link.id)
+            guard v.status == "active" else { return "That circle has been taken back." }
+            var r = CircleRecord(id: link.id, role: .delegate, other: v.primary, perPaymentMinor: v.maxPerPaymentMinor, totalMinor: v.totalLimitMinor)
+            r.remainingMinor = v.remainingMinor
+            circles.insert(r, at: 0); return nil
+        } catch let e as APIError { return e.status == 404 ? "That circle isn't known to this test server." : e.message }
+        catch { return "Couldn't reach the test server." }
+    }
+
+    /// Ask the bank about every circle. As the lender, take new spends out of this wallet once each (floored at zero) and list them in History.
+    func refreshCircles() async {
+        guard let c = client else { return }
+        for r in circles {
+            guard let v = try? await c.simCircleView(id: r.id), let i = circles.firstIndex(where: { $0.id == r.id }) else { continue }
+            circles[i].status = v.status; circles[i].remainingMinor = v.remainingMinor
+            guard r.role == .primary else { continue }
+            let fresh = AutoPayLedger.newDebits(applied: Set(circles[i].applied.map(\.attemptID)), reported: v.spends)
+            for d in fresh {
+                balanceMinor = max(0, balanceMinor - d.amountMinor)
+                history.insert(Txn(payee: "circle", name: "\(r.other) (circle)", amountMinor: d.amountMinor, note: "Paid by \(r.other) from your account", status: .success, kind: "circle-in", category: SpendCategory.other.rawValue), at: 0)
+            }
+            circles[i].applied.append(contentsOf: fresh)
+        }
+    }
+
+    /// The lender takes the circle back; a delegate just leaves it on this phone.
+    func endCircle(_ id: String) async -> Bool {
+        guard let i = circles.firstIndex(where: { $0.id == id }) else { return false }
+        if circles[i].role == .primary {
+            guard let c = client, (try? await c.simCircleRevoke(id: id)) != nil else { return false }
+            circles[i].status = "revoked"
+        } else { circles.remove(at: i) }
+        return true
     }
 }

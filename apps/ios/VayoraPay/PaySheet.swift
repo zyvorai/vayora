@@ -18,6 +18,7 @@ struct PaySheet: View {
     @State private var shake: CGFloat = 0
     @State private var progress = 0.0
     @State private var cooling = 0
+    @State private var circleID: String?
 
     init(payload: UPIPayload, transfer: Bool = false) {
         self.payload = payload; self.transfer = transfer
@@ -39,11 +40,12 @@ struct PaySheet: View {
                         // a big first payment to someone new waits a few seconds; the slide itself is never blocked
                         if cooling > 0 { Haptics.error(); return }
                         // a small payment (when switched on, and inside today's limit) needs only the slide
-                        if !store.needsPIN(for: amount) { submit(noPIN: true); return }
+                        if chosenCircle == nil, !store.needsPIN(for: amount) { submit(noPIN: true); return }
                         pin.clear(); pinError = false
                         withAnimation(VUI.spring) { step = .pin }
                     }
                     .overlay(alignment: .top) { VStack(spacing: 6) { budgetBanner(amount); riskBanners(amount) }.padding(.top, 58) }
+                    .overlay(alignment: .bottom) { circlePicker(amount).padding(.bottom, 150) }
                     .task(id: amount.minor) { await cool(amount) }
                 }
             case .pin:
@@ -78,6 +80,25 @@ struct PaySheet: View {
                 .background(VUI.amber.opacity(0.16), in: Capsule())
         }
     }
+
+    /// A delegate can pay from someone's circle instead of their own wallet, when that circle can cover this payment.
+    @ViewBuilder func circlePicker(_ amount: Money) -> some View {
+        let options = transfer ? [] : store.circles.filter { $0.canCover(amount.minor) }
+        if !options.isEmpty {
+            VStack(spacing: 6) {
+                Text("Pay from").vfont(12).foregroundStyle(VUI.textTertiary)
+                HStack(spacing: 8) {
+                    pill("My wallet", on: circleID == nil) { circleID = nil }
+                    ForEach(options) { c in pill("\(c.other)'s circle", on: circleID == c.id) { circleID = c.id } }
+                }
+            }
+        }
+    }
+    func pill(_ t: String, on: Bool, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) { Text(t).vfont(13, .semibold).foregroundStyle(on ? .white : VUI.textSecondary).padding(.horizontal, 12).padding(.vertical, 7)
+            .background(on ? AnyShapeStyle(VUI.violet) : AnyShapeStyle(.white.opacity(0.1)), in: Capsule()) }.buttonStyle(PressScale())
+    }
+    var chosenCircle: CircleRecord? { circleID.flatMap { id in store.circles.first { $0.id == id } } }
 
     func risks(_ amount: Money) -> [RiskFlag] {
         transfer ? [] : PaymentRisk.check(payee: payload.payee, amountMinor: amount.minor, history: store.historyRows, saved: store.payees.all)
@@ -125,8 +146,9 @@ struct PaySheet: View {
         guard let amount else { return }
         withAnimation(VUI.spring) { step = .working }
         Task {
-            let outcome = transfer ? store.transfer(payload, amount: amount) : await store.pay(payload, amount: amount)
-            store.settle(payload, amount: amount, outcome: outcome, transfer: transfer, noPIN: noPIN)
+            let circle = chosenCircle
+            let outcome = transfer ? store.transfer(payload, amount: amount) : await store.pay(payload, amount: amount, circle: circle)
+            store.settle(payload, amount: amount, outcome: outcome, transfer: transfer, noPIN: noPIN, viaCircle: circle)
             progress = 0
             withAnimation(.easeInOut(duration: 0.3)) { step = .done(outcome) }
             outcome == .paid ? Haptics.success() : Haptics.error()

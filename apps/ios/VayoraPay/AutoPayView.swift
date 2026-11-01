@@ -4,7 +4,7 @@ import VayoraUI
 
 /// Bills holds two things the user sets up once and then forgets: reminders (they never pay) and AutoPay (they do).
 struct BillsView: View {
-    enum Mode: String, CaseIterable { case reminders = "Reminders", autopay = "AutoPay", planned = "Planned" }
+    enum Mode: String, CaseIterable { case reminders = "Reminders", autopay = "AutoPay", planned = "Planned", circle = "Circle" }
     @State private var mode = Mode.reminders
     var body: some View {
         VStack(spacing: 0) {
@@ -14,6 +14,7 @@ struct BillsView: View {
             case .reminders: RemindersView()
             case .autopay: AutoPayView()
             case .planned: PlannedView()
+            case .circle: CircleView()
             }
         }
         .background(VUI.ink)

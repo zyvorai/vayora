@@ -13561,3 +13561,80 @@ async fn a_desk_time_zone_decides_the_local_day_and_offset_and_wins_over_the_fix
     assert_eq!(r["timezone"], Value::Null);
     assert_eq!(r["utc_offset_minutes"], t.state.review_utc_offset_minutes);
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_simulated_settlement_nets_off_a_refund_processed_the_same_day(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Refund Settle Ltd", "email": "r@rs.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let today = zyvor_api::ist_today().to_string();
+    let i = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/payment_intents",
+            Some("rs-i"),
+            json!({ "amount_minor": 50_000, "currency": "INR" }),
+        )
+        .await;
+    let iid = i["id"].as_str().unwrap();
+    let a = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/attempts"),
+            Some("rs-a"),
+            json!({ "method": "upi", "vpa": "ok@bank" }),
+        )
+        .await;
+    assert_eq!(a["status"], "captured", "{a}");
+    let rf = t
+        .ok(
+            &tn,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some("rs-r"),
+            json!({ "amount_minor": 10_000 }),
+        )
+        .await;
+    assert_eq!(rf["status"], "processed", "{rf}");
+    let r = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/settlements/sync",
+            None,
+            json!({ "provider": "sim", "date": today }),
+        )
+        .await;
+    assert_eq!(r["imported"].as_array().unwrap().len(), 1, "{r}");
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    let row = &list["data"][0];
+    // 50,000 in, 2% fee 1,000 and the 10,000 refund out
+    assert_eq!(row["gross_minor"], 50_000, "{row}");
+    assert_eq!(row["fee_minor"], 1_000, "{row}");
+    assert_eq!(
+        row["refunds_minor"].as_i64().unwrap().abs(),
+        10_000,
+        "{row}"
+    );
+    assert_eq!(row["net_minor"], 39_000, "{row}");
+    let cases = t.ok(&tn, "GET", "/v1/recon/cases", None, Value::Null).await;
+    assert_eq!(cases["data"].as_array().unwrap().len(), 0, "{cases}");
+    // the matching bank credit is exactly the net, so it matches
+    let sid = row["id"].as_str().unwrap();
+    t.ok(
+        &tn,
+        "POST",
+        &format!("/v1/settlements/{sid}/simulate_bank"),
+        None,
+        json!({}),
+    )
+    .await;
+    let list = t.ok(&tn, "GET", "/v1/settlements", None, Value::Null).await;
+    assert_eq!(list["data"][0]["status"], "matched", "{list}");
+}
