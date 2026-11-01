@@ -1637,7 +1637,7 @@ paths:
         4XX:
           $ref: '#/components/responses/Error'
     put:
-      summary: Zyvor reviewers only - set (or, with an empty or absent email, clear) the address the caller is emailed at when a review or change is given to them, by another reviewer or by automatic assignment. Claiming one yourself sends nothing
+      summary: Zyvor reviewers only - set (or, with an empty or absent email, clear) the address the caller is emailed at when a review or change is given to them, by another reviewer or by automatic assignment. The previous holder is told when another reviewer takes the item from them. Claiming one yourself sends nothing
       tags:
       - platform
       responses:
