@@ -455,6 +455,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/platform/changes", get(platform::list_changes))
         .route(
+            "/platform/changes/{id}/assign",
+            post(platform::assign_change),
+        )
+        .route(
             "/platform/changes/{id}/escalate",
             post(platform::escalate_change),
         )

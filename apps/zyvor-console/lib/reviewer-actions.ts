@@ -108,18 +108,19 @@ export async function assignReview(_: State, form: FormData): Promise<State> {
   requireReviewerSurface();
   const key = await reviewerKey();
   if (!key) redirect("/reviewer");
+  const change = String(form.get("change") ?? "");
   const org = String(form.get("org") ?? "");
   const how = String(form.get("how") ?? "");
   if (!["claim", "release", "take_over"].includes(how)) return { error: "Choose what to do with this review." };
   const body = how === "release" ? {} : { to: "me", take_over: how === "take_over" };
-  const r = await platform(key, "POST", `/reviews/${encodeURIComponent(org)}/assign`, body);
+  const r = await platform(key, "POST", change ? `/changes/${encodeURIComponent(change)}/assign` : `/reviews/${encodeURIComponent(org)}/assign`, body);
   if (!r.ok) {
     if (r.status === 401) redirect("/reviewer");
     return { error: r.message };
   }
-  revalidatePath(`/reviewer/review/${org}`);
+  if (org) revalidatePath(`/reviewer/review/${org}`);
   revalidatePath("/reviewer");
-  return { ok: how === "release" ? "Handed back to the queue." : "This review is yours. Nobody else can decide it until you hand it back." };
+  return { ok: how === "release" ? "Handed back to the queue." : `This ${change ? "change" : "review"} is yours. Nobody else can decide it until you hand it back.` };
 }
 
 /** Ask for a second, different reviewer on a pending change no rule flagged. The note is read by whoever gives the second approval. */

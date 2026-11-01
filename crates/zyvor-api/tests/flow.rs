@@ -12626,3 +12626,225 @@ async fn a_reviewer_can_ask_for_a_second_reviewer_on_a_change_nothing_flagged(po
         (StatusCode::CONFLICT, json!("not_pending"))
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+#[sqlx::test(migrations = "./migrations")]
+async fn a_change_is_held_by_one_reviewer_until_it_is_released_or_taken_over(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st);
+    let (_, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (c_id, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    let (mkey, org) = asks_for_live(&t, &app, "Held Co", "o@heldco.in").await;
+    sqlx::query("UPDATE live_access SET status = 'approved' WHERE organisation_id = $1")
+        .bind(&org)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let (st, _) = common::raw(&app, &mkey, None, "POST", "/v1/onboarding/bank_accounts", None,
+        json!({ "holder_name": "Kiran Traders", "ifsc": "HDFC0001234", "account_number": "111122223333" })).await;
+    assert_eq!(st, StatusCode::CREATED);
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending&assigned=none".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"].as_array().unwrap().len(), 1);
+    let id = l["data"][0]["id"].as_str().unwrap().to_string();
+    let assign = format!("/v1/platform/changes/{id}/assign");
+    let decide = format!("/v1/platform/changes/{id}/decision");
+
+    // Asha claims it; it leaves the unassigned queue and shows her name
+    let (s1, b1) = rv(&a_key, "POST", assign.clone(), json!({ "to": "me" })).await;
+    assert_eq!(
+        (s1, b1["assigned_to_name"].clone()),
+        (StatusCode::OK, json!("Asha")),
+        "{b1}"
+    );
+    let (_, l) = rv(
+        &b_key,
+        "GET",
+        "/v1/platform/changes?status=pending&assigned=none".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"].as_array().unwrap().len(), 0);
+    let (_, l) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/changes?status=pending&assigned=me".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (
+            l["data"][0]["assigned_to_me"].clone(),
+            l["data"][0]["assigned_to_name"].clone()
+        ),
+        (json!(true), json!("Asha"))
+    );
+
+    // Bala can neither decide it nor claim it without taking over on purpose
+    let (s2, b2) = rv(
+        &b_key,
+        "POST",
+        decide.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s2, b2["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("assigned_to_other")),
+        "{b2}"
+    );
+    let (s3, _) = rv(&b_key, "POST", assign.clone(), json!({ "to": "me" })).await;
+    assert_eq!(s3, StatusCode::CONFLICT);
+    let (s4, b4) = rv(
+        &a_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": "rev_nobody" }),
+    )
+    .await;
+    assert_eq!(
+        (s4, b4["error"]["code"].clone()),
+        (StatusCode::UNPROCESSABLE_ENTITY, json!("unknown_reviewer"))
+    );
+    assert_eq!(
+        rv(
+            &a_key,
+            "POST",
+            assign.clone(),
+            json!({ "to": b_id.clone() })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+
+    // Bala's first approval (no bank check ran, so two are needed) releases it; the first approver cannot be handed the second look
+    let (s5, b5) = rv(
+        &b_key,
+        "POST",
+        decide.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s5, b5["stage"].clone()),
+        (StatusCode::OK, json!("awaiting_second")),
+        "{b5}"
+    );
+    let (_, l) = rv(
+        &c_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"][0]["assigned_to"], Value::Null);
+    let (s6, b6) = rv(
+        &c_key,
+        "POST",
+        assign.clone(),
+        json!({ "to": b_id.clone() }),
+    )
+    .await;
+    assert_eq!(
+        (s6, b6["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("first_reviewer_cannot_second"))
+    );
+
+    // Chitra holds it, Asha takes it over on purpose (audited), and a disabled holder gives it back
+    assert_eq!(
+        rv(
+            &c_key,
+            "POST",
+            assign.clone(),
+            json!({ "to": c_id.clone() })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        rv(
+            &a_key,
+            "POST",
+            decide.clone(),
+            json!({ "decision": "approve" })
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        rv(
+            &a_key,
+            "POST",
+            assign.clone(),
+            json!({ "to": "me", "take_over": true })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(t.count("SELECT count(*) FROM audit_events WHERE action = 'live_change.assigned' AND detail->>'took_over' = 'true' AND actor = 'zyvor:Asha'").await, 1);
+    assert_eq!(
+        rv(
+            &a_key,
+            "POST",
+            assign.clone(),
+            json!({ "to": c_id.clone() })
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert!(
+        zyvor_api::platform::disable_reviewer(&t.state.pool, &c_id)
+            .await
+            .unwrap()
+    );
+    let (_, l) = rv(
+        &b_key,
+        "GET",
+        "/v1/platform/changes?status=pending".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(l["data"][0]["assigned_to"], Value::Null);
+
+    // the second reviewer finishes it, and a settled change cannot be assigned
+    let (s7, b7) = rv(
+        &a_key,
+        "POST",
+        decide.clone(),
+        json!({ "decision": "approve" }),
+    )
+    .await;
+    assert_eq!(
+        (s7, b7["status"].clone()),
+        (StatusCode::OK, json!("approved")),
+        "{b7}"
+    );
+    let (s8, b8) = rv(&a_key, "POST", assign, json!({ "to": "me" })).await;
+    assert_eq!(
+        (s8, b8["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("not_pending"))
+    );
+}
