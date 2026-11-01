@@ -22,6 +22,7 @@ struct RootView: View {
     @State private var locked = true
     @State private var backgroundedAt: Date?
     @State private var authFailed = false
+    @State private var authenticating = false
 
     var body: some View {
         content
@@ -30,7 +31,9 @@ struct RootView: View {
                 switch new {
                 case .background: backgroundedAt = backgroundedAt ?? Date()
                 case .active:
-                    if LockPolicy.shouldLock(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true; authenticate() }
+                    if LockPolicy.shouldLock(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true }
+                    // Ask whenever the app is active and still locked: a prompt started at launch is cancelled by iOS while the app is not yet active
+                    if locked && lockOn && onboarded && !authFailed && !authenticating { authenticate() }
                     backgroundedAt = nil
                 default: break
                 }
@@ -52,11 +55,16 @@ struct RootView: View {
 
     func authenticate() {
         guard lockOn else { locked = false; return }
+        guard !authenticating else { return }
         let ctx = LAContext(); var err: NSError?
         // Face ID, falling back to the phone's passcode; a phone with neither cannot be locked, so it stays open rather than trapping the user
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { locked = false; return }
-        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vayora Pay") { ok, _ in
-            DispatchQueue.main.async { if ok { locked = false; authFailed = false } else { authFailed = true } }
+        authenticating = true; authFailed = false
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vayora Pay") { ok, error in
+            DispatchQueue.main.async { authenticating = false; if ok { locked = false; authFailed = false }
+                // iOS cancelling the prompt itself (app not active yet) is not the person saying no: ask again when active
+                else if let e = error as? LAError, e.code == .appCancel || e.code == .systemCancel { authFailed = false }
+                else { authFailed = true } }
         }
     }
 
