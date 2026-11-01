@@ -127,7 +127,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
   payment as captured or failed through the normal update path, standing in for a provider's late update (API, Node, Python and Go;
   a console button on the payment page for pending simulated attempts, and no signed webhook is actually sent to Zyvor's receiver).
 - **Test clock, in part:** `POST /v1/billing/run` and `POST /v1/collections/dunning/run` accept `as_of` (a date) in test mode, so a test
-  organisation can see the next period invoiced or the reminders due on a later day (Node and Python; not Go). Nothing else
+  organisation can see the next period invoiced or the reminders due on a later day (Node, Python and Go). Nothing else
   moves with it: the worker, mandates, due dates on new invoices and the console still use today. Still open: a real clock the
   whole test organisation follows; and a "reset test data" button (delete everything for a test tenant, never live).
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger

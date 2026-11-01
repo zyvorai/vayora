@@ -423,6 +423,41 @@ func (c *Client) RunDunning(channel string, minDaysOverdue, repeatAfterDays int)
 	return out, err
 }
 
+// RunDunningAsOf is RunDunning as if it were the given day (YYYY-MM-DD); test organisations only.
+func (c *Client) RunDunningAsOf(asOf, channel string, minDaysOverdue, repeatAfterDays int) (map[string]any, error) {
+	if _, err := time.Parse("2006-01-02", asOf); err != nil {
+		return nil, fmt.Errorf("asOf must be YYYY-MM-DD")
+	}
+	body := map[string]any{"as_of": asOf}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if minDaysOverdue > 0 {
+		body["min_days_overdue"] = minDaysOverdue
+	}
+	if repeatAfterDays > 0 {
+		body["repeat_after_days"] = repeatAfterDays
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/dunning/run", body, "", &out)
+	return out, err
+}
+
+// RunBilling invoices every subscription that is due (safe to repeat). A non-empty asOf (YYYY-MM-DD) runs as if it
+// were that day; test organisations only.
+func (c *Client) RunBilling(asOf string) (map[string]any, error) {
+	body := map[string]any{}
+	if asOf != "" {
+		if _, err := time.Parse("2006-01-02", asOf); err != nil {
+			return nil, fmt.Errorf("asOf must be YYYY-MM-DD")
+		}
+		body["as_of"] = asOf
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/billing/run", body, "", &out)
+	return out, err
+}
+
 // CreatePaymentLink makes one URL many payers can open. Pass amountMinor or invoiceID (the other zero/empty).
 func (c *Client) CreatePaymentLink(amountMinor int64, invoiceID, description string, maxUses int) (map[string]any, error) {
 	if (amountMinor > 0) == (invoiceID != "") {
