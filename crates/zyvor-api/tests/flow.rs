@@ -14430,3 +14430,116 @@ async fn a_lead_books_leave_for_others_sees_gaps_and_moves_work_off_people_on_le
         "{b}"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_lead_can_even_out_the_load_between_the_people_on_duty(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st.clone());
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (c_id, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    zyvor_api::platform::set_reviewer_lead(&t.state.pool, &a_id, true)
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    for k in [&a_key, &b_key, &c_key] {
+        rv(
+            k,
+            "PUT",
+            "/v1/platform/rota/me".into(),
+            json!({ "shifts": all_week }),
+        )
+        .await;
+    }
+    // Bala holds four; Asha and Chitra none
+    for (i, name) in ["One", "Two", "Three", "Four"].iter().enumerate() {
+        let (_, org) = asks_for_live(
+            &t,
+            &app,
+            &format!("{name} Ltd"),
+            &format!("o{i}@{}.in", name.to_lowercase()),
+        )
+        .await;
+        rv(
+            &b_key,
+            "POST",
+            format!("/v1/platform/reviews/{org}/assign"),
+            json!({ "to": "me" }),
+        )
+        .await;
+    }
+    let counts = || {
+        let root = t.root.clone();
+        async move {
+            let rows: Vec<(String, i64)> = sqlx::query_as("SELECT assigned_to, count(*) FROM live_access WHERE status = 'pending' AND assigned_to IS NOT NULL GROUP BY 1 ORDER BY 1")
+                .fetch_all(&root).await.unwrap();
+            rows
+        }
+    };
+
+    // by default only people on leave are touched, so nothing moves
+    let (s1, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (s1, b["moved"].clone(), b["evened"].clone()),
+        (StatusCode::OK, json!(0), json!(0)),
+        "{b}"
+    );
+    assert_eq!(counts().await, vec![(b_id.clone(), 4)]);
+
+    // asked to even out: 4/0/0 becomes 2/1/1 (stops when the gap is one), and only a lead may
+    let (s2, _) = rv(
+        &c_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({ "even": true }),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::FORBIDDEN);
+    let (s3, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({ "even": true }),
+    )
+    .await;
+    assert_eq!((s3, b["evened"].clone()), (StatusCode::OK, json!(2)), "{b}");
+    let mut want = vec![(a_id.clone(), 1), (b_id.clone(), 2), (c_id.clone(), 1)];
+    want.sort();
+    assert_eq!(counts().await, want);
+
+    // and it is settled: a second call moves nothing
+    let (_, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({ "even": true }),
+    )
+    .await;
+    assert_eq!(b["evened"], 0, "{b}");
+
+    // the moves are audited as the lead's, with the reason
+    let n: (i64,) = sqlx::query_as("SELECT count(*) FROM audit_events WHERE actor = 'zyvor:Asha' AND action = 'live_access.assigned' AND detail->>'rebalanced' = 'load'")
+        .fetch_one(&t.root).await.unwrap();
+    assert_eq!(n.0, 2);
+}

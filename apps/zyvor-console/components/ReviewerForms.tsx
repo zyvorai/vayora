@@ -213,7 +213,11 @@ export function RebalanceForm() {
     <form action={action} style={{ display: "grid", gap: 10 }}>
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
-      <div><button className="btn small" disabled={pending}>{pending ? "…" : "Move work off people on leave"}</button></div>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <input type="checkbox" name="even" style={{ marginTop: 3 }} />
+        <span>Also even out the load between the people on duty. This can move something a reviewer has already started.</span>
+      </label>
+      <div><button className="btn small" disabled={pending}>{pending ? "…" : "Re-balance"}</button></div>
     </form>
   );
 }
