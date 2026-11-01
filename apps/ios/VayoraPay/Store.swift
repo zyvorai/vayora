@@ -151,6 +151,13 @@ final class Store: ObservableObject {
         return c.string ?? ""
     }
 
+    /// A setup QR (`vayora://setup`) sets the test server. Returns the host when it was one, so any scanner can accept it.
+    func applySetup(_ text: String) -> String? {
+        guard let p = try? SetupPayload.parse(text) else { return nil }
+        serverURL = p.server.absoluteString
+        return p.server.host ?? "server"
+    }
+
     // MARK: AutoPay
 
     /// The payer approves a mandate in the simulated bank, and this phone remembers it. A failure leaves nothing saved.

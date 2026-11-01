@@ -55,13 +55,14 @@ struct AutoPayView: View {
         .fullScreenCover(isPresented: $scanning) {
             ScannerView(brand: .pay, hint: "Scan the AutoPay QR") { text in
                 scanning = false
+                if let host = store.applySetup(text) { problem = "Test server set to \(host)."; return }
                 do { mandate = (try MandatePayload.parse(text), text) } catch { problem = "That is not a valid AutoPay QR." }
             } onCancel: { scanning = false }
         }
         .sheet(isPresented: Binding(get: { mandate != nil }, set: { if !$0 { mandate = nil; Task { await store.refreshAutoPays() } } })) {
             if let m = mandate { MandateApproveSheet(mandate: m.0, uri: m.1).environmentObject(store) }
         }
-        .alert("Can't read that code", isPresented: Binding(get: { problem != nil }, set: { _ in problem = nil })) { Button("OK", role: .cancel) {} } message: { Text(problem ?? "") }
+        .alert(problem?.hasPrefix("Test server set") == true ? "Done" : "Can't read that code", isPresented: Binding(get: { problem != nil }, set: { _ in problem = nil })) { Button("OK", role: .cancel) {} } message: { Text(problem ?? "") }
         .confirmationDialog("Stop this AutoPay?", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .visible) {
             Button("Stop AutoPay", role: .destructive) {
                 if let s = stopping { Task { if !(await store.stopAutoPay(s.id)) { problem = "Couldn't stop it. Check the test server." } } }
