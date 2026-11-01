@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
 import { AssignForm, ChangeForm, EscalateChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
 import { dueLabel } from "@/lib/due";
@@ -17,25 +16,32 @@ const DONE: Record<string, string> = {
   change_reject: "Change rejected. The account was removed and the merchant has been emailed your reason.",
 };
 
+function SignInCard({ notice }: { notice?: string }) {
+  return (
+    <div className="login" style={{ minHeight: "70dvh" }}>
+      <div className="card">
+        <h1>Zyvor review</h1>
+        <p className="lede">Businesses asking for live mode wait here for a person at Zyvor.</p>
+        {notice && <div className="note bad" role="alert" style={{ marginBottom: 12 }}>{notice}</div>}
+        <ReviewerSignIn />
+      </div>
+    </div>
+  );
+}
+
 export default async function Queue({ searchParams }: { searchParams: Promise<{ status?: string; done?: string; assigned?: string }> }) {
   requireReviewerSurface();
   const key = await reviewerKey();
   if (!key) {
-    return (
-      <div className="login" style={{ minHeight: "70dvh" }}>
-        <div className="card">
-          <h1>Zyvor review</h1>
-          <p className="lede">Businesses asking for live mode wait here for a person at Zyvor.</p>
-          <ReviewerSignIn />
-        </div>
-      </div>
-    );
+    return <SignInCard />;
   }
   const q = await searchParams;
   const status = (FILTERS as readonly string[]).includes(q.status ?? "") ? (q.status as (typeof FILTERS)[number]) : "pending";
   const assigned = q.assigned === "me" || q.assigned === "none" ? q.assigned : "";
   const r = await platform<{ data: ReviewRow[] }>(key, "GET", `/reviews?status=${status}${assigned ? `&assigned=${assigned}` : ""}`);
-  if (!r.ok && r.status === 401) redirect("/reviewer?expired=1");
+  // A key the API no longer accepts (disabled, or the reviewer was removed) must not redirect to this same page, which
+  // would loop; a server page cannot clear the cookie, so ask for a key again. Signing in sets a fresh cookie.
+  if (!r.ok && r.status === 401) return <SignInCard notice="The API no longer accepts your key; it may have been disabled. Sign in with a key that works." />;
   const rows = r.ok ? r.body.data : [];
   const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", `/changes?status=pending${assigned ? `&assigned=${assigned}` : ""}`) : null;
   const changes = ch?.ok ? ch.body.data : [];
