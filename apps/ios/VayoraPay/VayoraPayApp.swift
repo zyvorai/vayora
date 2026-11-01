@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftUI
 import VayoraKit
 import VayoraUI
@@ -15,7 +16,51 @@ struct VayoraPayApp: App {
 struct RootView: View {
     @EnvironmentObject var store: Store
     @AppStorage("onboarded") private var onboarded = false
+    @AppStorage("faceIDLock") private var lockOn = false
+    @AppStorage("lockTimeout") private var lockTimeout = 0
+    @Environment(\.scenePhase) private var phase
+    @State private var locked = true
+    @State private var backgroundedAt: Date?
+    @State private var authFailed = false
+
     var body: some View {
+        content
+            .overlay { if phase != .active || (locked && lockOn && onboarded) { shield } }
+            .onChange(of: phase) { _, new in
+                switch new {
+                case .background: backgroundedAt = backgroundedAt ?? Date()
+                case .active:
+                    if LockPolicy.shouldLock(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true; authenticate() }
+                    backgroundedAt = nil
+                default: break
+                }
+            }
+            .onAppear { if lockOn { authenticate() } else { locked = false } }
+    }
+
+    /// Covers the app in the app switcher, and while locked until Face ID or the passcode says yes.
+    var shield: some View {
+        ZStack {
+            VUI.ink.ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "lock.fill").font(.system(size: 36)).foregroundStyle(VUI.textSecondary)
+                if locked && lockOn { Button("Unlock") { authenticate() }.vfont(17, .semibold).foregroundStyle(VUI.violet)
+                    if authFailed { Text("Couldn't unlock. Try again.").vfont(13).foregroundStyle(VUI.textSecondary) } }
+            }
+        }
+    }
+
+    func authenticate() {
+        guard lockOn else { locked = false; return }
+        let ctx = LAContext(); var err: NSError?
+        // Face ID, falling back to the phone's passcode; a phone with neither cannot be locked, so it stays open rather than trapping the user
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { locked = false; return }
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vayora Pay") { ok, _ in
+            DispatchQueue.main.async { if ok { locked = false; authFailed = false } else { authFailed = true } }
+        }
+    }
+
+    @ViewBuilder var content: some View {
         if onboarded {
             TabView {
                 HomeView().tabItem { Label("Home", systemImage: "house.fill") }

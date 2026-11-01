@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var splitting = false
     @State private var scanError: String?
     @State private var receipt: Txn?
+    @AppStorage("hideBalance") private var hideBalance = false
     @State private var mandate: (MandatePayload, String)?
 
     var body: some View {
@@ -19,7 +20,7 @@ struct HomeView: View {
             VStack(spacing: 0) {
             payAgainRow
             PayHomeScreen(balance: store.balance, spentThisMonth: Money(minor: store.spentThisMonth), week: weekSeries, recent: store.history.prefix(4).map(row),
-                          summary: MonthSummary.byCategory(store.spendEntries, now: Date()),
+                          summary: MonthSummary.byCategory(store.spendEntries, now: Date()), hideBalance: hideBalance,
                           onScan: { scanning = true }, onPaste: { pasting = true }, onSend: { sending = true }, onSplit: { splitting = true },
                           onOpen: { r in receipt = store.history.first { $0.id.uuidString == r.id } })
             }

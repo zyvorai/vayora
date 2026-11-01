@@ -1,4 +1,5 @@
 import LocalAuthentication
+import UniformTypeIdentifiers
 import SwiftUI
 import VayoraKit
 import VayoraUI
@@ -6,6 +7,11 @@ import VayoraUI
 struct SettingsView: View {
     @EnvironmentObject var store: Store
     @AppStorage("faceIDLock") private var lock = false
+    @AppStorage("lockTimeout") private var lockTimeout = 0
+    @AppStorage("hideBalance") private var hideBalance = false
+    @State private var backupURL: URL?
+    @State private var importing = false
+    @State private var backupMessage: String?
     @State private var confirmReset = false
     @State private var scanning = false
     @State private var budgeting = false
@@ -36,6 +42,11 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Label("Security", systemImage: "lock.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 Toggle("Lock with Face ID", isOn: $lock).tint(VUI.violet).foregroundStyle(VUI.textPrimary)
+                                if lock {
+                                    Picker("Ask again", selection: $lockTimeout) { Text("Every time").tag(0); Text("After 1 min").tag(1); Text("After 5 min").tag(5) }.pickerStyle(.segmented)
+                                }
+                                Toggle("Hide the balance", isOn: $hideBalance).tint(VUI.violet).foregroundStyle(VUI.textPrimary)
+                                Text("The app is also blurred in the app switcher.").vfont(12).foregroundStyle(VUI.textTertiary)
                                 SecureField("Test PIN (4 digits)", text: $store.testPIN).keyboardType(.numberPad).foregroundStyle(VUI.textPrimary)
                                     .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 Text("A local test PIN, not a UPI PIN.").vfont(13).foregroundStyle(VUI.textSecondary)
@@ -69,6 +80,18 @@ struct SettingsView: View {
                             }
                         }
                         GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Backup", systemImage: "externaldrive.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                HStack(spacing: 18) {
+                                    if let backupURL { ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") } }
+                                    else { Button { if let d = store.exportBackup() { let u = FileManager.default.temporaryDirectory.appendingPathComponent("vayora-pay-backup.json"); try? d.write(to: u, options: .atomic); backupURL = u } } label: { Label("Make a backup", systemImage: "square.and.arrow.down") } }
+                                    Button { importing = true } label: { Label("Restore", systemImage: "arrow.counterclockwise") }
+                                }.vfont(15, .semibold).foregroundStyle(VUI.violet)
+                                if let backupMessage { Text(backupMessage).vfont(13).foregroundStyle(VUI.textSecondary) }
+                                Text("Payees, history, jars, budgets, notes and the wallet. Not the PIN, the server address or receipt photos. Restoring replaces what is on this phone.").vfont(12).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("About", systemImage: "info.circle.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 Text("Vayora Pay is a test payer. It cannot link a bank or move real money. A real UPI app needs NPCI approval and a sponsor bank.")
@@ -86,6 +109,17 @@ struct SettingsView: View {
             }
             .environment(\.colorScheme, .dark)
             .toolbar(.hidden, for: .navigationBar)
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+                guard case .success(let url) = result else { return }
+                let ok = url.startAccessingSecurityScopedResource(); defer { if ok { url.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url) else { backupMessage = "Couldn't read that file."; return }
+                switch store.restoreBackup(data) {
+                case .success(let n): backupMessage = "Restored \(n) items."; backupURL = nil; Haptics.success()
+                case .failure(.tooBig): backupMessage = "That file is too big to be a backup."; Haptics.error()
+                case .failure(.wrongVersion): backupMessage = "That backup is from a different version."; Haptics.error()
+                case .failure: backupMessage = "That is not a Vayora Pay backup."; Haptics.error()
+                }
+            }
             .sheet(isPresented: $budgeting) { BudgetsView().environmentObject(store) }
             .sheet(isPresented: $receiving) { ReceiveView().environmentObject(store) }
             .sheet(isPresented: $jarring) { JarsView().environmentObject(store) }
