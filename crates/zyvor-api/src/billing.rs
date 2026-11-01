@@ -347,16 +347,21 @@ pub async fn run_billing(
     Ok(created)
 }
 
-pub async fn billing_run(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
+#[derive(Deserialize, Default)]
+pub struct RunBody {
+    /// Test mode only: run as if it were this day.
+    as_of: Option<NaiveDate>,
+}
+
+pub async fn billing_run(
+    State(s): State<AppState>,
+    auth: Auth,
+    body: Option<Json<RunBody>>,
+) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
+    let today = crate::run_date(&auth, body.and_then(|b| b.0.as_of))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let n = run_billing(
-        &mut tx,
-        &auth.tenant_id,
-        crate::ist_today(),
-        s.mandate_notice_hours,
-    )
-    .await?;
+    let n = run_billing(&mut tx, &auth.tenant_id, today, s.mandate_notice_hours).await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,

@@ -12869,3 +12869,124 @@ async fn a_change_is_held_by_one_reviewer_until_it_is_released_or_taken_over(poo
         (StatusCode::CONFLICT, json!("not_pending"))
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_test_organisation_can_run_billing_and_reminders_as_of_another_day(pool: PgPool) {
+    let t = setup(pool).await;
+    let r = t.ok_public("POST", "/v1/signup", json!({ "organisation_name": "Clock Ltd", "email": "c@clock.in", "password": "correct horse battery" })).await;
+    let tn = Tenant {
+        id: r["test_tenant"].as_str().unwrap().into(),
+        key: r["test_key"].as_str().unwrap().into(),
+    };
+    let b = zyvor_api::admin::bootstrap_org(&t.state.pool, "Live Clock Ltd")
+        .await
+        .unwrap();
+    let live = Tenant {
+        id: b.live_tenant,
+        key: b.live_key,
+    };
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Ravi" }),
+        )
+        .await;
+    let plan = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Pro", "amount_minor": 99_900, "interval_unit": "month" }),
+        )
+        .await;
+    t.ok(&tn, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "quantity": 1, "start_date": today.to_string() })).await;
+    // today: the first period is invoiced once
+    assert_eq!(
+        t.ok(&tn, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        1
+    );
+    // not due again until next month: a run as of tomorrow changes nothing, as of 40 days on it invoices the next period
+    let tomorrow = today
+        .checked_add_days(chrono::Days::new(1))
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": tomorrow })
+        )
+        .await["invoices_created"],
+        0
+    );
+    let later = today
+        .checked_add_days(chrono::Days::new(40))
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": later })
+        )
+        .await["invoices_created"],
+        1
+    );
+    assert_eq!(
+        t.ok(
+            &tn,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": later })
+        )
+        .await["invoices_created"],
+        0
+    );
+    // reminders: the first invoice is now overdue as of that day, and a run as of today finds nothing to remind
+    let none = t
+        .ok(&tn, "POST", "/v1/collections/dunning/run", None, json!({}))
+        .await;
+    assert_eq!(
+        none["reminded"].as_array().map(|a| a.len()).unwrap_or(0),
+        0,
+        "{none}"
+    );
+    let due = t
+        .ok(
+            &tn,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "as_of": later }),
+        )
+        .await;
+    assert!(due.to_string().contains("rem_"), "{due}");
+    // a bad date is refused, and a live organisation can never pick the day
+    let (st, _) = t
+        .call(
+            &tn,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": "not a date" }),
+        )
+        .await;
+    assert!(st.is_client_error());
+    for path in ["/v1/billing/run", "/v1/collections/dunning/run"] {
+        let (st, body) = t
+            .call(&live, "POST", path, None, json!({ "as_of": later }))
+            .await;
+        assert!(st.is_client_error(), "{path}: {st} {body}");
+        assert_eq!(body["error"]["code"], "test_only", "{path}: {body}");
+    }
+}

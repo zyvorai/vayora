@@ -98,8 +98,9 @@ class Zyvor:
         """Retry-safe when `reference` is set: the same reference is recorded once."""
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/usage", {k: v for k, v in {"quantity": quantity, "reference": reference}.items() if v is not None})
 
-    def run_billing(self) -> dict:
-        return self._req("POST", "/v1/billing/run")
+    def run_billing(self, as_of: Optional[str] = None) -> dict:
+        """Invoice every subscription that is due. as_of (YYYY-MM-DD) runs as if it were that day; test mode only."""
+        return self._req("POST", "/v1/billing/run", {"as_of": as_of} if as_of else {})
 
     def credit_note(self, invoice_id: str, amount_minor: int, reason: str) -> dict:
         return self._req("POST", f"/v1/invoices/{invoice_id}/credit_notes", {"amount_minor": amount_minor, "reason": reason})
@@ -144,9 +145,9 @@ class Zyvor:
     def remind(self, invoice_id: str, channel: str, message: Optional[str] = None) -> dict:
         return self._req("POST", f"/v1/invoices/{invoice_id}/reminders", {k: v for k, v in {"channel": channel, "message": message}.items() if v is not None})
 
-    def run_dunning(self, channel: Optional[str] = None, min_days_overdue: Optional[int] = None, repeat_after_days: Optional[int] = None) -> dict:
+    def run_dunning(self, channel: Optional[str] = None, min_days_overdue: Optional[int] = None, repeat_after_days: Optional[int] = None, as_of: Optional[str] = None) -> dict:
         """Remind every overdue invoice with no live promise and no recent reminder. Safe to repeat."""
-        return self._req("POST", "/v1/collections/dunning/run", {k: v for k, v in {"channel": channel, "min_days_overdue": min_days_overdue, "repeat_after_days": repeat_after_days}.items() if v is not None})
+        return self._req("POST", "/v1/collections/dunning/run", {k: v for k, v in {"channel": channel, "min_days_overdue": min_days_overdue, "repeat_after_days": repeat_after_days, "as_of": as_of}.items() if v is not None})
 
     def draft_reminder(self, invoice_id: str, channel: Optional[str] = None, tone: Optional[str] = None, ai: bool = False) -> dict:
         """A reminder for a person to review. `ai=True` asks the optional assistant to word it."""

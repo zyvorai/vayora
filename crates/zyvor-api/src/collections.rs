@@ -281,6 +281,8 @@ pub struct DunningBody {
     /// Don't nudge the same invoice again within this many days (default 7).
     repeat_after_days: Option<i64>,
     channel: Option<String>,
+    /// Test mode only: run as if it were this day.
+    as_of: Option<NaiveDate>,
 }
 
 /// Remind every overdue invoice that has no live promise to pay and wasn't reminded recently.
@@ -365,6 +367,7 @@ pub async fn run_dunning(
             "channel must be email, sms, whatsapp, call or other",
         ));
     }
+    let today = crate::run_date(&auth, b.as_of)?;
     let (min, rep) = (
         b.min_days_overdue.unwrap_or(1).max(0),
         b.repeat_after_days.unwrap_or(7).clamp(0, 365),
@@ -380,7 +383,7 @@ pub async fn run_dunning(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
-        crate::ist_today(),
+        today,
         &Policy {
             min_days: min,
             repeat_days: rep,

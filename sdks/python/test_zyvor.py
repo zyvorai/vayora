@@ -72,6 +72,16 @@ class Tests(unittest.TestCase):
         self.assertEqual(seen[3][2], {"channel": "sms"})
         self.assertEqual(seen[4][2], {"overlap_hours": 2})
 
+    def test_runs_can_name_a_test_day(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b"{}")
+        z = Zyvor("k", opener=opener)
+        z.run_billing(); z.run_billing(as_of="2027-01-15"); z.run_dunning(as_of="2027-01-15")
+        self.assertEqual(seen, [("/v1/billing/run", {}), ("/v1/billing/run", {"as_of": "2027-01-15"}),
+                                ("/v1/collections/dunning/run", {"as_of": "2027-01-15"})])
+
     def test_reminder_drafts(self):
         seen = []
         def opener(req, timeout=None):

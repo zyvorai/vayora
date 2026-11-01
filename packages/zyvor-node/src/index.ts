@@ -218,7 +218,8 @@ export class Zyvor {
     cancel: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/cancel`),
     /** Retry-safe when `reference` is set: the same reference is recorded once. */
     recordUsage: (id: string, p: { quantity: number; reference?: string; note?: string }) => this.req<{ recorded: boolean }>("POST", `/v1/subscriptions/${encodeURIComponent(id)}/usage`, p),
-    run: () => this.req<{ invoices_created: number }>("POST", "/v1/billing/run"),
+    /** `asOf` (YYYY-MM-DD) runs as if it were that day; test mode only. */
+    run: (p: { asOf?: string } = {}) => this.req<{ invoices_created: number }>("POST", "/v1/billing/run", { as_of: p.asOf }),
     creditNote: (invoiceId: string, p: { amountMinor: number; reason: string }) => this.req<{ id: string }>("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/credit_notes`, { amount_minor: p.amountMinor, reason: p.reason }),
     voidInvoice: (invoiceId: string) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/void`),
     statement: (customerId: string) => this.req<{ lines: Record<string, unknown>[]; balance_minor: Record<string, number> }>("GET", `/v1/customers/${encodeURIComponent(customerId)}/statement`),
@@ -375,8 +376,8 @@ export class Zyvor {
     approveDraft: (id: string, message?: string) => this.req<{ id: string; reminder_id: string }>("POST", `/v1/collections/drafts/${encodeURIComponent(id)}/approve`, message ? { message } : {}),
     rejectDraft: (id: string) => this.req("POST", `/v1/collections/drafts/${encodeURIComponent(id)}/reject`),
     /** Remind every overdue invoice with no live promise to pay and no recent reminder. Safe to repeat. */
-    runDunning: (p: { channel?: "email" | "sms" | "whatsapp" | "call" | "other"; minDaysOverdue?: number; repeatAfterDays?: number } = {}) =>
-      this.req<{ reminded: number; reminder_ids: string[] }>("POST", "/v1/collections/dunning/run", { channel: p.channel, min_days_overdue: p.minDaysOverdue, repeat_after_days: p.repeatAfterDays }),
+    runDunning: (p: { channel?: "email" | "sms" | "whatsapp" | "call" | "other"; minDaysOverdue?: number; repeatAfterDays?: number; asOf?: string } = {}) =>
+      this.req<{ reminded: number; reminder_ids: string[] }>("POST", "/v1/collections/dunning/run", { channel: p.channel, min_days_overdue: p.minDaysOverdue, repeat_after_days: p.repeatAfterDays, as_of: p.asOf }),
     reminders: (invoiceId: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`),
     remind: (invoiceId: string, p: { channel: "email" | "sms" | "whatsapp" | "call" | "other"; message?: string }) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`, p),
   };

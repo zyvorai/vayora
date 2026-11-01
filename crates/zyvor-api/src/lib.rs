@@ -178,6 +178,22 @@ pub fn ist_today() -> chrono::NaiveDate {
         .date_naive()
 }
 
+/// The date a manual billing or reminder run works to. A test organisation may name any day, as a test clock
+/// would, to see what the next period brings; a live one always gets today.
+pub fn run_date(
+    auth: &auth::Auth,
+    as_of: Option<chrono::NaiveDate>,
+) -> Result<chrono::NaiveDate, ApiError> {
+    match as_of {
+        None => Ok(ist_today()),
+        Some(d) if auth.env == "test" => Ok(d),
+        Some(_) => Err(ApiError::invalid(
+            "test_only",
+            "choosing the date of a run is only available in test mode",
+        )),
+    }
+}
+
 pub fn app(state: AppState) -> Router {
     use admin::*;
     let v1 = Router::new()

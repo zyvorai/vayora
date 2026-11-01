@@ -47,6 +47,20 @@ describe("client", () => {
   });
 });
 
+describe("runs as of a test day", () => {
+  it("sends as_of only when asked", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    const c = client(f);
+    await c.billing.run();
+    await c.billing.run({ asOf: "2027-01-15" });
+    await c.collections.runDunning({ asOf: "2027-01-15" });
+    const bodies = f.mock.calls.map((x) => { const [, i] = x as unknown as [string, RequestInit]; return i.body ? JSON.parse(i.body as string) : undefined; });
+    expect(bodies[0]?.as_of).toBeUndefined();
+    expect(bodies[1]).toEqual({ as_of: "2027-01-15" });
+    expect(bodies[2]).toMatchObject({ as_of: "2027-01-15" });
+  });
+});
+
 describe("payment links, dunning and key rotation", () => {
   it("maps camelCase options to the API's snake_case and the right routes", async () => {
     const f = vi.fn(async () => json(200, {}));

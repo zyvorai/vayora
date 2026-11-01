@@ -470,7 +470,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/collections/dunning/run:
     post:
-      summary: Remind every overdue invoice with no live promise (repeat-safe)
+      summary: Remind every overdue invoice with no live promise (repeat-safe); test mode may pass as_of to run as of another day
       tags:
       - collections
       responses:
@@ -703,7 +703,7 @@ paths:
           type: string
   /v1/billing/run:
     post:
-      summary: Invoice every subscription that is due (idempotent per period)
+      summary: Invoice every subscription that is due (idempotent per period); test mode may pass as_of to run as of another day
       tags:
       - billing
       responses:
