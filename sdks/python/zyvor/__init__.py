@@ -60,6 +60,10 @@ class Zyvor:
     def explain_settlement(self, settlement_id: str) -> dict:
         return self._req("GET", f"/v1/settlements/{settlement_id}/explain")
 
+    def send_test_event(self) -> dict:
+        """Queue a webhook.test event to the webhook URL set in Settings (admin key)."""
+        return self._req("POST", "/v1/outbox/test", {})
+
     def sync_settlements(self, provider: str, date: str) -> dict:
         """Pull a provider's settlement file for a day (date is YYYY-MM-DD). On a test organisation, provider "sim" builds one from simulated payments."""
         return self._req("POST", "/v1/settlements/sync", {"provider": provider, "date": date})

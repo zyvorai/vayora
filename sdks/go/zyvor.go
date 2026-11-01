@@ -273,6 +273,13 @@ func (c *Client) GetMandate(id string) (map[string]any, error) {
 	return out, err
 }
 
+// SendTestEvent queues a webhook.test event to the webhook URL set in Settings (admin key).
+func (c *Client) SendTestEvent() (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/outbox/test", map[string]any{}, "", &out)
+	return out, err
+}
+
 // SyncSettlements pulls a provider's settlement file for a day (YYYY-MM-DD). On a test organisation, provider "sim"
 // builds one from the simulated payments.
 func (c *Client) SyncSettlements(provider, date string) (map[string]any, error) {

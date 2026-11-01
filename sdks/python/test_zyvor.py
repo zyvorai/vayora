@@ -154,9 +154,10 @@ class Tests(unittest.TestCase):
             return FakeRes(b"{}")
 
         z = Zyvor("k", opener=opener)
-        z.sync_settlements("sim", "2026-11-01"); z.simulate_bank_credit("stl_1", 5000)
+        z.sync_settlements("sim", "2026-11-01"); z.simulate_bank_credit("stl_1", 5000); z.send_test_event()
         self.assertEqual(seen, [("POST", "/v1/settlements/sync", {"provider": "sim", "date": "2026-11-01"}),
-                                ("POST", "/v1/settlements/stl_1/simulate_bank", {"short_minor": 5000})])
+                                ("POST", "/v1/settlements/stl_1/simulate_bank", {"short_minor": 5000}),
+                                ("POST", "/v1/outbox/test", {})])
         with self.assertRaises(ValueError):
             z.simulate_bank_credit("stl_1", -1)
 
