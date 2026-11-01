@@ -26,6 +26,8 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSCameraUsageDescription: Vayora Pay scans payment QR codes with the camera. Nothing is recorded.
         INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock the app with Face ID.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Listens for a spoken payment like "Pay Asha 200 rupees" only while you hold the voice screen open. Nothing is recorded or kept.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Turns your spoken payment into text on this phone where possible. It only opens the normal review; you still confirm.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connects to your Vayora test server on this network. No real money moves.

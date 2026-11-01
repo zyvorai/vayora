@@ -32,6 +32,8 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - Share the payment QR as an image, export payments and daily totals as CSV, and tag sales with who was on the till. No server change.
 **Pay: working app lock, privacy, backup (on-phone, test mode)**
 - Face ID lock that actually locks, an app-switcher cover, hide balance, scam warning on the review screen, and backup and restore of the phone's data. Merchant's Info.plist now has a local-network usage string. No server change.
+**Pay: voice pay (on-phone, test mode)**
+- A spoken payment in English or Hindi that opens the usual review for a saved payee. Never pays by itself. No server change.
 
 **Pay: receipts vault and split by item (on-phone, test mode)**
 - Notes, tags and photos on payments, a month PDF, and itemised splits with exact shares. No server change.
