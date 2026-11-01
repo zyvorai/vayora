@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { addDayOff, assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, removeDayOff, reviewerSignIn, saveMyEmail, saveRota } from "@/lib/reviewer-actions";
+import { addDayOff, assignReview, changeLiveAccess, decideChange, decideReview, escalateChange, escalateReview, rebalance, removeDayOff, reviewerSignIn, saveMyEmail, saveRota } from "@/lib/reviewer-actions";
 import { DAYS, type RotaShift } from "@/lib/rota";
 
 export function ReviewerSignIn() {
@@ -154,9 +154,9 @@ export function RotaForm({ shifts, reviewer }: { shifts: RotaShift[]; reviewer?:
 }
 
 /** Leave for yourself or, ticked, a holiday for the whole desk. Controlled, so a refusal keeps what was typed. */
-export function DayOffForm({ today }: { today: string }) {
+export function DayOffForm({ today, others }: { today: string; others?: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState(addDayOff, undefined);
-  const [v, setV] = useState({ from: today, to: "", note: "", desk: false });
+  const [v, setV] = useState({ from: today, to: "", note: "", desk: false, reviewer: "" });
   return (
     <form action={action} style={{ display: "grid", gap: 10, maxWidth: 420 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -164,6 +164,13 @@ export function DayOffForm({ today }: { today: string }) {
         <div><label className="f" htmlFor="off-to">Until (optional)</label><input id="off-to" type="date" name="to" min={v.from || today} value={v.to} onChange={(e) => setV({ ...v, to: e.target.value })} /></div>
       </div>
       <div><label className="f" htmlFor="off-note">Note (optional)</label><input id="off-note" name="note" maxLength={200} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} placeholder="Diwali, or why you are away" /></div>
+      {others && others.length > 0 && !v.desk && (
+        <div><label className="f" htmlFor="off-who">For</label>
+          <select id="off-who" name="reviewer" value={v.reviewer} onChange={(e) => setV({ ...v, reviewer: e.target.value })}>
+            <option value="">Me</option>
+            {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select></div>
+      )}
       <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
         <input type="checkbox" name="desk" checked={v.desk} onChange={(e) => setV({ ...v, desk: e.target.checked })} style={{ marginTop: 3 }} />
         <span>This is a holiday for the whole desk, not only my leave.</span>
@@ -196,6 +203,17 @@ export function EmailForm({ email }: { email: string | null }) {
       {state?.error && <div className="note bad" role="alert">{state.error}</div>}
       {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
       <div><button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button></div>
+    </form>
+  );
+}
+
+export function RebalanceForm() {
+  const [state, action, pending] = useActionState(rebalance, undefined);
+  return (
+    <form action={action} style={{ display: "grid", gap: 10 }}>
+      {state?.error && <div className="note bad" role="alert">{state.error}</div>}
+      {state?.ok && <div className="note ok" role="status">{state.ok}</div>}
+      <div><button className="btn small" disabled={pending}>{pending ? "…" : "Move work off people on leave"}</button></div>
     </form>
   );
 }

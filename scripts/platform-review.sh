@@ -17,6 +17,9 @@
 #   ... rota                                  who is on duty now and everyone's weekly hours (the desk's local time)
 #   ... leave 2026-12-24 [2026-12-31] ["why"]   book your leave (inclusive days, the desk's time); leave-remove <id> takes it back
 #   ... holiday 2026-12-25 [2026-12-25] ["why"] a desk holiday: nobody is on duty; holiday-remove <id> lifts it
+#   ... leave-for rev_... 2026-12-24 [2026-12-31] ["why"]   a lead books leave for another reviewer (leave-remove works on theirs too)
+#   ... coverage [days]                          the hours in the coming days (default 7, up to 28) when nobody is working
+#   ... rebalance                                a lead moves what reviewers on leave hold to people on duty
 #   ... email you@example.com | none            where you are emailed when something is given to you (none stops it)
 #   ... rota-set "mon-fri 09:00-18:00" ["sat 10:00-14:00" ...]   replace your hours; days are mon, mon-fri or mon,wed; "none" clears them
 #   ... rota-set rev_... "mon-fri 09:00-18:00" ...   a lead sets that reviewer's hours (they are emailed); the operator makes a lead
@@ -99,6 +102,30 @@ for o in d.get("days_off", []):
   email)
     [ -n "${2:-}" ] || { echo "usage: $0 email you@example.com   (or: none)" >&2; exit 2; }
     call PUT "/v1/platform/me" "$(python3 -c 'import sys,json; print(json.dumps({"email": None if sys.argv[1] == "none" else sys.argv[1]}))' "$2")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else ("you will be emailed at " + d["email"] if d.get("email") else "you will not be emailed"))' ;;
+  leave-for)
+    [ -n "${3:-}" ] || { echo "usage: $0 leave-for <reviewer id> <first day YYYY-MM-DD> [last day] [\"why\"]" >&2; exit 2; }
+    who="$2"; shift 2
+    body="$(python3 -c '
+import sys, json, re
+who, args = sys.argv[1], sys.argv[2:]
+days = [a for a in args if re.fullmatch(r"\d{4}-\d{2}-\d{2}", a)]
+note = " ".join(a for a in args if a not in days)
+b = {"from": days[0], "reviewer": who}
+if len(days) > 1: b["to"] = days[1]
+if note: b["note"] = note
+print(json.dumps(b))' "$who" "$@")" || exit 2
+    call POST "/v1/platform/rota/days_off" "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "booked leave for %s, %s to %s (id %s)" % (d["reviewer_id"], d["first_day"], d["last_day"], d["id"]))' ;;
+  coverage)
+    call GET "/v1/platform/rota/coverage?days=${2:-7}" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if "error" in d: sys.exit(d["error"]["message"])
+if not d["configured"]: print("(no hours set yet, so nothing to cover)")
+for x in d["days"]:
+    note = "HOLIDAY (%s)" % x["holiday"] if x["holiday"] else ("covered" if x["fully_covered"] else "NOBODY " + ", ".join("%s-%s" % (g["from"], g["to"]) for g in x["gaps"]))
+    print("%s %s  %s%s" % (x["date"], x["weekday"], note, "  (%d on leave)" % x["on_leave"] if x["on_leave"] else ""))' ;;
+  rebalance)
+    call POST "/v1/platform/rota/rebalance" "{}" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "moved %d item(s) off people on leave; %d could not be moved" % (d["moved"], d["left"]))' ;;
   leave|holiday)
     [ -n "${2:-}" ] || { echo "usage: $0 $1 <first day YYYY-MM-DD> [last day] [\"why\"]" >&2; exit 2; }
     body="$(python3 -c '

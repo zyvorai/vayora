@@ -14220,3 +14220,213 @@ async fn a_lead_can_set_another_reviewers_hours_and_nobody_else_can(pool: PgPool
     .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_lead_books_leave_for_others_sees_gaps_and_moves_work_off_people_on_leave(pool: PgPool) {
+    let t = setup(pool).await;
+    let mut st = t.state.clone();
+    st.review_two_person = zyvor_api::platform::TwoPerson::Flagged;
+    let app = zyvor_api::app(st.clone());
+    let (a_id, a_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let (b_id, b_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Bala")
+        .await
+        .unwrap();
+    let (c_id, c_key) = zyvor_api::platform::create_reviewer(&t.state.pool, "Chitra")
+        .await
+        .unwrap();
+    zyvor_api::platform::set_reviewer_lead(&t.state.pool, &a_id, true)
+        .await
+        .unwrap();
+    let rv = |k: &str, m: &'static str, p: String, b: Value| {
+        let (app, k) = (app.clone(), k.to_string());
+        async move { common::raw(&app, &k, None, m, &p, None, b).await }
+    };
+    let all_week: Vec<Value> = zyvor_api::rota::DAYS
+        .iter()
+        .map(|d| json!({ "weekday": d, "start": "00:00", "end": "24:00" }))
+        .collect();
+    for k in [&a_key, &b_key, &c_key] {
+        rv(
+            k,
+            "PUT",
+            "/v1/platform/rota/me".into(),
+            json!({ "shifts": all_week }),
+        )
+        .await;
+    }
+    let (_, r) = rv(&a_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    let today = r["local_date"].as_str().unwrap().to_string();
+
+    // only a lead books leave for someone else; a desk holiday is not "for" anyone
+    let (s1, _) = rv(
+        &c_key,
+        "POST",
+        "/v1/platform/rota/days_off".into(),
+        json!({ "from": today, "reviewer": b_id }),
+    )
+    .await;
+    assert_eq!(s1, StatusCode::FORBIDDEN);
+    let (s2, _) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off".into(),
+        json!({ "from": today, "reviewer": "rev_nope" }),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::NOT_FOUND);
+    let (s3, _) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off".into(),
+        json!({ "from": today, "reviewer": b_id, "desk": true }),
+    )
+    .await;
+    assert_eq!(s3, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Bala holds two reviews and is then put on leave by the lead
+    let (_, org1) = asks_for_live(&t, &app, "One Ltd", "o@one.in").await;
+    let (_, org2) = asks_for_live(&t, &app, "Two Ltd", "o@two2.in").await;
+    for org in [&org1, &org2] {
+        rv(
+            &b_key,
+            "POST",
+            format!("/v1/platform/reviews/{org}/assign"),
+            json!({ "to": "me" }),
+        )
+        .await;
+    }
+    let (s4, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off".into(),
+        json!({ "from": today, "reviewer": b_id, "note": "unwell" }),
+    )
+    .await;
+    assert_eq!(
+        (s4, b["reviewer_id"].clone()),
+        (StatusCode::CREATED, json!(b_id)),
+        "{b}"
+    );
+    let off_id = b["id"].as_str().unwrap().to_string();
+    let (_, r) = rv(&c_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    assert_eq!(
+        r["days_off"][0]["removable"], false,
+        "Chitra is not a lead: {r}"
+    );
+    let (_, r) = rv(&a_key, "GET", "/v1/platform/rota".into(), Value::Null).await;
+    assert_eq!(r["days_off"][0]["removable"], true, "{r}");
+
+    // Bala cannot re-balance; the lead can, and both reviews leave Bala for Asha and Chitra (one each)
+    let (s5, _) = rv(
+        &b_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({}),
+    )
+    .await;
+    assert_eq!(s5, StatusCode::FORBIDDEN);
+    let (s6, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (s6, b["moved"].clone(), b["left"].clone()),
+        (StatusCode::OK, json!(2), json!(0)),
+        "{b}"
+    );
+    let held: Vec<(String,)> = sqlx::query_as("SELECT assigned_to FROM live_access WHERE status = 'pending' AND assigned_to IS NOT NULL ORDER BY assigned_to")
+        .fetch_all(&t.root).await.unwrap();
+    let mut want = vec![(a_id.clone(),), (c_id.clone(),)];
+    want.sort();
+    assert_eq!(held, want, "one each, none left with Bala");
+    let (_, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({}),
+    )
+    .await;
+    assert_eq!(b["moved"], 0, "nothing is left to move: {b}");
+
+    // the lead takes Bala's leave back
+    let (s7, _) = rv(
+        &c_key,
+        "DELETE",
+        format!("/v1/platform/rota/days_off/{off_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(s7, StatusCode::FORBIDDEN);
+    let (s8, _) = rv(
+        &a_key,
+        "DELETE",
+        format!("/v1/platform/rota/days_off/{off_id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(s8, StatusCode::OK);
+
+    // coverage: everyone works all day, so no gaps; a bad range is refused; with nobody's hours there is one gap a day
+    let (_, c) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/rota/coverage?days=3".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(c["days"].as_array().unwrap().len(), 3, "{c}");
+    assert!(
+        c["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["fully_covered"] == true && d["gaps"] == json!([])),
+        "{c}"
+    );
+    let (s9, _) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/rota/coverage?days=0".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(s9, StatusCode::UNPROCESSABLE_ENTITY);
+    rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/days_off".into(),
+        json!({ "from": today, "desk": true, "note": "Fair" }),
+    )
+    .await;
+    let (_, c) = rv(
+        &a_key,
+        "GET",
+        "/v1/platform/rota/coverage?days=1".into(),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(c["days"][0]["holiday"], "Fair", "{c}");
+    assert_eq!(
+        c["days"][0]["gaps"],
+        json!([{ "from": "00:00", "to": "24:00" }]),
+        "{c}"
+    );
+    // and nobody on duty means a re-balance has nowhere to go
+    let (s10, b) = rv(
+        &a_key,
+        "POST",
+        "/v1/platform/rota/rebalance".into(),
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        (s10, b["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("nobody_on_duty")),
+        "{b}"
+    );
+}

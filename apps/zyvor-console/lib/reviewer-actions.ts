@@ -185,13 +185,15 @@ export async function addDayOff(_: State, form: FormData): Promise<State> {
   const note = String(form.get("note") ?? "").trim();
   if (!from) return { error: "Pick the first day." };
   const desk = form.get("desk") === "on";
-  const r = await platform(key, "POST", "/rota/days_off", { from, ...(to ? { to } : {}), ...(note ? { note } : {}), desk });
+  const other = desk ? "" : String(form.get("reviewer") ?? "");
+  const r = await platform(key, "POST", "/rota/days_off", { from, ...(to ? { to } : {}), ...(note ? { note } : {}), ...(other ? { reviewer: other } : {}), desk });
   if (!r.ok) {
     if (r.status === 401) redirect("/reviewer");
     return { error: r.message };
   }
   revalidatePath("/reviewer/rota");
   revalidatePath("/reviewer");
+  if (other) return { ok: "Leave booked for them: they are off the rota those days." };
   return { ok: desk ? "Holiday added: nobody is on duty those days." : "Leave booked: you are off the rota those days." };
 }
 
@@ -209,4 +211,19 @@ export async function removeDayOff(_: State, form: FormData): Promise<State> {
   revalidatePath("/reviewer/rota");
   revalidatePath("/reviewer");
   return { ok: "Removed." };
+}
+
+/** A lead moves what people on leave hold to people on duty. */
+export async function rebalance(_: State): Promise<State> {
+  requireReviewerSurface();
+  const key = await reviewerKey();
+  if (!key) redirect("/reviewer");
+  const r = await platform<{ moved: number; left: number }>(key, "POST", "/rota/rebalance", {});
+  if (!r.ok) {
+    if (r.status === 401) redirect("/reviewer");
+    return { error: r.message };
+  }
+  revalidatePath("/reviewer/rota");
+  revalidatePath("/reviewer");
+  return { ok: r.body.moved ? `Moved ${r.body.moved} item(s) to people on duty${r.body.left ? `; ${r.body.left} could not be moved` : ""}.` : r.body.left ? `Nothing moved; ${r.body.left} could not be given to anyone else.` : "Nobody on leave is holding anything." };
 }

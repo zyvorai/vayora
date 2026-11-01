@@ -120,6 +120,18 @@ impl Away {
     }
 }
 
+/// Whether this active reviewer is a lead.
+pub async fn is_lead(s: &AppState, id: &str) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT is_lead FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(false)
+}
+
 /// The local day `now` falls on in the desk's time.
 fn local_day(s: &AppState, now: DateTime<Utc>) -> NaiveDate {
     desk_local(s, now).date()
@@ -232,6 +244,7 @@ pub async fn show(State(s): State<AppState>, p: PlatformAuth) -> Result<Json<Val
         "days_off": days_off.iter().map(|(id, who, name, first, last, note)| json!({
             "id": id, "reviewer_id": who, "reviewer": name, "desk": who.is_none(),
             "mine": who.as_deref() == Some(p.id.as_str()),
+            "removable": who.is_none() || who.as_deref() == Some(p.id.as_str()) || leads.contains(&p.id),
             "first_day": first.to_string(), "last_day": last.to_string(), "note": note,
         })).collect::<Vec<_>>(),
     })))
@@ -375,6 +388,8 @@ pub struct DayOffIn {
     /// A holiday for the whole desk rather than the caller's own leave.
     #[serde(default)]
     desk: bool,
+    /// A lead booking leave for another reviewer.
+    reviewer: Option<String>,
 }
 
 /// `POST /v1/platform/rota/days_off`: book leave for the caller, or a desk holiday (`desk: true`) for everyone.
@@ -421,12 +436,34 @@ pub async fn add_day_off(
             "100 upcoming days off already; remove some first".into()
         ));
     }
+    let who = match b.reviewer.as_deref().filter(|r| *r != p.id) {
+        None => p.id.clone(),
+        Some(_) if b.desk => {
+            return Err(bad(
+                "a desk holiday is for everyone; leave out reviewer".into()
+            ));
+        }
+        Some(r) => {
+            if !is_lead(&s, &p.id).await {
+                return Err(ApiError::forbidden(
+                    "only a lead can book leave for another reviewer",
+                ));
+            }
+            let found: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+            )
+            .bind(r)
+            .fetch_optional(&s.pool)
+            .await?;
+            found.ok_or_else(|| ApiError::not_found("reviewer"))?
+        }
+    };
     let id = new_id("off");
     sqlx::query(
         "INSERT INTO reviewer_days_off (id, reviewer_id, first_day, last_day, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
     )
     .bind(&id)
-    .bind((!b.desk).then_some(&p.id))
+    .bind((!b.desk).then_some(&who))
     .bind(first)
     .bind(last)
     .bind(&note)
@@ -436,7 +473,7 @@ pub async fn add_day_off(
     Ok((
         axum::http::StatusCode::CREATED,
         Json(json!({
-            "id": id, "desk": b.desk, "first_day": first.to_string(), "last_day": last.to_string(), "note": note,
+            "id": id, "desk": b.desk, "reviewer_id": (!b.desk).then_some(&who), "first_day": first.to_string(), "last_day": last.to_string(), "note": note,
         })),
     ))
 }
@@ -454,9 +491,9 @@ pub async fn remove_day_off(
             .fetch_optional(&s.pool)
             .await?;
     let (owner,) = row.ok_or_else(|| ApiError::not_found("day off"))?;
-    if owner.is_some_and(|o| o != p.id) {
+    if owner.is_some_and(|o| o != p.id) && !is_lead(&s, &p.id).await {
         return Err(ApiError::forbidden(
-            "that is another reviewer's leave; only they can remove it",
+            "that is another reviewer's leave; only they or a lead can remove it",
         ));
     }
     sqlx::query("DELETE FROM reviewer_days_off WHERE id = $1")
@@ -464,6 +501,69 @@ pub async fn remove_day_off(
         .execute(&s.pool)
         .await?;
     Ok(Json(json!({ "id": id, "deleted": true })))
+}
+
+/// The windows of `0..1440` that none of `covered` (start, end) minute ranges reaches, in order.
+pub fn gaps(mut covered: Vec<(i16, i16)>) -> Vec<(i16, i16)> {
+    covered.sort_unstable();
+    let (mut out, mut at) = (Vec::new(), 0i16);
+    for (a, b) in covered {
+        if a > at {
+            out.push((at, a));
+        }
+        at = at.max(b);
+    }
+    if at < 1440 {
+        out.push((at, 1440));
+    }
+    out
+}
+
+#[derive(Deserialize)]
+pub struct CoverageQ {
+    days: Option<i64>,
+}
+
+/// `GET /v1/platform/rota/coverage?days=7`: for each coming local day (today first, 1 to 28 days, default 7), the
+/// windows with nobody working once shifts, leave and desk holidays are counted, so a gap is seen before it happens.
+/// Wall-clock hours; the one-hour shift on a daylight-saving night is not modelled. Before anyone has set hours there
+/// is nothing to cover and every day is reported as `configured: false`.
+pub async fn coverage(
+    State(s): State<AppState>,
+    _p: PlatformAuth,
+    axum::extract::Query(q): axum::extract::Query<CoverageQ>,
+) -> Result<Json<Value>, ApiError> {
+    let n = q.days.unwrap_or(7);
+    if !(1..=28).contains(&n) {
+        return Err(ApiError::invalid("invalid_days", "days is 1 to 28"));
+    }
+    let people = people(&s).await?;
+    let configured = people.iter().any(|(_, _, sh)| !sh.is_empty());
+    let today = local_day(&s, Utc::now());
+    let mut out = Vec::new();
+    for i in 0..n {
+        let day = today + Duration::days(i);
+        let away = away_on(&s, day).await;
+        let wd = day.weekday().num_days_from_monday() as i16;
+        let covered: Vec<(i16, i16)> = if away.holiday.is_some() {
+            Vec::new()
+        } else {
+            people
+                .iter()
+                .filter(|(id, _, _)| !away.covers(id))
+                .flat_map(|(_, _, sh)| sh.iter().filter(|x| x.weekday == wd))
+                .map(|x| (x.start_min, x.end_min))
+                .collect()
+        };
+        let holes = gaps(covered);
+        out.push(json!({
+            "date": day.to_string(), "weekday": DAYS[wd as usize],
+            "holiday": away.holiday, "on_leave": away.on_leave.len(),
+            "gaps": holes.iter().map(|(a, b)| json!({ "from": fmt_hm(*a), "to": fmt_hm(*b) })).collect::<Vec<_>>(),
+            "fully_covered": configured && holes.is_empty(),
+        }));
+    }
+    Ok(Json(json!({ "configured": configured, "days": out })))
 }
 
 /// How many active reviewers are on duty now, or `-1` when nobody has set any hours (the rota is not in use, so an
@@ -504,6 +604,19 @@ mod tests {
     /// `on_duty` at a UTC instant for a desk in a time zone.
     fn zoned(shifts: &[Shift], now: DateTime<Utc>, tz: chrono_tz::Tz) -> bool {
         on_duty(shifts, now.with_timezone(&tz).naive_local())
+    }
+
+    #[test]
+    fn gaps_are_what_no_shift_reaches() {
+        assert_eq!(gaps(vec![]), vec![(0, 1440)]);
+        assert_eq!(gaps(vec![(0, 1440)]), vec![]);
+        // overlapping and out-of-order shifts merge; the ends are gaps
+        assert_eq!(
+            gaps(vec![(780, 1080), (540, 840), (600, 660)]),
+            vec![(0, 540), (1080, 1440)]
+        );
+        // two shifts that meet leave no gap between them
+        assert_eq!(gaps(vec![(0, 720), (720, 1440)]), vec![]);
     }
 
     #[test]

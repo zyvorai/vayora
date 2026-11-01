@@ -143,7 +143,16 @@ that their hours changed (who changed them and how many shifts, not the hours), 
 them back. A lead sets weekly hours only: leave stays each reviewer's own, and a desk holiday stays open to everyone. The
 change is logged by the API but not in the audit trail, which is per business and the rota belongs to no business.
 
-**Not built:** re-balancing items already held. (A revoke is one person on purpose; giving
+A lead can also **book or remove leave for another reviewer** (`leave-for rev_... 2026-12-24 ...`; `POST /platform/rota/days_off`
+with `reviewer`), **see coverage** (`coverage [days]`, `GET /platform/rota/coverage`: the hours in the coming days when nobody
+is working, with shifts, leave and holidays counted; wall-clock, so a daylight-saving night's odd hour is not modelled),
+and **re-balance** (`rebalance`, `POST /platform/rota/rebalance`): everything pending that a reviewer on leave today holds
+moves to the on-duty reviewer holding the fewest, never the first approver. Items held by someone who is merely off
+shift stay with them, nothing moves while nobody is on duty (409), and an item with nobody it can go to is counted as
+`left`. Each move is audited as the lead's, and the new holder and the old one are told.
+
+**Not built:** re-balancing by workload alone (it only moves work off people on leave), and moving work when someone is
+only off shift. (A revoke is one person on purpose; giving
 access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back

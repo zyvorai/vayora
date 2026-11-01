@@ -9,7 +9,9 @@ export type RotaView = {
   days_off: DayOff[];
 };
 /** Leave for one reviewer, or a holiday for the whole desk (`desk`). Days are `YYYY-MM-DD` in the desk's time, inclusive. */
-export type DayOff = { id: string; desk: boolean; reviewer: string | null; mine: boolean; first_day: string; last_day: string; note: string };
+export type DayOff = { removable: boolean; id: string; desk: boolean; reviewer: string | null; mine: boolean; first_day: string; last_day: string; note: string };
 
 /** `330` as `UTC+5:30`. */
 export const offsetLabel = (m: number) => `UTC${m < 0 ? "-" : "+"}${Math.floor(Math.abs(m) / 60)}${Math.abs(m) % 60 ? ":" + String(Math.abs(m) % 60).padStart(2, "0") : ""}`;
+
+export type Coverage = { configured: boolean; days: { date: string; weekday: string; holiday: string | null; on_leave: number; gaps: { from: string; to: string }[]; fully_covered: boolean }[] };
