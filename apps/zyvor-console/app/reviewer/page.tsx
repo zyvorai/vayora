@@ -54,7 +54,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
                 <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>{c.kind === "profile" ? ": change to legal details" : ": new bank account"}<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>{c.stage === "awaiting_second" ? <div className="fine">{c.first_approved_by} approved; needs a different reviewer</div> : c.needs_second_because.length > 0 && <div className="fine">needs two reviewers: {c.needs_second_because.join("; ")}{c.escalation_note ? ` (escalation note: ${c.escalation_note})` : ""}</div>}<div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
                 <div style={{ display: "grid", gap: 8 }}>
                   <AssignForm change={c.id} holder={c.assigned_to_name} mine={c.assigned_to_me} />
-                  <ChangeForm id={c.id} kind={c.kind} firstApprovalOnly={c.stage !== "awaiting_second" && c.needs_second_because.length > 0} />
+                  <ChangeForm id={c.id} kind={c.kind} firstApprovalOnly={c.stage !== "awaiting_second" && c.needs_second_because.length > 0} iApprovedFirst={c.first_approved_by_me} />
                   {c.needs_second_because.length === 0 && c.stage !== "awaiting_second" && <details><summary className="fine">Not sure? Ask for a second reviewer</summary><div style={{ marginTop: 8 }}><EscalateChangeForm id={c.id} /></div></details>}
                 </div>
               </div>
