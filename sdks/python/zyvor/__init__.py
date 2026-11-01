@@ -221,6 +221,11 @@ class Zyvor:
     def save_profile(self, legal_name: str, business_type: str, pan: str, address: str, gstin: Optional[str] = None) -> dict:
         return self._req("PUT", "/v1/onboarding", {"legal_name": legal_name, "business_type": business_type, "pan": pan, "address": address, "gstin": gstin})
 
+    def request_profile_change(self, legal_name: str, business_type: str, pan: str, address: str, reason: str, gstin: Optional[str] = None) -> dict:
+        """After approval the details are locked. This asks Zyvor to change them: nothing changes, and live payouts are held,
+        until a Zyvor reviewer decides. One request can wait at a time. The PAN is checked and only its last four digits are kept."""
+        return self._req("POST", "/v1/onboarding/profile_change", {"legal_name": legal_name, "business_type": business_type, "pan": pan, "address": address, "gstin": gstin, "reason": reason})
+
     def add_onboarding_document(self, kind: str, reference: str) -> dict:
         return self._req("POST", "/v1/onboarding/documents", {"kind": kind, "reference": reference})
 

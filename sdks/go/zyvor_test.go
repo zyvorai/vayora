@@ -184,6 +184,25 @@ func TestMerchantOperationsPaths(t *testing.T) {
 	}
 }
 
+func TestRequestProfileChangeSendsTheReasonAndOmitsAnEmptyGSTIN(t *testing.T) {
+	var path string
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.Method + " " + r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	_, _ = c.RequestProfileChange("Sri Clinic Pvt Ltd", "private_limited", "ABCPE1234F", "Pune 411001", "", "converted to a company")
+	if path != "POST /v1/onboarding/profile_change" || body["reason"] != "converted to a company" || body["legal_name"] != "Sri Clinic Pvt Ltd" {
+		t.Fatalf("got %s %v", path, body)
+	}
+	if _, has := body["gstin"]; has {
+		t.Fatalf("an empty gstin should not be sent: %v", body)
+	}
+}
+
 func TestCreateIntentAtSendsBranchAndCounter(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
