@@ -65,7 +65,7 @@ pub struct Capabilities {
     #[serde(default)]
     pub upi_intent: bool,
     /// Provider can hold a UPI AutoPay mandate (the payer approves once, the merchant debits later). Default
-    /// off: turn it on only for a flow verified with that partner. Today only the simulator has it.
+    /// off: turn it on only for a flow verified with that partner. The simulator has it; Cashfree has it, built from docs and not verified against its sandbox.
     #[serde(default)]
     pub mandates: bool,
     /// Refunds are refused after this many days.
@@ -461,6 +461,16 @@ pub trait Provider: Send + Sync {
     /// uncertain outcome that is resolved by asking, never by re-sending) applies.
     async fn debit(&self, _req: &DebitRequest) -> Result<Initiated, ProviderError> {
         Err(ProviderError::Unsupported("UPI AutoPay debits".into()))
+    }
+
+    /// Look a mandate debit up by our attempt id and its mandate. A provider that can only find a debit
+    /// through its mandate (Cashfree) needs the mandate id; the default ignores it.
+    async fn fetch_debit(
+        &self,
+        attempt_id: &str,
+        _mandate_id: &str,
+    ) -> Result<PaymentState, ProviderError> {
+        self.fetch_payment(attempt_id).await
     }
 
     /// Is the account reachable, and are its credentials accepted? Read-only: nothing is created. The

@@ -682,8 +682,18 @@ pub async fn refresh_attempt_internal(
     let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     let row = fetch_attempt(&mut tx, attempt_id).await?;
     let provider = registry::load(s, &mut tx, tenant_id, env, &row.provider).await?;
+    let mandate_id: Option<String> =
+        sqlx::query_scalar("SELECT mandate_id FROM payment_attempts WHERE id = $1")
+            .bind(attempt_id)
+            .fetch_one(&mut *tx)
+            .await?;
     tx.commit().await?;
-    match provider.fetch_payment(attempt_id).await {
+    // A mandate debit may only be findable through its mandate (Cashfree).
+    let looked_up = match &mandate_id {
+        Some(m) => provider.fetch_debit(attempt_id, m).await,
+        None => provider.fetch_payment(attempt_id).await,
+    };
+    match looked_up {
         Ok(state) => {
             let mut tx = tenant::begin(&s.pool, tenant_id).await?;
             apply_provider_state(

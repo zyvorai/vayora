@@ -13,6 +13,8 @@ use zyvor_core::{Currency, minor_to_decimal};
 
 use crate::*;
 
+mod subscriptions;
+
 pub struct Cashfree {
     base: String,
     client_id: String,
@@ -20,6 +22,8 @@ pub struct Cashfree {
     http: reqwest::Client,
     /// Native UPI intent / QR through Order Pay. Off until the account has it enabled (Cashfree's S2S flag).
     upi_intent: bool,
+    /// Days ahead a mandate debit is scheduled for (see `subscriptions.rs`). Default 0: today.
+    debit_lead_days: u64,
 }
 
 /// The Order Pay API version the UPI intent / QR calls are made with (the order itself uses the version
@@ -44,7 +48,15 @@ impl Cashfree {
             client_secret: client_secret.into(),
             http,
             upi_intent: false,
+            debit_lead_days: 0,
         }
+    }
+
+    /// Schedule mandate debits this many days ahead. UNCLEAR whether Cashfree needs this for its own
+    /// pre-debit notification; set it once the sandbox says so.
+    pub fn with_debit_lead_days(mut self, days: u64) -> Self {
+        self.debit_lead_days = days;
+        self
     }
 
     /// Turn on native UPI intent / QR for this account. Only do so once Cashfree has enabled it.
@@ -154,7 +166,9 @@ impl Provider for Cashfree {
             server_initiated_upi: true,
             // Verified against the sandbox only, and needs the account to have it enabled: opt in per account.
             upi_intent: self.upi_intent,
-            mandates: false,
+            // UPI AutoPay through Cashfree Subscriptions: built from the docs against a mock, NOT verified
+            // against Cashfree's sandbox, and the account needs Subscriptions enabled.
+            mandates: true,
             refund_window_days: Some(365),
         }
     }
@@ -287,6 +301,26 @@ impl Provider for Cashfree {
             failure_reason: None,
             raw: p,
         })
+    }
+
+    async fn create_mandate(&self, req: &CreateMandate) -> Result<MandateState, ProviderError> {
+        self.sub_create_mandate(req).await
+    }
+    async fn fetch_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        self.sub_fetch_mandate(mandate_id).await
+    }
+    async fn revoke_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        self.sub_revoke_mandate(mandate_id).await
+    }
+    async fn debit(&self, req: &DebitRequest) -> Result<Initiated, ProviderError> {
+        self.sub_debit(req).await
+    }
+    async fn fetch_debit(
+        &self,
+        attempt_id: &str,
+        mandate_id: &str,
+    ) -> Result<PaymentState, ProviderError> {
+        self.sub_fetch_debit(attempt_id, mandate_id).await
     }
 
     async fn check(&self) -> Result<String, ProviderError> {
@@ -484,6 +518,10 @@ impl Provider for Cashfree {
         let v: Value =
             serde_json::from_slice(body).map_err(|e| WebhookError::Malformed(e.to_string()))?;
         let ty = v["type"].as_str().unwrap_or_default();
+        // Subscription (mandate) events have their own shape: see `subscriptions.rs`.
+        if let Some(ev) = subscriptions::webhook_event(ty, &v) {
+            return Ok(ev);
+        }
         let order = v["data"]["order"]["order_id"].as_str().map(str::to_string);
         let pay = &v["data"]["payment"];
         let refund = &v["data"]["refund"];
