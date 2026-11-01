@@ -28,6 +28,27 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `POST /v1/sim/pay` lets a test payer approve or decline the simulator's UPI payload. Off unless `ZYVOR_SIM_PAYER=1` (404 otherwise); only touches the in-process simulator.
 - Pay also has test-mode payees, send, split a bill (a request QR), small payments without a PIN (off by default) and bill reminders. These person-to-person items are recorded on the phone and never reach Zyvor's ledger.
 
+**Pay: receipts vault and split by item (on-phone, test mode)**
+- Notes, tags and photos on payments, a month PDF, and itemised splits with exact shares. No server change.
+
+**Pay: learns categories and jars (on-phone, test mode)**
+- Recategorise a payee once and it sticks; savings jars with goals that conserve the test wallet. No server change.
+
+**Pay: Siri and Shortcuts (on-phone, test mode)**
+- Two App Intents: spend this month and test balance. No server change.
+
+**Merchant: cashier mode, closing reminder, regulars (on-phone, test mode)**
+- An owner-PIN cashier lock, a daily closing reminder, and per-name running totals. No server change. Counter tagging of payments is not built: the payment-intent API has no counter field.
+
+**Pay: planned payments, repeating payments, split tracker (on-phone, test mode)**
+- A Planned tab in Bills: payments you confirm on the day, repeating payments found in your history, and a hand-ticked split tracker. No server change.
+
+**Merchant: counter speaker and end of day (test mode)**
+- A spoken "received" in English or Hindi, and a guided end-of-day close over the existing cash entry and closing APIs. No server change.
+
+**Pay: safety checks, Pay again, Ask your money (on-phone, test mode)**
+- Warnings before the slide (first-time payee, lookalike UPI ID, unusually large), a 10-second pause for a large first payment, a Pay again row on Home, and plain-word questions in History with a total. No server change.
+
 **Pay and Merchant extras (on-phone, test mode)**
 - Pay: monthly budgets with a warning on the review screen, History filters and CSV export, and a "Receive" QR with no amount. Merchant: tips on the keypad, repeat last amount, takings by the hour, and a shareable receipt. No server change.
 

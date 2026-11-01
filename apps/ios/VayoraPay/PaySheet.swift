@@ -17,6 +17,7 @@ struct PaySheet: View {
     @State private var pinError = false
     @State private var shake: CGFloat = 0
     @State private var progress = 0.0
+    @State private var cooling = 0
 
     init(payload: UPIPayload, transfer: Bool = false) {
         self.payload = payload; self.transfer = transfer
@@ -35,12 +36,15 @@ struct PaySheet: View {
             case .review:
                 if let amount {
                     PayReviewScreen(name: payload.name, payee: payload.payee, amount: amount, balance: store.balance) {
+                        // a big first payment to someone new waits a few seconds; the slide itself is never blocked
+                        if cooling > 0 { Haptics.error(); return }
                         // a small payment (when switched on, and inside today's limit) needs only the slide
                         if !store.needsPIN(for: amount) { submit(noPIN: true); return }
                         pin.clear(); pinError = false
                         withAnimation(VUI.spring) { step = .pin }
                     }
-                    .overlay(alignment: .top) { budgetBanner(amount) }
+                    .overlay(alignment: .top) { VStack(spacing: 6) { budgetBanner(amount); riskBanners(amount) }.padding(.top, 58) }
+                    .task(id: amount.minor) { await cool(amount) }
                 }
             case .pin:
                 PinScreen(filled: pin.digits.count, error: pinError, shake: shake, onDigit: { digit($0) }, onDelete: { pin.delete(); pinError = false })
@@ -71,8 +75,31 @@ struct PaySheet: View {
             Label(w.level == .over ? "This puts \(cat.title) \(Money(minor: w.spentMinor - w.limitMinor).display) over your budget" : "\(cat.title) will be at \(Int(w.fraction * 100))% of your budget",
                   systemImage: "exclamationmark.triangle.fill")
                 .vfont(13, .semibold).foregroundStyle(VUI.amber).padding(.horizontal, 14).padding(.vertical, 8)
-                .background(VUI.amber.opacity(0.16), in: Capsule()).padding(.top, 58)
+                .background(VUI.amber.opacity(0.16), in: Capsule())
         }
+    }
+
+    func risks(_ amount: Money) -> [RiskFlag] {
+        transfer ? [] : PaymentRisk.check(payee: payload.payee, amountMinor: amount.minor, history: store.historyRows, saved: store.payees.all)
+    }
+    /// Plain warnings above the slide. They inform; the person decides.
+    @ViewBuilder func riskBanners(_ amount: Money) -> some View {
+        ForEach(Array(risks(amount).enumerated()), id: \.offset) { _, f in
+            Label(text(f), systemImage: "exclamationmark.shield.fill").vfont(13, .semibold).foregroundStyle(VUI.coral)
+                .padding(.horizontal, 14).padding(.vertical, 8).background(VUI.coral.opacity(0.14), in: Capsule())
+        }
+        if cooling > 0 { Text("Take a moment: \(cooling)s").vfont(12).foregroundStyle(VUI.textSecondary) }
+    }
+    func text(_ f: RiskFlag) -> String {
+        switch f {
+        case .firstTime: "First time paying this UPI ID"
+        case .lookalike(let of): "Looks like \(of), which you saved"
+        case .unusuallyLarge(let t): "Much more than the usual \(Money(minor: t).display)"
+        }
+    }
+    func cool(_ amount: Money) async {
+        cooling = PaymentRisk.coolingSeconds(risks(amount), amountMinor: amount.minor)
+        while cooling > 0, !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000); if !Task.isCancelled { cooling -= 1 } }
     }
 
     var closable: Bool { switch step { case .working, .done: false; default: true } }

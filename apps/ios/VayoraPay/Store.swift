@@ -44,8 +44,13 @@ final class Store: ObservableObject {
     @Published var testPIN: String { didSet { UserDefaults.standard.set(testPIN, forKey: "testPIN") } }
     @Published var autoPays: [ApprovedMandate] { didSet { if let d = try? JSONEncoder().encode(autoPays) { UserDefaults.standard.set(d, forKey: "autoPays") } } }
     @Published var payees: PayeeBook { didSet { if let d = try? JSONEncoder().encode(payees) { UserDefaults.standard.set(d, forKey: "payees") } } }
-    @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders) } } }
+    @Published var reminders: [BillReminder] { didSet { if let d = try? JSONEncoder().encode(reminders) { UserDefaults.standard.set(d, forKey: "reminders") }; Task { await ReminderScheduler.sync(reminders, scheduled: scheduled) } } }
+    @Published var scheduled: [ScheduledPayment] { didSet { if let d = try? JSONEncoder().encode(scheduled) { UserDefaults.standard.set(d, forKey: "scheduled") }; Task { await ReminderScheduler.sync(reminders, scheduled: scheduled) } } }
+    @Published var splits: [SplitRecord] { didSet { if let d = try? JSONEncoder().encode(splits.prefix(50).map { $0 }) { UserDefaults.standard.set(d, forKey: "splits") } } }
     @Published var budgets: Budgets { didSet { if let d = try? JSONEncoder().encode(budgets) { UserDefaults.standard.set(d, forKey: "budgets") } } }
+    @Published var categoryMemory: CategoryMemory { didSet { if let d = try? JSONEncoder().encode(categoryMemory) { UserDefaults.standard.set(d, forKey: "categoryMemory") } } }
+    @Published var vault: Vault { didSet { if let d = try? JSONEncoder().encode(vault) { UserDefaults.standard.set(d, forKey: "vault") } } }
+    @Published var jars: JarBook { didSet { if let d = try? JSONEncoder().encode(jars) { UserDefaults.standard.set(d, forKey: "jars") } } }
     @Published var smallPayments: Bool { didSet { UserDefaults.standard.set(smallPayments, forKey: "smallPayments") } }
     @Published var myName: String { didSet { UserDefaults.standard.set(myName, forKey: "myName") } }
     /// Where split requests ask to be paid. Made once per install; a test ID, not a bank account.
@@ -62,6 +67,11 @@ final class Store: ObservableObject {
         balanceMinor = d.object(forKey: "balance") as? Int64 ?? Store.startingBalance
         testPIN = d.string(forKey: "testPIN") ?? "1234"
         history = (d.data(forKey: "history")).flatMap { try? JSONDecoder().decode([Txn].self, from: $0) } ?? []
+        scheduled = (d.data(forKey: "scheduled")).flatMap { try? JSONDecoder().decode([ScheduledPayment].self, from: $0) } ?? []
+        splits = (d.data(forKey: "splits")).flatMap { try? JSONDecoder().decode([SplitRecord].self, from: $0) } ?? []
+        categoryMemory = (d.data(forKey: "categoryMemory")).flatMap { try? JSONDecoder().decode(CategoryMemory.self, from: $0) } ?? CategoryMemory()
+        vault = (d.data(forKey: "vault")).flatMap { try? JSONDecoder().decode(Vault.self, from: $0) } ?? Vault()
+        jars = (d.data(forKey: "jars")).flatMap { try? JSONDecoder().decode(JarBook.self, from: $0) } ?? JarBook()
         budgets = (d.data(forKey: "budgets")).flatMap { try? JSONDecoder().decode(Budgets.self, from: $0) } ?? Budgets()
         autoPays = (d.data(forKey: "autoPays")).flatMap { try? JSONDecoder().decode([ApprovedMandate].self, from: $0) } ?? []
         payees = (d.data(forKey: "payees")).flatMap { try? JSONDecoder().decode(PayeeBook.self, from: $0) } ?? PayeeBook()
@@ -89,7 +99,8 @@ final class Store: ObservableObject {
 
     var historyRows: [HistoryRow] {
         history.map { HistoryRow(date: $0.date, name: $0.name, payee: $0.payee, amountMinor: $0.amountMinor, paid: $0.status == .success,
-                                 category: SpendCategory(rawValue: $0.category ?? "") ?? .other, note: $0.note, kind: $0.kind ?? "") }
+                                 category: SpendCategory(rawValue: $0.category ?? "") ?? .other, note: $0.note, kind: $0.kind ?? "",
+                                 tags: vault.entry($0.id.uuidString).tags) }
     }
     var budgetStatuses: [BudgetStatus] { BudgetCheck.statuses(spendEntries, budgets: budgets, now: Date()) }
 
@@ -105,7 +116,7 @@ final class Store: ObservableObject {
         // an unclear outcome (checking, server away) is never recorded: nothing is known yet
         let ok: Bool
         switch outcome { case .paid: ok = true; case .declined: ok = false; case .unknown, .notAvailable: return }
-        let cat = SpendCategory.guess(name: p.name, note: p.note, transfer: transfer)
+        let cat = categoryMemory.resolve(vpa: p.payee, name: p.name, note: p.note, transfer: transfer)
         record(Txn(payee: p.payee, name: p.name, amountMinor: amount.minor, note: p.note, status: ok ? .success : .failed,
                    kind: transfer ? "transfer" : nil, category: cat.rawValue, noPIN: noPIN ? true : nil))
         if ok { payees.save(name: p.name, input: p.payee, paidAt: Date()) }
@@ -129,7 +140,26 @@ final class Store: ObservableObject {
         if t.status == .success { balanceMinor -= t.amountMinor }
     }
 
-    func resetWallet() { balanceMinor = Store.startingBalance; history = [] }
+    func resetWallet() { balanceMinor = Store.startingBalance; history = []; jars = JarBook() }
+
+    /// The person says what a payee is: this and every earlier payment to it, and later ones, use that category.
+    func setCategory(_ c: SpendCategory, forPayee vpa: String) {
+        categoryMemory.set(vpa, to: c)
+        for i in history.indices where history[i].payee.lowercased() == vpa.lowercased() { history[i].category = c.rawValue }
+    }
+
+    /// Wallet to jar and back. Failures leave both untouched.
+    func moveToJar(_ id: UUID, _ minor: Int64) -> JarBook.Failure? {
+        var w = balanceMinor, b = jars
+        do { try b.deposit(id, minor, wallet: &w) } catch { return error as? JarBook.Failure }
+        balanceMinor = w; jars = b; return nil
+    }
+    func moveFromJar(_ id: UUID, _ minor: Int64) -> JarBook.Failure? {
+        var w = balanceMinor, b = jars
+        do { try b.withdraw(id, minor, wallet: &w) } catch { return error as? JarBook.Failure }
+        balanceMinor = w; jars = b; return nil
+    }
+    func removeJar(_ id: UUID) { var w = balanceMinor, b = jars; b.remove(id, wallet: &w); balanceMinor = w; jars = b }
 
     /// Pay a scanned payload through the simulated payer. Returns the final state; a lost reply is
     /// reported as `.unknown` so the screen says "checking" instead of guessing.

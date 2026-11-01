@@ -7,10 +7,26 @@ struct HistoryView: View {
     @State private var filter = HistoryFilter()
     @State private var open: Txn?
     @State private var exportURL: URL?
+    @State private var reportURL: URL?
 
     var query: String { filter.text }
+    /// A question like "food last week" or "more than 500 this month": answered with a total above the list.
+    var asked: SpendQuery? {
+        let q = SpendQuery.parse(filter.text)
+        return q.isStructured ? q : nil
+    }
+    func matching() -> [HistoryRow] {
+        if var q = asked {
+            var base = filter; base.text = ""
+            // chips still apply on top of the question
+            if let c = base.category, q.filter.category == nil { q.filter.category = c }
+            if base.outcome != .all { q.filter.outcome = base.outcome }
+            return q.apply(store.historyRows)
+        }
+        return filter.apply(store.historyRows)
+    }
     var rows: [Txn] {
-        let keep = Set(filter.apply(store.historyRows).map { RowKey($0) })
+        let keep = Set(matching().map { RowKey($0) })
         return store.history.filter { keep.contains(RowKey($0)) }
     }
     struct RowKey: Hashable {
@@ -21,7 +37,7 @@ struct HistoryView: View {
 
     /// The CSV of what is on screen, written to a temporary file so Files, Mail or a spreadsheet app can take it.
     func export() {
-        let csv = HistoryCSV.make(filter.apply(store.historyRows))
+        let csv = HistoryCSV.make(matching())
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vayora-pay-history.csv")
         do { try csv.write(to: url, atomically: true, encoding: .utf8); exportURL = url } catch { exportURL = nil }
     }
@@ -31,6 +47,19 @@ struct HistoryView: View {
         return Dictionary(grouping: rows) { cal.startOfDay(for: $0.date) }
             .map { (day: $0.key, items: $0.value.sorted { $0.date > $1.date }) }.sorted { $0.day > $1.day }
     }
+    func answerCard(_ q: SpendQuery) -> some View {
+        let t = SpendQuery.total(matching())
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text([q.filter.category?.title, q.periodLabel].compactMap { $0 }.joined(separator: " · ").isEmpty ? "Answer" : [q.filter.category?.title, q.periodLabel].compactMap { $0 }.joined(separator: " · "))
+                    .vfont(13, .medium).foregroundStyle(VUI.textSecondary)
+                AmountText(Money(minor: t.minor), size: 34)
+                Text("\(t.count) payment\(t.count == 1 ? "" : "s"). Failed payments are not counted.").vfont(12).foregroundStyle(VUI.textTertiary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -60,6 +89,11 @@ struct HistoryView: View {
                         HStack {
                             Text("History").vfont(28, .bold).foregroundStyle(VUI.textPrimary)
                             Spacer()
+                            if let report = reportURL {
+                                ShareLink(item: report) { Label("PDF", systemImage: "doc.richtext").vfont(14, .semibold).foregroundStyle(VUI.violet) }
+                            } else if !rows.isEmpty {
+                                Button { let r = MonthReport.make(store.historyRows, month: Date()); reportURL = MonthPDF.make(r) } label: { Label("Month PDF", systemImage: "doc.richtext").vfont(14, .semibold).foregroundStyle(VUI.violet) }
+                            }
                             if let exportURL {
                                 ShareLink(item: exportURL) { Label("Share CSV", systemImage: "square.and.arrow.up").vfont(14, .semibold).foregroundStyle(VUI.violet) }
                             } else if !rows.isEmpty {
@@ -68,10 +102,11 @@ struct HistoryView: View {
                         }
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass").foregroundStyle(VUI.textTertiary)
-                            TextField("Search payments", text: $filter.text).textInputAutocapitalization(.never).autocorrectionDisabled().foregroundStyle(VUI.textPrimary)
+                            TextField("Search, or ask: food last week", text: $filter.text).textInputAutocapitalization(.never).autocorrectionDisabled().foregroundStyle(VUI.textPrimary)
                         }
                         .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         filterChips
+                        if let q = asked { answerCard(q) }
                         if rows.isEmpty {
                             GlassCard { Text(!filter.isActive ? "Payments you make appear here." : "Nothing matches these filters.").vfont(15).foregroundStyle(VUI.textSecondary) }
                         }
@@ -94,6 +129,7 @@ struct HistoryView: View {
 }
 
 struct Receipt: View {
+    @EnvironmentObject var store: Store
     let txn: Txn
     @State private var progress = 0.0
     var ok: Bool { txn.status == .success }
@@ -114,6 +150,20 @@ struct Receipt: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             row("To", who); row("UPI ID", txn.payee); row("Reference", txn.note); row("Date", txn.date.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    }
+                    VaultCard(id: txn.id.uuidString)
+                    if !txn.isAutoPay {
+                        GlassCard {
+                            HStack {
+                                Label("Category", systemImage: "tag.fill").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                                Spacer()
+                                Picker("Category", selection: Binding(get: { SpendCategory(rawValue: store.history.first { $0.id == txn.id }?.category ?? txn.category ?? "") ?? .other },
+                                                                      set: { store.setCategory($0, forPayee: txn.payee) })) {
+                                    ForEach(SpendCategory.allCases, id: \.self) { Text($0.title).tag($0) }
+                                }.tint(VUI.violet)
+                            }
+                            Text("Changing it also changes your other payments to this UPI ID, and later ones.").vfont(12).foregroundStyle(VUI.textTertiary)
                         }
                     }
                     ShareLink(item: text) {

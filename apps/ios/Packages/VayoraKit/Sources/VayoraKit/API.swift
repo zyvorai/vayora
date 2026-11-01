@@ -204,6 +204,34 @@ public struct VayoraClient: Sendable {
         return try await send(request("POST", "/sim/mandate/revoke", body: data), as: SimPayResult.self)
     }
 
+    // End of day
+
+    public func branches() async throws -> [BranchInfo] {
+        struct List: Decodable { let data: [BranchInfo] }
+        return try await send(request("GET", "/branches"), as: List.self).data
+    }
+
+    /// Needs the admin scope; a test key from setup has it.
+    public func createBranch(name: String) async throws -> BranchInfo {
+        let data = try JSONSerialization.data(withJSONObject: ["name": name.trimmingCharacters(in: .whitespaces)])
+        return try await send(request("POST", "/branches", body: data), as: BranchInfo.self)
+    }
+
+    /// `kind`: "sale" (cash taken), "refund" (cash handed back) or "float" (cash put in the till to start).
+    public func addCash(branchID: String, kind: String, amount: Money, note: String? = nil, idempotencyKey: String = UUID().uuidString) async throws {
+        var body: [String: Any] = ["branch_id": branchID, "kind": kind, "amount_minor": amount.minor]
+        if let note, !note.isEmpty { body["note"] = note }
+        struct Created: Decodable { let id: String }
+        _ = try await send(request("POST", "/cash_entries", body: try JSONSerialization.data(withJSONObject: body), idempotencyKey: idempotencyKey), as: Created.self)
+    }
+
+    /// Close a branch day. `day` is the IST date `YYYY-MM-DD`. A second person signs it off on the console.
+    public func closeDay(branchID: String, day: String, counted: Money, note: String? = nil) async throws -> ClosingInfo {
+        var body: [String: Any] = ["branch_id": branchID, "day": day, "counted_cash_minor": counted.minor]
+        if let note, !note.isEmpty { body["note"] = note }
+        return try await send(request("POST", "/closings", body: try JSONSerialization.data(withJSONObject: body)), as: ClosingInfo.self)
+    }
+
     // AutoPay: merchant side
 
     /// The customer with this name, created the first time. Matched by a reference made from the name, so the same
@@ -314,4 +342,20 @@ public struct PayerMandateView: Codable, Equatable, Sendable {
     public let maxAmountMinor: Int64
     public let debits: [PayerDebit]
     enum CodingKeys: String, CodingKey { case mandateID = "mandate_id", status, maxAmountMinor = "max_amount_minor", debits }
+}
+
+public struct BranchInfo: Codable, Equatable, Sendable, Identifiable { public let id: String; public let name: String }
+
+public struct ClosingInfo: Codable, Equatable, Sendable, Identifiable {
+    public struct Digital: Codable, Equatable, Sendable { public let method: String; public let payments: Int; public let netMinor: Int64
+        enum CodingKeys: String, CodingKey { case method, payments, netMinor = "net_minor" } }
+    public let id: String
+    public let expectedCashMinor: Int64
+    public let countedCashMinor: Int64
+    public let differenceMinor: Int64
+    public let digital: [Digital]
+    public let status: String
+    enum CodingKeys: String, CodingKey { case id, digital, status, expectedCashMinor = "expected_cash_minor", countedCashMinor = "counted_cash_minor", differenceMinor = "difference_minor" }
+    /// "Short", "Over" or "Matches", in words, so the sign is not the only signal.
+    public var verdict: String { differenceMinor == 0 ? "Matches" : (differenceMinor < 0 ? "Short" : "Over") }
 }
