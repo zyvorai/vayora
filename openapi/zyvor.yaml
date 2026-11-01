@@ -1562,6 +1562,22 @@ paths:
           description: OK
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/changes/{id}/assign:
+    post:
+      summary: Zyvor reviewers only - give a pending change to one reviewer (to - me, or a reviewer id), or hand it back (to absent). While it is held only the holder can decide it; take_over true changes that on purpose
+      tags:
+      - platform
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/platform/changes/{id}/escalate:
     post:
       summary: Zyvor reviewers only - ask for a second, different reviewer on a pending change (a note says why and is shown to them)

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
-import { ChangeForm, EscalateChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
+import { AssignForm, ChangeForm, EscalateChangeForm, ReviewerSignIn } from "@/components/ReviewerForms";
 import { dueLabel } from "@/lib/due";
 import { platform, requireReviewerSurface, reviewerKey, type ChangeRow, type ReviewRow } from "@/lib/reviewer";
 
@@ -37,7 +37,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
   const r = await platform<{ data: ReviewRow[] }>(key, "GET", `/reviews?status=${status}${assigned ? `&assigned=${assigned}` : ""}`);
   if (!r.ok && r.status === 401) redirect("/reviewer?expired=1");
   const rows = r.ok ? r.body.data : [];
-  const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", "/changes?status=pending") : null;
+  const ch = status === "pending" ? await platform<{ data: ChangeRow[] }>(key, "GET", `/changes?status=pending${assigned ? `&assigned=${assigned}` : ""}`) : null;
   const changes = ch?.ok ? ch.body.data : [];
   return (
     <>
@@ -53,6 +53,7 @@ export default async function Queue({ searchParams }: { searchParams: Promise<{ 
               <div key={c.id} style={{ display: "grid", gap: 6, gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", alignItems: "start" }}>
                 <div><a href={`/reviewer/review/${encodeURIComponent(c.organisation_id)}`}>{c.organisation}</a>{c.kind === "profile" ? ": change to legal details" : ": new bank account"}<div className="fine">{c.summary}</div><div className="fine">added by {c.requested_by.replace(/^user:/, "")} on {new Date(c.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>{c.stage === "awaiting_second" ? <div className="fine">{c.first_approved_by} approved; needs a different reviewer</div> : c.needs_second_because.length > 0 && <div className="fine">needs two reviewers: {c.needs_second_because.join("; ")}{c.escalation_note ? ` (escalation note: ${c.escalation_note})` : ""}</div>}<div className="fine" style={dueLabel(c.due_at).late ? { color: "var(--bad)", fontWeight: 600 } : undefined}>{dueLabel(c.due_at).text}</div></div>
                 <div style={{ display: "grid", gap: 8 }}>
+                  <AssignForm change={c.id} holder={c.assigned_to_name} mine={c.assigned_to_me} />
                   <ChangeForm id={c.id} kind={c.kind} firstApprovalOnly={c.stage !== "awaiting_second" && c.needs_second_because.length > 0} />
                   {c.needs_second_because.length === 0 && c.stage !== "awaiting_second" && <details><summary className="fine">Not sure? Ask for a second reviewer</summary><div style={{ marginTop: 8 }}><EscalateChangeForm id={c.id} /></div></details>}
                 </div>

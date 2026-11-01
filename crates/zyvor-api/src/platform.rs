@@ -159,6 +159,12 @@ pub async fn disable_reviewer(pool: &PgPool, id: &str) -> Result<bool, sqlx::Err
         .bind(id)
         .execute(pool)
         .await?;
+        sqlx::query(
+            "UPDATE live_changes SET assigned_to = NULL, assigned_at = NULL WHERE assigned_to = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
     }
     Ok(done)
 }
@@ -674,16 +680,28 @@ pub struct ChangeDecision {
 /// `GET /v1/platform/changes?status=pending`: changes a business made after Zyvor approved it, waiting for a reviewer.
 pub async fn list_changes(
     State(s): State<AppState>,
-    _p: PlatformAuth,
+    p: PlatformAuth,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    let (want_none, want) = match q.assigned.as_deref() {
+        None | Some("") => (false, None),
+        Some("none") => (true, None),
+        Some("me") => (false, Some(p.id.clone())),
+        Some(id) => (false, Some(id.to_string())),
+    };
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>, bool, Option<String>)> = sqlx::query_as(
-        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name, c.escalated_by IS NOT NULL, c.escalated_note
+    let rows: Vec<(String, String, String, String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>, Vec<String>, Option<String>, bool, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT c.id, c.organisation_id, o.name, c.kind, c.summary, c.status, c.requested_by, c.requested_at, c.note, c.flagged_because, f.name, c.escalated_by IS NOT NULL, c.escalated_note, c.assigned_to, a.name
          FROM live_changes c JOIN organisations o ON o.id = c.organisation_id LEFT JOIN platform_reviewers f ON f.id = c.first_approved_by
-         WHERE ($1::text IS NULL OR c.status = $1) ORDER BY c.requested_at LIMIT 100",
+         LEFT JOIN platform_reviewers a ON a.id = c.assigned_to
+         WHERE ($1::text IS NULL OR c.status = $1)
+           AND (NOT $2 OR c.assigned_to IS NULL)
+           AND ($3::text IS NULL OR c.assigned_to = $3)
+         ORDER BY c.requested_at LIMIT 100",
     )
     .bind(&q.status)
+    .bind(want_none)
+    .bind(&want)
     .fetch_all(&s.pool)
     .await?;
     Ok(Json(json!({ "data": rows.into_iter().map(|r| {
@@ -696,8 +714,98 @@ pub async fn list_changes(
             "first_approved_by": r.10,
             "needs_second_because": change_second_reviewer_reasons(s.review_two_person, &r.9, r.11),
             "escalation_note": r.12,
+            "assigned_to": r.13, "assigned_to_name": r.14, "assigned_to_me": r.13.as_deref() == Some(p.id.as_str()),
         })
     }).collect::<Vec<_>>() })))
+}
+
+/// `POST /v1/platform/changes/{id}/assign`: the same as for a review: give a pending change to one reviewer (`to: "me"`
+/// claims it), or hand it back. While held, only the holder decides it; taking one is explicit and audited.
+pub async fn assign_change(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path(id): Path<String>,
+    Json(b): Json<Assignment>,
+) -> Result<Json<Value>, ApiError> {
+    let target: Option<String> = match b.to.as_deref().map(str::trim) {
+        None | Some("") | Some("none") => None,
+        Some("me") => Some(p.id.clone()),
+        Some(t) => Some(t.to_string()),
+    };
+    let tid: Option<String> =
+        sqlx::query_scalar("SELECT tenant_id FROM live_changes WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(&s.pool)
+            .await?;
+    let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let cur: Option<(String, Option<String>, Option<String>, String)> = sqlx::query_as(
+        "SELECT status, assigned_to, first_approved_by, ref_id FROM live_changes WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, holder, first_by, ref_id) = cur.ok_or_else(|| ApiError::not_found("change"))?;
+    if status != "pending" {
+        return Err(ApiError::conflict(
+            "not_pending",
+            format!("this change is already {status}"),
+        ));
+    }
+    let took_over = holder.as_deref().is_some_and(|h| h != p.id);
+    if took_over && !b.take_over {
+        let who: Option<String> =
+            sqlx::query_scalar("SELECT name FROM platform_reviewers WHERE id = $1")
+                .bind(holder.as_deref())
+                .fetch_optional(&mut *tx)
+                .await?;
+        return Err(ApiError::conflict(
+            "assigned_to_other",
+            format!(
+                "{} has this change; say take_over to change that",
+                who.unwrap_or_default()
+            ),
+        ));
+    }
+    let mut to_name: Option<String> = None;
+    if let Some(t) = &target {
+        to_name = sqlx::query_scalar(
+            "SELECT name FROM platform_reviewers WHERE id = $1 AND disabled_at IS NULL",
+        )
+        .bind(t)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if to_name.is_none() {
+            return Err(ApiError::invalid(
+                "unknown_reviewer",
+                "that reviewer does not exist or is disabled",
+            ));
+        }
+        if first_by.as_deref() == Some(t.as_str()) {
+            return Err(ApiError::conflict(
+                "first_reviewer_cannot_second",
+                "that reviewer gave the first approval; the second has to be someone else",
+            ));
+        }
+    }
+    sqlx::query("UPDATE live_changes SET assigned_to = $2, assigned_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END WHERE id = $1")
+        .bind(&id)
+        .bind(&target)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &tid,
+        &format!("zyvor:{}", p.name),
+        "live_change.assigned",
+        Some(&ref_id),
+        json!({ "to": target, "to_name": to_name, "from": holder, "took_over": took_over }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "assigned_to": target, "assigned_to_name": to_name }),
+    ))
 }
 
 /// `POST /v1/platform/changes/{id}/escalate`: ask for a second, different reviewer on a pending change that no rule
@@ -790,18 +898,32 @@ pub async fn decide_change(
     let tid = tid.ok_or_else(|| ApiError::not_found("change"))?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
     #[allow(clippy::type_complexity)]
-    let cur: Option<(String, String, String, String, String, Vec<String>, Option<String>, bool)> = sqlx::query_as(
-        "SELECT status, kind, ref_id, requested_by, summary, flagged_because, first_approved_by, escalated_by IS NOT NULL FROM live_changes WHERE id = $1 FOR UPDATE",
+    let cur: Option<(String, String, String, String, String, Vec<String>, Option<String>, bool, Option<String>)> = sqlx::query_as(
+        "SELECT status, kind, ref_id, requested_by, summary, flagged_because, first_approved_by, escalated_by IS NOT NULL, assigned_to FROM live_changes WHERE id = $1 FOR UPDATE",
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, kind, ref_id, requested_by, summary, flagged, first_by, escalated) =
+    let (status, kind, ref_id, requested_by, summary, flagged, first_by, escalated, holder) =
         cur.ok_or_else(|| ApiError::not_found("change"))?;
     if status != "pending" {
         return Err(ApiError::conflict(
             "not_pending",
             format!("this change is already {status}"),
+        ));
+    }
+    if let Some(h) = holder.as_deref().filter(|h| *h != p.id) {
+        let who: Option<String> =
+            sqlx::query_scalar("SELECT name FROM platform_reviewers WHERE id = $1")
+                .bind(h)
+                .fetch_optional(&mut *tx)
+                .await?;
+        return Err(ApiError::conflict(
+            "assigned_to_other",
+            format!(
+                "{} has this change; ask them, or take it over first",
+                who.unwrap_or_else(|| h.to_string())
+            ),
         ));
     }
     // An approval that warrants it needs two different reviewers: the first is recorded and the change (and the hold
@@ -811,7 +933,7 @@ pub async fn decide_change(
         if !why.is_empty() {
             match first_by.as_deref() {
                 None => {
-                    sqlx::query("UPDATE live_changes SET first_approved_by = $2, first_approved_at = now(), first_note = $3 WHERE id = $1")
+                    sqlx::query("UPDATE live_changes SET first_approved_by = $2, first_approved_at = now(), first_note = $3, assigned_to = NULL, assigned_at = NULL WHERE id = $1")
                         .bind(&id)
                         .bind(&p.id)
                         .bind(note)
@@ -845,7 +967,7 @@ pub async fn decide_change(
         }
     }
     let new = if approve { "approved" } else { "rejected" };
-    sqlx::query("UPDATE live_changes SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4 WHERE id = $1")
+    sqlx::query("UPDATE live_changes SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4, assigned_to = NULL, assigned_at = NULL WHERE id = $1")
         .bind(&id)
         .bind(new)
         .bind(&p.id)

@@ -76,10 +76,13 @@ the first of two approvals is given (so a different reviewer can give the second
 it), and when it is decided or the business asks again. Escalating a review is not blocked by who holds it.
 
 Assignment is a courtesy that stops duplicated work, not an access control: any reviewer can take over. It covers
-live-access requests, not bank-account changes.
+live-access requests and for changes alike (`change-claim|change-release|change-take-over <id>`, `change-assign <id>
+<reviewer id>`, "Take this change" in the queue; `changes pending me|none` filters). Holding a change only stops others
+deciding it: its live payout hold is unaffected. It returns to the queue on the same events (holder disabled, first of
+two approvals, decided).
 
-**Not built:** a reviewer's working hours or on-call rota, assigning bank-account changes, automatic assignment, and a
-and assigning changes (a revoke is one person on purpose; giving access back needs two).
+**Not built:** a reviewer's working hours or on-call rota, and automatic assignment. (A revoke is one person on purpose;
+giving access back needs two.)
 
 ## Taking live mode away (revoke) and giving it back
 
@@ -186,6 +189,6 @@ When unsure, reject with a note that says exactly what would change your mind.
 
 ## Not built yet
 
-- Working hours and an on-call rota, and assigning bank-account changes (assignment of live-access requests, the clock and the second reviewer exist; see above).
+- Working hours and an on-call rota, and automatic assignment (assigning requests and changes, the clock and the second reviewer exist; see above).
 - Re-checking identity later (GSTIN status, name change). A business can ask to change its legal details (see above),
   but nothing re-verifies it on a schedule, and a legal-details change takes one reviewer.

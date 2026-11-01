@@ -13,8 +13,9 @@
 #   ... release <organisation_id>              hand it back to the queue
 #   ... take-over <organisation_id>            take it from the reviewer holding it
 #   ... assign <organisation_id> <reviewer id> give it to another reviewer
+#   ... change-claim|change-release|change-take-over <id>, change-assign <id> <reviewer id>   the same for a change
 #   ... escalate <organisation_id> "why"      ask for a second, different reviewer (note required)
-#   ... changes [pending|approved|rejected]   what live businesses changed after approval (a new bank account, or new legal details)
+#   ... changes [status] [me|none|<reviewer id>]   what live businesses changed after approval (a new bank account, or new legal details)
 #   ... change-approve <id> ["note"]           accepts the change; live payouts are no longer held for it
 #   ... change-escalate <id> "why"             ask for a second, different reviewer on a pending change (note required)
 #   ... change-reject <id> "why"               removes the account; the merchant is shown why (note required)
@@ -64,25 +65,27 @@ if d.get("note"): print("last note  :", d["note"])' ;;
     if [ -z "${3:-}" ]; then echo "say why:  $0 revoke <organisation_id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: revoke <organisation_id> \"why\"}/revoke" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "revoked: no new payments or payouts for " + d["organisation_id"])' ;;
   restore) call POST "/v1/platform/reviews/${2:?usage: restore <organisation_id> [note]}/restore" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "restored: live mode is open again for " + d["organisation_id"])' ;;
-  claim|release|take-over|assign)
-    org="${2:?usage: $1 <organisation_id>}"
-    case "$1" in
-      claim) body='"'"'{"to":"me"}'"'"' ;;
-      release) body='"'"'{}'"'"' ;;
-      take-over) body='"'"'{"to":"me","take_over":true}'"'"' ;;
-      assign) body="$(python3 -c '"'"'import sys,json; print(json.dumps({"to":sys.argv[1],"take_over":True}))'"'"' "${3:?usage: assign <organisation_id> <reviewer id>}")" ;;
+  claim|release|take-over|assign|change-claim|change-release|change-take-over|change-assign)
+    verb="${1#change-}"
+    what=reviews; [ "$verb" != "$1" ] && what=changes
+    id="${2:?usage: $1 <id>}"
+    case "$verb" in
+      claim) body='{"to":"me"}' ;;
+      release) body='{}' ;;
+      take-over) body='{"to":"me","take_over":true}' ;;
+      assign) body="$(python3 -c 'import sys,json; print(json.dumps({"to":sys.argv[1],"take_over":True}))' "${3:?usage: $1 <id> <reviewer id>}")" ;;
     esac
-    call POST "/v1/platform/reviews/$org/assign" "$body" | python3 -c '"'"'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else (d["organisation_id"] + " is held by " + d["assigned_to_name"] if d.get("assigned_to_name") else d["organisation_id"] + " is back in the queue"))'"'"' ;;
+    call POST "/v1/platform/$what/$id/assign" "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else (d.get("organisation_id") or d["id"]) + (" is held by " + d["assigned_to_name"] if d.get("assigned_to_name") else " is back in the queue"))' ;;
   escalate)
     if [ -z "${3:-}" ]; then echo "say why:  $0 escalate <organisation_id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/reviews/${2:?usage: escalate <organisation_id> \"why\"}/escalate" "$(python3 -c 'import sys,json; print(json.dumps({"note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "escalated: a second reviewer must approve " + d["organisation_id"])' ;;
   changes)
-    call GET "/v1/platform/changes${2:+?status=$2}" | python3 -c '
+    call GET "/v1/platform/changes?${2:+status=$2&}${3:+assigned=$3}" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
 if "error" in d: print("error:", d["error"]["message"]); sys.exit(1)
 for c in d["data"]:
-    print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]) + (" [awaiting 2nd after " + c["first_approved_by"] + "]" if c.get("stage") == "awaiting_second" else (" [needs 2 reviewers]" if c.get("needs_second_because") and c["status"] == "pending" else "")))
+    print("%-8s %-30s %-28s %s  (%s, %s)" % (c["status"], c["id"], c["organisation"][:28], c["summary"], c["requested_by"], c["requested_at"][:16]) + (" [awaiting 2nd after " + c["first_approved_by"] + "]" if c.get("stage") == "awaiting_second" else (" [needs 2 reviewers]" if c.get("needs_second_because") and c["status"] == "pending" else "")) + (" {held by " + c["assigned_to_name"] + "}" if c.get("assigned_to_name") else ""))
 if not d["data"]: print("nothing here")' ;;
   change-approve) call POST "/v1/platform/changes/${2:?usage: change-approve <id> [note]}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"approve","note":sys.argv[1] or None}))' "${3:-}")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "approved: payouts are no longer held for " + d["id"])' ;;
   change-escalate)
@@ -91,5 +94,5 @@ if not d["data"]: print("nothing here")' ;;
   change-reject)
     if [ -z "${3:-}" ]; then echo "say why:  $0 change-reject <id> \"why\"" >&2; exit 2; fi
     call POST "/v1/platform/changes/${2:?usage: change-reject <id> \"why\"}/decision" "$(python3 -c 'import sys,json; print(json.dumps({"decision":"reject","note":sys.argv[1]}))' "$3")" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["error"]["message"] if "error" in d else "rejected: the account was removed and the merchant will see why")' ;;
-  *) sed -n '2,22p' "$0"; exit 1 ;;
+  *) sed -n '2,23p' "$0"; exit 1 ;;
 esac
