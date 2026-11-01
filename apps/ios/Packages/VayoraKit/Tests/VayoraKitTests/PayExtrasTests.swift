@@ -803,3 +803,26 @@ extension VayoraClient {
     /// Tests use a per-test bank, so the protocol looks the bank up by this registry instead of the shared one.
     static func demoForTests(bank: DemoBank) -> VayoraClient { .demo(bank: bank) }
 }
+
+final class PaymentCardTests: XCTestCase {
+    let d = Date(timeIntervalSince1970: 1_700_000_000)
+    func make(name: String = "Asha", note: String = "Lunch", paid: Bool = true) -> PaymentCardModel {
+        PaymentCardModel(amount: Money(minor: 25000), payeeName: name, payeeVPA: "asha@okbank", note: note, date: d, paid: paid, timeZone: TimeZone(identifier: "Asia/Kolkata")!)
+    }
+    func testPaidCard() {
+        let c = make()
+        XCTAssertEqual(c.to, "Asha"); XCTAssertEqual(c.headline, "Paid"); XCTAssertEqual(c.note, "Lunch"); XCTAssertTrue(c.paid)
+        XCTAssertFalse(c.when.isEmpty)
+    }
+    func testFailedCard() { XCTAssertEqual(make(paid: false).headline, "Didn't go through") }
+    func testUPIIDIsNeverOnTheCard() {
+        let c = make(name: "")
+        XCTAssertEqual(c.to, "as•••@okbank")
+        XCTAssertFalse(c.to.contains("asha@"))
+    }
+    func testEmptyNoteIsOmittedAndLongNoteCut() {
+        XCTAssertNil(make(note: "  ").note)
+        XCTAssertEqual(make(note: String(repeating: "x", count: 200)).note?.count, 60)
+    }
+    func testMaskWithoutAtSign() { XCTAssertEqual(PaymentCardModel.masked("nonsense"), "a payee") }
+}
