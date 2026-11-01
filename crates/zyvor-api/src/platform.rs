@@ -455,6 +455,14 @@ pub async fn show_review(
     });
     d["first_approved_by"] = json!(first);
     d["escalation_note"] = json!(esc_note);
+    d["restore_needs_other"] =
+        json!(status == "revoked" && restore_needs_other(s.review_two_person));
+    d["reviewed_by_name"] = json!(
+        sqlx::query_scalar::<_, String>("SELECT name FROM platform_reviewers WHERE id = $1")
+            .bind(&reviewer)
+            .fetch_optional(&s.pool)
+            .await?
+    );
     d["assigned_to_me"] = json!(assignee.as_deref() == Some(p.id.as_str()));
     d["assigned_to"] = json!(assignee);
     d["assigned_to_name"] = json!(assignee_name);
@@ -1072,6 +1080,12 @@ pub async fn restore(
     change_live_access(&s, &p, &org, "revoked", "approved", note).await
 }
 
+/// Whether giving live mode back must be done by someone other than the reviewer who took it away. Only `never`
+/// lets one reviewer undo their own revoke.
+pub fn restore_needs_other(policy: TwoPerson) -> bool {
+    !matches!(policy, TwoPerson::Never)
+}
+
 /// Move a review between two states, with the record, the event and the email that go with it.
 async fn change_live_access(
     s: &AppState,
@@ -1083,17 +1097,28 @@ async fn change_live_access(
 ) -> Result<Json<Value>, ApiError> {
     let tid = test_tenant_of(s, org).await?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
-    let cur: Option<(String, String)> = sqlx::query_as(
-        "SELECT status, requested_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
+    let cur: Option<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT status, requested_by, reviewed_by FROM live_access WHERE organisation_id = $1 FOR UPDATE",
     )
     .bind(org)
     .fetch_optional(&mut *tx)
     .await?;
-    let (status, requested_by) = cur.ok_or_else(|| ApiError::not_found("review"))?;
+    let (status, requested_by, last_by) = cur.ok_or_else(|| ApiError::not_found("review"))?;
     if status != from {
         return Err(ApiError::conflict(
             "wrong_state",
             format!("this review is {status}, not {from}"),
+        ));
+    }
+    // Taking live mode away is a protective act, so one reviewer does it at once. Giving it back reopens the risk,
+    // so a different reviewer than the one who took it away has to agree.
+    if to == "approved"
+        && restore_needs_other(s.review_two_person)
+        && last_by.as_deref() == Some(p.id.as_str())
+    {
+        return Err(ApiError::conflict(
+            "second_reviewer_required",
+            "you took live mode away from this business; a different reviewer has to give it back",
         ));
     }
     sqlx::query("UPDATE live_access SET status = $2, reviewed_by = $3, reviewed_at = now(), note = $4, assigned_to = NULL, assigned_at = NULL WHERE organisation_id = $1")
@@ -1109,7 +1134,15 @@ async fn change_live_access(
     } else {
         "live_access.restored"
     };
-    tenant::audit(&mut tx, &tid, &actor, event, None, json!({ "note": note })).await?;
+    tenant::audit(
+        &mut tx,
+        &tid,
+        &actor,
+        event,
+        None,
+        json!({ "note": note, "revoked_by": if to == "approved" { last_by.clone() } else { None } }),
+    )
+    .await?;
     tenant::emit(
         &mut tx,
         &tid,

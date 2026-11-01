@@ -1490,7 +1490,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/restore:
     post:
-      summary: Zyvor reviewers only: give live mode back to a business whose access was revoked
+      summary: Zyvor reviewers only: give live mode back to a business whose access was revoked (a different reviewer than the one who revoked it, unless ZYVOR_REVIEW_TWO_PERSON=never)
       tags:
       - platform
       parameters:

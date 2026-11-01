@@ -46,7 +46,7 @@ export type ReviewDetail = {
   documents: { kind: string; reference: string; status: string }[];
   bank_accounts: { holder_name: string; ifsc: string; account_last4: string; verified: boolean }[];
   checks: { kind: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[];
-  stage: "new" | "awaiting_second"; first_approved_by: string | null; needs_second_because: string[]; escalation_note: string | null; assigned_to: string | null; assigned_to_name: string | null; assigned_to_me: boolean; assigned_at: string | null; due_at: string; overdue: boolean; sla_hours: number;
+  stage: "new" | "awaiting_second"; first_approved_by: string | null; needs_second_because: string[]; escalation_note: string | null; assigned_to: string | null; assigned_to_name: string | null; assigned_to_me: boolean; assigned_at: string | null; restore_needs_other: boolean; reviewed_by_name: string | null; due_at: string; overdue: boolean; sla_hours: number;
 };
 
 /** How a check outcome is shown: only a pass is green. */
