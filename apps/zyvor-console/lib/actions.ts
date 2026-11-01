@@ -315,6 +315,19 @@ export const runBilling = async (_: FormState): Promise<FormState> => {
   });
   return r?.error ? r : { ok: `${made} invoice(s) created.` };
 };
+/** Test mode only: run billing or reminders as if it were another day, to see what that day would bring. */
+export async function runAsOf(_: FormState, f: FormData): Promise<FormState> {
+  const day = String(f.get("day") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day))) return { error: "Choose a day." };
+  const what = String(f.get("what")) === "reminders" ? "reminders" : "billing";
+  let msg = "";
+  const r = await run(["/billing", "/collections"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Choosing the day is only available in test mode.");
+    if (what === "billing") msg = `${(await z.billing.run({ asOf: day })).invoices_created} invoice(s) created as of ${day}.`;
+    else msg = `${(await z.collections.runDunning({ asOf: day })).reminded} reminder(s) sent as of ${day}.`;
+  });
+  return r?.error ? r : { ok: msg };
+}
 export const remind = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.remind(id(f), { channel: String(f.get("channel") ?? "whatsapp") as "whatsapp" }));
 export const completeMilestone = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.milestones.complete(id(f)));
 export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], (z) => z.disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));

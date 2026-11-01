@@ -2,6 +2,7 @@ import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { NewCustomer, NewInstalments, NewInvoice } from "@/components/BillingForms";
 import { Tabs } from "@/components/Tabs";
+import { TestClock } from "@/components/TestClock";
 import { completeMilestone, runBilling, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
@@ -13,6 +14,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const q = await searchParams;
   const tab = TABS.find((t) => t === q.tab) ?? "invoices";
   const z = await api();
+  const testMode = (await z.settings.get()).env === "test";
   const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
@@ -26,6 +28,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
         <a className="btn small" href="/export/invoices">Export invoices CSV</a>
         <Act action={runBilling} label="Run billing now" primary />
       </div>
+      {testMode && <TestClock />}
       <div className="facts">
         <div className="card"><div className="k">Outstanding</div><div className="v">{inr(sum(unpaid))}</div><div className="n muted">{unpaid.length} open invoice{unpaid.length === 1 ? "" : "s"}</div></div>
         <div className="card"><div className="k">Overdue</div><div className="v" style={overdue.length ? { color: "var(--bad)" } : undefined}>{inr(sum(overdue))}</div><div className="n muted">{overdue.length ? `${overdue.length} past their due date` : "Nothing is overdue"}</div></div>
