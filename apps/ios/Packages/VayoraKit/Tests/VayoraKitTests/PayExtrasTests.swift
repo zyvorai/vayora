@@ -335,3 +335,58 @@ final class RegularsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(RegularsBook.self, from: JSONEncoder().encode(b)), b)
     }
 }
+
+final class CategoryMemoryTests: XCTestCase {
+    func testRememberedBeatsGuessAndOthersStillGuess() {
+        var m = CategoryMemory()
+        XCTAssertEqual(m.resolve(vpa: "cafe@x", name: "Cafe Blue", note: "", transfer: false), .food)   // the guess
+        m.set("CAFE@x", to: .shopping)
+        XCTAssertEqual(m.resolve(vpa: "cafe@x", name: "Cafe Blue", note: "", transfer: false), .shopping)
+        XCTAssertEqual(m.resolve(vpa: "other@x", name: "Metro", note: "", transfer: false), .travel)
+        m.forget("cafe@x"); XCTAssertEqual(m.resolve(vpa: "cafe@x", name: "Cafe Blue", note: "", transfer: false), .food)
+    }
+    func testAnOverrideAlsoWinsForTransfersAndRoundTrips() throws {
+        var m = CategoryMemory(); m.set("friend@x", to: .bills)
+        XCTAssertEqual(m.resolve(vpa: "friend@x", name: "Friend", note: "", transfer: true), .bills)
+        XCTAssertEqual(try JSONDecoder().decode(CategoryMemory.self, from: JSONEncoder().encode(m)), m)
+    }
+    func testUnknownStoredValueIsIgnored() throws {
+        let m = try JSONDecoder().decode(CategoryMemory.self, from: Data(#"{"byPayee":{"a@x":"nonsense"}}"#.utf8))
+        XCTAssertNil(m.category(for: "a@x"))
+    }
+}
+
+final class JarTests: XCTestCase {
+    func testMoneyIsConservedThroughDepositWithdrawRemove() throws {
+        var b = JarBook(); var wallet: Int64 = 10_000_00
+        let j = try b.add(name: " Trip ", targetMinor: 5_000_00)
+        XCTAssertEqual(j.name, "Trip")
+        try b.deposit(j.id, 3_000_00, wallet: &wallet)
+        XCTAssertEqual(wallet, 7_000_00); XCTAssertEqual(b.totalSavedMinor, 3_000_00); XCTAssertEqual(wallet + b.totalSavedMinor, 10_000_00)
+        try b.withdraw(j.id, 1_000_00, wallet: &wallet); XCTAssertEqual(wallet + b.totalSavedMinor, 10_000_00)
+        b.remove(j.id, wallet: &wallet); XCTAssertEqual(wallet, 10_000_00); XCTAssertTrue(b.jars.isEmpty)
+    }
+    func testBoundsNeverGoBelowZero() throws {
+        var b = JarBook(); var wallet: Int64 = 100_00
+        let j = try b.add(name: "A", targetMinor: 50_00)
+        XCTAssertThrowsError(try b.deposit(j.id, 100_01, wallet: &wallet)) { XCTAssertEqual($0 as? JarBook.Failure, .walletTooLow) }
+        XCTAssertThrowsError(try b.withdraw(j.id, 1, wallet: &wallet)) { XCTAssertEqual($0 as? JarBook.Failure, .jarTooLow) }
+        XCTAssertThrowsError(try b.deposit(j.id, 0, wallet: &wallet)) { XCTAssertEqual($0 as? JarBook.Failure, .badAmount) }
+        XCTAssertThrowsError(try b.deposit(UUID(), 1, wallet: &wallet)) { XCTAssertEqual($0 as? JarBook.Failure, .unknownJar) }
+        XCTAssertEqual(wallet, 100_00); XCTAssertEqual(b.totalSavedMinor, 0)
+    }
+    func testValidationAndLimit() throws {
+        var b = JarBook()
+        XCTAssertThrowsError(try b.add(name: "  ", targetMinor: 1)) { XCTAssertEqual($0 as? JarBook.Failure, .badName) }
+        XCTAssertThrowsError(try b.add(name: "A", targetMinor: 0)) { XCTAssertEqual($0 as? JarBook.Failure, .badTarget) }
+        XCTAssertThrowsError(try b.add(name: String(repeating: "x", count: 31), targetMinor: 1)) { XCTAssertEqual($0 as? JarBook.Failure, .badName) }
+        for i in 0..<JarBook.maxJars { try b.add(name: "J\(i)", targetMinor: 1) }
+        XCTAssertThrowsError(try b.add(name: "More", targetMinor: 1)) { XCTAssertEqual($0 as? JarBook.Failure, .tooMany) }
+    }
+    func testProgress() throws {
+        var b = JarBook(); var w: Int64 = 1000_00
+        let j = try b.add(name: "A", targetMinor: 200_00)
+        try b.deposit(j.id, 100_00, wallet: &w); XCTAssertEqual(b.jars[0].fraction, 0.5, accuracy: 0.001); XCTAssertFalse(b.jars[0].reached)
+        try b.deposit(j.id, 150_00, wallet: &w); XCTAssertEqual(b.jars[0].fraction, 1); XCTAssertTrue(b.jars[0].reached)
+    }
+}
