@@ -42,6 +42,9 @@ Vayora's simulator only knows merchant payments, so these are kept on the phone 
 - **Split a bill** shows a request QR (`vayora://request?pa=…&pn=…&am=…&tn=…`). Another phone's Pay scans it and pays; the amount is required and read with the same rules as a `upi://pay` link.
 - **Small payments** (off by default, in Settings): up to ₹200 a payment and ₹1,000 a day need only the slide, not the PIN.
 - **Bills** are monthly local notifications. They remind; they never pay.
+- **Safety checks** on the review screen: first time paying a UPI ID, a UPI ID one character away from one you saved, and an amount more than 5x the usual for that payee. A first payment of ₹5,000 or more to someone new waits 10 seconds. These warn; they never block, and the payer decides.
+- **Pay again** on Home: up to three payees you pay most, weighted toward this weekday and hour; one tap opens the usual review, slide and PIN.
+- **Ask your money** in History: type "food last week", "more than 500 this month", "failed payments" or a name. It is plain-word matching on the phone (no model, no network); it shows a total of paid payments above the list.
 - **Budgets** (Settings): a monthly limit per category. The review screen warns near or over a limit; it never blocks a payment. Spend is the same paid history the month summary uses (a failed payment never counts).
 - **History** has category and Failed chips, search, and **Export** as a CSV file (cells that start with `=`, `+`, `-` or `@` are quoted as text so a spreadsheet never runs them).
 - **Receive** (Settings): a QR with your test UPI ID and no amount (`vayora://request?pa=…&pn=…&open=1`). Another Pay scans it and types the amount; a request without `open=1` and without an amount is still refused.

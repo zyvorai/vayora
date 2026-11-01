@@ -126,3 +126,91 @@ final class MerchantToolsTests: XCTestCase {
         XCTAssertFalse(ReceiptText.make(merchant: "", amount: Money(minor: 1), status: "failed", id: "x", when: nil).contains("Refunded"))
     }
 }
+
+final class PaymentRiskTests: XCTestCase {
+    func row(_ vpa: String, _ minor: Int64, paid: Bool = true, at t: TimeInterval = 1_700_000_000, kind: String = "") -> HistoryRow {
+        HistoryRow(date: Date(timeIntervalSince1970: t), name: vpa, payee: vpa, amountMinor: minor, paid: paid, category: .other, note: "", kind: kind)
+    }
+    func testFirstTimeOnlyWhenNeverPaidAndNotSaved() {
+        XCTAssertEqual(PaymentRisk.check(payee: "new@bank", amountMinor: 100, history: [], saved: []), [.firstTime])
+        XCTAssertEqual(PaymentRisk.check(payee: "new@bank", amountMinor: 100, history: [], saved: [Payee(vpa: "new@bank", name: "N")]), [])
+        XCTAssertEqual(PaymentRisk.check(payee: "new@bank", amountMinor: 100, history: [row("new@bank", 5)], saved: []), [])
+        XCTAssertEqual(PaymentRisk.check(payee: "new@bank", amountMinor: 100, history: [row("new@bank", 5, paid: false)], saved: []), [.firstTime])
+    }
+    func testLookalikeIsOneEditFromASavedPayee() {
+        let saved = [Payee(vpa: "asha@okzyvor", name: "Asha")]
+        XCTAssertEqual(PaymentRisk.check(payee: "ashaa@okzyvor", amountMinor: 1, history: [], saved: saved), [.firstTime, .lookalike(of: "asha@okzyvor")])
+        XCTAssertFalse(PaymentRisk.check(payee: "ravi@okzyvor", amountMinor: 1, history: [], saved: saved).contains(.lookalike(of: "asha@okzyvor")))
+        XCTAssertEqual(PaymentRisk.check(payee: "asha@okzyvor", amountMinor: 1, history: [], saved: saved), [])   // the saved payee itself
+    }
+    func testUnusuallyLargeNeedsHistoryAndFiveTimesTheMedian() {
+        let h = [row("a@b.c", 100_00), row("a@b.c", 120_00), row("a@b.c", 110_00)]
+        let saved = [Payee(vpa: "a@b.c", name: "A")]
+        XCTAssertEqual(PaymentRisk.check(payee: "a@b.c", amountMinor: 551_00, history: h, saved: saved), [.unusuallyLarge(typicalMinor: 110_00)])
+        XCTAssertEqual(PaymentRisk.check(payee: "a@b.c", amountMinor: 550_00, history: h, saved: saved), [])
+        XCTAssertEqual(PaymentRisk.check(payee: "a@b.c", amountMinor: 9_999_00, history: Array(h.prefix(2)), saved: saved), [])
+    }
+    func testCoolingOnlyForBigPaymentToSomeoneNew() {
+        XCTAssertEqual(PaymentRisk.coolingSeconds([.firstTime], amountMinor: 5_000_00), 10)
+        XCTAssertEqual(PaymentRisk.coolingSeconds([.firstTime], amountMinor: 4_999_99), 0)
+        XCTAssertEqual(PaymentRisk.coolingSeconds([], amountMinor: 90_000_00), 0)
+    }
+    func testEditDistance() {
+        XCTAssertEqual(PaymentRisk.editDistance("kitten", "sitting"), 3); XCTAssertEqual(PaymentRisk.editDistance("", "abc"), 3); XCTAssertEqual(PaymentRisk.editDistance("same", "same"), 0)
+    }
+    func testPayAgainNeedsTwoPaymentsAndPrefersNowish() {
+        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        func at(_ d: Int, _ h: Int) -> Date { c.date(from: DateComponents(year: 2026, month: 10, day: d, hour: h))! }
+        func r(_ v: String, _ d: Date, paid: Bool = true) -> HistoryRow { HistoryRow(date: d, name: v, payee: v, amountMinor: 100, paid: paid, category: .food, note: "", kind: "") }
+        let now = at(29, 9)   // a Thursday, 9 am
+        let h = [r("chai@x", at(22, 9)), r("chai@x", at(15, 9)), r("gym@x", at(28, 20)), r("gym@x", at(27, 20)), r("once@x", at(29, 9)), r("bad@x", at(22, 9), paid: false), r("bad@x", at(15, 9), paid: false)]
+        let s = PayAgain.suggest(h, now: now, calendar: c)
+        XCTAssertEqual(s.map(\.vpa), ["chai@x", "gym@x"])
+        XCTAssertEqual(s.first?.count, 2)
+    }
+    func testPayAgainIgnoresAutopayDebits() {
+        let d = Date(); func r(_ k: String) -> HistoryRow { HistoryRow(date: d, name: "M", payee: "m@x", amountMinor: 1, paid: true, category: .bills, note: "", kind: k) }
+        XCTAssertTrue(PayAgain.suggest([r("autopay"), r("autopay"), r("autopay")], now: d).isEmpty)
+    }
+}
+
+final class SpendQueryTests: XCTestCase {
+    var cal: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Kolkata")!; c.firstWeekday = 2; return c }
+    var now: Date { cal.date(from: DateComponents(year: 2026, month: 10, day: 29, hour: 15))! }   // Thursday
+    func at(_ m: Int, _ d: Int, _ h: Int = 12) -> Date { cal.date(from: DateComponents(year: 2026, month: m, day: d, hour: h))! }
+    func row(_ n: String, _ date: Date, _ minor: Int64, _ cat: SpendCategory, paid: Bool = true) -> HistoryRow { HistoryRow(date: date, name: n, payee: n.lowercased() + "@x", amountMinor: minor, paid: paid, category: cat, note: "", kind: "") }
+
+    func testCategoryAndLastWeek() {
+        let q = SpendQuery.parse("how much did I spend on food last week", now: now, calendar: cal)
+        XCTAssertEqual(q.filter.category, .food); XCTAssertEqual(q.periodLabel, "last week"); XCTAssertTrue(q.isStructured); XCTAssertEqual(q.filter.text, "")
+        let rows = [row("Chai", at(10, 21), 100_00, .food), row("Chai", at(10, 29), 50_00, .food), row("Metro", at(10, 22), 30_00, .travel), row("Chai", at(10, 14), 70_00, .food)]
+        let hit = q.apply(rows, calendar: cal)
+        XCTAssertEqual(hit.map(\.amountMinor), [100_00])
+        XCTAssertEqual(SpendQuery.total(hit).minor, 100_00)
+    }
+    func testAmountRulesAreStrict() {
+        let q = SpendQuery.parse("more than 500 this month", now: now, calendar: cal)
+        XCTAssertEqual(q.minMinor, 500_00); XCTAssertEqual(q.periodLabel, "this month"); XCTAssertEqual(q.filter.text, "")
+        let rows = [row("A", at(10, 3), 500_00, .other), row("B", at(10, 4), 500_01, .other), row("C", at(9, 30), 900_00, .other)]
+        XCTAssertEqual(q.apply(rows, calendar: cal).map(\.name), ["B"])
+        XCTAssertEqual(SpendQuery.parse("under 200", now: now, calendar: cal).maxMinor, 200_00)
+    }
+    func testPlainNameIsATextSearchNotStructured() {
+        let q = SpendQuery.parse("Chai Point", now: now, calendar: cal)
+        XCTAssertEqual(q.filter.text, "chai point"); XCTAssertFalse(q.isStructured)
+    }
+    func testLastNDaysAndYesterdayAndFailed() {
+        XCTAssertEqual(SpendQuery.parse("last 7 days", now: now, calendar: cal).periodLabel, "last 7 days")
+        let y = SpendQuery.parse("yesterday", now: now, calendar: cal)
+        XCTAssertEqual(y.apply([row("A", at(10, 28), 1, .other), row("B", at(10, 29), 1, .other)], calendar: cal).map(\.name), ["A"])
+        XCTAssertEqual(SpendQuery.parse("failed payments", now: now, calendar: cal).filter.outcome, .failed)
+    }
+    func testTotalCountsOnlyPaid() {
+        let t = SpendQuery.total([row("A", now, 100, .food), row("B", now, 900, .food, paid: false)])
+        XCTAssertEqual(t.minor, 100); XCTAssertEqual(t.count, 1)
+    }
+    func testEmptyAndNonsenseDoNotCrash() {
+        XCTAssertFalse(SpendQuery.parse("", now: now, calendar: cal).isStructured)
+        _ = SpendQuery.parse("more than", now: now, calendar: cal); _ = SpendQuery.parse("last 99999 days", now: now, calendar: cal)
+    }
+}

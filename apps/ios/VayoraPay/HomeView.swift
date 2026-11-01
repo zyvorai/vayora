@@ -16,10 +16,13 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
+            payAgainRow
             PayHomeScreen(balance: store.balance, spentThisMonth: Money(minor: store.spentThisMonth), week: weekSeries, recent: store.history.prefix(4).map(row),
                           summary: MonthSummary.byCategory(store.spendEntries, now: Date()),
                           onScan: { scanning = true }, onPaste: { pasting = true }, onSend: { sending = true }, onSplit: { splitting = true },
                           onOpen: { r in receipt = store.history.first { $0.id.uuidString == r.id } })
+            }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(item: $receipt) { Receipt(txn: $0) }
                 .fullScreenCover(isPresented: $scanning) {
@@ -40,6 +43,24 @@ struct HomeView: View {
                 .alert(scanError?.hasPrefix("Test server set") == true ? "Done" : "Can't read that code", isPresented: Binding(get: { scanError != nil }, set: { _ in scanError = nil })) {
                     Button("OK", role: .cancel) {}
                 } message: { Text(scanError ?? "") }
+        }
+    }
+
+    /// People you usually pay about now; one tap opens the normal review (and the slide and PIN) for them.
+    @ViewBuilder var payAgainRow: some View {
+        let s = PayAgain.suggest(store.historyRows, now: Date())
+        if !s.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Text("Pay again").vfont(13, .semibold).foregroundStyle(VUI.textTertiary)
+                    ForEach(s, id: \.vpa) { p in
+                        Button { isTransfer = false; payload = try? UPIPayload.parse("upi://pay?pa=\(p.vpa)&pn=\(p.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&cu=INR") } label: {
+                            Text(p.name).vfont(14, .semibold).foregroundStyle(VUI.textPrimary).padding(.horizontal, 14).padding(.vertical, 8).background(.white.opacity(0.1), in: Capsule())
+                        }.buttonStyle(PressScale())
+                    }
+                }.padding(.horizontal, 20)
+            }
+            .padding(.top, 8).background(VUI.ink)
         }
     }
 
