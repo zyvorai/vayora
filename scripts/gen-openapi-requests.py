@@ -366,7 +366,7 @@ def main() -> int:
         schemas[name_of[(mod, name)]] = s
 
     for n, (mod, fl) in rows.items():
-        props = {f[0]: schema_of(f[1], {}) for f in fl}
+        props = {f[0]: nullable(f[1]) for f in fl}
         req = [f[0] for f in fl if not f[1].startswith("Option<")]
         schemas[n] = {"type": "object", "x-generated": True, "properties": props, "required": req}
 

@@ -390,3 +390,20 @@ func TestUpdateSettingsSendsOnlyThePatch(t *testing.T) {
 		t.Fatalf("%v %v", err, got)
 	}
 }
+
+func TestDecodeTurnsAListIntoItsResponseType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"plan_1","name":"Pro","currency":"INR","amount_minor":49900,"interval_unit":"month","interval_count":1,"usage_unit_minor":0,"active":true}]}`))
+	}))
+	defer srv.Close()
+	plans, err := Decode[GetPlansResponse](New("k", srv.URL).ListPlans())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans.Data) != 1 || plans.Data[0].AmountMinor != 49900 || plans.Data[0].UsageUnitMinor != 0 || !plans.Data[0].Active {
+		t.Fatalf("decoded wrongly: %+v", plans)
+	}
+	if _, err := Decode[GetPlansResponse](nil, &Error{Status: 500}); err == nil {
+		t.Fatal("an error from the call must come through Decode")
+	}
+}

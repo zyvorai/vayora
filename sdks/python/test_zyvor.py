@@ -8,6 +8,13 @@ class FakeRes(io.BytesIO):
 
 
 class Tests(unittest.TestCase):
+    def test_methods_are_annotated_with_generated_response_types(self):
+        from zyvor import types
+        self.assertEqual(Zyvor.list_plans.__annotations__["return"], "types.GetPlansResponse")
+        self.assertIn("data", types.GetPlansResponse.__annotations__)
+        # a key that is a Python keyword still works, because the types use the functional TypedDict form
+        self.assertTrue(any("from" in t.__annotations__ for t in vars(types).values() if hasattr(t, "__annotations__")))
+
     def test_headers_and_minor_units(self):
         seen = {}
         def opener(req, timeout=None):

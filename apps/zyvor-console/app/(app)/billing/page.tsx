@@ -7,7 +7,6 @@ import { completeMilestone, runBilling, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
-type Row = Record<string, string | number | null>;
 const TABS = ["invoices", "subscriptions", "milestones", "plans"] as const;
 
 export default async function Billing({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -20,7 +19,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
   const overdue = unpaid.filter((i) => i.due_date && i.due_date < today);
   const sum = (xs: { outstanding_minor: number }[]) => xs.reduce((a, i) => a + i.outstanding_minor, 0);
-  const pendingMilestones = milestones.data.filter((m) => (m as Row).status === "pending").length;
+  const pendingMilestones = milestones.data.filter((m) => m.status === "pending").length;
   return (
     <>
       <div className="head">
@@ -57,7 +56,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>ID</th><th>Plan</th><th className="num">Qty</th><th>Next bill</th><th>Status</th></tr></thead>
             <tbody>
               {subs.data.length === 0 && <tr><td colSpan={5} className="empty">No subscriptions.</td></tr>}
-              {subs.data.map((s) => { const r = s as Row; const p = plans.data.find((x) => (x as Row).id === r.plan_id) as Row | undefined; return <tr key={String(r.id)}><td className="mono">{String(r.id).slice(0, 14)}…</td><td>{p ? String(p.name) : String(r.plan_id)}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td></tr>; })}
+              {subs.data.map((s) => { const r = s; const p = plans.data.find((x) => x.id === r.plan_id); return <tr key={String(r.id)}><td className="mono">{String(r.id).slice(0, 14)}…</td><td>{p ? String(p.name) : String(r.plan_id)}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td></tr>; })}
             </tbody>
           </table>
         </div>
@@ -68,7 +67,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>Milestone</th><th className="num">Amount</th><th>Status</th><th /></tr></thead>
             <tbody>
               {milestones.data.length === 0 && <tr><td colSpan={4} className="empty">No milestones.</td></tr>}
-              {milestones.data.map((m) => { const r = m as Row; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td><Chip status={String(r.status)} /></td><td>{r.status === "pending" && <Act action={completeMilestone} id={String(r.id)} label="Accept & invoice" />}</td></tr>; })}
+              {milestones.data.map((m) => { const r = m; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td><Chip status={String(r.status)} /></td><td>{r.status === "pending" && <Act action={completeMilestone} id={String(r.id)} label="Accept & invoice" />}</td></tr>; })}
             </tbody>
           </table>
         </div>
@@ -79,7 +78,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>Name</th><th className="num">Price</th><th>Every</th></tr></thead>
             <tbody>
               {plans.data.length === 0 && <tr><td colSpan={3} className="empty">No plans.</td></tr>}
-              {plans.data.map((p) => { const r = p as Row; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}</td></tr>; })}
+              {plans.data.map((p) => { const r = p; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}</td></tr>; })}
             </tbody>
           </table>
         </div>

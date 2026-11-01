@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import type { GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -190,7 +191,7 @@ export class Zyvor {
   };
 
   readonly settlements = {
-    list: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/settlements"),
+    list: () => this.req<GetSettlementsResponse>("GET", "/v1/settlements"),
     /** "Explain every rupee": payments, refunds, fees, adjustments, bank match and a plain-language narrative. */
     explain: (id: string) => this.req<{ narrative: string; difference_minor: number; difference_breakdown: { reason: string; amount_minor: number }[]; [k: string]: unknown }>("GET", `/v1/settlements/${encodeURIComponent(id)}/explain`),
     sync: (provider: string, date: string) => this.req<{ imported: string[] }>("POST", "/v1/settlements/sync", { provider, date }),
@@ -209,10 +210,10 @@ export class Zyvor {
   readonly billing = {
     createPlan: (p: { name: string; amountMinor: number; intervalUnit: "day" | "week" | "month" | "year"; intervalCount?: number; usageUnitMinor?: number; dueDays?: number; currency?: Currency }) =>
       this.req<{ id: string }>("POST", "/v1/plans", { name: p.name, amount_minor: p.amountMinor, interval_unit: p.intervalUnit, interval_count: p.intervalCount, usage_unit_minor: p.usageUnitMinor, due_days: p.dueDays, currency: p.currency }),
-    plans: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/plans"),
+    plans: () => this.req<GetPlansResponse>("GET", "/v1/plans"),
     subscribe: (p: { customerId: string; planId: string; quantity?: number; startDate?: string }) =>
       this.req<{ id: string; next_bill_date: string }>("POST", "/v1/subscriptions", { customer_id: p.customerId, plan_id: p.planId, quantity: p.quantity, start_date: p.startDate }),
-    subscriptions: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/subscriptions"),
+    subscriptions: () => this.req<GetSubscriptionsResponse>("GET", "/v1/subscriptions"),
     pause: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/pause`),
     resume: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/resume`),
     cancel: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/cancel`),
@@ -227,14 +228,14 @@ export class Zyvor {
 
   readonly invoices = {
     list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
-    retrieve: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
+    retrieve: (id: string) => this.req<GetInvoicesByIdResponse>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
     /** Give `amountMinor`, or GST `lines` and the server computes tax and total (needs `gst.gstin` in settings). */
     create: (p: { number: string; amountMinor?: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string; lines?: GstLine[]; placeOfSupply?: string; buyerGstin?: string; reverseCharge?: boolean }) =>
       this.req<{ id: string; amount_minor: number; tax_minor: number }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef, lines: p.lines?.map((l) => ({ description: l.description, hsn_sac: l.hsnSac, quantity: l.quantity, unit_price_minor: l.unitPriceMinor, rate_bp: l.rateBp })), place_of_supply: p.placeOfSupply, buyer_gstin: p.buyerGstin, reverse_charge: p.reverseCharge }),
     /** Void an invoice nothing has been paid or credited against. */
     void: (id: string) => this.req("POST", `/v1/invoices/${encodeURIComponent(id)}/void`),
     /** CGST/SGST/IGST breakdown of a GST invoice. */
-    lines: (id: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${encodeURIComponent(id)}/lines`),
+    lines: (id: string) => this.req<GetInvoicesByIdLinesResponse>("GET", `/v1/invoices/${encodeURIComponent(id)}/lines`),
   };
 
   /** Vendors you pay and the payouts to them. Zyvor controls and records; the transfer is made from your own bank. */
@@ -287,7 +288,7 @@ export class Zyvor {
       if (!Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) throw new RangeError("amountMinor must be a positive integer (paise)");
       return this.req<Record<string, unknown>>("POST", `/v1/mandates/${encodeURIComponent(id)}/debits`, { amount_minor: p.amountMinor, due_date: p.dueDate, invoice_id: p.invoiceId }, key(p.idempotencyKey));
     },
-    debits: (id: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/mandates/${encodeURIComponent(id)}/debits`),
+    debits: (id: string) => this.req<GetMandatesByIdDebitsResponse>("GET", `/v1/mandates/${encodeURIComponent(id)}/debits`),
     /** Sandbox aid: run the mandate pass now (the worker does this on its own). */
     run: () => this.req<Record<string, unknown>>("POST", "/v1/mandates/run", {}),
   };
@@ -339,12 +340,12 @@ export class Zyvor {
   readonly gst = {
     /** GSTR-1 style summary for `YYYY-MM`: a preparation aid, Zyvor does not file returns. */
     /** DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal. */
-    einvoice: (invoiceId: string) => this.req<Record<string, unknown>>("GET", `/v1/invoices/${invoiceId}/einvoice`),
+    einvoice: (invoiceId: string) => this.req<GetInvoicesByIdEinvoiceResponse>("GET", `/v1/invoices/${invoiceId}/einvoice`),
     gstr1: (period: string) => this.req<Record<string, unknown>>("GET", `/v1/gst/gstr1${this.qs({ period })}`),
   };
 
   readonly milestones = {
-    list: () => this.req<Page<Record<string, unknown>>>("GET", "/v1/milestones"),
+    list: () => this.req<GetMilestonesResponse>("GET", "/v1/milestones"),
     create: (p: { customerId: string; name: string; amountMinor: number; dueDays?: number; externalRef?: string }) =>
       this.req<{ id: string }>("POST", "/v1/milestones", { customer_id: p.customerId, name: p.name, amount_minor: p.amountMinor, due_days: p.dueDays, external_ref: p.externalRef }),
     /** Accept the milestone and invoice it. Calling twice returns the same invoice. */
@@ -378,7 +379,7 @@ export class Zyvor {
     /** Remind every overdue invoice with no live promise to pay and no recent reminder. Safe to repeat. */
     runDunning: (p: { channel?: "email" | "sms" | "whatsapp" | "call" | "other"; minDaysOverdue?: number; repeatAfterDays?: number; asOf?: string } = {}) =>
       this.req<{ reminded: number; reminder_ids: string[] }>("POST", "/v1/collections/dunning/run", { channel: p.channel, min_days_overdue: p.minDaysOverdue, repeat_after_days: p.repeatAfterDays, as_of: p.asOf }),
-    reminders: (invoiceId: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`),
+    reminders: (invoiceId: string) => this.req<GetInvoicesByIdRemindersResponse>("GET", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`),
     remind: (invoiceId: string, p: { channel: "email" | "sms" | "whatsapp" | "call" | "other"; message?: string }) => this.req("POST", `/v1/invoices/${encodeURIComponent(invoiceId)}/reminders`, p),
   };
 

@@ -7276,14 +7276,22 @@ components:
         provider:
           type: string
         provider_mandate_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         authorization: {}
         failure_reason:
-          type: string
+          type:
+          - string
+          - 'null'
         revoked_by:
-          type: string
+          type:
+          - string
+          - 'null'
         external_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         created_at:
           type: string
           format: date-time
@@ -7319,19 +7327,27 @@ components:
           type: string
           format: date
         notified_at:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
         invoice_id:
-          type: string
+          type:
+          - string
+          - 'null'
         state:
           type: string
         attempt_id:
-          type: string
+          type:
+          - string
+          - 'null'
         retry_no:
           type: integer
           format: int32
         failure_reason:
-          type: string
+          type:
+          - string
+          - 'null'
         created_at:
           type: string
           format: date-time
@@ -7351,11 +7367,17 @@ components:
         id:
           type: string
         customer_id:
-          type: string
+          type:
+          - string
+          - 'null'
         invoice_id:
-          type: string
+          type:
+          - string
+          - 'null'
         branch_id:
-          type: string
+          type:
+          - string
+          - 'null'
         amount_minor:
           type: integer
           format: int64
@@ -7366,13 +7388,19 @@ components:
         capture_method:
           type: string
         allowed_providers:
-          type: array
+          type:
+          - array
+          - 'null'
           items:
             type: string
         external_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         description:
-          type: string
+          type:
+          - string
+          - 'null'
         metadata: {}
         created_at:
           type: string
@@ -7409,11 +7437,17 @@ components:
         currency:
           type: string
         provider_order_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         provider_payment_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         failure_reason:
-          type: string
+          type:
+          - string
+          - 'null'
         route: {}
         client_action: {}
         refunded_minor:
@@ -7459,17 +7493,27 @@ components:
         status:
           type: string
         reason:
-          type: string
+          type:
+          - string
+          - 'null'
         external_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         requested_by:
           type: string
         approved_by:
-          type: string
+          type:
+          - string
+          - 'null'
         provider_refund_ref:
-          type: string
+          type:
+          - string
+          - 'null'
         failure_reason:
-          type: string
+          type:
+          - string
+          - 'null'
         created_at:
           type: string
           format: date-time
