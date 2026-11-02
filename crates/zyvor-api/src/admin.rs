@@ -978,6 +978,8 @@ pub struct Settings {
     payment_receipts: Option<bool>,
     /// Where replies to the emails sent for you go (one plain address). An empty string clears it.
     reply_to_email: Option<String>,
+    /// Email payment reminders whose channel is `email` to the customer (off by default).
+    reminder_emails: Option<bool>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -1096,6 +1098,13 @@ pub async fn put_settings(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(on) = b.reminder_emails {
+        sqlx::query("UPDATE tenant_settings SET reminder_emails = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(on)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(r) = &b.reply_to_email {
         let value = if r.trim().is_empty() {
             None
@@ -1142,7 +1151,7 @@ pub async fn put_settings(
     .bind(b.outbound_webhook_secret.as_ref().map(|sec| s.crypto.encrypt(sec.as_bytes())))
     .execute(&mut *tx)
     .await?;
-    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url, "dunning_changed": b.dunning.is_some(), "payment_receipts": b.payment_receipts, "reply_to_changed": b.reply_to_email.is_some() })).await?;
+    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url, "dunning_changed": b.dunning.is_some(), "payment_receipts": b.payment_receipts, "reply_to_changed": b.reply_to_email.is_some(), "reminder_emails": b.reminder_emails })).await?;
     tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -1153,6 +1162,11 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     let (thr, routing, url, on, ch, min, rep, appr, gstin, legal, ptr, wev, risk): (i64, Value, Option<String>, bool, String, i32, i32, bool, Option<String>, Option<String>, i64, Option<Vec<String>>, Value) = sqlx::query_as("SELECT refund_approval_threshold_minor, routing, outbound_webhook_url, auto_dunning, dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval, gstin, gst_legal_name, payout_approval_threshold_minor, webhook_events, risk_rules FROM tenant_settings WHERE tenant_id = $1").bind(&auth.tenant_id).fetch_one(&mut *tx).await?;
     let receipts: bool =
         sqlx::query_scalar("SELECT payment_receipts FROM tenant_settings WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let reminder_emails: bool =
+        sqlx::query_scalar("SELECT reminder_emails FROM tenant_settings WHERE tenant_id = $1")
             .bind(&auth.tenant_id)
             .fetch_one(&mut *tx)
             .await?;
@@ -1169,7 +1183,7 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

@@ -344,6 +344,29 @@ pub fn payment_link_expiring(
     (subject, lines.join("\n"))
 }
 
+/// The words of a payment reminder email. `wording` is what a person wrote or approved (or the standard text).
+pub fn reminder(
+    merchant: &str,
+    payer_name: &str,
+    wording: &str,
+    invoice_number: &str,
+    outstanding: &str,
+) -> (String, String) {
+    let subject = format!("Payment reminder: invoice {invoice_number} from {merchant}");
+    let mut lines = Vec::new();
+    if !wording.trim_start().to_lowercase().starts_with("hello") {
+        lines.push(format!("Hello {payer_name},"));
+        lines.push(String::new());
+    }
+    lines.push(wording.trim().to_string());
+    lines.push(String::new());
+    lines.push(format!("Invoice: {invoice_number}"));
+    lines.push(format!("Amount due: {outstanding}"));
+    lines.push(String::new());
+    lines.push("If you have already paid, please ignore this email. If anything looks wrong, reply to the business that sent your bill.".into());
+    (subject, lines.join("\n"))
+}
+
 /// Seconds to wait after the nth failed send: 30s, 1m, 2m ... capped at an hour.
 pub fn backoff_secs(attempts: i32) -> i64 {
     (30i64 << attempts.clamp(0, 7).min(7)).min(3600)

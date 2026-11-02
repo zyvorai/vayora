@@ -248,6 +248,15 @@ pub async fn approve_draft(
         .bind(&rem).bind(&auth.tenant_id).bind(&invoice_id).bind(&channel).bind(&message).bind(&auth.actor)
         .execute(&mut *tx).await?;
     tenant::emit(&mut tx, &auth.tenant_id, "invoice.reminder", json!({ "reminder_id": rem, "invoice_id": invoice_id, "number": f.number, "channel": channel, "outstanding_minor": f.outstanding, "message": message, "approved_by": auth.actor, "drafted_by": source })).await?;
+    crate::collections::queue_reminder_email(
+        &mut tx,
+        &auth.tenant_id,
+        &rem,
+        &invoice_id,
+        &channel,
+        Some(&message),
+    )
+    .await?;
     sqlx::query("UPDATE reminder_drafts SET status = 'approved', message = $2, decided_by = $3, decided_at = now(), reminder_id = $4 WHERE id = $1")
         .bind(&id).bind(&message).bind(&auth.actor).bind(&rem).execute(&mut *tx).await?;
     tenant::audit(
