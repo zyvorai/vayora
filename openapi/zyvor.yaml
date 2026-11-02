@@ -5667,6 +5667,10 @@ paths:
                     type: string
                   summary:
                     type: string
+                  ai_summary:
+                    type:
+                    - string
+                    - 'null'
                   evidence:
                     type: array
                     items: {}
@@ -5684,6 +5688,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: ai
+        in: query
+        required: false
+        schema:
+          type: boolean
+        x-generated: true
   /v1/audit_events:
     get:
       summary: Audit trail
@@ -6506,6 +6516,12 @@ components:
           type:
           - string
           - 'null'
+    SuggestQuery:
+      type: object
+      x-generated: true
+      properties:
+        ai:
+          type: boolean
     SimPayPay:
       type: object
       x-generated: true

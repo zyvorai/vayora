@@ -202,7 +202,7 @@ export class Zyvor {
   readonly cases = {
     list: (p: { status?: string; kind?: string } = {}) => this.req<Page<ReconCase>>("GET", `/v1/recon/cases${this.qs({ status: p.status, kind: p.kind })}`),
     /** The likeliest explanation with its evidence and next steps. Changes nothing; a person resolves the case. */
-    suggestions: (id: string) => this.req<{ case_id: string; kind: string; summary: string; evidence: Record<string, unknown>[]; next_steps: string[]; note: string }>("GET", `/v1/recon/cases/${encodeURIComponent(id)}/suggestions`),
+    suggestions: (id: string, opts: { ai?: boolean } = {}) => this.req<{ case_id: string; kind: string; summary: string; ai_summary: string | null; evidence: Record<string, unknown>[]; next_steps: string[]; note: string }>("GET", `/v1/recon/cases/${encodeURIComponent(id)}/suggestions${opts.ai ? "?ai=true" : ""}`),
     assign: (id: string, assignee: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/assign`, { assignee }),
     resolve: (id: string, resolution: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/resolve`, { resolution }),
   };

@@ -333,9 +333,9 @@ class Zyvor:
         q = urllib.parse.urlencode(sorted({k: v for k, v in {"status": status, "kind": kind}.items() if v not in (None, '')}.items()))
         return self._req("GET", "/v1/recon/cases" + ("?" + q if q else ""))
 
-    def case_suggestions(self, case_id: str) -> types.GetReconCasesByIdSuggestionsResponse:
-        """Evidence and next steps for a case (read only)."""
-        return self._req("GET", f"/v1/recon/cases/{case_id}/suggestions")
+    def case_suggestions(self, case_id: str, *, ai: bool = False) -> types.GetReconCasesByIdSuggestionsResponse:
+        """Evidence and next steps for a case (read only). ai=True adds a plain-words `ai_summary` from the model (or None)."""
+        return self._req("GET", f"/v1/recon/cases/{case_id}/suggestions" + ("?ai=true" if ai else ""))
 
     def assign_case(self, case_id: str, assignee: str) -> types.GetPlansResponse:
         """Give a case to someone."""

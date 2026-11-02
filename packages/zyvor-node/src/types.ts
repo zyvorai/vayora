@@ -642,6 +642,7 @@ export interface GetReconCasesByIdSuggestionsResponse {
   case_id: string;
   kind: string;
   summary: string;
+  ai_summary: string | null;
   evidence: unknown[];
   next_steps: string[];
   note: string;
