@@ -6,11 +6,12 @@ import { draftReminder, remind } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
-const LABEL: Record<string, string> = { current: "Not yet due", "1_30": "1–30 days", "31_60": "31–60 days", "61_90": "61–90 days", over_90: "Over 90 days", no_due_date: "No due date" };
+const LABEL: Record<string, string> = { current: "Not yet due", "1_30": "Overdue 1–30 days", "31_60": "Overdue 31–60 days", "61_90": "Overdue 61–90 days", over_90: "Overdue over 90 days", no_due_date: "No due date" };
 
 export default async function Collections() {
   const z = await api();
-  const [ageing, promises, drafts, fx] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts(), z.fx.exposure()]);
+  const [ageing, promises, drafts, fx, customers] = await Promise.all([z.collections.ageing(), z.collections.promises(), z.collections.drafts(), z.fx.exposure(), z.customers.list()]);
+  const who = new Map(customers.data.map((c) => [c.id, c.name]));
   const ai = process.env.CONSOLE_AI === "1";
   const rows = ageing.data.flatMap((b) => b.invoices.map((i) => ({ ...i, bucket: b.bucket, currency: b.currency })));
   return (
@@ -62,12 +63,12 @@ export default async function Collections() {
       <h2>Unpaid invoices</h2>
       <div className="tablewrap" style={{ marginBottom: 28 }}>
         <table>
-          <thead><tr><th>Invoice</th><th>Due</th><th className="num">Days late</th><th className="num">Outstanding</th><th /></tr></thead>
+          <thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th className="num">Days late</th><th className="num">Outstanding</th><th /></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={5} className="empty">No unpaid invoices. Overdue invoices from <Link href="/billing">Billing</Link> appear here, with their reminders.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="empty">No unpaid invoices. Overdue invoices from <Link href="/billing">Billing</Link> appear here, with their reminders.</td></tr>}
             {rows.map((i) => (
               <tr key={i.id}>
-                <td>{i.number}</td><td>{i.due_date ?? "—"}</td><td className="num">{i.days_past_due}</td>
+                <td>{i.number}</td><td>{(i.customer_id && who.get(i.customer_id)) || <span className="muted">—</span>}</td><td>{i.due_date ?? "—"}</td><td className="num">{i.days_past_due > 0 ? i.days_past_due : <span className="muted">—</span>}</td>
                 <td className="num">{inr(i.outstanding_minor)}</td>
                 <td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                   <Act action={draftReminder} id={i.id} label="Draft reminder" />
@@ -79,6 +80,7 @@ export default async function Collections() {
           </tbody>
         </table>
       </div>
+      <p className="muted" style={{ marginTop: -16, marginBottom: 28 }}>Send now records the reminder and announces it to your own messaging system (the <code>invoice.reminder</code> event). Zyvor emails the customer itself only if you turn on reminder emails in Settings and the reminder channel is email.</p>
       <h2>Promises to pay</h2>
       <div className="tablewrap">
         <table>
