@@ -1,9 +1,10 @@
+import { actorLabel } from "@/lib/labels";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { AddVendor, BulkPayouts, MarkPaid, RequestPayout } from "@/components/PayoutForms";
 import { approvePayout, cancelPayout, rejectPayout } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
-import { inr } from "@/lib/format";
+import { inr, istDateTime } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
 export default async function Payouts() {
@@ -39,13 +40,13 @@ export default async function Payouts() {
       )}
       <div className="tablewrap">
         <table>
-          <thead><tr><th>Vendor</th><th>Purpose</th><th className="num">Amount</th><th>Requested by</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Date</th><th>Vendor</th><th>Purpose</th><th className="num">Amount</th><th>Requested by</th><th>Status</th><th /></tr></thead>
           <tbody>
-            {payouts.data.length === 0 && <tr><td colSpan={6} className="empty">No payouts yet.</td></tr>}
+            {payouts.data.length === 0 && <tr><td colSpan={7} className="empty">No payouts yet.</td></tr>}
             {payouts.data.map((p) => (
               <tr key={p.id}>
-                <td>{name.get(p.vendor_id) ?? p.vendor_id}</td><td>{p.purpose}</td><td className="num">{inr(p.amount_minor)}</td>
-                <td className="muted">{p.requested_by.replace(/^user:/, "")}</td>
+                <td className="muted" style={{ whiteSpace: "nowrap" }}>{istDateTime(p.created_at)}</td><td>{name.get(p.vendor_id) ?? p.vendor_id}</td><td>{p.purpose}</td><td className="num">{inr(p.amount_minor)}</td>
+                <td className="muted">{actorLabel(p.requested_by)}</td>
                 <td><Chip status={p.status} />{p.bank_ref && <div className="mono muted">{p.bank_ref}</div>}</td>
                 <td style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                   {p.status === "pending_approval" && p.requested_by !== `user:${me?.u}` && <><Act action={approvePayout} id={p.id} label="Approve" primary /><Act action={rejectPayout} id={p.id} label="Reject" /></>}

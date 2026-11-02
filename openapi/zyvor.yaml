@@ -2101,6 +2101,11 @@ paths:
                           type: string
                         attempt_id:
                           type: string
+                        intent_id:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
                         amount_minor:
                           type: integer
                           format: int64

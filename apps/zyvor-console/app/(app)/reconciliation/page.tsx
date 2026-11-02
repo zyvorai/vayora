@@ -1,3 +1,4 @@
+import { providerLabel, words } from "@/lib/labels";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { assignCase, simulateBankCredit, simulateSettlement } from "@/lib/actions";
@@ -41,7 +42,7 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
             {cases.data.length === 0 && <tr><td colSpan={6} className="empty">{settlements.data.length === 0 ? "Nothing to reconcile yet. A case opens here when a settlement or a bank line does not match your payments." : "Everything reconciles."}</td></tr>}
             {cases.data.map((c) => (
               <tr key={c.id}>
-                <td className="mono">{c.kind}</td>
+                <td>{words(c.kind)}</td>
                 <td style={{ maxWidth: 420 }}>
                   {c.explanation}
                   {hints.get(c.id) && <div className="muted" style={{ marginTop: 4 }}>Likely: {hints.get(c.id)!.summary}{hints.get(c.id)!.next_steps[0] ? ` Next: ${hints.get(c.id)!.next_steps[0]}` : ""}</div>}
@@ -70,7 +71,7 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
               const r = s as Record<string, number | string | null>;
               return (
                 <tr key={String(r.id)}>
-                  <td>{String(r.provider)}</td><td>{String(r.settled_on)}</td>
+                  <td>{providerLabel(String(r.provider))}</td><td>{String(r.settled_on)}</td>
                   <td className="num">{inr(Number(r.gross_minor))}</td><td className="num">{inr(Number(r.refunds_minor))}</td>
                   <td className="num">{inr(Number(r.fee_minor))}</td><td className="num">{inr(Number(r.net_minor))}</td>
                   <td><Chip status={String(r.status)} /></td>

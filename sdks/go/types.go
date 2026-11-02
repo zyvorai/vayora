@@ -254,6 +254,8 @@ type GetDisputesResponse struct {
 type GetDisputesResponseDataItem struct {
 	ID            string  `json:"id"`
 	AttemptID     string  `json:"attempt_id"`
+	IntentID      string  `json:"intent_id"`
+	CreatedAt     string  `json:"created_at"`
 	AmountMinor   int64   `json:"amount_minor"`
 	Reason        string  `json:"reason"`
 	Status        string  `json:"status"`
