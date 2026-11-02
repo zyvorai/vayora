@@ -6,7 +6,7 @@ export async function SetupChecklist() {
   const z = await api();
   let steps: { label: string; hint: string; href: string; done: boolean }[];
   try {
-    const [o, keys, s, links, access, pays] = await Promise.all([z.onboarding.get(), z.keys.list(), z.settings.get(), z.paymentLinks.list(), z.liveAccess.get(), z.intents.list({ limit: 1 })]);
+    const [o, keys, s, links, access, pays] = await Promise.all([z.onboarding.get(), z.keys.list(), z.settings.get(), z.paymentLinks.list(), z.liveAccess.get(), z.intents.list({ limit: 1, status: "succeeded" })]);
     // quick wins first: see a payment work, then the things that take time (a review) come last
     steps = [
       ...(s.env === "test" ? [{ label: "Take a test payment", hint: "See a payment go through, with no real money", href: "/sandbox", done: pays.data.length > 0 }] : []),
