@@ -110,7 +110,7 @@ reset. Verified only against a plain local SMTP server.
   has alert rules for them (and the other gauges). The rules are valid YAML but have **not** been run through `promtool`.
 - **Done:** payment receipts. `payment_receipts` in settings (off by default; a Receipts box on the Settings page) queues a plain-text
   receipt in the same transaction as the capture, to the intent's customer when that customer has an email address, once per attempt
-  (`mail_queue.dedupe_key`). Tested to the queue; delivery uses the mailer above, so it is as verified as that is (plain local SMTP only).
+  (`mail_queue.dedupe_key`). Checked in the local sandbox: the Settings box saves and persists, and a simulated captured payment for a customer with an email queued one receipt that the worker handed to the log-only mailer (no SMTP configured, so nothing was delivered). Delivery uses the mailer above, so it is as verified as that is (plain local SMTP only).
 - **Later:** HTML templates, a per-organisation sender, refund receipts and reminder emails (the events exist; add
   consumers that enqueue mail), unsubscribe handling for anything that is not transactional.
 
