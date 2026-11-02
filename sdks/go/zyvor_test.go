@@ -415,3 +415,32 @@ func TestDecodeTurnsAListIntoItsResponseType(t *testing.T) {
 		t.Fatal("an error from the call must come through Decode")
 	}
 }
+
+func TestCreatePaymentLinkForSendsTheCustomerExpiryAndReminder(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	exp := time.Date(2026, 11, 3, 18, 29, 59, 0, time.UTC)
+	if _, err := c.CreatePaymentLinkFor(5000, "", "Term fee", 0, PaymentLinkOptions{CustomerID: "cus_1", RemindBeforeExpiry: true}); err == nil {
+		t.Fatal("a reminder without an expiry must be rejected before any request")
+	}
+	if _, err := c.CreatePaymentLinkFor(5000, "", "Term fee", 0, PaymentLinkOptions{ExpiresAt: exp, RemindBeforeExpiry: true}); err == nil {
+		t.Fatal("a reminder without a customer must be rejected before any request")
+	}
+	if _, err := c.CreatePaymentLinkFor(5000, "", "Term fee", 0, PaymentLinkOptions{CustomerID: "cus_1", ExpiresAt: exp, RemindBeforeExpiry: true}); err != nil {
+		t.Fatal(err)
+	}
+	if body["customer_id"] != "cus_1" || body["expires_at"] != "2026-11-03T18:29:59Z" || body["remind_before_expiry"] != true || body["amount_minor"] != float64(5000) {
+		t.Fatalf("body %v", body)
+	}
+	// the plain call sends none of the extras
+	body = nil
+	_, _ = c.CreatePaymentLink(5000, "", "", 0)
+	if _, has := body["customer_id"]; has || body["remind_before_expiry"] != nil {
+		t.Fatalf("plain call body %v", body)
+	}
+}
