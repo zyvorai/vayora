@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
-import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, type FormState } from "@/lib/actions";
+import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, updatePlan, type FormState } from "@/lib/actions";
 
 type Customer = { id: string; name: string };
 
@@ -117,6 +117,24 @@ export function NewMilestone({ customers }: { customers: Customer[] }) {
 }
 
 /** Move a subscription to another plan. An upgrade is charged now for the unused part of the period; a downgrade applies from the next invoice. */
+export function EditPlan({ id, name, priceMinor }: { id: string; name: string; priceMinor: number }) {
+  const [state, run, pending] = useActionState(updatePlan, undefined);
+  return (
+    <details>
+      <summary style={{ cursor: "pointer" }}>Edit</summary>
+      <form action={run} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginTop: 8 }}>
+        <input type="hidden" name="id" value={id} />
+        <label className="field" style={{ flex: "2 1 160px" }}>Name<input name="name" required maxLength={80} defaultValue={name} /></label>
+        <label className="field" style={{ flex: "1 1 110px" }}>Price (₹)<input name="price" inputMode="decimal" required defaultValue={(priceMinor / 100).toFixed(2)} /></label>
+        <button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button>
+        <span className="muted" style={{ flexBasis: "100%" }}>A new price applies to everyone on this plan from their next invoice. Invoices already raised keep their amount.</span>
+        {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+        {state?.ok && <span className="note" role="status">{state.ok}</span>}
+      </form>
+    </details>
+  );
+}
+
 export function ChangePlan({ id, plans }: { id: string; plans: { id: string; name: string }[] }) {
   const [state, run, pending] = useActionState(changeSubscriptionPlan, undefined);
   if (plans.length === 0) return null;

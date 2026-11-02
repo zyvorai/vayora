@@ -1,10 +1,10 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { ChangePlan, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
+import { ChangePlan, EditPlan, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
 import { ConfirmAct } from "@/components/ConfirmAct";
 import { Tabs } from "@/components/Tabs";
 import { TestClock } from "@/components/TestClock";
-import { cancelSubscription, completeMilestone, pauseSubscription, resumeSubscription, runBilling, voidInvoice } from "@/lib/actions";
+import { cancelSubscription, completeMilestone, pauseSubscription, resumeSubscription, runBilling, setPlanActive, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -95,10 +95,14 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
         </details>
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Name</th><th className="num">Price</th><th>Every</th></tr></thead>
+            <thead><tr><th>Name</th><th className="num">Price</th><th>Every</th><th /></tr></thead>
             <tbody>
-              {plans.data.length === 0 && <tr><td colSpan={3} className="empty">No plans yet. A plan is a price that repeats (for example, monthly tuition); subscribe customers to it to bill them automatically.</td></tr>}
-              {plans.data.map((p) => { const r = p; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}</td></tr>; })}
+              {plans.data.length === 0 && <tr><td colSpan={4} className="empty">No plans yet. A plan is a price that repeats (for example, monthly tuition); subscribe customers to it to bill them automatically.</td></tr>}
+              {plans.data.map((p) => { const r = p; const on = r.active !== false; return <tr key={String(r.id)}><td>{String(r.name)}{!on && <> <span className="chip warn">archived</span></>}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}</td><td style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+                <EditPlan id={String(r.id)} name={String(r.name)} priceMinor={Number(r.amount_minor)} />
+                <Act action={setPlanActive} id={String(r.id)} extra={{ active: on ? "false" : "true" }} label={on ? "Archive" : "Restore"} />
+                {on && <span className="muted">Archiving stops new subscribers; current ones keep billing.</span>}
+              </td></tr>; })}
             </tbody>
           </table>
         </div>

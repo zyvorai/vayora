@@ -96,6 +96,10 @@ class Zyvor:
     def create_plan(self, name: str, amount_minor: int, interval_unit: str, **extra) -> types.PostPlansResponse:
         return self._req("POST", "/v1/plans", {"name": name, "amount_minor": amount_minor, "interval_unit": interval_unit, **extra})
 
+    def update_plan(self, plan_id: str, **fields) -> types.PatchPlansByIdResponse:
+        """Rename a plan (name), change its price (amount_minor, applies from each subscriber's next invoice) or archive it (active=False)."""
+        return self._req("PATCH", f"/v1/plans/{plan_id}", fields)
+
     def subscribe(self, customer_id: str, plan_id: str, quantity: int = 1, start_date: Optional[str] = None) -> dict:
         body = {k: v for k, v in {"customer_id": customer_id, "plan_id": plan_id, "quantity": quantity, "start_date": start_date}.items() if v is not None}
         return self._req("POST", "/v1/subscriptions", body)

@@ -340,6 +340,7 @@ pub fn app(state: AppState) -> Router {
             "/plans",
             post(billing::create_plan).get(billing::list_plans),
         )
+        .route("/plans/{id}", axum::routing::patch(billing::update_plan))
         .route(
             "/subscriptions",
             post(billing::create_subscription).get(billing::list_subscriptions),

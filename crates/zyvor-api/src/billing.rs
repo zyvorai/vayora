@@ -88,6 +88,82 @@ pub async fn create_plan(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct PlanPatch {
+    name: Option<String>,
+    amount_minor: Option<i64>,
+    active: Option<bool>,
+}
+
+/// Rename a plan, change its price, or archive it. The price applies to every subscription on the plan from its
+/// next invoice (invoices already raised keep their amount); an archived plan takes no new subscribers and
+/// its current ones keep billing.
+pub async fn update_plan(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<PlanPatch>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("billing:write")?;
+    if b.name.is_none() && b.amount_minor.is_none() && b.active.is_none() {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "send at least one of name, amount_minor or active",
+        ));
+    }
+    if let Some(n) = &b.name
+        && (n.trim().is_empty() || n.chars().count() > 80)
+    {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "name must be 1 to 80 characters",
+        ));
+    }
+    if let Some(a) = b.amount_minor
+        && !(0..=zyvor_core::MAX_AMOUNT_MINOR).contains(&a)
+    {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "amount_minor must be non-negative",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(String, i64, bool)> =
+        sqlx::query_as("SELECT name, amount_minor, active FROM plans WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (name0, amount0, active0) = row.ok_or_else(|| ApiError::not_found("plan"))?;
+    let name = b
+        .name
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&name0)
+        .to_string();
+    let amount = b.amount_minor.unwrap_or(amount0);
+    let active = b.active.unwrap_or(active0);
+    sqlx::query("UPDATE plans SET name = $2, amount_minor = $3, active = $4 WHERE id = $1")
+        .bind(&id)
+        .bind(&name)
+        .bind(amount)
+        .bind(active)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "plan.updated",
+        Some(&id),
+        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active] }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "name": name, "amount_minor": amount, "active": active }),
+    ))
+}
+
 pub async fn list_plans(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;

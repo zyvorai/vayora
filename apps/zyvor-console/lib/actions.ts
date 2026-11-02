@@ -525,6 +525,15 @@ export const createPlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (!Number.isInteger(count) || count < 1 || count > 365) return { error: "Every how many periods? Enter a whole number from 1 to 365." };
   return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count }));
 };
+export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const price = money(f, "price");
+  if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
+  const name = String(f.get("name") ?? "").trim();
+  if (!name) return { error: "Give the plan a name." };
+  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price }));
+  return r?.error ? r : { ok: "Saved." };
+};
+export const setPlanActive = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.updatePlan(id(f), { active: f.get("active") === "true" }));
 export const createSubscription = async (_: FormState, f: FormData): Promise<FormState> => {
   const quantity = Number(f.get("quantity") ?? 1);
   if (!Number.isInteger(quantity) || quantity < 1) return { error: "Quantity must be a whole number, 1 or more." };

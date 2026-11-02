@@ -809,6 +809,13 @@ export interface PatchCustomersByIdResponse {
   pincode: string | null;
 }
 
+export interface PatchPlansByIdResponse {
+  id: string;
+  name: string;
+  amount_minor: number;
+  active: unknown;
+}
+
 export interface PostApiKeysByIdRevokeResponse {
   id: string;
   revoked: boolean;

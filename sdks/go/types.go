@@ -829,6 +829,13 @@ type PatchCustomersByIdResponse struct {
 	Pincode     *string `json:"pincode"`
 }
 
+type PatchPlansByIdResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AmountMinor int64  `json:"amount_minor"`
+	Active      any    `json:"active"`
+}
+
 type PostApiKeysByIdRevokeResponse struct {
 	ID      string `json:"id"`
 	Revoked bool   `json:"revoked"`
