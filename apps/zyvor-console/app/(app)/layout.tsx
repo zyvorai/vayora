@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const paused = me?.e === "live" && (await (await api()).liveAccess.get().catch(() => null))?.status === "revoked";
   return (
     <div className="shell">
+      <a className="skip" href="#main">Skip to content</a>
       <aside className="side">
         <a className="brand" href="/"><img src="/favicon.svg" alt="" width="26" height="26" />Zyvor</a>
         <Nav role={me?.r ?? "viewer"} env={me?.e} />
@@ -38,7 +39,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </header>
         {paused && <div className="testbar bad" role="alert">Zyvor has paused live mode for this business: new payments and payouts are stopped. <a href="/onboarding">See why</a></div>}
         {me?.e === "test" && <div className="testbar" role="status">Test mode: nothing here moves real money.</div>}
-        <main id="main">{children}</main>
+        <main id="main" tabIndex={-1}>{children}</main>
       </div>
       <CommandPalette />
     </div>
