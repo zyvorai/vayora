@@ -516,6 +516,29 @@ export const createInvoice = async (_: FormState, f: FormData): Promise<FormStat
       : z.invoices.create({ ...base, amountMinor: amount }),
   );
 };
+export const createPlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const price = money(f, "price");
+  if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
+  const unit = String(f.get("unit") ?? "month");
+  if (!["day", "week", "month", "year"].includes(unit)) return { error: "Choose how often it is billed." };
+  const count = Number(f.get("every") ?? 1);
+  if (!Number.isInteger(count) || count < 1 || count > 365) return { error: "Every how many periods? Enter a whole number from 1 to 365." };
+  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count }));
+};
+export const createSubscription = async (_: FormState, f: FormData): Promise<FormState> => {
+  const quantity = Number(f.get("quantity") ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Quantity must be a whole number, 1 or more." };
+  const start = String(f.get("start") ?? "");
+  return run(["/billing"], (z) => z.billing.subscribe({ customerId: String(f.get("customer") ?? ""), planId: String(f.get("plan") ?? ""), quantity, startDate: start || undefined }));
+};
+export const pauseSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.pause(id(f)));
+export const resumeSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.resume(id(f)));
+export const createMilestone = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amount = money(f, "amount");
+  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const due = String(f.get("due_days") ?? "").trim();
+  return run(["/billing"], (z) => z.milestones.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), amountMinor: amount, dueDays: due ? Number(due) : undefined }));
+};
 export const voidInvoice = async (_: FormState, f: FormData) => run(["/billing", "/collections"], (z) => z.invoices.void(id(f)));
 export const createInstalments = async (_: FormState, f: FormData): Promise<FormState> => {
   const total = money(f, "total");
