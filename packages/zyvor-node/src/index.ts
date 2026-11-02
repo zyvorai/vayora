@@ -258,6 +258,8 @@ export class Zyvor {
     pause: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/pause`),
     resume: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/resume`),
     cancel: (id: string) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/cancel`),
+    /** An upgrade is charged now for the unused part of the period at the price difference; a downgrade applies from the next invoice. */
+    changePlan: (id: string, p: { planId: string; quantity?: number }) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/change_plan`, { plan_id: p.planId, quantity: p.quantity }),
     /** Retry-safe when `reference` is set: the same reference is recorded once. */
     recordUsage: (id: string, p: { quantity: number; reference?: string; note?: string }) => this.req<{ recorded: boolean }>("POST", `/v1/subscriptions/${encodeURIComponent(id)}/usage`, p),
     /** `asOf` (YYYY-MM-DD) runs as if it were that day; test mode only. */

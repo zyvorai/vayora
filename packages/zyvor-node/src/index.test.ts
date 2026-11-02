@@ -39,6 +39,17 @@ describe("client", () => {
     expect(Array.from(bytes)).toEqual([37, 80, 68, 70, 0, 255]);
   });
 
+  it("changes a subscription's plan and cancels it", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    const c = client(f);
+    await c.billing.changePlan("sub_1", { planId: "plan_2", quantity: 3 });
+    await c.billing.cancel("sub_1");
+    const calls = f.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0][0]).toBe("http://localhost:8080/v1/subscriptions/sub_1/change_plan");
+    expect(JSON.parse(calls[0][1].body as string)).toEqual({ plan_id: "plan_2", quantity: 3 });
+    expect(calls[1][0]).toBe("http://localhost:8080/v1/subscriptions/sub_1/cancel");
+  });
+
   it("rejects bad amounts before any request", () => {
     const f = vi.fn();
     expect(() => client(f).intents.create({ amountMinor: 10.5 })).toThrow(RangeError);

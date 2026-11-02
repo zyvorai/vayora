@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
-import { createCustomer, createInstalments, createInvoice, createMilestone, createPlan, createSubscription, type FormState } from "@/lib/actions";
+import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, type FormState } from "@/lib/actions";
 
 type Customer = { id: string; name: string };
 
@@ -113,5 +113,24 @@ export function NewMilestone({ customers }: { customers: Customer[] }) {
       <label className="field" style={{ flex: "1 1 120px" }}>Amount (₹)<input name="amount" inputMode="decimal" required /></label>
       <label className="field" style={{ flex: "0 1 130px" }}>Due after (days)<input name="due_days" type="number" min={0} placeholder="e.g. 7" /></label>
     </Inline>
+  );
+}
+
+/** Move a subscription to another plan. An upgrade is charged now for the unused part of the period; a downgrade applies from the next invoice. */
+export function ChangePlan({ id, plans }: { id: string; plans: { id: string; name: string }[] }) {
+  const [state, run, pending] = useActionState(changeSubscriptionPlan, undefined);
+  if (plans.length === 0) return null;
+  return (
+    <details>
+      <summary style={{ cursor: "pointer" }}>Change plan</summary>
+      <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+        <input type="hidden" name="id" value={id} />
+        <select name="plan" required defaultValue="" aria-label="New plan"><option value="" disabled>Choose…</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <button className="btn small" disabled={pending}>{pending ? "…" : "Change"}</button>
+        <span className="muted" style={{ flexBasis: "100%" }}>An upgrade is charged now for the rest of the period; a downgrade applies from the next invoice.</span>
+        {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+        {state?.ok && <span className="note" role="status">{state.ok}</span>}
+      </form>
+    </details>
   );
 }
