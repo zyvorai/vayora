@@ -110,7 +110,7 @@ export interface PayoutRow { id: string; vendor_id: string; amount_minor: number
 export type OnboardingUpload = {
   id: string; kind: string; filename: string; content_type: string; size_bytes: number;
   read_method: "text" | "ocr" | "none";
-  facts: { gstin?: string | null; pan_last4?: string | null; pan_in_gstin?: boolean | null; cin?: string | null; legal_name?: string | null; ifsc?: string | null };
+  facts: { gstin?: string | null; pan_last4?: string | null; pan_in_gstin?: boolean | null; cin?: string | null; legal_name?: string | null; ifsc?: string | null; /** OCR misread a character and it was corrected by position; worth confirming on the file */ ocr_corrected?: boolean };
   checks: { name: string; result: "match" | "mismatch" | "not_found" | "not_checked"; detail: string }[];
   uploaded_by: string; created_at: string;
 };

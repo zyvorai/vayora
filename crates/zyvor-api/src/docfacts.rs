@@ -21,6 +21,9 @@ pub struct Facts {
     pub cin: Option<String>,
     pub legal_name: Option<String>,
     pub ifsc: Option<String>,
+    /// An identifier was misread by OCR (a 0 as an O, a 1 as an I) and fixed by its position and its check character.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ocr_corrected: bool,
 }
 
 fn tokens(text: &str) -> impl Iterator<Item = &str> {
@@ -124,25 +127,134 @@ fn name_in_incorporation(text: &str) -> Option<String> {
     (name.chars().count() >= 3 && name.chars().count() <= 150).then(|| name.to_string())
 }
 
+/// What an OCR engine commonly makes of a digit when it reads a letter, and the other way round.
+fn as_digit(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c),
+        b'O' | b'Q' | b'D' => Some(b'0'),
+        b'I' | b'L' => Some(b'1'),
+        b'Z' => Some(b'2'),
+        b'S' => Some(b'5'),
+        b'G' => Some(b'6'),
+        b'B' => Some(b'8'),
+        _ => None,
+    }
+}
+
+fn as_letter(c: u8) -> Option<u8> {
+    match c {
+        b'A'..=b'Z' => Some(c),
+        b'0' => Some(b'O'),
+        b'1' => Some(b'I'),
+        b'2' => Some(b'Z'),
+        b'5' => Some(b'S'),
+        b'6' => Some(b'G'),
+        b'8' => Some(b'B'),
+        _ => None,
+    }
+}
+
+/// The other reading of a character that could be either (a digit position that also allows a letter).
+fn swapped(c: u8) -> u8 {
+    as_digit(c)
+        .filter(|d| *d != c)
+        .or_else(|| as_letter(c).filter(|l| *l != c))
+        .unwrap_or(c)
+}
+
+/// Re-read a token of the right length position by position: `D` digit, `L` letter, `Z` the letter Z, `A` either
+/// (tried both ways). Returns every reading that `valid` accepts; the caller takes it only when there is exactly one,
+/// so a garbled token is never forced into an answer.
+fn repairs(token: &str, pattern: &[u8], valid: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let t = token.as_bytes();
+    // a real identifier has digits in it, even misread ones: a plain word is never forced into one
+    if t.len() != pattern.len() || t.iter().filter(|c| c.is_ascii_digit()).count() < 2 {
+        return Vec::new();
+    }
+    let mut options: Vec<Vec<u8>> = Vec::new();
+    for (c, p) in t.iter().zip(pattern) {
+        let o = match p {
+            b'D' => as_digit(*c).map(|d| vec![d]),
+            b'L' => as_letter(*c).map(|l| vec![l]),
+            b'Z' => (*c == b'Z' || *c == b'2').then(|| vec![b'Z']),
+            _ => Some(if swapped(*c) == *c {
+                vec![*c]
+            } else {
+                vec![*c, swapped(*c)]
+            }),
+        };
+        match o {
+            Some(o) => options.push(o),
+            None => return Vec::new(),
+        }
+    }
+    let mut out: Vec<Vec<u8>> = vec![Vec::new()];
+    for o in options {
+        out = out
+            .into_iter()
+            .flat_map(|prefix| {
+                o.iter().map(move |c| {
+                    let mut v = prefix.clone();
+                    v.push(*c);
+                    v
+                })
+            })
+            .collect();
+        if out.len() > 16 {
+            return Vec::new();
+        }
+    }
+    out.into_iter()
+        .filter_map(|v| String::from_utf8(v).ok())
+        .filter(|c| valid(c))
+        .collect()
+}
+
+fn the_one(mut v: Vec<String>) -> Option<String> {
+    v.dedup();
+    (v.len() == 1).then(|| v.remove(0))
+}
+
 pub fn extract(text: &str) -> Facts {
     let mut f = Facts::default();
-    let mut pan_full: Option<&str> = None;
+    let mut pan_full: Option<String> = None;
     for t in tokens(text) {
         if f.gstin.is_none() && t.len() == 15 && gst::valid_gstin(t) {
             f.gstin = Some(t.to_string());
         } else if pan_full.is_none() && is_pan(t) {
-            pan_full = Some(t);
+            pan_full = Some(t.to_string());
         } else if f.cin.is_none() && is_cin(t) {
             f.cin = Some(t.to_string());
         } else if f.ifsc.is_none() && is_ifsc(t) {
             f.ifsc = Some(t.to_string());
         }
     }
+    // OCR misreads (0 as O, 1 as I) are put right by position and accepted only when the result then checks out
+    if f.gstin.is_none() || pan_full.is_none() || f.cin.is_none() {
+        for t in tokens(text) {
+            if f.gstin.is_none()
+                && let Some(g) = the_one(repairs(t, b"DDLLLLLDDDDLAZA", &|c| gst::valid_gstin(c)))
+            {
+                f.gstin = Some(g);
+                f.ocr_corrected = true;
+            } else if pan_full.is_none()
+                && let Some(p) = the_one(repairs(t, b"LLLLLDDDDL", &is_pan))
+            {
+                pan_full = Some(p);
+                f.ocr_corrected = true;
+            } else if f.cin.is_none()
+                && let Some(c) = the_one(repairs(t, b"LDDDDDLLDDDDLLLDDDDDD", &is_cin))
+            {
+                f.cin = Some(c);
+                f.ocr_corrected = true;
+            }
+        }
+    }
     let gstin_pan = f.gstin.as_deref().map(|g| &g[2..12]);
-    if let (Some(p), Some(g)) = (pan_full, gstin_pan) {
+    if let (Some(p), Some(g)) = (pan_full.as_deref(), gstin_pan) {
         f.pan_in_gstin = Some(p == g);
     }
-    if let Some(p) = pan_full.or(gstin_pan) {
+    if let Some(p) = pan_full.as_deref().or(gstin_pan) {
         f.pan_last4 = Some(p[p.len() - 4..].to_string());
     }
     f.legal_name = name_in_incorporation(text)
@@ -304,7 +416,11 @@ pub fn cross_check(kind: &str, f: &Facts, e: &Entered) -> Vec<Check> {
                 Some(_) => Check::new(
                     "gstin_found",
                     "match",
-                    "a GSTIN with a valid check character is on the document",
+                    if f.ocr_corrected {
+                        "a GSTIN with a valid check character is on the document (OCR misread a character and it was corrected by position; confirm on the file)"
+                    } else {
+                        "a GSTIN with a valid check character is on the document"
+                    },
                 ),
                 None => Check::new(
                     "gstin_found",
@@ -425,6 +541,29 @@ mod tests {
             f.pan_in_gstin, None,
             "no separate PAN on the page to compare"
         );
+    }
+
+    #[test]
+    fn ocr_confusions_are_put_right_by_position_and_only_when_the_check_character_agrees() {
+        let g = gstin("27", PAN);
+        // zeros read as O and a 1 read as I, as tesseract does on a poor scan
+        let garbled = g.replace('0', "O").replacen('1', "I", 1);
+        assert_ne!(garbled, g);
+        let f = extract(&format!("Registration Number : {garbled}\n"));
+        assert_eq!(f.gstin.as_deref(), Some(g.as_str()), "{garbled}");
+        assert!(f.ocr_corrected);
+        // PAN: a letter where a digit belongs
+        let p = extract("Permanent Account Number ABCCEI23OF\n");
+        assert_eq!(p.pan_last4.as_deref(), Some("230F"), "{p:?}");
+        assert!(p.ocr_corrected);
+        // a clean read is never marked as corrected
+        assert!(!extract(&format!("GSTIN {g}")).ocr_corrected);
+        // too damaged, or the wrong check character: nothing is made up
+        let wrecked = format!("{}XX{}", &g[..4], &g[6..]);
+        assert_eq!(extract(&format!("GSTIN {wrecked}")).gstin, None);
+        // an ordinary word of the right length is never turned into an identifier
+        let w = extract("Administration Boardroom ADMINISTER SOBBLOOOLS\n");
+        assert_eq!((w.gstin, w.pan_last4, w.cin), (None, None, None));
     }
 
     #[test]
