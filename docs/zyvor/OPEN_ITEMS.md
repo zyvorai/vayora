@@ -152,7 +152,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 ## 6. Console polish
 
 Mobile was checked on three pages only. Walk every page at 390 px (`apps/zyvor-console/app/globals.css` has the phone
-rules at the end), and add: saved views on Payments (search is **done**: `q=` on `GET /v1/payment_intents` and a box on the page),
+rules at the end), and add: saved views on Payments (**done**: search `q=`, date range `created_from`/`created_to`, and named views: `GET/POST /v1/saved_views`, `DELETE /v1/saved_views/{id}`; personal by default, shareable with the environment by a person with `payments:write`; 20 per person; filters status, q, from, to are validated on save; Node `savedViews`, Python `*_saved_view`, Go `*SavedView`; chips with a save form on the Payments page and the CSV export keeps the same filters; other lists are not covered). Checked in the local sandbox in a browser: filters, saving a shared view, applying it, deleting it, and the date range. That check found and fixed a bug: the page listed views as a different person from the one who saved them, so a personal view would not have shown,
 payment-link reminders (backend feature), an audit of empty states in a browser (a code scan found every list page has empty-state text except Keys, which cannot be empty because the viewing key is listed; `error.tsx`, `loading.tsx` and `not-found.tsx` exist for the app group), keyboard and screen-reader pass,
 translations for the new pages (`apps/zyvor-checkout` shows the approach).
 

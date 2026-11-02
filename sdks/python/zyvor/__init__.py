@@ -177,9 +177,9 @@ class Zyvor:
     def cancel_payment_link(self, link_id: str) -> types.PostPaymentLinksByIdCancelResponse:
         return self._req("POST", f"/v1/payment_links/{link_id}/cancel")
 
-    def list_payments(self, status: Optional[str] = None, q: Optional[str] = None, limit: Optional[int] = None, starting_after: Optional[str] = None) -> types.GetPaymentIntentsByIdTimelineResponse:
-        """Newest first. `q` matches a payment id exactly, or part of its reference or description."""
-        params = {k: v for k, v in {"status": status, "q": q, "limit": limit, "starting_after": starting_after}.items() if v not in (None, "")}
+    def list_payments(self, status: Optional[str] = None, q: Optional[str] = None, limit: Optional[int] = None, starting_after: Optional[str] = None, *, created_from: Optional[str] = None, created_to: Optional[str] = None) -> types.GetPaymentIntentsByIdTimelineResponse:
+        """Newest first. `q` matches a payment id exactly, or part of its reference or description. created_from/created_to are days (IST, YYYY-MM-DD)."""
+        params = {k: v for k, v in {"status": status, "q": q, "limit": limit, "starting_after": starting_after, "created_from": created_from, "created_to": created_to}.items() if v not in (None, "")}
         return self._req("GET", "/v1/payment_intents" + ("?" + urllib.parse.urlencode(params) if params else ""))
 
     # --- UPI AutoPay mandates ------------------------------------------------------------------
@@ -607,6 +607,18 @@ class Zyvor:
     def replay_event(self, event_id: str) -> types.PostOutboxByIdReplayResponse:
         """Queue a webhook event again."""
         return self._req("POST", f"/v1/outbox/{event_id}/replay", {})
+
+    def list_saved_views(self) -> types.GetSavedViewsResponse:
+        """Your saved Payments views and the ones shared with the environment."""
+        return self._req("GET", "/v1/saved_views?scope=payments")
+
+    def create_saved_view(self, name: str, query: dict, *, shared: bool = False) -> types.PostSavedViewsResponse:
+        """Save Payments filters (status, q, from, to as YYYY-MM-DD). Sharing needs payments:write."""
+        return self._req("POST", "/v1/saved_views", {"scope": "payments", "name": name, "query": query, "shared": shared})
+
+    def delete_saved_view(self, view_id: str) -> types.DeleteSavedViewsByIdResponse:
+        """Delete a view you own (an admin can delete any)."""
+        return self._req("DELETE", f"/v1/saved_views/{view_id}")
 
     def reset_test_data(self) -> types.PostTestDataResetResponse:
         """Test environments only: clear payments, invoices, customers and the ledger; keep settings, keys, providers and other setup."""

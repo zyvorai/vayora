@@ -357,6 +357,49 @@ func (c *Client) ListPayments(status, q string, limit int) (map[string]any, erro
 	return out, err
 }
 
+// ListPaymentsInRange is ListPayments limited to payments created from createdFrom to createdTo, days in IST as
+// YYYY-MM-DD ("" = no limit on that side).
+func (c *Client) ListPaymentsInRange(status, q string, limit int, createdFrom, createdTo string) (map[string]any, error) {
+	v := url.Values{}
+	if status != "" {
+		v.Set("status", status)
+	}
+	if q != "" {
+		v.Set("q", q)
+	}
+	if limit > 0 {
+		v.Set("limit", fmt.Sprint(limit))
+	}
+	if createdFrom != "" {
+		v.Set("created_from", createdFrom)
+	}
+	if createdTo != "" {
+		v.Set("created_to", createdTo)
+	}
+	path := "/v1/payment_intents"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+// ListSavedViews returns your saved Payments views and the ones shared with the environment.
+func (c *Client) ListSavedViews() (map[string]any, error) {
+	return c.call("GET", "/v1/saved_views?scope=payments", nil)
+}
+
+// CreateSavedView saves Payments filters (status, q, from, to as YYYY-MM-DD). Sharing needs payments:write.
+func (c *Client) CreateSavedView(name string, query map[string]any, shared bool) (map[string]any, error) {
+	return c.call("POST", "/v1/saved_views", map[string]any{"scope": "payments", "name": name, "query": query, "shared": shared})
+}
+
+// DeleteSavedView deletes a view you own (an admin can delete any).
+func (c *Client) DeleteSavedView(id string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/saved_views/"+id, nil)
+}
+
 // FxExposure values open dollar invoices at the rate when raised and at asOf ("" = today). Reporting only.
 func (c *Client) FxExposure(asOf string) (map[string]any, error) {
 	path := "/v1/fx/exposure"

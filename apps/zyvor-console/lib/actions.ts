@@ -307,6 +307,16 @@ export const resolveCase = async (_: FormState, f: FormData) => {
   if (!note) return { error: "Say how it was resolved." };
   return run(["/reconciliation", "/"], (z) => z.cases.resolve(id(f), note));
 };
+const PAYMENT_FILTERS = ["status", "q", "from", "to"] as const;
+export const saveView = async (_: FormState, f: FormData) => {
+  const name = String(f.get("name") ?? "").trim();
+  if (!name) return { error: "Give the view a name." };
+  const query: Record<string, string> = {};
+  for (const k of PAYMENT_FILTERS) { const v = String(f.get(k) ?? "").trim(); if (v) query[k] = v; }
+  if (Object.keys(query).length === 0) return { error: "Choose a filter first." };
+  return run(["/payments"], (z) => z.savedViews.create({ name, query, shared: on(f, "shared") }), "viewer");
+};
+export const deleteView = async (_: FormState, f: FormData) => run(["/payments"], (z) => z.savedViews.delete(id(f)), "viewer");
 export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)), "admin");
 export const runBilling = async (_: FormState): Promise<FormState> => {
   let made = 0;

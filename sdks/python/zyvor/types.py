@@ -43,6 +43,10 @@ DeletePlatformRotaDaysOffByIdResponse = TypedDict("DeletePlatformRotaDaysOffById
     "deleted": "Any",
 })
 
+DeleteSavedViewsByIdResponse = TypedDict("DeleteSavedViewsByIdResponse", {
+    "ok": "bool",
+})
+
 GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
     "by_provider_method": "List[Any]",
     "suggestions": "Any",
@@ -641,6 +645,10 @@ GetRefundsByIdResponse = TypedDict("GetRefundsByIdResponse", {
 GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "data": "List[RefundRow]",
     "has_more": "bool",
+})
+
+GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
+    "data": "List[Any]",
 })
 
 GetSettingsResponse = TypedDict("GetSettingsResponse", {
@@ -1447,6 +1455,15 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "failure_reason": "Optional[str]",
     "created_at": "str",
     "updated_at": "str",
+})
+
+PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
+    "id": "str",
+    "name": "str",
+    "query": "Any",
+    "shared": "Any",
+    "mine": "Any",
+    "owner": "Any",
 })
 
 PostSettingsResponse = TypedDict("PostSettingsResponse", {
