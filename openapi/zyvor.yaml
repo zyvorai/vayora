@@ -1551,6 +1551,40 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/NewReminder'
+  /v1/plans/{id}:
+    patch:
+      summary: Rename a plan, change its price (from each subscriber's next invoice) or archive it
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  amount_minor:
+                    type: integer
+                  active: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanPatch'
   /v1/plans:
     get:
       summary: Create or list billing plans
@@ -7899,6 +7933,17 @@ components:
         as_of:
           type: string
           format: date
+    PlanPatch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        active:
+          type: boolean
     NewUsage:
       type: object
       x-generated: true

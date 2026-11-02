@@ -813,6 +813,13 @@ PatchCustomersByIdResponse = TypedDict("PatchCustomersByIdResponse", {
     "pincode": "Optional[str]",
 })
 
+PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "amount_minor": "int",
+    "active": "Any",
+})
+
 PostApiKeysByIdRevokeResponse = TypedDict("PostApiKeysByIdRevokeResponse", {
     "id": "str",
     "revoked": "bool",

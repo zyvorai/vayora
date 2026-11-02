@@ -116,9 +116,10 @@ func TestBillingAndCollectionsPaths(t *testing.T) {
 	}
 	_, _ = c.EinvoiceDraft("inv_1")
 	_, _ = c.UpdateCustomer("cus_1", map[string]string{"pincode": "110001"})
+	_, _ = c.UpdatePlan("plan_1", map[string]any{"amount_minor": 5000})
 	want := []string{"POST /v1/subscriptions", "POST /v1/subscriptions/sub_1/change_plan", "POST /v1/subscriptions/sub_1/usage",
 		"POST /v1/invoices/inv_1/credit_notes", "GET /v1/collections/ageing?as_of=2026-10-31", "POST /v1/invoices/inv_1/promises",
-		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31", "GET /v1/payment_intents?limit=10&q=ORD+1%26x&status=succeeded", "POST /v1/mandates", "POST /v1/mandates/mnd_1/pause", "POST /v1/mandates/mnd_1/debits", "POST /v1/settlements/sync", "POST /v1/outbox/test", "POST /v1/billing/run", "POST /v1/collections/dunning/run", "POST /v1/payment_attempts/att_1/simulate_event", "POST /v1/settlements/stl_1/simulate_bank", "GET /v1/invoices/inv_1/einvoice", "PATCH /v1/customers/cus_1"}
+		"POST /v1/fx/rates", "GET /v1/fx/exposure?as_of=2026-10-31", "GET /v1/payment_intents?limit=10&q=ORD+1%26x&status=succeeded", "POST /v1/mandates", "POST /v1/mandates/mnd_1/pause", "POST /v1/mandates/mnd_1/debits", "POST /v1/settlements/sync", "POST /v1/outbox/test", "POST /v1/billing/run", "POST /v1/collections/dunning/run", "POST /v1/payment_attempts/att_1/simulate_event", "POST /v1/settlements/stl_1/simulate_bank", "GET /v1/invoices/inv_1/einvoice", "PATCH /v1/customers/cus_1", "PATCH /v1/plans/plan_1"}
 	if fmt.Sprint(seen) != fmt.Sprint(want) {
 		t.Fatalf("got %v", seen)
 	}

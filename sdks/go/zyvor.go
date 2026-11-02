@@ -1440,6 +1440,14 @@ func (c *Client) CreatePlan(name string, amountMinor int64, intervalUnit string,
 	return c.call("POST", "/v1/plans", body)
 }
 
+// UpdatePlan renames a plan (name), changes its price (amount_minor, from each subscriber's next invoice) or archives it
+// (active: false). Keys left out stay as they are.
+func (c *Client) UpdatePlan(planID string, fields map[string]any) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("PATCH", "/v1/plans/"+planID, fields, "", &out)
+	return out, err
+}
+
 // Statement: A customer's statement.
 func (c *Client) Statement(customerId string) (map[string]any, error) {
 	v := url.Values{}

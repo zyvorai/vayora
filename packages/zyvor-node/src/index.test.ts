@@ -39,6 +39,15 @@ describe("client", () => {
     expect(Array.from(bytes)).toEqual([37, 80, 68, 70, 0, 255]);
   });
 
+  it("renames, reprices and archives a plan with a PATCH that omits what was left out", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    await client(f).billing.updatePlan("plan_1", { amountMinor: 12500, active: false });
+    const [url, init] = (f.mock.calls as unknown as [string, RequestInit][])[0];
+    expect(url).toBe("http://localhost:8080/v1/plans/plan_1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ amount_minor: 12500, active: false });
+  });
+
   it("changes a subscription's plan and cancels it", async () => {
     const f = vi.fn(async () => json(200, {}));
     const c = client(f);

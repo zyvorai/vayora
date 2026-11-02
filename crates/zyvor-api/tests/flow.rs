@@ -16209,3 +16209,105 @@ async fn a_case_can_be_put_into_plain_words_by_the_model_without_adding_facts(po
         2
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_plan_can_be_renamed_repriced_and_archived(pool: PgPool) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Tuition Payer" }),
+        )
+        .await;
+    let plan = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Monthly", "amount_minor": 10_000, "interval_unit": "month" }),
+        )
+        .await;
+    let pid = plan["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "POST",
+        "/v1/subscriptions",
+        None,
+        json!({ "customer_id": cust["id"], "plan_id": pid }),
+    )
+    .await;
+    // price and name change; the existing subscriber is billed the new price
+    let up = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{pid}"),
+            None,
+            json!({ "name": "  Monthly tuition ", "amount_minor": 12_500 }),
+        )
+        .await;
+    assert_eq!(
+        (up["name"].as_str(), up["amount_minor"].as_i64()),
+        (Some("Monthly tuition"), Some(12_500))
+    );
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        1
+    );
+    let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    assert_eq!(invoices["data"][0]["amount_minor"], 12_500);
+    // the list shows the change
+    let list = t.ok(a, "GET", "/v1/plans", None, Value::Null).await;
+    assert_eq!(list["data"][0]["name"], "Monthly tuition");
+    // refused: nothing to change, a blank name, a negative price
+    for body in [
+        json!({}),
+        json!({ "name": "  " }),
+        json!({ "amount_minor": -1 }),
+    ] {
+        let (st, _) = t
+            .call(a, "PATCH", &format!("/v1/plans/{pid}"), None, body)
+            .await;
+        assert_eq!(st.as_u16(), 422);
+    }
+    // another business cannot see or change it
+    let (st, _) = t
+        .call(
+            b,
+            "PATCH",
+            &format!("/v1/plans/{pid}"),
+            None,
+            json!({ "name": "x" }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+    // archived: no new subscribers
+    t.ok(
+        a,
+        "PATCH",
+        &format!("/v1/plans/{pid}"),
+        None,
+        json!({ "active": false }),
+    )
+    .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": pid }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    assert_eq!(
+        t.count("SELECT COUNT(*) FROM audit_events WHERE action = 'plan.updated'")
+            .await,
+        2
+    );
+}
