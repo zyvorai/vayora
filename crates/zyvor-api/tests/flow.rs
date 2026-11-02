@@ -16311,3 +16311,65 @@ async fn a_plan_can_be_renamed_repriced_and_archived(pool: PgPool) {
         2
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_subscriptions_quantity_can_change_on_the_same_plan(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Seats Co" }),
+        )
+        .await;
+    let plan = t.ok(a, "POST", "/v1/plans", None, json!({ "name": "Seat", "amount_minor": 30_000, "interval_unit": "day", "interval_count": 30 })).await;
+    let sub = t.ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "start_date": (today + chrono::Duration::days(10)).to_string() })).await;
+    let path = format!(
+        "/v1/subscriptions/{}/change_plan",
+        sub["id"].as_str().unwrap()
+    );
+    // two more seats with 10 of 30 days left: 2 * 30000 * 10/30
+    let up = t
+        .ok(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "plan_id": plan["id"], "quantity": 3 }),
+        )
+        .await;
+    assert_eq!(
+        (up["quantity"].as_i64(), up["proration_minor"].as_i64()),
+        (Some(3), Some(20_000))
+    );
+    // fewer seats is free now and applies from the next invoice
+    let down = t
+        .ok(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "plan_id": plan["id"], "quantity": 1 }),
+        )
+        .await;
+    assert_eq!(
+        (down["quantity"].as_i64(), down["proration_minor"].as_i64()),
+        (Some(1), Some(0))
+    );
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "plan_id": plan["id"], "quantity": 0 }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    assert_eq!(subs["data"][0]["quantity"], 1);
+}
