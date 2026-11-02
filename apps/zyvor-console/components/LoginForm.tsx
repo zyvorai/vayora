@@ -21,7 +21,7 @@ export function LoginForm({ next, reset }: { next: string; reset?: boolean }) {
         <label className="f" htmlFor="password">Password</label>
         <div style={{ position: "relative" }}>
           <input id="password" name="password" type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required style={{ paddingRight: 64 }} readOnly={needOtp} />
-          <button type="button" className="linkbtn" onClick={() => setShow((v) => !v)} aria-pressed={show} style={{ position: "absolute", right: 12, top: 10 }}>{show ? "Hide" : "Show"}</button>
+          <button type="button" className="linkbtn" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"} style={{ position: "absolute", right: 12, top: 10 }}>{show ? "Hide" : "Show"}</button>
         </div>
       </div>
       {needOtp && (

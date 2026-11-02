@@ -132,8 +132,19 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
     }
   }
 
+  // When the screen changes (paying, waiting, paid, failed, try again) the control the payer was on goes away, and
+  // focus would drop to the top of the page. Move it to the new screen's heading instead, which also makes a screen
+  // reader read it. Not on the first load, so opening the page never steals focus.
+  const viewKey = session ? `${session.phase}:${retrying}` : "";
+  const seenView = useRef(false);
+  useEffect(() => {
+    if (!viewKey) return;
+    if (!seenView.current) { seenView.current = true; return; }
+    document.querySelector<HTMLElement>("[data-announce]")?.focus();
+  }, [viewKey]);
+
   if (gone) {
-    return <div className="card state" role="alert"><h2>{t("invalidTitle")}</h2><p>{t("invalidBody")}</p><LangPicker lang={lang} setLang={setLang} label={t("language")} /></div>;
+    return <div className="card state" role="alert"><h1>{t("invalidTitle")}</h1><p>{t("invalidBody")}</p><LangPicker lang={lang} setLang={setLang} label={t("language")} /></div>;
   }
   if (!session) {
     return <div className="card state" role="status" aria-live="polite">{errText ? <p>{errText}</p> : <><div className="spin" /><p>{t("loading")}</p></>}</div>;
@@ -154,7 +165,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status">
           <svg className="badge" viewBox="0 0 84 84" aria-hidden="true" stroke="var(--ok)"><circle cx="42" cy="42" r="40" /><path d="M26 43l11 11 21-23" /></svg>
-          <h2>{t("paidTitle")}</h2>
+          <h2 tabIndex={-1} data-announce>{t("paidTitle")}</h2>
           <p>{session.merchant ? t("paidTo", { amount, merchant: session.merchant }) : t("paidPlain", { amount })}</p>
         </div>
         <Help t={t} intent={intent} />
@@ -167,7 +178,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
-          <h2>{t("confirmTitle")}</h2>
+          <h2 tabIndex={-1} data-announce>{t("confirmTitle")}</h2>
           <p>{t("confirmBody")}</p>
         </div>
         <Help t={t} intent={intent} />
@@ -184,7 +195,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         <div className="card">
           {head}
           <div className="state" role="status" aria-live="polite">
-            <h2>{t("scanTitle")}</h2>
+            <h2 tabIndex={-1} data-announce>{t("scanTitle")}</h2>
             <img className="qr" src={qrImage} width={220} height={220} alt={t("scanAlt")} />
             <p>{t("scanBody")}</p>
             {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
@@ -202,7 +213,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         <div className="card">
           {head}
           <div className="state" role="status" aria-live="polite">
-            <h2>{t("scanTitle")}</h2>
+            <h2 tabIndex={-1} data-announce>{t("scanTitle")}</h2>
             <img className="qr" src={`${base}/upi-qr.svg?secret=${encodeURIComponent(secret)}`} width={220} height={220} alt={t("scanAlt")} />
             <p>{t("scanBody")}</p>
             <a className="pay" href={intentUri}>{t("openUpiApp")}</a>
@@ -219,7 +230,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
-          <h2>{upi ? t("approveTitle") : t("completeTitle")}</h2>
+          <h2 tabIndex={-1} data-announce>{upi ? t("approveTitle") : t("completeTitle")}</h2>
           <p>{upi ? t("approveBody") : t("completeBody")}</p>
           {waited >= 60000 && <p className="notice warn">{t("stillWaiting")}</p>}
           <button className="link" type="button" onClick={() => void load()}>{t("checkStatus")}</button>
@@ -235,13 +246,13 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
     <form className="card" onSubmit={pay} noValidate>
       {head}
       {failed && (
-        <div className="notice bad" role="alert">
+        <div className="notice bad" role="alert" tabIndex={-1} data-announce>
           {t(failureKey(session.attempt?.failure_reason ?? null))}
         </div>
       )}
       {(!failed) && (
         <>
-          <fieldset className="methods">
+          <fieldset className="methods" tabIndex={-1} data-announce>
             <legend>{t("methodLegend")}</legend>
             {session.methods.map((m) => (
               <label key={m}>

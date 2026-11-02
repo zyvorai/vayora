@@ -25,7 +25,7 @@ input[type=text]:focus-visible { outline: 3px solid var(--accent); outline-offse
 .link { all: unset; cursor: pointer; color: var(--accent-text); font-weight: 500; padding: 8px 4px; }
 .link:focus-visible { outline: 3px solid var(--accent); border-radius: 6px; }
 .state { text-align: center; padding: 8px 0; }
-.state h2 { margin: 14px 0 6px; font-size: 1.375rem; letter-spacing: -.02em; }
+.state h1, .state h2 { margin: 14px 0 6px; font-size: 1.375rem; letter-spacing: -.02em; }
 .state p { margin: 0 0 8px; color: var(--muted); }
 .badge { width: 72px; height: 72px; margin: 0 auto; }
 .badge circle { fill: none; stroke-width: 4; stroke-dasharray: 252; stroke-dashoffset: 252; animation: draw .7s .05s ease-out forwards; }
@@ -61,3 +61,6 @@ a.pay { display: flex; align-items: center; justify-content: center; text-decora
 @media (prefers-color-scheme: dark) { .pay { color: #000; } }
 
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+
+/* screens move focus to their heading when they change; it is not a control, so it gets no ring */
+[data-announce]:focus { outline: none; }

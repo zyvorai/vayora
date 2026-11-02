@@ -5,12 +5,14 @@ export function AuthShell({ title, lede, children }: { title: string; lede?: str
   return (
     <div className="login">
       <div className="aurora" aria-hidden="true" />
+      <main className="authmain">
       <div className="card">
         <img src="/favicon.svg" alt="" width="44" height="44" style={{ borderRadius: 11 }} />
         <h1>{title}</h1>
         {lede && <p className="lede">{lede}</p>}
         {children}
       </div>
+      </main>
     </div>
   );
 }

@@ -5,6 +5,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   return (
     <div className="login">
       <div className="aurora" aria-hidden="true" />
+      <main className="authmain">
       <div className="card">
         <img src="/favicon.svg" alt="" width="44" height="44" style={{ borderRadius: 11 }} />
         <h1>Welcome to Zyvor</h1>
@@ -12,6 +13,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
         <LoginForm next={next ?? "/"} reset={reset === "1"} />
         <p className="fine">Every action here is recorded in the audit trail.</p>
       </div>
+      </main>
     </div>
   );
 }
