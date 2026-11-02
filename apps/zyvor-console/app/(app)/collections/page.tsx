@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { DraftReview } from "@/components/DraftReview";
@@ -63,7 +64,7 @@ export default async function Collections() {
         <table>
           <thead><tr><th>Invoice</th><th>Due</th><th className="num">Days late</th><th className="num">Outstanding</th><th /></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={5} className="empty">No unpaid invoices.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={5} className="empty">No unpaid invoices. Overdue invoices from <Link href="/billing">Billing</Link> appear here, with their reminders.</td></tr>}
             {rows.map((i) => (
               <tr key={i.id}>
                 <td>{i.number}</td><td>{i.due_date ?? "—"}</td><td className="num">{i.days_past_due}</td>
@@ -83,7 +84,7 @@ export default async function Collections() {
         <table>
           <thead><tr><th>Invoice</th><th className="num">Promised</th><th>By</th><th>Status</th><th>Note</th></tr></thead>
           <tbody>
-            {promises.data.length === 0 && <tr><td colSpan={5} className="empty">No promises recorded.</td></tr>}
+            {promises.data.length === 0 && <tr><td colSpan={5} className="empty">No promises to pay recorded. Note one on an unpaid invoice when a customer agrees to pay by a date.</td></tr>}
             {promises.data.map((p) => {
               const r = p as Record<string, string | number | null>;
               return (

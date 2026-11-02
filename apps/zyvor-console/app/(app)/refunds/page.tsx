@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
 import { approveRefund, rejectRefund, retryRefund } from "@/lib/actions";
@@ -14,7 +15,7 @@ export default async function Refunds() {
         <table>
           <thead><tr><th>ID</th><th className="num">Amount</th><th>Status</th><th>Requested by</th><th>Return ref</th><th /></tr></thead>
           <tbody>
-            {page.data.length === 0 && <tr><td colSpan={6} className="empty">No refunds yet.</td></tr>}
+            {page.data.length === 0 && <tr><td colSpan={6} className="empty">No refunds yet. To refund a payment, open it under <Link href="/payments">Payments</Link> and choose Refund.</td></tr>}
             {page.data.map((r) => (
               <tr key={r.id}>
                 <td className="mono">{r.id.slice(0, 16)}…</td>
