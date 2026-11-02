@@ -28,3 +28,6 @@ export function dueIn(day: string): { text: string; tone: "" | "warn" | "bad" } 
   if (days === 0) return { text: "today", tone: "bad" };
   return { text: `in ${days} day${days === 1 ? "" : "s"}`, tone: days <= 3 ? "warn" : "" };
 }
+
+/** The anchor a settings card is reached by from the jump links ("Risk limits" is #risk-limits). */
+export const slug = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

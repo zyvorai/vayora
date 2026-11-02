@@ -86,7 +86,7 @@ td a.row { color: var(--fg); font-weight: 500; }
 :root[data-theme="dark"] .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
 .btn[disabled] { opacity: .5; cursor: progress; }
 .btn.small { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
-input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="date"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
+input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="date"], input[type="number"], input[type="url"], input[type="tel"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
 label.f { display: block; font-size: .75rem; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
 .seg { display: inline-flex; padding: 3px; border-radius: 980px; background: var(--soft); gap: 2px; }
 .seg a { padding: 5px 14px; border-radius: 980px; color: var(--muted); font-weight: 500; font-size: .875rem; }

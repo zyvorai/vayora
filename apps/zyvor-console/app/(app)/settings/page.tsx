@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
+import { slug } from "@/lib/labels";
 import { resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
@@ -16,8 +17,13 @@ export default async function Settings() {
   return (
     <>
       <div className="head"><div><h1>Settings</h1><p className="lede">How reminders, approvals, tax and webhooks behave for this {s.env} environment.</p></div></div>
+      <nav aria-label="On this page" style={{ marginBottom: 20 }}>
+        <div className="seg">
+          {[["Collections", "Collections"], ["Receipts, reminders and replies", "Emails"], ["Approvals", "Approvals"], ["Risk limits", "Risk"], ["GST", "GST"], ["Exchange rate", "Exchange rate"], ["Webhooks", "Webhooks"], ...(s.env === "test" ? [["Test data", "Test data"]] : [])].map(([title, label]) => <a key={title} href={`#${slug(title)}`}>{label}</a>)}
+        </div>
+      </nav>
 
-      <SettingsForm title="Collections" hint="Remind customers about overdue invoices on a schedule. Nothing is sent by Zyvor itself: your own messaging picks up the reminder event." action={saveCollections}>
+      <SettingsForm title="Collections" hint="Remind customers about overdue invoices on a schedule. Each reminder is logged and announced to your own messaging (the reminder event); Zyvor emails it itself only when reminder emails are on below and the channel is email." action={saveCollections}>
         <label className="field checkbox"><input type="checkbox" name="enabled" defaultChecked={s.dunning.enabled} /> Remind automatically</label>
         <label className="field checkbox"><input type="checkbox" name="requires_approval" defaultChecked={s.dunning.requires_approval} /> A person approves each reminder first</label>
         <label className="field">Channel
@@ -29,7 +35,7 @@ export default async function Settings() {
 
       <SettingsForm title="Receipts, reminders and replies" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up. When a payer replies to a receipt or a payment-link email, the reply goes to the address below instead of to Zyvor." action={saveReceipts}>
         <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment and refund receipts</label>
-        <label className="field checkbox"><input type="checkbox" name="reminders" defaultChecked={s.reminder_emails} /> Email payment reminders (only reminders sent by email; leave off if your own system already sends them from the reminder event)</label>
+        <label className="field checkbox"><input type="checkbox" name="reminders" defaultChecked={s.reminder_emails} /> <span>Email payment reminders<small className="muted" style={{ display: "block" }}>Only reminders on the email channel. Leave off if your own system already sends them.</small></span></label>
         <label className="field">Replies go to<input name="reply_to" type="email" maxLength={200} placeholder="accounts@yourbusiness.example" defaultValue={s.reply_to_email ?? ""} /></label>
       </SettingsForm>
 
