@@ -976,6 +976,8 @@ pub struct Settings {
     risk: Option<crate::risk::Rules>,
     /// Email each payer a receipt when their payment is captured (needs the customer's email; off by default).
     payment_receipts: Option<bool>,
+    /// Where replies to the emails sent for you go (one plain address). An empty string clears it.
+    reply_to_email: Option<String>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -1094,6 +1096,23 @@ pub async fn put_settings(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(r) = &b.reply_to_email {
+        let value = if r.trim().is_empty() {
+            None
+        } else {
+            Some(crate::mail::clean_reply_to(r).ok_or_else(|| {
+                ApiError::invalid(
+                    "invalid_reply_to",
+                    "reply_to_email must be one email address, such as accounts@school.example",
+                )
+            })?)
+        };
+        sqlx::query("UPDATE tenant_settings SET reply_to_email = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(t) = b.payout_approval_threshold_minor {
         sqlx::query(
             "UPDATE tenant_settings SET payout_approval_threshold_minor = $2 WHERE tenant_id = $1",
@@ -1123,7 +1142,7 @@ pub async fn put_settings(
     .bind(b.outbound_webhook_secret.as_ref().map(|sec| s.crypto.encrypt(sec.as_bytes())))
     .execute(&mut *tx)
     .await?;
-    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url, "dunning_changed": b.dunning.is_some(), "payment_receipts": b.payment_receipts })).await?;
+    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "settings.updated", None, json!({ "threshold": b.refund_approval_threshold_minor, "routing_changed": b.routing.is_some(), "webhook_url": b.outbound_webhook_url, "dunning_changed": b.dunning.is_some(), "payment_receipts": b.payment_receipts, "reply_to_changed": b.reply_to_email.is_some() })).await?;
     tx.commit().await?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -1137,6 +1156,11 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
             .bind(&auth.tenant_id)
             .fetch_one(&mut *tx)
             .await?;
+    let reply_to: Option<String> =
+        sqlx::query_scalar("SELECT reply_to_email FROM tenant_settings WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let (gaddr, gloc, gpin): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
         "SELECT gst_address1, gst_location, gst_pincode FROM tenant_settings WHERE tenant_id = $1",
     )
@@ -1145,7 +1169,7 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

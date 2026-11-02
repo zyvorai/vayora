@@ -470,7 +470,11 @@ export const resetTestData = async (_: FormState, f: FormData) => {
   if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
   return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
 };
-export const saveReceipts = async (_: FormState, f: FormData) => run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts") }), "admin");
+export const saveReceipts = async (_: FormState, f: FormData) => {
+  const replyTo = String(f.get("reply_to") ?? "").trim();
+  if (replyTo && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(replyTo)) return { error: "Enter one email address for replies, such as accounts@school.example, or leave it empty." };
+  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reply_to_email: replyTo }), "admin");
+};
 export const saveApprovals = async (_: FormState, f: FormData) => {
   const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];
   if (!Number.isFinite(r) || !Number.isFinite(p) || r < 0 || p < 0) return { error: "Amounts must be zero or more." };

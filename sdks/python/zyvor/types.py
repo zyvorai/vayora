@@ -695,6 +695,7 @@ GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "gst": "Any",
     "payout_approval_threshold_minor": "int",
     "payment_receipts": "bool",
+    "reply_to_email": "Optional[str]",
     "risk": "Any",
     "webhook_events": "Any",
 })

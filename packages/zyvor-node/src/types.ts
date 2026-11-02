@@ -691,6 +691,7 @@ export interface GetSettingsResponse {
   gst: unknown;
   payout_approval_threshold_minor: number;
   payment_receipts: boolean;
+  reply_to_email: string | null;
   risk: unknown;
   webhook_events: unknown;
 }

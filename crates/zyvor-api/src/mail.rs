@@ -61,21 +61,21 @@ impl Mailer {
         !matches!(self, Mailer::Log)
     }
 
-    pub async fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), String> {
+    pub async fn send(
+        &self,
+        to: &str,
+        subject: &str,
+        body: &str,
+        reply_to: Option<&str>,
+    ) -> Result<(), String> {
         match self {
             Mailer::Log => {
-                tracing::warn!(%to, %subject, "email NOT sent (log-only mailer, set ZYVOR_SMTP_URL):\n{body}");
+                tracing::warn!(%to, %subject, ?reply_to, "email NOT sent (log-only mailer, set ZYVOR_SMTP_URL):\n{body}");
                 Ok(())
             }
             Mailer::Null => Ok(()),
             Mailer::Smtp(s) => {
-                let msg = Message::builder()
-                    .from(s.from.parse().map_err(|e| format!("from: {e}"))?)
-                    .to(to.parse().map_err(|e| format!("to: {e}"))?)
-                    .subject(subject)
-                    .header(ContentType::TEXT_PLAIN)
-                    .body(body.to_string())
-                    .map_err(|e| e.to_string())?;
+                let msg = build_message(&s.from, to, subject, body, reply_to)?;
                 s.transport
                     .send(msg)
                     .await
@@ -84,6 +84,33 @@ impl Mailer {
             }
         }
     }
+}
+
+/// The message as the SMTP mailer sends it. A reply-to that does not parse is an error, so a bad address is never
+/// silently dropped.
+fn build_message(
+    from: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+    reply_to: Option<&str>,
+) -> Result<Message, String> {
+    let mut b = Message::builder()
+        .from(from.parse().map_err(|e| format!("from: {e}"))?)
+        .to(to.parse().map_err(|e| format!("to: {e}"))?)
+        .subject(subject);
+    if let Some(r) = reply_to {
+        b = b.reply_to(r.parse().map_err(|e| format!("reply-to: {e}"))?);
+    }
+    b.header(ContentType::TEXT_PLAIN)
+        .body(body.to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// A business's reply-to address as typed: trimmed, and it must be one plain address (no display name).
+pub fn clean_reply_to(raw: &str) -> Option<String> {
+    let r = raw.trim();
+    (r.len() <= 200 && r.parse::<lettre::Address>().is_ok()).then(|| r.to_string())
 }
 
 /// Queue a message. Cheap and local; the worker sends it.
@@ -107,17 +134,25 @@ pub async fn enqueue(
 /// queues nothing. Returns whether a message was queued.
 pub async fn enqueue_once(
     conn: &mut sqlx::PgConnection,
+    tenant_id: &str,
     dedupe_key: &str,
     to: &str,
     subject: &str,
     body: &str,
 ) -> Result<bool, sqlx::Error> {
-    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (dedupe_key) DO NOTHING")
+    let reply_to: Option<String> =
+        sqlx::query_scalar("SELECT reply_to_email FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .flatten();
+    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (dedupe_key) DO NOTHING")
         .bind(new_id("mail"))
         .bind(to)
         .bind(subject)
         .bind(body)
         .bind(dedupe_key)
+        .bind(reply_to)
         .execute(conn)
         .await?
         .rows_affected();
@@ -260,16 +295,20 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
-        let row: Option<(String, String, String, String, i32)> = sqlx::query_as(
-            "SELECT id, to_email, subject, body, attempts FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
+        let row: Option<(String, String, String, String, i32, Option<String>)> = sqlx::query_as(
+            "SELECT id, to_email, subject, body, attempts, reply_to FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some((id, to, subject, body, attempts)) = row else {
+        let Some((id, to, subject, body, attempts, reply_to)) = row else {
             break;
         };
-        match s.mailer.send(&to, &subject, &body).await {
+        match s
+            .mailer
+            .send(&to, &subject, &body, reply_to.as_deref())
+            .await
+        {
             Ok(()) => {
                 sqlx::query("UPDATE mail_queue SET status = 'sent', sent_at = now(), body = '', last_error = NULL WHERE id = $1")
                     .bind(&id).execute(&mut *tx).await?;

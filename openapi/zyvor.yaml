@@ -2227,6 +2227,10 @@ paths:
                     format: int64
                   payment_receipts:
                     type: boolean
+                  reply_to_email:
+                    type:
+                    - string
+                    - 'null'
                   risk: {}
                   webhook_events: {}
         4XX:
@@ -7900,6 +7904,8 @@ components:
           type: object
         payment_receipts:
           type: boolean
+        reply_to_email:
+          type: string
     GstProfile:
       type: object
       x-generated: true
