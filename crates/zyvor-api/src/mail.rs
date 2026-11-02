@@ -8,7 +8,8 @@
 use std::time::Duration;
 
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{MultiPart, header::ContentType},
 };
 use sqlx::PgPool;
 use zyvor_core::new_id;
@@ -67,6 +68,7 @@ impl Mailer {
         subject: &str,
         body: &str,
         reply_to: Option<&str>,
+        html: Option<&str>,
     ) -> Result<(), String> {
         match self {
             Mailer::Log => {
@@ -75,7 +77,7 @@ impl Mailer {
             }
             Mailer::Null => Ok(()),
             Mailer::Smtp(s) => {
-                let msg = build_message(&s.from, to, subject, body, reply_to)?;
+                let msg = build_message(&s.from, to, subject, body, reply_to, html)?;
                 s.transport
                     .send(msg)
                     .await
@@ -94,6 +96,7 @@ fn build_message(
     subject: &str,
     body: &str,
     reply_to: Option<&str>,
+    html: Option<&str>,
 ) -> Result<Message, String> {
     let mut b = Message::builder()
         .from(from.parse().map_err(|e| format!("from: {e}"))?)
@@ -102,9 +105,75 @@ fn build_message(
     if let Some(r) = reply_to {
         b = b.reply_to(r.parse().map_err(|e| format!("reply-to: {e}"))?);
     }
-    b.header(ContentType::TEXT_PLAIN)
-        .body(body.to_string())
-        .map_err(|e| e.to_string())
+    match html {
+        Some(h) => b.multipart(MultiPart::alternative_plain_html(
+            body.to_string(),
+            h.to_string(),
+        )),
+        None => b.header(ContentType::TEXT_PLAIN).body(body.to_string()),
+    }
+    .map_err(|e| e.to_string())
+}
+
+fn esc(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => o.push_str("&amp;"),
+            '<' => o.push_str("&lt;"),
+            '>' => o.push_str("&gt;"),
+            '"' => o.push_str("&quot;"),
+            '\'' => o.push_str("&#39;"),
+            c => o.push(c),
+        }
+    }
+    o
+}
+
+/// An HTML version of a payer-facing plain-text email, made from the text itself so the wording lives in one
+/// place. Paragraphs follow the blank lines; a `Pay here: <https url>` line becomes a button (any other kind of
+/// address stays text); the last paragraph is the small print. Everything is escaped, and there is no image,
+/// script or tracking pixel.
+pub fn html_from_text(body: &str) -> String {
+    let blocks: Vec<&str> = body
+        .split("\n\n")
+        .filter(|b| !b.trim().is_empty())
+        .collect();
+    let mut out = String::from(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"margin:0;padding:24px;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f\"><div style=\"max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;font-size:16px;line-height:1.5\">",
+    );
+    for (i, block) in blocks.iter().enumerate() {
+        let small = i + 1 == blocks.len() && blocks.len() > 1;
+        let style = if small {
+            "margin:24px 0 0;font-size:13px;color:#6e6e73"
+        } else {
+            "margin:0 0 16px"
+        };
+        let mut lines = Vec::new();
+        let mut button = None;
+        for line in block.lines() {
+            match line.strip_prefix("Pay here: ") {
+                Some(u)
+                    if (u.starts_with("https://") || u.starts_with("http://"))
+                        && !u.contains(char::is_whitespace) =>
+                {
+                    button = Some(u.to_string());
+                }
+                _ => lines.push(esc(line)),
+            }
+        }
+        if !lines.is_empty() {
+            out.push_str(&format!("<p style=\"{style}\">{}</p>", lines.join("<br>")));
+        }
+        if let Some(u) = button {
+            let u = esc(&u);
+            out.push_str(&format!(
+                "<p style=\"margin:0 0 16px\"><a href=\"{u}\" style=\"display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:12px 22px;border-radius:980px;font-weight:600\">Pay now</a></p><p style=\"margin:0 0 16px;font-size:13px;color:#6e6e73;word-break:break-all\">{u}</p>"
+            ));
+        }
+    }
+    out.push_str("</div></body></html>");
+    out
 }
 
 /// A business's reply-to address as typed: trimmed, and it must be one plain address (no display name).
@@ -146,13 +215,14 @@ pub async fn enqueue_once(
             .fetch_optional(&mut *conn)
             .await?
             .flatten();
-    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (dedupe_key) DO NOTHING")
+    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to, html) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING")
         .bind(new_id("mail"))
         .bind(to)
         .bind(subject)
         .bind(body)
         .bind(dedupe_key)
         .bind(reply_to)
+        .bind(html_from_text(body))
         .execute(conn)
         .await?
         .rows_affected();
@@ -295,22 +365,22 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
-        let row: Option<(String, String, String, String, i32, Option<String>)> = sqlx::query_as(
-            "SELECT id, to_email, subject, body, attempts, reply_to FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
+        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT id, to_email, subject, body, attempts, reply_to, html FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some((id, to, subject, body, attempts, reply_to)) = row else {
+        let Some((id, to, subject, body, attempts, reply_to, html)) = row else {
             break;
         };
         match s
             .mailer
-            .send(&to, &subject, &body, reply_to.as_deref())
+            .send(&to, &subject, &body, reply_to.as_deref(), html.as_deref())
             .await
         {
             Ok(()) => {
-                sqlx::query("UPDATE mail_queue SET status = 'sent', sent_at = now(), body = '', last_error = NULL WHERE id = $1")
+                sqlx::query("UPDATE mail_queue SET status = 'sent', sent_at = now(), body = '', html = NULL, last_error = NULL WHERE id = $1")
                     .bind(&id).execute(&mut *tx).await?;
                 sent += 1;
             }
@@ -330,6 +400,34 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_html_version_escapes_everything_and_only_buttons_a_web_address() {
+        let h = html_from_text(
+            "Hello <b>Asha</b> & co,\n\nPay here: https://pay.example.com/pay/link/t/x?a=1&b=2\n\nSmall print.",
+        );
+        assert!(h.contains("Hello &lt;b&gt;Asha&lt;/b&gt; &amp; co,"), "{h}");
+        assert!(
+            h.contains(">Pay now</a>")
+                && h.contains("href=\"https://pay.example.com/pay/link/t/x?a=1&amp;b=2\""),
+            "{h}"
+        );
+        assert!(
+            h.contains("font-size:13px") && h.contains("Small print."),
+            "{h}"
+        );
+        assert!(
+            !h.contains("<b>") && !h.contains("<script") && !h.contains("<img"),
+            "{h}"
+        );
+        assert!(h.contains("<meta charset=\"utf-8\">"), "{h}");
+        // not a web address: stays visible text, no link
+        let t = html_from_text("Hi,\n\nPay here: javascript:alert(1)\n\nBye.");
+        assert!(
+            !t.contains("href=") && t.contains("Pay here: javascript:alert(1)"),
+            "{t}"
+        );
+    }
 
     #[test]
     fn retries_back_off_and_cap() {

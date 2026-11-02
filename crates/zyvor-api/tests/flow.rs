@@ -9612,6 +9612,13 @@ async fn a_business_can_have_replies_to_its_emails_go_to_its_own_address(pool: P
         raw.contains("Reply-To: accounts@school.example") && raw.contains("no-reply@example.com"),
         "{raw}"
     );
+    // a payer-facing email goes as plain text plus an HTML alternative
+    assert!(
+        raw.contains("multipart/alternative")
+            && raw.contains("Content-Type: text/plain")
+            && raw.contains("Content-Type: text/html"),
+        "{raw}"
+    );
 
     // cleared: later mail has none
     t.ok(
@@ -9652,6 +9659,8 @@ async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPoo
         "{raw}"
     );
     assert!(raw.contains("token=abc"), "{raw}");
+    // mail from Zyvor itself (sign-in links and the like) stays plain text
+    assert!(!raw.contains("text/html"), "{raw}");
     assert_eq!(
         t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent' AND body = ''")
             .await,
