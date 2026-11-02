@@ -411,6 +411,8 @@ export interface GetInvoicesResponseDataItem {
   outstanding_minor: number;
   status: string;
   due_date: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
 }
 
 export interface GetMandatesByIdDebitsResponse {
