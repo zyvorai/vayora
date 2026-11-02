@@ -3,7 +3,7 @@ import { startTransition, useActionState, useState, type FormEvent } from "react
 import { createCoupon, createLink } from "@/lib/actions";
 
 /** Make a link and show its URL right away, ready to paste into WhatsApp or a fee notice. */
-export function LinkForm({ base, counters = [] }: { base: string; counters?: { id: string; name: string; branch: string }[] }) {
+export function LinkForm({ base, counters = [], customers = [] }: { base: string; counters?: { id: string; name: string; branch: string }[]; customers?: { id: string; name: string; email: string }[] }) {
   const [state, run, pending] = useActionState(createLink, undefined);
   const [open, setOpen] = useState(false);
   // Submitted by hand so a refusal keeps what was typed (a form `action` resets its fields afterwards).
@@ -32,6 +32,17 @@ export function LinkForm({ base, counters = [] }: { base: string; counters?: { i
         <label className="field" style={{ flex: "1 1 160px" }}>Counter (optional)
           <select name="counter_id" defaultValue=""><option value="">None</option>{counters.map((c) => <option key={c.id} value={c.id}>{c.branch} · {c.name}</option>)}</select>
         </label>
+      )}
+      {!open && customers.length > 0 && (
+        <>
+          <label className="field" style={{ flex: "1 1 200px" }}>For a customer (optional)
+            <select name="customer_id" defaultValue=""><option value="">Anyone with the link</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}</select>
+          </label>
+          <label className="field" style={{ flex: "1 1 150px" }}>Last day to pay (optional)<input name="expires_on" type="date" /></label>
+          <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" name="remind" /> Email that customer once, in the last day before it stops working (needs a customer and a last day)
+          </label>
+        </>
       )}
       <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
         <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} /> The payer types the amount (for a printed counter QR; no coupon, split or fee)
