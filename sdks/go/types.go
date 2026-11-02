@@ -54,6 +54,11 @@ type DebitRow struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+type DeleteOnboardingUploadsByIdResponse struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
 type DeletePlatformRotaDaysOffByIdResponse struct {
 	ID      string `json:"id"`
 	Deleted bool   `json:"deleted"`
@@ -455,13 +460,15 @@ type GetMilestonesResponseDataItem struct {
 }
 
 type GetOnboardingResponse struct {
-	AutomatedChecks any                                     `json:"automated_checks"`
-	ReviewReasons   []string                                `json:"review_reasons"`
-	Checks          []GetOnboardingResponseChecksItem       `json:"checks"`
-	Status          string                                  `json:"status"`
-	Profile         []GetOnboardingResponseProfileItem      `json:"profile"`
-	Documents       []GetOnboardingResponseDocumentsItem    `json:"documents"`
-	BankAccounts    []GetOnboardingResponseBankAccountsItem `json:"bank_accounts"`
+	AutomatedChecks         any                                     `json:"automated_checks"`
+	ReviewReasons           []string                                `json:"review_reasons"`
+	Checks                  []GetOnboardingResponseChecksItem       `json:"checks"`
+	Status                  string                                  `json:"status"`
+	Profile                 []GetOnboardingResponseProfileItem      `json:"profile"`
+	Documents               []GetOnboardingResponseDocumentsItem    `json:"documents"`
+	Uploads                 any                                     `json:"uploads"`
+	DocumentReaderAvailable any                                     `json:"document_reader_available"`
+	BankAccounts            []GetOnboardingResponseBankAccountsItem `json:"bank_accounts"`
 }
 
 type GetOnboardingResponseBankAccountsItem struct {
@@ -495,6 +502,11 @@ type GetOnboardingResponseProfileItem struct {
 	SubmittedBy  any     `json:"submitted_by"`
 	ReviewedBy   any     `json:"reviewed_by"`
 	ReviewNote   any     `json:"review_note"`
+}
+
+type GetOnboardingUploadsResponse struct {
+	Data            any `json:"data"`
+	ReaderAvailable any `json:"reader_available"`
 }
 
 type GetOutboxResponse struct {
@@ -1272,6 +1284,19 @@ type PostOnboardingSubmitResponse struct {
 	Status    string `json:"status"`
 	Automatic bool   `json:"automatic"`
 	Reasons   any    `json:"reasons"`
+}
+
+type PostOnboardingUploadsResponse struct {
+	ID          string  `json:"id"`
+	Kind        string  `json:"kind"`
+	Filename    any     `json:"filename"`
+	ContentType any     `json:"content_type"`
+	SizeBytes   any     `json:"size_bytes"`
+	ReadMethod  any     `json:"read_method"`
+	Facts       any     `json:"facts"`
+	Checks      any     `json:"checks"`
+	UploadedBy  any     `json:"uploaded_by"`
+	CreatedAt   *string `json:"created_at"`
 }
 
 type PostOutboxByIdReplayResponse struct {

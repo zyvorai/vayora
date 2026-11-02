@@ -546,8 +546,11 @@ async fn detail(s: &AppState, org: &str) -> Result<Value, ApiError> {
         sqlx::query_as("SELECT kind, outcome, detail FROM kyc_checks ORDER BY created_at")
             .fetch_all(&mut *tx)
             .await?;
+    // what the uploaded documents say and whether it agrees with the profile (the files themselves stay with the merchant)
+    let uploads = crate::uploads::summaries(&mut tx).await?;
     tx.commit().await?;
     Ok(json!({
+        "uploads": uploads,
         "profile": p.map(|p| json!({ "legal_name": p.0, "business_type": p.1, "pan": format!("XXXXXX{}", p.2), "gstin": p.3, "address": p.4, "status": p.5, "submitted_by": p.6, "reviewed_by": p.7, "review_note": p.8, "review_reasons": p.9 })),
         "documents": docs.into_iter().map(|d| json!({ "kind": d.0, "reference": d.1, "status": d.2 })).collect::<Vec<_>>(),
         "bank_accounts": banks.into_iter().map(|b| json!({ "holder_name": b.0, "ifsc": b.1, "account_last4": b.2, "verified": b.3 })).collect::<Vec<_>>(),

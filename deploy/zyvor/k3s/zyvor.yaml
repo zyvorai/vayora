@@ -121,8 +121,12 @@ spec:
             # set the `provider` key of that secret to `simulator`.
           readinessProbe: { httpGet: { path: /readyz, port: 8080 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10 }
-          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 768Mi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          # uploaded onboarding documents are read by pdftotext and tesseract in a scratch folder under /tmp
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 256Mi } }
 ---
 apiVersion: v1
 kind: Service

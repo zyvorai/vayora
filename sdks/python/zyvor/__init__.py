@@ -27,6 +27,15 @@ class Zyvor:
         self.api_key, self.base, self.actor = api_key, base_url.rstrip("/"), actor
         self._open = opener or urllib.request.urlopen
 
+    def _bytes(self, path: str) -> bytes:
+        req = urllib.request.Request(self.base + path, method="GET", headers={"authorization": f"Bearer {self.api_key}", **({"zyvor-actor": self.actor} if self.actor else {})})
+        try:
+            with self._open(req, timeout=30) as res:
+                return res.read()
+        except urllib.error.HTTPError as e:
+            payload = json.loads(e.read() or b"{}").get("error", {})
+            raise ZyvorError(e.code, payload.get("code", "unknown"), payload.get("message", e.reason)) from None
+
     def _req(self, method: str, path: str, body: Any = None, idem: Optional[str] = None) -> Any:
         headers = {"authorization": f"Bearer {self.api_key}"}
         data = None
@@ -235,6 +244,21 @@ class Zyvor:
 
     def add_onboarding_document(self, kind: str, reference: str) -> types.PostOnboardingDocumentsResponse:
         return self._req("POST", "/v1/onboarding/documents", {"kind": kind, "reference": reference})
+
+    def list_onboarding_uploads(self) -> types.GetOnboardingUploadsResponse:
+        """Uploaded document files, what was read from each and how it compares with the profile."""
+        return self._req("GET", "/v1/onboarding/uploads")
+
+    def upload_onboarding_document(self, kind: str, filename: str, data: bytes) -> types.PostOnboardingUploadsResponse:
+        """Upload a PDF, PNG or JPEG (up to 5 MB). It is stored encrypted, read, and compared with the profile."""
+        import base64
+        return self._req("POST", "/v1/onboarding/uploads", {"kind": kind, "filename": filename, "data_base64": base64.b64encode(data).decode()})
+
+    def delete_onboarding_upload(self, upload_id: str) -> types.DeleteOnboardingUploadsByIdResponse:
+        return self._req("DELETE", f"/v1/onboarding/uploads/{upload_id}")
+
+    def download_onboarding_upload(self, upload_id: str) -> bytes:
+        return self._bytes(f"/v1/onboarding/uploads/{upload_id}/file")
 
     def add_bank_account(self, holder_name: str, ifsc: str, account_number: str) -> types.PostOnboardingBankAccountsResponse:
         return self._req("POST", "/v1/onboarding/bank_accounts", {"holder_name": holder_name, "ifsc": ifsc, "account_number": account_number})

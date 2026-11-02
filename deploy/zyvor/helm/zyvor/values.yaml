@@ -11,7 +11,8 @@ existingSecret: zyvor-secrets
 
 api:
   replicas: 2
-  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+  # 768Mi: reading an uploaded scan with OCR needs a little room beside the API
+  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 768Mi } }
   providerTimeoutSeconds: 10
 worker:
   replicas: 2   # safe to scale: events and jobs use SKIP LOCKED

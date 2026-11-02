@@ -1,8 +1,9 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { BankForm, DocForm, ProfileChangeForm, ProfileForm, ReviewForm } from "@/components/OnboardingForms";
+import { BankForm, DocForm, ProfileChangeForm, ProfileForm, ReviewForm, UploadForm } from "@/components/OnboardingForms";
+import { UploadChecks } from "@/components/UploadChecks";
 import { Stepper, type Step } from "@/components/Stepper";
-import { requestLiveAccess, submitOnboarding, verifyBankAccount } from "@/lib/actions";
+import { deleteOnboardingUpload, requestLiveAccess, submitOnboarding, verifyBankAccount } from "@/lib/actions";
 import { currentSession, requireRole } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -13,7 +14,8 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
   const [o, me, q] = await Promise.all([(await api()).onboarding.get(), currentSession(), searchParams]);
   const admin = me?.r === "admin";
   const open = o.status === "not_started" || o.status === "draft" || o.status === "rejected";
-  const hasPan = o.documents.some((d) => d.kind === "pan");
+  const hasPan = o.documents.some((d) => d.kind === "pan") || o.uploads.some((u) => u.kind === "pan");
+  const docCount = o.documents.length + o.uploads.length;
   // once submitted, every earlier step counts as done (an approval carried into live has no documents of its own)
   const submitted = o.status === "in_review" || o.status === "approved";
   const steps: Step[] = [
@@ -33,7 +35,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <div className="head"><div><h1>Get set up</h1><p className="lede">Tell us who the business is and where its money goes. {o.automated_checks ? "Your PAN, GSTIN and bank account are checked with our verification partner as you add them, and a clean submission is approved straight away." : "A second person reviews the submission before payouts and live mode open."} We keep references and the last four digits only.</p></div><Chip status={o.status.replace(/_/g, " ")} /></div>
+      <div className="head"><div><h1>Get set up</h1><p className="lede">Tell us who the business is and where its money goes. {o.automated_checks ? "Your PAN, GSTIN and bank account are checked with our verification partner as you add them, and a clean submission is approved straight away." : "A second person reviews the submission before payouts and live mode open."} We keep only the last four digits of any number you enter, and files you upload are stored encrypted.</p></div><Chip status={o.status.replace(/_/g, " ")} /></div>
 
       {o.status === "approved" && (
         <div className="note ok" role="status" style={{ marginBottom: 16 }}>
@@ -92,12 +94,28 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
       {current === "documents" && (
         <section>
           <h2>Documents</h2>
-          <p className="muted">A PAN document is required. Add where the file is kept; we do not store the file itself.</p>
-          <div className="tablewrap"><table><thead><tr><th>Kind</th><th>Reference</th><th>Status</th></tr></thead><tbody>
-            {o.documents.length === 0 && <tr><td colSpan={3} className="empty">None yet.</td></tr>}
-            {o.documents.map((d) => <tr key={d.id}><td>{d.kind.replace(/_/g, " ")}</td><td className="mono">{d.reference}</td><td><Chip status={d.status} /></td></tr>)}
+          <p className="muted">Upload the business's certificates (GST registration, incorporation, PAN card, a cancelled cheque). We read each one and compare what it says with the details you entered; anything that does not match, or cannot be read, goes to a person to look at. Files are stored encrypted. A PAN document is required. Aadhaar cards cannot be uploaded.</p>
+          {!o.document_reader_available && <div className="note" role="status" style={{ marginBottom: 12 }}>Automatic reading is not switched on in this deployment, so a person will read your documents instead.</div>}
+          <div className="tablewrap"><table><thead><tr><th>Document</th><th>What we found</th><th /></tr></thead><tbody>
+            {o.uploads.length === 0 && <tr><td colSpan={3} className="empty">Nothing uploaded yet. Choose what it is and pick the file below.</td></tr>}
+            {o.uploads.map((u) => (
+              <tr key={u.id}>
+                <td><div>{u.filename}</div><div className="muted">{u.kind.replace(/_/g, " ")} · {(u.size_bytes / 1024).toFixed(0)} KB</div></td>
+                <td><UploadChecks u={u} /></td>
+                <td style={{ whiteSpace: "nowrap" }}><a className="btn small" href={`/onboarding/file/${u.id}`}>Download</a>{open && admin && <> <Act action={deleteOnboardingUpload} id={u.id} label="Remove" /></>}</td>
+              </tr>
+            ))}
           </tbody></table></div>
-          {open && admin && <div style={{ marginTop: 16 }}><DocForm /></div>}
+          {open && admin && <div style={{ marginTop: 16 }}><UploadForm /></div>}
+          <details style={{ marginTop: 16 }}>
+            <summary>Or record where a file is kept (no upload)</summary>
+            <p className="muted">If you would rather keep the file in your own store, add a link or path. We do not read these, so a person checks them.</p>
+            <div className="tablewrap"><table><thead><tr><th>Kind</th><th>Reference</th><th>Status</th></tr></thead><tbody>
+              {o.documents.length === 0 && <tr><td colSpan={3} className="empty">None.</td></tr>}
+              {o.documents.map((d) => <tr key={d.id}><td>{d.kind.replace(/_/g, " ")}</td><td className="mono">{d.reference}</td><td><Chip status={d.status} /></td></tr>)}
+            </tbody></table></div>
+            {open && admin && <div style={{ marginTop: 16 }}><DocForm /></div>}
+          </details>
           {hasPan && <Next />}
         </section>
       )}
@@ -122,7 +140,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
           <h2>Review and submit</h2>
           <div className="card" style={{ display: "grid", gap: 8 }}>
             <div><strong>Business</strong> {o.profile ? <span className="muted">{o.profile.legal_name} · {o.profile.business_type.replace(/_/g, " ")}</span> : <span className="muted">not entered</span>}</div>
-            <div><strong>Documents</strong> <span className="muted">{submitted && o.documents.length === 0 ? "reviewed in the test environment" : `${o.documents.length} added${hasPan ? "" : " (PAN missing)"}`}</span></div>
+            <div><strong>Documents</strong> <span className="muted">{submitted && docCount === 0 ? "reviewed in the test environment" : `${docCount} added${hasPan ? "" : " (PAN missing)"}`}</span></div>
             <div><strong>Bank accounts</strong> <span className="muted">{submitted && o.bank_accounts.length === 0 ? "reviewed in the test environment" : `${o.bank_accounts.length} added, ${o.bank_accounts.filter((b) => b.verified).length} verified`}</span></div>
             {o.checks.length > 0 && <div><strong>Checks</strong><ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>{o.checks.map((c) => <li key={c.kind + c.subject}><Chip status={c.outcome} /> {KIND[c.kind]}: {c.detail}</li>)}</ul></div>}
           </div>

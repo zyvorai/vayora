@@ -556,6 +556,17 @@ export const requestProfileChange = async (_: FormState, f: FormData) =>
 export const saveProfile = async (_: FormState, f: FormData) =>
   run(["/onboarding"], (z) => z.onboarding.saveProfile({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address") }), "admin");
 export const addOnboardingDoc = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.addDocument({ kind: text(f, "kind"), reference: text(f, "reference") }), "admin");
+const MAX_UPLOAD = 5 * 1024 * 1024;
+/** A document file for onboarding: stored encrypted, read for the facts on it, compared with the business details. */
+export const uploadOnboardingDoc = async (_: FormState, f: FormData): Promise<FormState> => {
+  const file = f.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a PDF, PNG or JPEG file." };
+  if (file.size > MAX_UPLOAD) return { error: "That file is over 5 MB. Scan it at a lower resolution or save a smaller PDF." };
+  const data = new Uint8Array(await file.arrayBuffer());
+  const r = await run(["/onboarding"], (z) => z.onboarding.uploads.upload({ kind: text(f, "kind"), filename: file.name, data }), "admin");
+  return r?.error ? r : { ok: "Uploaded and read." };
+};
+export const deleteOnboardingUpload = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.uploads.delete(id(f)), "admin");
 export const addBankAccount = async (_: FormState, f: FormData) =>
   run(["/onboarding"], (z) => z.onboarding.addBankAccount({ holderName: text(f, "holder_name"), ifsc: text(f, "ifsc"), accountNumber: text(f, "account_number").replace(/\s/g, "") }), "admin");
 export const verifyBankAccount = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.verifyBankAccount(id(f)), "admin");

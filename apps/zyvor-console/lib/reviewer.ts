@@ -45,6 +45,7 @@ export type ReviewDetail = {
   profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; status: string; submitted_by: string; reviewed_by: string | null; review_note: string | null; review_reasons: string[] | null } | null;
   documents: { kind: string; reference: string; status: string }[];
   bank_accounts: { holder_name: string; ifsc: string; account_last4: string; verified: boolean }[];
+  uploads: { id: string; kind: string; filename: string; read_method: "text" | "ocr" | "none"; facts: Record<string, string | boolean | null>; checks: { name: string; result: "match" | "mismatch" | "not_found" | "not_checked"; detail: string }[] }[];
   checks: { kind: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[];
   stage: "new" | "awaiting_second"; first_approved_by: string | null; first_approved_by_me: boolean; needs_second_because: string[]; escalation_note: string | null; assigned_to: string | null; assigned_to_name: string | null; assigned_to_me: boolean; assigned_at: string | null; restore_needs_other: boolean; reviewed_by_name: string | null; due_at: string; overdue: boolean; sla_hours: number;
 };

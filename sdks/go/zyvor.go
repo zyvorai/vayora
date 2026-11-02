@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -82,6 +83,10 @@ func (c *Client) do(method, path string, body any, idem string, out any) error {
 		}
 		_ = json.Unmarshal(raw, &e)
 		return &Error{res.StatusCode, e.Error.Code, e.Error.Message}
+	}
+	if b, ok := out.(*[]byte); ok { // a file, not JSON
+		*b = raw
+		return nil
 	}
 	if out != nil {
 		return json.Unmarshal(raw, out)
@@ -616,6 +621,28 @@ func (c *Client) RequestProfileChange(legalName, businessType, pan, address, gst
 // AddOnboardingDocument records where a document is kept; Zyvor stores only the reference.
 func (c *Client) AddOnboardingDocument(kind, reference string) (map[string]any, error) {
 	return c.call("POST", "/v1/onboarding/documents", map[string]any{"kind": kind, "reference": reference})
+}
+
+// ListOnboardingUploads lists uploaded document files, what was read from each and how it compares with the profile.
+func (c *Client) ListOnboardingUploads() (map[string]any, error) {
+	return c.call("GET", "/v1/onboarding/uploads", nil)
+}
+
+// UploadOnboardingDocument uploads a PDF, PNG or JPEG (up to 5 MB): stored encrypted, read, and compared with the profile.
+func (c *Client) UploadOnboardingDocument(kind, filename string, data []byte) (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/uploads", map[string]any{"kind": kind, "filename": filename, "data_base64": base64.StdEncoding.EncodeToString(data)})
+}
+
+// DeleteOnboardingUpload removes an uploaded document (only while the profile is a draft or was sent back).
+func (c *Client) DeleteOnboardingUpload(id string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/onboarding/uploads/"+id, nil)
+}
+
+// DownloadOnboardingUpload returns the stored file.
+func (c *Client) DownloadOnboardingUpload(id string) ([]byte, error) {
+	var out []byte
+	err := c.do("GET", "/v1/onboarding/uploads/"+id+"/file", nil, "", &out)
+	return out, err
 }
 
 // AddBankAccount stores the holder, IFSC and the last four digits of the account number.

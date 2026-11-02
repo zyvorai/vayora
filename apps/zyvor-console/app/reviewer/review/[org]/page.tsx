@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { Chip } from "@/components/Chip";
+import { UploadChecks } from "@/components/UploadChecks";
 import { AssignForm, DecisionForm, EscalateForm, LiveAccessForm } from "@/components/ReviewerForms";
 import { dueLabel } from "@/lib/due";
 import { outcomeTone, platform, requireReviewerSurface, reviewerKey, type ReviewDetail } from "@/lib/reviewer";
@@ -96,8 +97,13 @@ export default async function Review({ params }: { params: Promise<{ org: string
 
         <section className="card">
           <h2>Documents</h2>
-          <p className="fine">Zyvor keeps references, not files. Open each one where it is kept.</p>
-          {d.documents.length === 0 ? <p className="fine">None added.</p> : (
+          <p className="fine">Uploaded files were read automatically and compared with the details above; the files themselves stay with the business, so ask them for a copy if one needs a closer look. Anything marked as not matching or not found is worth a question. Linked documents are references only.</p>
+          {d.uploads.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 12 }}>
+              {d.uploads.map((u) => <li key={u.id}><strong>{u.filename}</strong> <span className="fine">{u.kind.replace(/_/g, " ")}</span><UploadChecks u={u} /></li>)}
+            </ul>
+          )}
+          {d.documents.length === 0 ? <p className="fine">{d.uploads.length === 0 ? "None added." : "No linked documents."}</p> : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
               {d.documents.map((x, i) => <li key={i}><strong>{x.kind.replace(/_/g, " ")}</strong> <Chip status={x.status} /><div className="fine">{x.reference}</div></li>)}
             </ul>

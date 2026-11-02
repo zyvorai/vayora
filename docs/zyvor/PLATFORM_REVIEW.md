@@ -250,8 +250,9 @@ scripts/platform-review.sh reject org_... "GSTIN certificate is missing"
 `show` prints the legal name, business type, masked PAN, GSTIN, address, the document **references**, the bank
 accounts (holder, IFSC, last four digits, verified or not), and every identity and bank check with its outcome.
 
-**What the review is worth depends on what you check.** Zyvor keeps references to documents, not the files, and the
-checks are only as real as the KYC provider behind them (with the simulator they verify nothing). Before approving:
+**What the review is worth depends on what you check.** Documents a business uploads are read automatically and compared with its details (the reviewer sees what was
+found and which comparisons failed, not the file itself; see ONBOARDING_DOCUMENTS.md), and the other checks are only as real as
+the KYC provider behind them (with the simulator they verify nothing). Linked documents are references only. Before approving:
 
 - the legal name, the PAN holder and the bank account holder are the same party (a proprietor's PAN, a company's
   account, or the reverse, is a reason to ask);

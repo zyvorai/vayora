@@ -25,6 +25,20 @@ describe("client", () => {
     expect(((f.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<string, string>)["idempotency-key"]).toBe("ret-7");
   });
 
+  it("uploads a document as base64 and downloads the stored file as bytes, not JSON", async () => {
+    const f = vi.fn(async (url: string) =>
+      String(url).endsWith("/file") ? new Response(new Uint8Array([37, 80, 68, 70, 0, 255]), { status: 200 }) : json(201, { id: "oup_1", read_method: "text", checks: [] }),
+    );
+    const c = client(f);
+    const up = await c.onboarding.uploads.upload({ kind: "gst_certificate", filename: "gst.pdf", data: new Uint8Array([37, 80, 68, 70]) });
+    expect(up.id).toBe("oup_1");
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/v1/onboarding/uploads");
+    expect(JSON.parse(init.body as string)).toEqual({ kind: "gst_certificate", filename: "gst.pdf", data_base64: "JVBERg==" });
+    const bytes = await c.onboarding.uploads.download("oup_1");
+    expect(Array.from(bytes)).toEqual([37, 80, 68, 70, 0, 255]);
+  });
+
   it("rejects bad amounts before any request", () => {
     const f = vi.fn();
     expect(() => client(f).intents.create({ amountMinor: 10.5 })).toThrow(RangeError);

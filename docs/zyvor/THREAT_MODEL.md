@@ -54,6 +54,17 @@ API keys, customer contact data, the audit trail.
 - **Supply chain**: cargo-deny (advisories, licences, sources), `pnpm audit`, gitleaks, CodeQL, Trivy on the
   image, weekly Dependabot, GitHub Actions pinned by commit SHA, CycloneDX SBOM per run.
 
+- **Uploaded onboarding documents (certificates, PAN card, cancelled cheque)**: the file is limited to 5 MB and to
+  PDF, PNG or JPEG by its first bytes (not its name); the bytes are stored encrypted with the master key, never in the
+  clear, and every download is audited; an Aadhaar card or letter is refused before anything is stored. Reading a
+  file runs `pdftotext`, `pdftoppm` and `tesseract` on untrusted input, so each runs in its own empty private
+  directory with an empty environment, a 40 second limit, a 3-page limit, a cap on what it may print, one OCR thread
+  and an address-space limit (`ulimit -v`), and the pod mounts a small `emptyDir` at `/tmp` because the root
+  filesystem is read-only. What a document says is only ever a reason for a person to look: a mismatch or a
+  missing fact adds a review reason, and nothing read from a file approves anybody. Residual risk: those programs
+  parse hostile files in the API's container; a flaw in one of them is a flaw there. Moving the reading to its own
+  low-privilege job (or turning it off with `ZYVOR_DOC_READER=off`, which sends every document to a person) removes it.
+
 ## Known gaps (do not rely on these yet)
 - MFA is optional unless `CONSOLE_REQUIRE_MFA=1`; sessions are not individually revocable before their 12 h expiry; no SSO.
 - Webhook secret rotation has no dual-signature window yet. Master-key rotation exists (below) but is operator-run.

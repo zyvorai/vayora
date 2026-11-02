@@ -1,9 +1,12 @@
 "use client";
-import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
-import { addBankAccount, addOnboardingDoc, requestProfileChange, reviewOnboarding, saveProfile, type FormState } from "@/lib/actions";
+import { startTransition, useActionState, useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { addBankAccount, addOnboardingDoc, uploadOnboardingDoc, requestProfileChange, reviewOnboarding, saveProfile, type FormState } from "@/lib/actions";
 
-function Card({ action, children, cta }: { action: (s: FormState, f: FormData) => Promise<FormState>; children: ReactNode; cta: string }) {
+function Card({ action, children, cta, reset }: { action: (s: FormState, f: FormData) => Promise<FormState>; children: ReactNode; cta: string; reset?: boolean }) {
   const [state, run, pending] = useActionState(action, undefined);
+  const form = useRef<HTMLFormElement>(null);
+  // after a good upload the file box is emptied, so it does not look as if the file still has to be sent
+  useEffect(() => { if (reset && state?.ok) form.current?.reset(); }, [reset, state]);
   // Submitted by hand so a refusal keeps what was typed (a form `action` resets its fields afterwards).
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -11,11 +14,11 @@ function Card({ action, children, cta }: { action: (s: FormState, f: FormData) =
     startTransition(() => run(data));
   };
   return (
-    <form onSubmit={submit} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
+    <form ref={form} onSubmit={submit} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
       {children}
-      <button className="btn primary" disabled={pending}>{pending ? "Saving…" : cta}</button>
+      <button className="btn primary" disabled={pending}>{pending ? (reset ? "Reading…" : "Saving…") : cta}</button>
       {state?.error && <p className="note bad" role="alert" style={{ flexBasis: "100%" }}>{state.error}</p>}
-      {state?.ok && <p className="note" role="status" style={{ flexBasis: "100%" }}>Saved.</p>}
+      {state?.ok && <p className="note" role="status" style={{ flexBasis: "100%" }}>{state.ok === "Done." ? "Saved." : state.ok}</p>}
     </form>
   );
 }
@@ -45,6 +48,15 @@ export function ProfileChangeForm({ current }: { current: { legal_name: string; 
       <label className="field" style={{ flex: "0 1 190px" }}>GSTIN (optional)<input name="gstin" maxLength={15} autoCapitalize="characters" defaultValue={current.gstin ?? ""} /></label>
       <label className="field" style={{ flex: "1 1 100%" }}>Registered address<input name="address" defaultValue={current.address} required /></label>
       <label className="field" style={{ flex: "1 1 100%" }}>Why are they changing?<input name="reason" required minLength={5} placeholder="e.g. converted to a private limited company" /></label>
+    </Card>
+  );
+}
+
+export function UploadForm() {
+  return (
+    <Card action={uploadOnboardingDoc} cta="Upload and read" reset>
+      <label className="field" style={{ flex: "0 1 220px" }}>What is it<select name="kind" defaultValue="gst_certificate">{DOCS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+      <label className="field" style={{ flex: "1 1 280px" }}>File (PDF, PNG or JPEG, up to 5 MB)<input type="file" name="file" accept="application/pdf,image/png,image/jpeg" required /></label>
     </Card>
   );
 }
