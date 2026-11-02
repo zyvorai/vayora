@@ -9637,6 +9637,143 @@ async fn a_business_can_have_replies_to_its_emails_go_to_its_own_address(pool: P
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn payment_reminders_are_emailed_only_when_turned_on_for_the_email_channel_and_a_customer_address(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let overdue = (zyvor_api::ist_today() - chrono::Duration::days(9)).to_string();
+    let asha = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let inv = |n: &str, cust: Option<&Value>| {
+        let mut b = json!({ "number": n, "amount_minor": 125_050, "due_date": overdue });
+        if let Some(c) = cust {
+            b["customer_id"] = c["id"].clone();
+        }
+        t.ok(a, "POST", "/v1/invoices", None, b)
+    };
+    let (with, without) = (inv("INV-R1", Some(&asha)).await, inv("INV-R2", None).await);
+    let (wid, nid) = (
+        with["id"].as_str().unwrap().to_string(),
+        without["id"].as_str().unwrap().to_string(),
+    );
+    let mails =
+        || t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Payment reminder:%'");
+    let remind = |id: &str, channel: &str, message: Option<&str>| {
+        let mut b = json!({ "channel": channel });
+        if let Some(m) = message {
+            b["message"] = json!(m);
+        }
+        let path = format!("/v1/invoices/{id}/reminders");
+        let tr = &t;
+        async move { tr.ok(a, "POST", &path, None, b).await }
+    };
+
+    // off by default: logged and announced to the business's own system, nothing emailed
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["reminder_emails"],
+        json!(false)
+    );
+    remind(&wid, "email", Some("Please settle by Friday.")).await;
+    assert_eq!(mails().await, 0);
+
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "reminder_emails": true }),
+    )
+    .await;
+    // other channels and invoices with nobody to email stay unsent
+    remind(&wid, "sms", Some("text me")).await;
+    remind(&nid, "email", Some("Please settle by Friday.")).await;
+    assert_eq!(mails().await, 0);
+
+    remind(&wid, "email", Some("Please settle by Friday.")).await;
+    assert_eq!(mails().await, 1);
+    let (to, subject, body, key): (String, String, String, String) = sqlx::query_as(
+        "SELECT to_email, subject, body, dedupe_key FROM mail_queue WHERE subject LIKE 'Payment reminder:%'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert!(key.starts_with("reminder:rem_"), "{key}");
+    assert!(subject.contains("INV-R1"), "{subject}");
+    assert!(
+        body.starts_with("Hello Asha Rao,")
+            && body.contains("Please settle by Friday.")
+            && body.contains("Amount due: ₹1250.50"),
+        "{body}"
+    );
+
+    // a person-approved draft goes out with the approved wording (the standard text already greets, so no second Hello)
+    let d = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/invoices/{wid}/reminders/draft"),
+            None,
+            json!({ "channel": "email" }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/collections/drafts/{}/approve",
+            d["id"].as_str().unwrap()
+        ),
+        None,
+        json!({ "message": "Hello Asha, a gentle nudge about INV-R1." }),
+    )
+    .await;
+    assert_eq!(mails().await, 2);
+    let approved: String = sqlx::query_scalar("SELECT body FROM mail_queue WHERE subject LIKE 'Payment reminder:%' ORDER BY created_at DESC LIMIT 1")
+        .fetch_one(&t.root).await.unwrap();
+    assert!(
+        approved.starts_with("Hello Asha, a gentle nudge") && !approved.contains("Hello Asha Rao"),
+        "{approved}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'reminder.emailed'")
+            .await,
+        2
+    );
+    // the unattended dunning run, with the email channel, uses the standard wording
+    let third = inv("INV-R3", Some(&asha)).await;
+    let ran = t
+        .ok(
+            a,
+            "POST",
+            "/v1/collections/dunning/run",
+            None,
+            json!({ "channel": "email" }),
+        )
+        .await;
+    assert_eq!(ran["reminded"], 1, "{ran}");
+    assert_eq!(mails().await, 3);
+    let std: String =
+        sqlx::query_scalar("SELECT body FROM mail_queue WHERE subject LIKE '%INV-R3%'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert!(
+        std.starts_with("Hello, a reminder from")
+            && std.contains(third["number"].as_str().unwrap()),
+        "{std}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
     let t = setup(pool).await;
     let (url, got) = smtp_sink().await;

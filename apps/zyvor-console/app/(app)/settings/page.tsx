@@ -27,8 +27,9 @@ export default async function Settings() {
         <label className="field">Days between reminders<input name="repeat_days" type="number" min={0} max={365} defaultValue={s.dunning.repeat_after_days} /></label>
       </SettingsForm>
 
-      <SettingsForm title="Receipts and replies" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up. When a payer replies to a receipt or a payment-link email, the reply goes to the address below instead of to Zyvor." action={saveReceipts}>
+      <SettingsForm title="Receipts, reminders and replies" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up. When a payer replies to a receipt or a payment-link email, the reply goes to the address below instead of to Zyvor." action={saveReceipts}>
         <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment and refund receipts</label>
+        <label className="field checkbox"><input type="checkbox" name="reminders" defaultChecked={s.reminder_emails} /> Email payment reminders (only reminders sent by email; leave off if your own system already sends them from the reminder event)</label>
         <label className="field">Replies go to<input name="reply_to" type="email" maxLength={200} placeholder="accounts@yourbusiness.example" defaultValue={s.reply_to_email ?? ""} /></label>
       </SettingsForm>
 

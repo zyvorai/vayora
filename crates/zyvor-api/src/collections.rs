@@ -206,6 +206,76 @@ pub struct NewReminder {
     message: Option<String>,
 }
 
+/// With `reminder_emails` on, email a reminder whose channel is `email` to the invoice's customer (only when the
+/// customer has an address). `message` is the wording a person wrote or approved; None (the unattended dunning run)
+/// uses the standard text. Once per reminder.
+pub async fn queue_reminder_email(
+    conn: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    reminder_id: &str,
+    invoice_id: &str,
+    channel: &str,
+    message: Option<&str>,
+) -> Result<(), ApiError> {
+    if channel != "email" {
+        return Ok(());
+    }
+    let on: bool =
+        sqlx::query_scalar("SELECT reminder_emails FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .unwrap_or(false);
+    if !on {
+        return Ok(());
+    }
+    let who: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT c.name, c.email FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1",
+    )
+    .bind(invoice_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((name, Some(email))) = who else {
+        return Ok(());
+    };
+    if !email.contains('@') {
+        return Ok(());
+    }
+    let f = crate::reminders::load_facts(conn, tenant_id, invoice_id).await?;
+    let wording = match message.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(m) => m.chars().take(1000).collect::<String>(),
+        None => crate::ai::template(&f.as_ai("email")),
+    };
+    let (subject, body) = crate::mail::reminder(
+        &f.merchant,
+        &name,
+        &wording,
+        &f.number,
+        &crate::ai::money(f.outstanding, &f.currency),
+    );
+    if crate::mail::enqueue_once(
+        conn,
+        tenant_id,
+        &format!("reminder:{reminder_id}"),
+        &email,
+        &subject,
+        &body,
+    )
+    .await?
+    {
+        tenant::audit(
+            conn,
+            tenant_id,
+            "system:mail",
+            "reminder.emailed",
+            Some(reminder_id),
+            json!({ "invoice_id": invoice_id }),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Log a reminder and emit `invoice.reminder` so the merchant's own messaging sends it.
 pub async fn create_reminder(
     State(s): State<AppState>,
@@ -237,6 +307,15 @@ pub async fn create_reminder(
             e => e.into(),
         })?;
     tenant::emit(&mut tx, &auth.tenant_id, "invoice.reminder", json!({ "reminder_id": id, "invoice_id": invoice_id, "number": number, "channel": b.channel, "outstanding_minor": outstanding, "message": b.message })).await?;
+    queue_reminder_email(
+        &mut tx,
+        &auth.tenant_id,
+        &id,
+        &invoice_id,
+        &b.channel,
+        b.message.as_deref(),
+    )
+    .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
@@ -347,6 +426,7 @@ pub async fn run_dunning_tx(
             .bind(&id).bind(tenant_id).bind(&invoice_id).bind(channel).bind(format!("{days} days overdue")).bind(actor)
             .execute(&mut *tx).await?;
         tenant::emit(tx, tenant_id, "invoice.reminder", json!({ "reminder_id": id, "invoice_id": invoice_id, "number": number, "channel": channel, "outstanding_minor": outstanding, "days_overdue": days, "automated": true })).await?;
+        queue_reminder_email(tx, tenant_id, &id, &invoice_id, channel, None).await?;
         ids.push(id);
     }
     Ok(ids)

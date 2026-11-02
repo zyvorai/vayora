@@ -473,7 +473,7 @@ export const resetTestData = async (_: FormState, f: FormData) => {
 export const saveReceipts = async (_: FormState, f: FormData) => {
   const replyTo = String(f.get("reply_to") ?? "").trim();
   if (replyTo && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(replyTo)) return { error: "Enter one email address for replies, such as accounts@school.example, or leave it empty." };
-  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reply_to_email: replyTo }), "admin");
+  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reminder_emails: on(f, "reminders"), reply_to_email: replyTo }), "admin");
 };
 export const saveApprovals = async (_: FormState, f: FormData) => {
   const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];
