@@ -10090,6 +10090,135 @@ async fn uploaded_documents_are_read_compared_with_the_profile_and_kept_encrypte
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn a_reviewer_opens_an_uploaded_document_only_for_a_business_that_asked_and_the_business_can_see_it(
+    pool: PgPool,
+) {
+    use axum::body::Body;
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let pw = "correct horse battery";
+    let su = t
+        .ok_public(
+            "POST",
+            "/v1/signup",
+            json!({ "organisation_name": "Docs Ltd", "email": "d@dc.in", "password": pw }),
+        )
+        .await;
+    let home = su["test_tenant"].as_str().unwrap().to_string();
+    let login = t
+        .ok_public(
+            "POST",
+            "/v1/console/login",
+            json!({ "email": "d@dc.in", "password": pw }),
+        )
+        .await;
+    let merchant_key = login["session_key"].as_str().unwrap().to_string();
+    sqlx::query("INSERT INTO merchant_profiles (tenant_id, legal_name, business_type, pan_last4, address, status, reviewed_by) VALUES ($1, 'Docs Ltd', 'private_limited', '1234', 'Pune 411001', 'approved', 'the merchant themselves')")
+        .bind(&home).execute(&t.root).await.unwrap();
+    let bytes = b"%PDF-1.4 the certificate of a made-up business".to_vec();
+    sqlx::query("INSERT INTO onboarding_uploads (id, tenant_id, kind, filename, content_type, size_bytes, sha256, data_enc, read_method, uploaded_by) VALUES ('oup_t1', $1, 'gst_certificate', 'GST.pdf', 'application/pdf', $2, 'abc', $3, 'text', 'priya')")
+        .bind(&home).bind(bytes.len() as i32).bind(t.state.crypto.encrypt(&bytes)).execute(&t.root).await.unwrap();
+    let (_, rkey) = zyvor_api::platform::create_reviewer(&t.state.pool, "Asha")
+        .await
+        .unwrap();
+    let org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+        .bind(&home)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    let get = |key: String, path: String| {
+        let app = t.app.clone();
+        async move {
+            let res = app
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("GET")
+                        .uri(path)
+                        .header("authorization", format!("Bearer {key}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let (code, h) = (res.status().as_u16(), res.headers().clone());
+            (
+                code,
+                h,
+                axum::body::to_bytes(res.into_body(), 1 << 20)
+                    .await
+                    .unwrap()
+                    .to_vec(),
+            )
+        }
+    };
+    let path = format!("/v1/platform/reviews/{org}/uploads/oup_t1/file");
+
+    // nothing is opened for a business that has not asked for a review
+    assert_eq!(get(rkey.clone(), path.clone()).await.0, 404);
+
+    // the business asks
+    let (st, _) = common::raw(
+        &t.app,
+        &merchant_key,
+        Some("d@dc.in"),
+        "POST",
+        "/v1/live_access",
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+
+    // the reviewer opens it: the exact bytes, as a download
+    let (code, h, body) = get(rkey.clone(), path.clone()).await;
+    assert_eq!((code, body), (200, bytes));
+    assert_eq!(h["content-type"], "application/pdf");
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .starts_with("attachment; filename=\"GST.pdf\"")
+    );
+    assert_eq!(h["x-content-type-options"], "nosniff");
+
+    // and it is on the business's own audit trail, under the reviewer's name
+    let seen: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE tenant_id = $1 AND actor = 'reviewer:Asha' AND action = 'onboarding.upload_viewed_by_reviewer' AND subject = 'oup_t1'")
+        .bind(&home).fetch_one(&t.root).await.unwrap();
+    assert_eq!(seen, 1);
+
+    // a document that is not theirs, and anyone who is not a reviewer, get nothing
+    assert_eq!(
+        get(
+            rkey.clone(),
+            format!("/v1/platform/reviews/{org}/uploads/oup_other/file")
+        )
+        .await
+        .0,
+        404
+    );
+    assert_eq!(get(merchant_key.clone(), path.clone()).await.0, 401);
+    assert_eq!(
+        get("zp_notarealreviewerkey".into(), path.clone()).await.0,
+        401
+    );
+    // the file is not reachable through another business's review
+    let other_org: String = sqlx::query_scalar("SELECT organisation_id FROM tenants WHERE id = $1")
+        .bind(&t.a.id)
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(
+        get(
+            rkey,
+            format!("/v1/platform/reviews/{other_org}/uploads/oup_t1/file")
+        )
+        .await
+        .0,
+        404
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
     let t = setup(pool).await;
     let (url, got) = smtp_sink().await;
