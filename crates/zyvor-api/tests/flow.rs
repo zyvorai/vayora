@@ -7351,6 +7351,19 @@ async fn a_payment_timeline_tells_the_story_in_order_and_stays_inside_the_tenant
         assert!(kinds.contains(&k), "missing {k} in {kinds:?}");
     }
     assert_eq!(kinds[0], "intent");
+    // provider and method are named the way people know them, not by their ids
+    let titles: Vec<&str> = events
+        .iter()
+        .map(|e| e["title"].as_str().unwrap())
+        .collect();
+    assert!(
+        titles.contains(&"Attempt started on Razorpay (UPI)"),
+        "{titles:?}"
+    );
+    assert!(
+        titles.iter().any(|t| t.starts_with("Razorpay sent ")),
+        "{titles:?}"
+    );
     // a refund booked later must not drag "Payment captured" past itself (the attempt's updated_at moves on a refund)
     let pos = |pred: &dyn Fn(&Value) -> bool| events.iter().position(pred).unwrap();
     let captured = pos(&|e| e["title"] == "Payment captured");

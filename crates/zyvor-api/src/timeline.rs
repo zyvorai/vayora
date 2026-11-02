@@ -34,6 +34,27 @@ pub fn standing(intent_status: &str, attempt: Option<(&str, &str)>, settled: boo
     }
 }
 
+/// The names people know, for the ids the API uses (the console shows the same words).
+fn provider_name(id: &str) -> String {
+    match id {
+        "sim" => "the simulator".into(),
+        "razorpay" => "Razorpay".into(),
+        "cashfree" => "Cashfree".into(),
+        "custom" => "your own gateway".into(),
+        other => other.to_string(),
+    }
+}
+
+fn method_name(id: &str) -> String {
+    match id {
+        "upi" => "UPI".into(),
+        "card" => "card".into(),
+        "netbanking" => "net banking".into(),
+        "wallet" => "wallet".into(),
+        other => other.replace('_', " "),
+    }
+}
+
 pub async fn payment_timeline(
     State(s): State<AppState>,
     auth: Auth,
@@ -75,7 +96,11 @@ pub async fn payment_timeline(
         out.push(ev(
             *c,
             "attempt",
-            format!("Attempt started on {provider} ({method})"),
+            format!(
+                "Attempt started on {} ({})",
+                provider_name(provider),
+                method_name(method)
+            ),
             json!({ "attempt_id": aid }),
         ));
         // The attempt's own updated_at moves again when a refund is booked against it, so a capture is dated by its
@@ -110,7 +135,7 @@ pub async fn payment_timeline(
                 out.push(ev(
                     at,
                     "webhook",
-                    format!("{p} sent {kind}"),
+                    format!("{} sent {kind}", provider_name(&p)),
                     json!({ "outcome": outcome }),
                 ));
             }
