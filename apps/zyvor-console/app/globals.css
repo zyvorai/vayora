@@ -1,7 +1,8 @@
 :root {
-  --bg: #f5f5f7; --surface: #fff; --fg: #1d1d1f; --muted: #6e6e73; --faint: #a1a1a6;
-  --line: rgba(0,0,0,.08); --soft: rgba(0,0,0,.04); --accent: #0088ff; --accent-text: #0068c4;
+  --bg: #f5f5f7; --surface: #fff; --fg: #1d1d1f; --muted: #636366; --faint: #a1a1a6;
+  --line: rgba(0,0,0,.08); --soft: rgba(0,0,0,.04); --accent: #0088ff; --accent-text: #0062bd;
   --ok: #1a9f4b; --warn: #b36b00; --bad: #d92d20; --code: #f0f0f3;
+  --ok-text: #0e6f31; --warn-text: #7a4a00; --bad-text: #b42318;  /* status colours as TEXT: 4.5:1 on their tinted backgrounds */
   --chip-ok: rgba(26,159,75,.14); --chip-warn: rgba(255,159,10,.2); --chip-bad: rgba(217,45,32,.13); --chip-neutral: rgba(0,0,0,.06); --chip-accent: rgba(0,136,255,.13);
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 28px rgba(0,0,0,.06);
   --spring: cubic-bezier(.34,1.56,.64,1);
@@ -11,6 +12,7 @@
   --bg: #000; --surface: #1c1c1e; --fg: #f5f5f7; --muted: #a1a1a6; --faint: #6e6e73;
   --line: rgba(255,255,255,.12); --soft: rgba(255,255,255,.06); --accent: #0a9bff; --accent-text: #5ac1ff;
   --ok: #30d158; --warn: #ffb340; --bad: #ff6961; --code: #111113;
+  --ok-text: #30d158; --warn-text: #ffb340; --bad-text: #ff7b73;
   --chip-ok: rgba(48,209,88,.18); --chip-warn: rgba(255,179,64,.2); --chip-bad: rgba(255,105,97,.2); --chip-neutral: rgba(255,255,255,.1); --chip-accent: rgba(10,155,255,.2);
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.5);
   color-scheme: dark;
@@ -74,13 +76,13 @@ td a.row { color: var(--fg); font-weight: 500; }
 /* chips (always icon-free text + shape + colour) */
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; font-weight: 600; padding: 3px 10px; border-radius: 980px; background: var(--chip-neutral); color: var(--fg); white-space: nowrap; }
 .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .9; }
-.chip.ok { background: var(--chip-ok); color: var(--ok); } .chip.bad { background: var(--chip-bad); color: var(--bad); }
-.chip.warn { background: var(--chip-warn); color: var(--warn); } .chip.accent { background: var(--chip-accent); color: var(--accent-text); }
+.chip.ok { background: var(--chip-ok); color: var(--ok-text); } .chip.bad { background: var(--chip-bad); color: var(--bad-text); }
+.chip.warn { background: var(--chip-warn); color: var(--warn-text); } .chip.accent { background: var(--chip-accent); color: var(--accent-text); }
 
 /* buttons, forms */
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 16px; border-radius: 980px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: transparent; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; transition: transform .25s var(--spring), background .15s; text-decoration: none !important; }
 .btn:hover { background: var(--chip-accent); } .btn:active { transform: scale(.97); }
-.btn.primary { background: #0077ed; border-color: #0077ed; color: #fff; } .btn.primary:hover { background: #0068c9; }
+.btn.primary { background: #0071e3; border-color: #0071e3; color: #fff; } .btn.primary:hover { background: #0068c9; }
 :root[data-theme="dark"] .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
 .btn[disabled] { opacity: .5; cursor: progress; }
 .btn.small { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
@@ -92,10 +94,10 @@ label.f { display: block; font-size: .75rem; font-weight: 600; color: var(--mute
 .seg a[aria-current="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .pager { display: flex; justify-content: space-between; margin-top: 14px; }
 .note { padding: 10px 14px; border-radius: 12px; font-size: .875rem; }
-.note.ok { background: var(--chip-ok); color: var(--ok); } .note.bad { background: var(--chip-bad); color: var(--bad); } .note.info { background: var(--chip-accent); color: var(--accent-text); }
-.note.warn { background: var(--chip-warn); color: var(--warn); }
+.note.ok { background: var(--chip-ok); color: var(--ok-text); } .note.bad { background: var(--chip-bad); color: var(--bad-text); } .note.info { background: var(--chip-accent); color: var(--accent-text); }
+.note.warn { background: var(--chip-warn); color: var(--warn-text); }
 textarea { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 10px 12px; resize: vertical; }
-.banner { padding: 8px 14px; border-radius: 12px; background: var(--chip-warn); color: var(--warn); font-size: .8125rem; font-weight: 500; margin-bottom: 18px; }
+.banner { padding: 8px 14px; border-radius: 12px; background: var(--chip-warn); color: var(--warn-text); font-size: .8125rem; font-weight: 500; margin-bottom: 18px; }
 .theme { all: unset; cursor: pointer; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
 .theme:hover { background: var(--soft); color: var(--fg); } .theme svg { width: 17px; height: 17px; }
 .linkbtn { all: unset; cursor: pointer; color: var(--muted); font-size: .75rem; } .linkbtn:hover { color: var(--fg); text-decoration: underline; }
@@ -230,10 +232,10 @@ label.field.checkbox input { width: auto; }
 .envseg button { all: unset; cursor: pointer; padding: 3px 14px; border-radius: 980px; font-size: .8125rem; font-weight: 600; color: var(--muted); }
 .envseg button:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 .envseg button.on { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
-.envseg button.on.test { color: var(--warn); } .envseg button.on.live { color: var(--ok); }
+.envseg button.on.test { color: var(--warn-text); } .envseg button.on.live { color: var(--ok-text); }
 .envsw-err { position: absolute; right: 0; top: calc(100% + 8px); width: 280px; z-index: 30; box-shadow: var(--shadow); }
-.testbar.bad { background: var(--chip-bad); color: var(--bad); }
-.testbar { padding: 6px clamp(16px, 3vw, 40px); font-size: .8125rem; font-weight: 500; background: var(--chip-warn); color: var(--warn); border-bottom: 1px solid var(--line); }
+.testbar.bad { background: var(--chip-bad); color: var(--bad-text); }
+.testbar { padding: 6px clamp(16px, 3vw, 40px); font-size: .8125rem; font-weight: 500; background: var(--chip-warn); color: var(--warn-text); border-bottom: 1px solid var(--line); }
 .menu { position: relative; }
 .menu summary { list-style: none; cursor: pointer; display: grid; place-items: center; border-radius: 50%; }
 .menu summary::-webkit-details-marker { display: none; }
@@ -248,7 +250,7 @@ label.field.checkbox input { width: auto; }
 .stepper a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 500; font-size: .875rem; }
 .stepper a:hover { text-decoration: none; background: var(--soft); }
 .stepper .dot { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; font-weight: 650; background: var(--chip-neutral); color: var(--fg); }
-.stepper .done .dot { background: var(--chip-ok); color: var(--ok); }
+.stepper .done .dot { background: var(--chip-ok); color: var(--ok-text); }
 .stepper .now a { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 0 3px var(--chip-accent); }
 .stepper .now .dot { background: var(--accent); color: #fff; }
 
@@ -315,5 +317,6 @@ label.field select { min-height: 40px; width: 100%; border-radius: 12px; border:
 /* keyboard: `all: unset` buttons keep a visible focus ring, and a skip link jumps past the menu */
 .kbtn:focus-visible, .theme:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 main:focus { outline: none; }
-.skip { position: absolute; left: 12px; top: -60px; z-index: 100; padding: 10px 16px; border-radius: 980px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
+.skip { position: absolute; left: 12px; top: -60px; z-index: 100; padding: 10px 16px; border-radius: 980px; background: var(--accent-text); color: #fff; font-weight: 600; text-decoration: none; }
 .skip:focus { top: 12px; }
+:root[data-theme="dark"] .skip { color: #000; }
