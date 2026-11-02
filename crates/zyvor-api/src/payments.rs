@@ -294,6 +294,10 @@ pub struct ListQuery {
     pub counter_id: Option<String>,
     /// Matches the payment id exactly, or part of its reference or description (case-insensitive).
     pub q: Option<String>,
+    /// Created on or after this day (IST, `YYYY-MM-DD`).
+    pub created_from: Option<chrono::NaiveDate>,
+    /// Created on or before this day (IST, `YYYY-MM-DD`).
+    pub created_to: Option<chrono::NaiveDate>,
 }
 
 pub async fn list_intents(
@@ -315,6 +319,8 @@ pub async fn list_intents(
            AND ($4::text IS NULL OR branch_id = $4) AND ($5::text IS NULL OR counter_id = $5)
            AND ($2::text IS NULL OR (created_at, id) < (SELECT created_at, id FROM payment_intents WHERE id = $2))
            AND ($6::text IS NULL OR id = $6 OR external_ref ILIKE $7 OR description ILIKE $7)
+           AND ($8::date IS NULL OR (created_at AT TIME ZONE 'Asia/Kolkata')::date >= $8)
+           AND ($9::date IS NULL OR (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $9)
          ORDER BY created_at DESC, id DESC LIMIT $3",
     )
     .bind(&q.status)
@@ -327,6 +333,8 @@ pub async fn list_intents(
         let escaped = n.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
         format!("%{escaped}%")
     }))
+    .bind(q.created_from)
+    .bind(q.created_to)
     .fetch_all(&mut *tx)
     .await?;
     let has_more = rows.len() as i64 > limit;

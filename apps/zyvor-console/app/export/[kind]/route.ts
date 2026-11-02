@@ -14,13 +14,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ kind: strin
   const { kind } = await ctx.params;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const q = req.nextUrl.searchParams.get("q")?.trim() || undefined;
+  const day = (k: string) => { const v = req.nextUrl.searchParams.get(k) ?? ""; return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined; };
+  const [createdFrom, createdTo] = [day("from"), day("to")];
   const z = await api();
   let body: string;
   if (kind === "payments") {
     const rows: Intent[] = [];
     let after: string | undefined;
     while (rows.length < MAX_ROWS) {
-      const page = await z.intents.list({ limit: 100, status, q, startingAfter: after });
+      const page = await z.intents.list({ limit: 100, status, q, createdFrom, createdTo, startingAfter: after });
       rows.push(...(page.data as unknown as Intent[]));
       const last = page.data.at(-1);
       if (!page.has_more || !last) break;

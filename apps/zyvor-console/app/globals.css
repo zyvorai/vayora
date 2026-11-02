@@ -297,3 +297,6 @@ td .code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 260px; max
   .top .grow { display: none; }
   .envseg button { padding: 3px 10px; }
 }
+
+/* a saved view that matches the filters now applied */
+.btn[aria-current="true"] { background: var(--chip-accent); color: var(--accent-text); border-color: transparent; }
