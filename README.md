@@ -21,7 +21,8 @@ Rust core · PostgreSQL · Next.js checkout and console · TypeScript, Python an
 
 ## What it does
 - **Never double-charges.** Idempotent writes; an uncertain provider outcome becomes `unknown` and blocks any new attempt, through any provider, until it is resolved. The system asks the provider; it never re-sends.
-- **Explains every rupee.** `GET /v1/settlements/{id}/explain` lists payments, refunds, fees, adjustments, the bank match and why the net is what it is. Anything unexplained becomes an assignable case.
+- **Explains every rupee.** `GET /v1/settlements/{id}/explain` lists payments, refunds, fees, adjustments, the bank match and why the net is what it is. Anything unexplained becomes an assignable case. An optional AI assistant can put a case into plain words (it adds no facts; its answer is dropped if it does), and the rule-based summary is always there.
+- **Works the way a team does.** Opt-in payment receipt emails (queued with the capture, once per payment); saved, shareable filters and a date range on Payments; and a test environment can clear its own payments and money records with a typed confirmation, never a live one.
 - **Keeps books you can audit.** Append-only double-entry ledger, balanced per currency by code and by a database constraint; corrections are reversals.
 - **Routes with receipts.** A capability matrix, rules and configured fees choose a provider, and the decision records every provider considered and why.
 - **Measures real cost.** Effective cost by provider and method from observed settlement deductions, with suggestions that cite their evidence and never change anything on their own.

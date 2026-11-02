@@ -114,7 +114,7 @@
 
   <article class="chapter reveal">
     <div class="wrap two flip">
-      <div class="copy"><h3>Explains every rupee.</h3><p>Open a settlement and see the payments, refunds, fees and adjustments behind its net, and the bank line it matched. Anything that does not add up becomes a case someone can own.</p></div>
+      <div class="copy"><h3>Explains every rupee.</h3><p>Open a settlement and see the payments, refunds, fees and adjustments behind its net, and the bank line it matched. Anything that does not add up becomes a case someone can own, and an optional AI assistant can say why in plain words without adding a fact.</p></div>
       <div class="panel" role="img" aria-label="Example settlement: payments 4,99,000 rupees, refunds minus 10,000, fees minus 9,820, net 4,79,180.">
         <p class="cap">Example settlement</p>
         <dl class="ledger">
@@ -235,6 +235,7 @@
     <details><summary>What has actually been verified?</summary><p>The platform is tested against local simulators and a k3s sandbox. One capability, Cashfree UPI intent and QR, also ran against Cashfree's own sandbox. Nothing has run against a live provider, and Razorpay is simulator-only. <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/STATUS.md">STATUS.md</a> lists every gap.</p></details>
     <details><summary>Can I use my own gateway or bank API?</summary><p>Yes. A generic <code>custom</code> adapter speaks a small JSON contract, so you do not need to fork. Routing, the ledger and reconciliation stay the same. See <a href="https://github.com/zyvorai/vayora/blob/main/docs/zyvor/BRING_YOUR_OWN_PROVIDER.md">bring your own provider</a>.</p></details>
     <details><summary>Do the iPhone apps move real money?</summary><p>No. Vayora Pay and Vayora Merchant are test apps against the simulator. A real consumer UPI app needs NPCI TPAP approval and a sponsor bank, which these do not have.</p></details>
+    <details><summary>Can I start over in the sandbox?</summary><p>Yes. A test environment can clear its own payments and money records from Settings, with a typed confirmation. Your setup stays. A live environment cannot do this, and the reset is written to the audit log.</p></details>
     <details><summary>Does it file my GST returns?</summary><p>No. It issues GST tax invoices and a GSTR-1 style summary. Filing is yours.</p></details>
     <details><summary>What does it cost?</summary><p>The software is free under Apache-2.0. Your provider, bank and any licensed partner charge their own fees; Zyvor can measure the real cost from your settlements.</p></details>
   </div>
