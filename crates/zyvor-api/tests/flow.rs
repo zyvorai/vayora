@@ -10169,6 +10169,28 @@ async fn a_reviewer_opens_an_uploaded_document_only_for_a_business_that_asked_an
     .await;
     assert_eq!(st, StatusCode::CREATED);
 
+    // a reviewer who does not hold the case cannot open its documents; taking the case is what allows it
+    assert_eq!(get(rkey.clone(), path.clone()).await.0, 403);
+    let (st, _) = common::raw(
+        &t.app,
+        &rkey,
+        None,
+        "POST",
+        &format!("/v1/platform/reviews/{org}/assign"),
+        None,
+        json!({ "to": "me" }),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, rkey2) = zyvor_api::platform::create_reviewer(&t.state.pool, "Ben")
+        .await
+        .unwrap();
+    assert_eq!(
+        get(rkey2, path.clone()).await.0,
+        403,
+        "not while someone else holds it"
+    );
+
     // the reviewer opens it: the exact bytes, as a download
     let (code, h, body) = get(rkey.clone(), path.clone()).await;
     assert_eq!((code, body), (200, bytes));
