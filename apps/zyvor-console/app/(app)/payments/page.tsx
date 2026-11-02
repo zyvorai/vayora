@@ -40,12 +40,12 @@ export default async function Payments({ searchParams }: { searchParams: Promise
           {FILTERS.map((f) => <Link key={f} href={`/payments${queryOf({ status: f || undefined, q: term, from, to })}`} aria-current={(status ?? "") === f}>{f ? f.replace(/_/g, " ") : "All"}</Link>)}
         </div>
       </div>
-      <form method="get" action="/payments" role="search" style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+      <form method="get" action="/payments" role="search" className="filterbar">
         {status && <input type="hidden" name="status" value={status} />}
-        <input name="q" defaultValue={term ?? ""} placeholder="Search payment ID, reference or description" aria-label="Search payments" maxLength={100} style={{ flex: 1 }} />
+        <input name="q" defaultValue={term ?? ""} placeholder="Search payment ID, reference or description" aria-label="Search payments" maxLength={100} className="grow" />
         <button className="btn small" type="submit">Search</button>
-        <input type="date" name="from" defaultValue={from ?? ""} aria-label="Created from" style={{ width: 150 }} />
-        <input type="date" name="to" defaultValue={to ?? ""} aria-label="Created to" style={{ width: 150 }} />
+        <label className="datef">From <input type="date" name="from" defaultValue={from ?? ""} /></label>
+        <label className="datef">To <input type="date" name="to" defaultValue={to ?? ""} /></label>
         {(term || from || to) && <Link className="btn small" href={`/payments${queryOf({ status })}`}>Clear</Link>}
       </form>
       {views && (
