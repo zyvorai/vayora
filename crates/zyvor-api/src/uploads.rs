@@ -322,11 +322,16 @@ pub async fn file(
     )
     .await?;
     tx.commit().await?;
+    download_response(&name, &mime, bytes)
+}
+
+/// A stored file as a download: never shown inline, never sniffed, never cached.
+pub fn download_response(name: &str, mime: &str, bytes: Vec<u8>) -> Result<Response, ApiError> {
     let mut res = Response::new(Body::from(bytes));
     let h = res.headers_mut();
     h.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_str(&mime).map_err(|_| ApiError::internal())?,
+        HeaderValue::from_str(mime).map_err(|_| ApiError::internal())?,
     );
     h.insert(
         header::CONTENT_DISPOSITION,

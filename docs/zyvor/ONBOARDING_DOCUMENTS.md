@@ -44,7 +44,7 @@ against "PRIVATE LIMITED" on the page. With the profile changed to another busin
 - It does not decide a document is genuine. A forged certificate with the right numbers reads the same. The GSTIN/PAN/bank provider
   checks (`KYC_CASHFREE.md`, not yet run against Cashfree) and a person are what test the facts against a register.
 - OCR of a photo (a cheque, a PAN card on a table) is only as good as the photo. An unreadable document goes to a person.
-- A Zyvor reviewer sees what was found and which comparisons failed, not the file. They can ask the business for a copy.
+- A Zyvor reviewer can open each uploaded file (`GET /v1/platform/reviews/{organisation_id}/uploads/{id}/file`, and an Open file button on the review page), but only for a business that has asked for review, and every opening is written to that business's own audit trail as `reviewer:<name>` (`onboarding.upload_viewed_by_reviewer`), so the business can see who looked. Any reviewer can open any such file; there is no finer permission yet.
 - It reads the first three pages (two for scans), English text.
 
 ## What a deployment needs

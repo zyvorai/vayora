@@ -3683,6 +3683,32 @@ paths:
                   detail: {}
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/platform/reviews/{organisation_id}/uploads/{id}/file:
+    get:
+      summary: Open a document the business uploaded (reviewers only; audited in the business's own trail)
+      tags:
+      - platform
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/platform/reviews/{organisation_id}/decision:
     post:
       summary: 'Zyvor reviewers only: approve or reject with a note (a rejection needs a note, which the merchant sees)'

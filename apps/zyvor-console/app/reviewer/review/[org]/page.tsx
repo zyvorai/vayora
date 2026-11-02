@@ -97,10 +97,10 @@ export default async function Review({ params }: { params: Promise<{ org: string
 
         <section className="card">
           <h2>Documents</h2>
-          <p className="fine">Uploaded files were read automatically and compared with the details above; the files themselves stay with the business, so ask them for a copy if one needs a closer look. Anything marked as not matching or not found is worth a question. Linked documents are references only.</p>
+          <p className="fine">Uploaded files were read automatically and compared with the details above. Open a file to check it yourself; each time you do, it is written to the business's own audit trail under your name. Anything marked as not matching or not found is worth a question. Linked documents are references only.</p>
           {d.uploads.length > 0 && (
             <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 12 }}>
-              {d.uploads.map((u) => <li key={u.id}><strong>{u.filename}</strong> <span className="fine">{u.kind.replace(/_/g, " ")}</span><UploadChecks u={u} /></li>)}
+              {d.uploads.map((u) => <li key={u.id}><strong>{u.filename}</strong> <span className="fine">{u.kind.replace(/_/g, " ")}</span> <a className="btn small" href={`/reviewer/file/${encodeURIComponent(org)}/${u.id}`}>Open file</a><UploadChecks u={u} /></li>)}
             </ul>
           )}
           {d.documents.length === 0 ? <p className="fine">{d.uploads.length === 0 ? "None added." : "No linked documents."}</p> : (

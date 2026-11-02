@@ -522,6 +522,10 @@ pub fn app(state: AppState) -> Router {
             "/platform/reviews/{organisation_id}/decision",
             post(platform::decide),
         )
+        .route(
+            "/platform/reviews/{organisation_id}/uploads/{id}/file",
+            get(platform::review_file),
+        )
         .route("/platform/rota", get(rota::show))
         .route("/platform/rota/me", axum::routing::put(rota::set_mine))
         .route("/platform/rota/coverage", get(rota::coverage))

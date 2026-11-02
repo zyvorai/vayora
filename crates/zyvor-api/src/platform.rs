@@ -611,6 +611,45 @@ pub async fn list_reviews(
 }
 
 /// `GET /v1/platform/reviews/{organisation_id}`
+/// `GET /v1/platform/reviews/{organisation_id}/uploads/{id}/file`: a reviewer opens a document the business uploaded.
+/// Only for a business that asked for review, and every opening is written to that business's own audit trail (as
+/// `reviewer:<name>`), so the business can see who looked.
+pub async fn review_file(
+    State(s): State<AppState>,
+    p: PlatformAuth,
+    Path((org, id)): Path<(String, String)>,
+) -> Result<axum::response::Response, ApiError> {
+    let asked: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM live_access WHERE organisation_id = $1)")
+            .bind(&org)
+            .fetch_one(&s.pool)
+            .await?;
+    if !asked {
+        return Err(ApiError::not_found("review"));
+    }
+    let tid = test_tenant_of(&s, &org).await?;
+    let mut tx = tenant::begin(&s.pool, &tid).await?;
+    let row: Option<(String, String, Vec<u8>)> = sqlx::query_as(
+        "SELECT filename, content_type, data_enc FROM onboarding_uploads WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (name, mime, enc) = row.ok_or_else(|| ApiError::not_found("document"))?;
+    let bytes = s.crypto.decrypt(&enc).ok_or_else(ApiError::internal)?;
+    tenant::audit(
+        &mut tx,
+        &tid,
+        &format!("reviewer:{}", p.name),
+        "onboarding.upload_viewed_by_reviewer",
+        Some(&id),
+        json!({ "reviewer_id": p.id }),
+    )
+    .await?;
+    tx.commit().await?;
+    crate::uploads::download_response(&name, &mime, bytes)
+}
+
 pub async fn show_review(
     State(s): State<AppState>,
     p: PlatformAuth,

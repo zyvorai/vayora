@@ -251,7 +251,7 @@ scripts/platform-review.sh reject org_... "GSTIN certificate is missing"
 accounts (holder, IFSC, last four digits, verified or not), and every identity and bank check with its outcome.
 
 **What the review is worth depends on what you check.** Documents a business uploads are read automatically and compared with its details (the reviewer sees what was
-found and which comparisons failed, not the file itself; see ONBOARDING_DOCUMENTS.md), and the other checks are only as real as
+found and which comparisons failed, and can open the file itself with the Open file button; each opening is written to the business's own audit trail under the reviewer's name; see ONBOARDING_DOCUMENTS.md), and the other checks are only as real as
 the KYC provider behind them (with the simulator they verify nothing). Linked documents are references only. Before approving:
 
 - the legal name, the PAN holder and the bank account holder are the same party (a proprietor's PAN, a company's
