@@ -283,6 +283,7 @@ class Tests(unittest.TestCase):
             ('z.list_providers()', 'GET', '/v1/provider_accounts', None),
             ("z.check_provider('pro_1')", 'POST', '/v1/provider_accounts/pro_1/check', {}),
             ("z.set_provider_enabled('pro_1', True)", 'POST', '/v1/provider_accounts/pro_1/enabled', {'enabled': True}),
+            ("z.send_payment_link('plk_1')", 'POST', '/v1/payment_links/plk_1/send', None),
             ('z.live_access_status()', 'GET', '/v1/live_access', None),
             ('z.request_live_access()', 'POST', '/v1/live_access', {}),
             ('z.event_catalogue()', 'GET', '/v1/events/catalogue', None),
@@ -296,7 +297,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 79)
+        self.assertEqual(len(rows), 80)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []

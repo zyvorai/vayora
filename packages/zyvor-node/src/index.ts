@@ -448,8 +448,10 @@ export class Zyvor {
       this.req<{ id: string; token: string; path: string }>("POST", "/v1/payment_links", { open_amount: p.openAmount, min_amount_minor: p.minAmountMinor, max_amount_minor: p.maxAmountMinor, counter_id: p.counterId, branch_id: p.branchId, description: p.description, amount_minor: p.amountMinor, currency: p.currency, invoice_id: p.invoiceId, customer_id: p.customerId, max_uses: p.maxUses, expires_at: p.expiresAt, splits: p.splits?.map((x) => ({ vendor_id: x.vendorId, amount_minor: x.amountMinor })), convenience_fee_bp: p.convenienceFeeBp }),
     /** SVG QR code of the link's public checkout address (needs `ZYVOR_CHECKOUT_PUBLIC_URL` on the API). */
     qrUrl: (id: string) => `${this.base}/v1/payment_links/${encodeURIComponent(id)}/qr.svg`,
-    list: () => this.req<Page<{ id: string; path: string; description: string | null; amount_minor: number | null; currency: string; invoice_id: string | null; max_uses: number | null; uses: number; status: "active" | "expired" | "used_up" | "canceled"; created_at: string }>>("GET", "/v1/payment_links"),
+    list: () => this.req<Page<{ id: string; path: string; description: string | null; amount_minor: number | null; currency: string; invoice_id: string | null; max_uses: number | null; uses: number; status: "active" | "expired" | "used_up" | "canceled"; created_at: string; can_email: boolean }>>("GET", "/v1/payment_links"),
     cancel: (id: string) => this.req("POST", `/v1/payment_links/${encodeURIComponent(id)}/cancel`),
+    /** Email an active link to the customer it was made for (once per link per day). */
+    send: (id: string) => this.req("POST", `/v1/payment_links/${encodeURIComponent(id)}/send`),
   };
 
   /** Named console users with roles, Argon2id passwords and TOTP. Needs an admin key. */

@@ -177,6 +177,10 @@ class Zyvor:
     def cancel_payment_link(self, link_id: str) -> types.PostPaymentLinksByIdCancelResponse:
         return self._req("POST", f"/v1/payment_links/{link_id}/cancel")
 
+    def send_payment_link(self, link_id: str) -> types.PostPaymentLinksByIdSendResponse:
+        """Email an active link to the customer it was made for (once per link per day)."""
+        return self._req("POST", f"/v1/payment_links/{link_id}/send")
+
     def list_payments(self, status: Optional[str] = None, q: Optional[str] = None, limit: Optional[int] = None, starting_after: Optional[str] = None, *, created_from: Optional[str] = None, created_to: Optional[str] = None) -> types.GetPaymentIntentsByIdTimelineResponse:
         """Newest first. `q` matches a payment id exactly, or part of its reference or description. created_from/created_to are days (IST, YYYY-MM-DD)."""
         params = {k: v for k, v in {"status": status, "q": q, "limit": limit, "starting_after": starting_after, "created_from": created_from, "created_to": created_to}.items() if v not in (None, "")}

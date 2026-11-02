@@ -1405,6 +1405,11 @@ export interface PostPaymentLinksByIdCancelResponse {
   status: string;
 }
 
+export interface PostPaymentLinksByIdSendResponse {
+  id: string;
+  queued: boolean;
+}
+
 export interface PostPaymentLinksResponse {
   id: string;
   token: unknown;

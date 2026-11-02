@@ -6039,6 +6039,42 @@ paths:
         required: true
         schema:
           type: string
+  /v1/payment_links/{id}/send:
+    post:
+      summary: Email a payment link to its customer
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  queued:
+                    type: boolean
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  queued:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/checkout/links/{tenant_id}/{token}:
     get:
       summary: Public payment link details

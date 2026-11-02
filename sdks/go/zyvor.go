@@ -530,6 +530,13 @@ func (c *Client) CancelPaymentLink(id string) (map[string]any, error) {
 	return out, err
 }
 
+// SendPaymentLink emails an active link to the customer it was made for (once per link per day).
+func (c *Client) SendPaymentLink(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links/"+id+"/send", map[string]any{}, "", &out)
+	return out, err
+}
+
 // RotateKey mints a replacement; the old key keeps working for overlapHours (0 = server default of 24).
 func (c *Client) RotateKey(keyID string, overlapHours int) (map[string]any, error) {
 	body := map[string]any{}
