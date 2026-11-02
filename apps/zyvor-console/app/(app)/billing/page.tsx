@@ -15,6 +15,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const z = await api();
   const testMode = (await z.settings.get()).env === "test";
   const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
+  const who = new Map(customers.data.map((c) => [c.id, c.name]));
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
   const overdue = unpaid.filter((i) => i.due_date && i.due_date < today);
@@ -52,10 +53,10 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
       {tab === "subscriptions" && (
         <div className="tablewrap">
           <table>
-            <thead><tr><th>ID</th><th>Plan</th><th className="num">Qty</th><th>Next bill</th><th>Status</th></tr></thead>
+            <thead><tr><th>Customer</th><th>Plan</th><th className="num">Qty</th><th>Next bill</th><th>Status</th></tr></thead>
             <tbody>
               {subs.data.length === 0 && <tr><td colSpan={5} className="empty">No subscriptions.</td></tr>}
-              {subs.data.map((s) => { const r = s; const p = plans.data.find((x) => x.id === r.plan_id); return <tr key={String(r.id)}><td className="mono">{String(r.id).slice(0, 14)}…</td><td>{p ? String(p.name) : String(r.plan_id)}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td></tr>; })}
+              {subs.data.map((s) => { const r = s; const p = plans.data.find((x) => x.id === r.plan_id); return <tr key={String(r.id)}><td>{who.get(String(r.customer_id)) ?? <span className="muted">—</span>}</td><td>{p ? String(p.name) : String(r.plan_id)}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td></tr>; })}
             </tbody>
           </table>
         </div>
@@ -63,10 +64,10 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
       {tab === "milestones" && (
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Milestone</th><th className="num">Amount</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Milestone</th><th>Customer</th><th className="num">Amount</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {milestones.data.length === 0 && <tr><td colSpan={4} className="empty">No milestones.</td></tr>}
-              {milestones.data.map((m) => { const r = m; return <tr key={String(r.id)}><td>{String(r.name)}</td><td className="num">{inr(Number(r.amount_minor))}</td><td><Chip status={String(r.status)} /></td><td>{r.status === "pending" && <Act action={completeMilestone} id={String(r.id)} label="Accept & invoice" />}</td></tr>; })}
+              {milestones.data.length === 0 && <tr><td colSpan={5} className="empty">No milestones.</td></tr>}
+              {milestones.data.map((m) => { const r = m; return <tr key={String(r.id)}><td>{String(r.name)}</td><td>{who.get(String(r.customer_id)) ?? <span className="muted">—</span>}</td><td className="num">{inr(Number(r.amount_minor))}</td><td><Chip status={String(r.status)} /></td><td>{r.status === "pending" && <Act action={completeMilestone} id={String(r.id)} label="Accept & invoice" />}</td></tr>; })}
             </tbody>
           </table>
         </div>
