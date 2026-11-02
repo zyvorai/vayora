@@ -67,7 +67,7 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   }
 
   const picker = <LangPicker lang={lang} setLang={setLang} label={t("language")} />;
-  if (missing) return <div className="card state" role="alert"><h2>{t("invalidTitle")}</h2><p>{t("invalidBody")}</p>{picker}</div>;
+  if (missing) return <div className="card state" role="alert"><h1>{t("invalidTitle")}</h1><p>{t("invalidBody")}</p>{picker}</div>;
   if (!info) return <div className="card state" role="status"><div className="spin" /><p>{t("loadingShort")}</p></div>;
   const goneKey = GONE[info.status];
   const adjusted = info.discount_minor > 0 || info.fee_minor > 0;

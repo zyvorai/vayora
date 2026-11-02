@@ -140,7 +140,7 @@ details > summary { cursor: pointer; color: var(--accent-text); font-size: .8125
 @keyframes drift { to { transform: translate3d(3%, -2%, 0) scale(1.06); } }
 .login .card { position: relative; backdrop-filter: blur(24px) saturate(1.4); background: color-mix(in srgb, var(--surface) 82%, transparent); }
 .login .lede { margin-bottom: 0; }
-.login .fine { margin: 18px 0 0; text-align: center; color: var(--faint); font-size: .75rem; }
+.login .fine { margin: 18px 0 0; text-align: center; color: var(--muted); font-size: .75rem; }
 @media (prefers-reduced-motion: reduce) { .login .aurora { animation: none; } }
 
 /* ───────── Apple-grade refinement ───────── */
@@ -323,3 +323,6 @@ main:focus { outline: none; }
 
 /* hint text in empty fields is the muted text colour (the browser's default grey was about 4:1) */
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+
+/* the sign-in pages' card sits inside a main landmark; it must not pick up the app's page padding and width */
+.login > main.authmain { padding: 0; width: auto; max-width: none; animation: none; min-width: 0; }
