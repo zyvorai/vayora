@@ -531,6 +531,13 @@ export const createSubscription = async (_: FormState, f: FormData): Promise<For
   const start = String(f.get("start") ?? "");
   return run(["/billing"], (z) => z.billing.subscribe({ customerId: String(f.get("customer") ?? ""), planId: String(f.get("plan") ?? ""), quantity, startDate: start || undefined }));
 };
+export const cancelSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.cancel(id(f)));
+export const changeSubscriptionPlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const plan = String(f.get("plan") ?? "");
+  if (!plan) return { error: "Choose the plan to move to." };
+  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: plan }));
+  return r?.error ? r : { ok: "Plan changed." };
+};
 export const pauseSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.pause(id(f)));
 export const resumeSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.resume(id(f)));
 export const createMilestone = async (_: FormState, f: FormData): Promise<FormState> => {
