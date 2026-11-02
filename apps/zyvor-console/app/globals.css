@@ -84,7 +84,7 @@ td a.row { color: var(--fg); font-weight: 500; }
 :root[data-theme="dark"] .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
 .btn[disabled] { opacity: .5; cursor: progress; }
 .btn.small { min-height: 30px; padding: 0 12px; font-size: .8125rem; }
-input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
+input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="date"] { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 12px; }
 label.f { display: block; font-size: .75rem; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
 .seg { display: inline-flex; padding: 3px; border-radius: 980px; background: var(--soft); gap: 2px; }
 .seg a { padding: 5px 14px; border-radius: 980px; color: var(--muted); font-weight: 500; font-size: .875rem; }
@@ -300,3 +300,13 @@ td .code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 260px; max
 
 /* a saved view that matches the filters now applied */
 .btn[aria-current="true"] { background: var(--chip-accent); color: var(--accent-text); border-color: transparent; }
+
+/* Payments filters: the search box keeps a usable width and the dates wrap under it on a phone */
+.filterbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.filterbar input.grow { flex: 1 1 220px; min-width: 0; }
+.datef { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .8125rem; font-weight: 500; }
+.datef input { width: 8.25rem; padding: 0 8px; }
+.seg a { white-space: nowrap; flex: none; }
+@media (max-width: 800px) { .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; } .seg::-webkit-scrollbar { display: none; } }
+/* dropdowns in forms look like the text inputs next to them */
+label.field select { min-height: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; font-weight: 400; padding: 0 10px; }
