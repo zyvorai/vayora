@@ -1,6 +1,6 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { ChangePlan, EditPlan, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
+import { ChangePlan, EditPlan, RecordUsage, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
 import { ConfirmAct } from "@/components/ConfirmAct";
 import { Tabs } from "@/components/Tabs";
 import { TestClock } from "@/components/TestClock";
@@ -65,6 +65,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
                 {r.status === "active" && <Act action={pauseSubscription} id={String(r.id)} label="Pause" />}
                 {r.status === "paused" && <Act action={resumeSubscription} id={String(r.id)} label="Resume" />}
                 {(r.status === "active" || r.status === "paused") && <>
+                  {p && Number(p.usage_unit_minor) > 0 && <RecordUsage id={String(r.id)} unit={inr(Number(p.usage_unit_minor))} />}
                   <ChangePlan id={String(r.id)} plans={plans.data.filter((x) => x.active !== false || x.id === r.plan_id).map((x) => ({ id: String(x.id), name: String(x.name) }))} planId={String(r.plan_id)} quantity={Number(r.quantity)} />
                   <ConfirmAct action={cancelSubscription} id={String(r.id)} label="Cancel subscription" question="Stop billing this customer?" yes="Yes, cancel" />
                 </>}
@@ -98,7 +99,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>Name</th><th className="num">Price</th><th>Every</th><th /></tr></thead>
             <tbody>
               {plans.data.length === 0 && <tr><td colSpan={4} className="empty">No plans yet. A plan is a price that repeats (for example, monthly tuition); subscribe customers to it to bill them automatically.</td></tr>}
-              {plans.data.map((p) => { const r = p; const on = r.active !== false; return <tr key={String(r.id)}><td>{String(r.name)}{!on && <> <span className="chip warn">archived</span></>}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}</td><td style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+              {plans.data.map((p) => { const r = p; const on = r.active !== false; return <tr key={String(r.id)}><td>{String(r.name)}{!on && <> <span className="chip warn">archived</span></>}</td><td className="num">{inr(Number(r.amount_minor))}</td><td>{r.interval_count} {String(r.interval_unit)}{Number(r.usage_unit_minor) > 0 && <div className="muted">+ {inr(Number(r.usage_unit_minor))} per unit used</div>}</td><td style={{ display: "grid", gap: 8, justifyItems: "end" }}>
                 <EditPlan id={String(r.id)} name={String(r.name)} priceMinor={Number(r.amount_minor)} />
                 <Act action={setPlanActive} id={String(r.id)} extra={{ active: on ? "false" : "true" }} label={on ? "Archive" : "Restore"} />
                 {on && <span className="muted">Archiving stops new subscribers; current ones keep billing.</span>}

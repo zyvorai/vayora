@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
-import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, updatePlan, type FormState } from "@/lib/actions";
+import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, recordUsage, updatePlan, type FormState } from "@/lib/actions";
 
 type Customer = { id: string; name: string };
 
@@ -87,6 +87,7 @@ export function NewPlan() {
       <label className="field" style={{ flex: "0 1 120px" }}>Period
         <select name="unit" defaultValue="month"><option value="day">day(s)</option><option value="week">week(s)</option><option value="month">month(s)</option><option value="year">year(s)</option></select>
       </label>
+      <label className="field" style={{ flex: "1 1 150px" }}>Per unit used (₹, optional)<input name="per_unit" inputMode="decimal" placeholder="2.50" /></label>
     </Inline>
   );
 }
@@ -117,6 +118,27 @@ export function NewMilestone({ customers }: { customers: Customer[] }) {
 }
 
 /** Move a subscription to another plan. An upgrade is charged now for the unused part of the period; a downgrade applies from the next invoice. */
+export function RecordUsage({ id, unit }: { id: string; unit: string }) {
+  const [state, run, pending] = useActionState(recordUsage, undefined);
+  // one reference per form load, so pressing Save twice records once
+  const [ref] = useState(() => crypto.randomUUID());
+  return (
+    <details>
+      <summary style={{ cursor: "pointer" }}>Record usage</summary>
+      <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="ref" value={ref} />
+        <input name="quantity" type="number" min={1} required placeholder="Units" aria-label="Units used" style={{ width: 90 }} />
+        <input name="note" maxLength={120} placeholder="Note (optional)" aria-label="Note" style={{ flex: "1 1 120px" }} />
+        <button className="btn small" disabled={pending}>{pending ? "…" : "Record"}</button>
+        <span className="muted" style={{ flexBasis: "100%" }}>Billed at {unit} per unit on the next invoice.</span>
+        {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+        {state?.ok && <span className="note" role="status">{state.ok}</span>}
+      </form>
+    </details>
+  );
+}
+
 export function EditPlan({ id, name, priceMinor }: { id: string; name: string; priceMinor: number }) {
   const [state, run, pending] = useActionState(updatePlan, undefined);
   return (
