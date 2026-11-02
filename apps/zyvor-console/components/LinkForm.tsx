@@ -15,39 +15,46 @@ export function LinkForm({ base, counters = [], customers = [] }: { base: string
   };
   return (
     <form onSubmit={submit} className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 24 }}>
-      <label className="field" style={{ flex: "2 1 220px" }}>Description<input name="description" placeholder="Term 2 fee" maxLength={120} /></label>
+      <label className="field" style={{ flex: "2 1 220px" }}>What is it for<input name="description" placeholder="Term 2 fee" maxLength={120} /></label>
       {open ? (
         <>
           <label className="field" style={{ flex: "1 1 120px" }}>Smallest (₹)<input name="min" inputMode="decimal" placeholder="10" /></label>
           <label className="field" style={{ flex: "1 1 120px" }}>Largest (₹)<input name="max" inputMode="decimal" placeholder="50000" /></label>
         </>
       ) : (
-        <>
-          <label className="field" style={{ flex: "1 1 120px" }}>Amount (₹)<input name="amount" inputMode="decimal" placeholder="1250.00" required /></label>
-          <label className="field" style={{ flex: "1 1 120px" }}>Max uses<input name="max_uses" inputMode="numeric" placeholder="Unlimited" /></label>
-          <label className="field" style={{ flex: "1 1 120px" }}>Fee payer covers (%)<input name="fee" inputMode="decimal" placeholder="0" /></label>
-        </>
+        <label className="field" style={{ flex: "1 1 140px" }}>Amount (₹)<input name="amount" inputMode="decimal" placeholder="1250.00" required /></label>
       )}
-      {counters.length > 0 && (
-        <label className="field" style={{ flex: "1 1 160px" }}>Counter (optional)
-          <select name="counter_id" defaultValue=""><option value="">None</option>{counters.map((c) => <option key={c.id} value={c.id}>{c.branch} · {c.name}</option>)}</select>
-        </label>
-      )}
-      {!open && customers.length > 0 && (
-        <>
-          <label className="field" style={{ flex: "1 1 200px" }}>For a customer (optional)
-            <select name="customer_id" defaultValue=""><option value="">Anyone with the link</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}</select>
-          </label>
-          <label className="field" style={{ flex: "1 1 150px" }}>Last day to pay (optional)<input name="expires_on" type="date" /></label>
-          <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" name="remind" /> Email that customer once, in the last day before it stops working (needs a customer and a last day)
-          </label>
-        </>
-      )}
-      <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
-        <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} /> The payer types the amount (for a printed counter QR; no coupon, split or fee)
-      </label>
       <button className="btn primary" disabled={pending}>{pending ? "Creating…" : "Create link"}</button>
+      <details style={{ flexBasis: "100%" }}>
+        <summary style={{ cursor: "pointer", fontWeight: 500 }}>More options: limit uses, add a fee, tie it to a customer, set a last day</summary>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
+          {!open && (
+            <>
+              <label className="field" style={{ flex: "1 1 120px" }}>Stop after this many payers<input name="max_uses" inputMode="numeric" placeholder="No limit" /></label>
+              <label className="field" style={{ flex: "1 1 140px" }}>Fee the payer adds on top (%)<input name="fee" inputMode="decimal" placeholder="0" /></label>
+            </>
+          )}
+          {counters.length > 0 && (
+            <label className="field" style={{ flex: "1 1 160px" }}>Counter
+              <select name="counter_id" defaultValue=""><option value="">None</option>{counters.map((c) => <option key={c.id} value={c.id}>{c.branch} · {c.name}</option>)}</select>
+            </label>
+          )}
+          {!open && customers.length > 0 && (
+            <>
+              <label className="field" style={{ flex: "1 1 200px" }}>For a customer
+                <select name="customer_id" defaultValue=""><option value="">Anyone with the link</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}</select>
+              </label>
+              <label className="field" style={{ flex: "1 1 150px" }}>Last day to pay<input name="expires_on" type="date" /></label>
+              <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" name="remind" /> Email that customer once, in the last day before it stops working (needs a customer and a last day)
+              </label>
+            </>
+          )}
+          <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} /> The payer types the amount (for a printed counter QR; no coupon, split or fee)
+          </label>
+        </div>
+      </details>
       {state?.error && <p className="note bad" role="alert" style={{ flexBasis: "100%" }}>{state.error}</p>}
       {state?.ok && <p className="note" role="status" style={{ flexBasis: "100%" }}>Created: <a className="mono" style={{ overflowWrap: "anywhere" }} href={base + state.ok} target="_blank" rel="noreferrer">{base + state.ok}</a></p>}
     </form>
