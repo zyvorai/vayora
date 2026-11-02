@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
-import { saveApprovals, saveCollections, saveFxRate, saveGst, saveRisk, saveWebhooks } from "@/lib/actions";
+import { resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -25,6 +25,10 @@ export default async function Settings() {
         </label>
         <label className="field">Days overdue before the first<input name="min_days" type="number" min={0} defaultValue={s.dunning.min_days_overdue} /></label>
         <label className="field">Days between reminders<input name="repeat_days" type="number" min={0} max={365} defaultValue={s.dunning.repeat_after_days} /></label>
+      </SettingsForm>
+
+      <SettingsForm title="Receipts" hint="Email the payer a receipt when their payment is captured. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up." action={saveReceipts}>
+        <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment receipts</label>
       </SettingsForm>
 
       <SettingsForm title="Approvals" hint="Amounts above these need a second person. Set payouts to 0 to require one for every payout." action={saveApprovals}>
@@ -63,6 +67,12 @@ export default async function Settings() {
           </label>
         ))}
       </SettingsForm>
+
+      {s.env === "test" && (
+        <SettingsForm title="Test data" hint="Clear the payments, invoices, customers, refunds and ledger created while trying things out, so you can start again. Your settings, providers, API keys, people, branches, vendors, plans and coupons stay. The audit trail is kept and records the reset. This cannot be undone, and it is not available in the live environment." action={resetTestData} button="Reset test data" busy="Resetting…" done="Test data cleared.">
+          <label className="field" style={{ gridColumn: "1 / -1" }}>Type <span className="mono">reset test data</span> to confirm<input name="confirm" autoComplete="off" spellCheck={false} /></label>
+        </SettingsForm>
+      )}
     </>
   );
 }

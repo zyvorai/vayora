@@ -257,6 +257,13 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"ListSettlements", func() (map[string]any, error) { return c.ListSettlements() }, "GET", "/v1/settlements", nil},
 		{"ListCases", func() (map[string]any, error) { return c.ListCases(map[string]any{"status": "x1", "kind": "x1"}) }, "GET", "/v1/recon/cases?kind=x1&status=x1", nil},
 		{"CaseSuggestions", func() (map[string]any, error) { return c.CaseSuggestions("cas_1") }, "GET", "/v1/recon/cases/cas_1/suggestions", nil},
+		{"ListSavedViews", func() (map[string]any, error) { return c.ListSavedViews() }, "GET", "/v1/saved_views?scope=payments", nil},
+		{"CreateSavedView", func() (map[string]any, error) {
+			return c.CreateSavedView("Failed", map[string]any{"status": "failed"}, true)
+		}, "POST", "/v1/saved_views", map[string]any{"scope": "payments", "name": "Failed", "query": map[string]any{"status": "failed"}, "shared": true}},
+		{"DeleteSavedView", func() (map[string]any, error) { return c.DeleteSavedView("sv_1") }, "DELETE", "/v1/saved_views/sv_1", nil},
+		{"ListPaymentsInRange", func() (map[string]any, error) { return c.ListPaymentsInRange("", "", 0, "2026-11-01", "2026-11-30") }, "GET", "/v1/payment_intents?created_from=2026-11-01&created_to=2026-11-30", nil},
+		{"ResetTestData", func() (map[string]any, error) { return c.ResetTestData() }, "POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"}},
 		{"AssignCase", func() (map[string]any, error) { return c.AssignCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/assign", map[string]any{"assignee": "x1"}},
 		{"ResolveCase", func() (map[string]any, error) { return c.ResolveCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/resolve", map[string]any{"resolution": "x1"}},
 		{"ListPlans", func() (map[string]any, error) { return c.ListPlans() }, "GET", "/v1/plans", nil},
@@ -374,8 +381,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 89 {
-		t.Fatalf("expected 89 rows, got %d", len(rows))
+	if len(rows) != 94 {
+		t.Fatalf("expected 94 rows, got %d", len(rows))
 	}
 }
 

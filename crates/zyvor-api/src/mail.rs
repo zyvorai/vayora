@@ -103,6 +103,55 @@ pub async fn enqueue(
     Ok(())
 }
 
+/// Queue a message inside the caller's transaction, once per `dedupe_key`: a repeat with the same key
+/// queues nothing. Returns whether a message was queued.
+pub async fn enqueue_once(
+    conn: &mut sqlx::PgConnection,
+    dedupe_key: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+) -> Result<bool, sqlx::Error> {
+    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (dedupe_key) DO NOTHING")
+        .bind(new_id("mail"))
+        .bind(to)
+        .bind(subject)
+        .bind(body)
+        .bind(dedupe_key)
+        .execute(conn)
+        .await?
+        .rows_affected();
+    Ok(n == 1)
+}
+
+/// The words of a payment receipt. Plain text, only facts the payer already knows or the merchant recorded.
+pub fn receipt(
+    merchant: &str,
+    payer_name: &str,
+    amount: &str,
+    paid_on: chrono::NaiveDate,
+    payment_id: &str,
+    reference: Option<&str>,
+    invoice_number: Option<&str>,
+) -> (String, String) {
+    let subject = format!("Receipt: {amount} paid to {merchant}");
+    let mut lines = vec![
+        format!("Hello {payer_name},"),
+        String::new(),
+        format!("{merchant} received your payment of {amount} on {paid_on}."),
+    ];
+    if let Some(n) = invoice_number {
+        lines.push(format!("Invoice: {n}"));
+    }
+    if let Some(r) = reference {
+        lines.push(format!("Reference: {r}"));
+    }
+    lines.push(format!("Payment id: {payment_id}"));
+    lines.push(String::new());
+    lines.push("Keep this email as your receipt. If anything looks wrong, reply to the business that sent your bill.".into());
+    (subject, lines.join("\n"))
+}
+
 /// Seconds to wait after the nth failed send: 30s, 1m, 2m ... capped at an hour.
 pub fn backoff_secs(attempts: i32) -> i64 {
     (30i64 << attempts.clamp(0, 7).min(7)).min(3600)

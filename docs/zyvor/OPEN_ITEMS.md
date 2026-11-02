@@ -108,7 +108,10 @@ reset. Verified only against a plain local SMTP server.
   not in spam. Needs SPF, DKIM and DMARC on the sending domain (done at your DNS and mail provider, not in this repo).
 - **Watch it:** **Done:** `/metrics` now carries `zyvor_mail_pending` and `zyvor_mail_dead`, and `deploy/zyvor/alerts.yml`
   has alert rules for them (and the other gauges). The rules are valid YAML but have **not** been run through `promtool`.
-- **Later:** HTML templates, a per-organisation sender, payment receipts and reminder emails (the events exist; add
+- **Done:** payment receipts. `payment_receipts` in settings (off by default; a Receipts box on the Settings page) queues a plain-text
+  receipt in the same transaction as the capture, to the intent's customer when that customer has an email address, once per attempt
+  (`mail_queue.dedupe_key`). Checked in the local sandbox: the Settings box saves and persists, and a simulated captured payment for a customer with an email queued one receipt that the worker handed to the log-only mailer (no SMTP configured, so nothing was delivered). Delivery uses the mailer above, so it is as verified as that is (plain local SMTP only).
+- **Later:** HTML templates, a per-organisation sender, refund receipts and reminder emails (the events exist; add
   consumers that enqueue mail), unsubscribe handling for anything that is not transactional.
 
 ---
@@ -129,7 +132,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 - **Test clock, in part:** `POST /v1/billing/run` and `POST /v1/collections/dunning/run` accept `as_of` (a date) in test mode, so a test
   organisation can see the next period invoiced or the reminders due on a later day (Node, Python and Go). Nothing else
   moves with it: the worker, mandates, due dates on new invoices and the console still use today. Still open: a real clock the
-  whole test organisation follows; and a "reset test data" button (delete everything for a test tenant, never live).
+  whole test organisation follows; and ~~a "reset test data" button~~ **Done:** `POST /v1/test_data/reset` (admin, test environments only, body `{"confirm":"reset test data"}`; Node `testData.reset()`, Python `reset_test_data()`, Go `ResetTestData()`; a Test data card on the console Settings page) clears payments, invoices, refunds, customers, settlements, mandates, payouts, cash entries and the ledger for that tenant and keeps settings, provider accounts, keys, people, branches, counters, vendors, plans and coupons (coupon use counts go back to 0). The audit trail is never cleared and records the reset with row counts. Checked in the local sandbox in a browser: a wrong confirmation is refused with the form kept, the right one clears the two payments, the invoice, the customer and the ledger, Payments then shows its empty state, and the provider accounts, keys and settings are still there.
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
   posting (`crates/zyvor-api/src/timeline.rs`); the test fails without the fix.
 
@@ -149,7 +152,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 ## 6. Console polish
 
 Mobile was checked on three pages only. Walk every page at 390 px (`apps/zyvor-console/app/globals.css` has the phone
-rules at the end), and add: saved views on Payments (search is **done**: `q=` on `GET /v1/payment_intents` and a box on the page),
+rules at the end), and add: saved views on Payments (**done**: search `q=`, date range `created_from`/`created_to`, and named views: `GET/POST /v1/saved_views`, `DELETE /v1/saved_views/{id}`; personal by default, shareable with the environment by a person with `payments:write`; 20 per person; filters status, q, from, to are validated on save; Node `savedViews`, Python `*_saved_view`, Go `*SavedView`; chips with a save form on the Payments page and the CSV export keeps the same filters; other lists are not covered). Checked in the local sandbox in a browser: filters, saving a shared view, applying it, deleting it, and the date range. That check found and fixed a bug: the page listed views as a different person from the one who saved them, so a personal view would not have shown,
 payment-link reminders (backend feature), an audit of empty states in a browser (a code scan found every list page has empty-state text except Keys, which cannot be empty because the viewing key is listed; `error.tsx`, `loading.tsx` and `not-found.tsx` exist for the app group), keyboard and screen-reader pass,
 translations for the new pages (`apps/zyvor-checkout` shows the approach).
 

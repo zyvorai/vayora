@@ -70,6 +70,8 @@ export interface Settings {
   risk: RiskRules;
   refund_approval_threshold_minor: number;
   payout_approval_threshold_minor: number;
+  /** Email each payer a receipt when a payment is captured (needs the customer's email). */
+  payment_receipts: boolean;
   outbound_webhook_url: string | null;
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
@@ -77,10 +79,15 @@ export interface Settings {
   env: string;
 }
 
+/** The filters a Payments view can hold. `from` and `to` are days (IST, YYYY-MM-DD). */
+export interface SavedViewQuery { status?: string; q?: string; from?: string; to?: string }
+export interface SavedView { id: string; name: string; query: SavedViewQuery; shared: boolean; mine: boolean; owner: string }
+
 /** Only the fields you send change. `outbound_webhook_secret` is write-only. */
 export interface SettingsPatch {
   refund_approval_threshold_minor?: number;
   payout_approval_threshold_minor?: number;
+  payment_receipts?: boolean;
   outbound_webhook_url?: string;
   outbound_webhook_secret?: string;
   webhook_events?: string[];
@@ -164,8 +171,8 @@ export class Zyvor {
     /** One ordered story of the payment, with a plain sentence on where it stands. */
     timeline: (id: string) => this.req<{ payment_id: string; status: string; standing: string; events: { at: string; kind: "intent" | "attempt" | "webhook" | "ledger" | "refund" | "dispute" | "settlement"; title: string; detail: Record<string, unknown> }[] }>("GET", `/v1/payment_intents/${encodeURIComponent(id)}/timeline`),
     /** `q` matches a payment id exactly, or part of its reference or description. */
-    list: (p: { limit?: number; startingAfter?: string; status?: string; q?: string } = {}) =>
-      this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status, q: p.q })}`),
+    list: (p: { limit?: number; startingAfter?: string; status?: string; q?: string; /** Created on or after this day (IST, YYYY-MM-DD). */ createdFrom?: string; /** Created on or before this day (IST, YYYY-MM-DD). */ createdTo?: string } = {}) =>
+      this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status, q: p.q, created_from: p.createdFrom, created_to: p.createdTo })}`),
     attempt: (intentId: string, p: { method: Method; vpa?: string; idempotencyKey?: string }) =>
       this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa }, key(p.idempotencyKey)),
     refund: (intentId: string, p: { amountMinor?: number; reason?: string; externalRef?: string; idempotencyKey?: string }) =>
@@ -299,6 +306,18 @@ export class Zyvor {
     rates: () => this.req<Page<{ id: string; currency: string; rate: string; as_of: string; note: string | null; set_by: string }>>("GET", "/v1/fx/rates"),
     convert: (p: { amountMinor: number; from: "INR" | "USD"; to: "INR" | "USD"; asOf?: string }) => this.req<{ amount_minor: number; currency: string; rate: string | null; rate_date?: string }>("GET", `/v1/fx/convert${this.qs({ amount_minor: p.amountMinor, from: p.from, to: p.to, as_of: p.asOf })}`),
     exposure: (p: { asOf?: string } = {}) => this.req<{ as_of: string; rate_date: string | null; outstanding_usd_minor: number; complete: boolean; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null; data: Array<{ invoice_id: string; number: string; outstanding_usd_minor: number; raised_on: string; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null }> }>("GET", `/v1/fx/exposure${this.qs({ as_of: p.asOf })}`),
+  };
+
+  /** Named sets of Payments filters. Personal unless `shared`. */
+  readonly savedViews = {
+    list: () => this.req<{ data: SavedView[] }>("GET", "/v1/saved_views?scope=payments"),
+    create: (p: { name: string; query: SavedViewQuery; shared?: boolean }) => this.req<SavedView>("POST", "/v1/saved_views", { scope: "payments", name: p.name, query: p.query, shared: p.shared ?? false }),
+    delete: (id: string) => this.req<{ ok: boolean }>("DELETE", `/v1/saved_views/${encodeURIComponent(id)}`),
+  };
+
+  readonly testData = {
+    /** Test environments only: clears payments, invoices, customers and the ledger; keeps settings, keys, providers, branches, vendors, plans, coupons. */
+    reset: () => this.req<{ ok: boolean; removed: Record<string, number> }>("POST", "/v1/test_data/reset", { confirm: "reset test data" }),
   };
 
   readonly settings = {

@@ -39,6 +39,10 @@ export interface DeletePlatformRotaDaysOffByIdResponse {
   deleted: boolean;
 }
 
+export interface DeleteSavedViewsByIdResponse {
+  ok: boolean;
+}
+
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
@@ -674,6 +678,10 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetSavedViewsResponse {
+  data: unknown[];
+}
+
 export interface GetSettingsResponse {
   refund_approval_threshold_minor: number;
   routing: unknown;
@@ -682,6 +690,7 @@ export interface GetSettingsResponse {
   dunning: unknown;
   gst: unknown;
   payout_approval_threshold_minor: number;
+  payment_receipts: boolean;
   risk: unknown;
   webhook_events: unknown;
 }
@@ -1630,6 +1639,15 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostSavedViewsResponse {
+  id: string;
+  name: string;
+  query: unknown;
+  shared: unknown;
+  mine: boolean;
+  owner: unknown;
+}
+
 export interface PostSettingsResponse {
   ok: boolean;
 }
@@ -1740,6 +1758,11 @@ export interface PostSubscriptionsResponse {
   id: string;
   status: string;
   next_bill_date: string | null;
+}
+
+export interface PostTestDataResetResponse {
+  ok: boolean;
+  removed: unknown;
 }
 
 export interface PostUsersResponse {
