@@ -234,6 +234,8 @@ export interface GetDisputesResponse {
 export interface GetDisputesResponseDataItem {
   id: string;
   attempt_id: string;
+  intent_id: string;
+  created_at: string;
   amount_minor: number;
   reason: string;
   status: string;

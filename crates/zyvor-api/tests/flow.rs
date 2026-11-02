@@ -1979,6 +1979,18 @@ async fn disputes_hold_the_money_and_a_lost_one_hits_the_ledger_and_reopens_the_
         )
         .await;
     assert_eq!(st.as_u16(), 404);
+    // the list says which payment each dispute is about, and when it was opened
+    let list = t.ok(a, "GET", "/v1/disputes", None, Value::Null).await;
+    let row = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == json!(did))
+        .unwrap();
+    assert!(
+        row["intent_id"].as_str().unwrap().starts_with("pi_") && row["created_at"].is_string(),
+        "{row}"
+    );
     let (st, _) = t
         .call(
             a,

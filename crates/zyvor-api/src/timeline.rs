@@ -35,7 +35,7 @@ pub fn standing(intent_status: &str, attempt: Option<(&str, &str)>, settled: boo
 }
 
 /// The names people know, for the ids the API uses (the console shows the same words).
-fn provider_name(id: &str) -> String {
+pub(crate) fn provider_name(id: &str) -> String {
     match id {
         "sim" => "the simulator".into(),
         "razorpay" => "Razorpay".into(),
@@ -216,6 +216,15 @@ pub async fn payment_timeline(
         "standing": standing(&status, last, settled),
         "events": out.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
     })))
+}
+
+/// A provider's name for the start of a sentence ("The simulator", "Razorpay").
+pub(crate) fn provider_title(id: &str) -> String {
+    let n = provider_name(id);
+    let mut c = n.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or(n)
 }
 
 #[cfg(test)]

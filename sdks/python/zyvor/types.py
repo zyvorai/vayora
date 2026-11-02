@@ -238,6 +238,8 @@ GetDisputesResponse = TypedDict("GetDisputesResponse", {
 GetDisputesResponseDataItem = TypedDict("GetDisputesResponseDataItem", {
     "id": "str",
     "attempt_id": "str",
+    "intent_id": "str",
+    "created_at": "str",
     "amount_minor": "int",
     "reason": "str",
     "status": "str",

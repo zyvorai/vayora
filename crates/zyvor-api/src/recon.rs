@@ -323,7 +323,8 @@ pub async fn evaluate(
                 Some(net),
                 Some(bank_amount),
                 &format!(
-                    "{provider} says it paid {} but the bank statement shows {} for the same UTR.",
+                    "{} says it paid {} but the bank statement shows {} for the same UTR.",
+                    crate::timeline::provider_title(&provider),
                     money(net),
                     money(bank_amount)
                 ),
@@ -671,7 +672,8 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
     }
     let effective_bps = if gross > 0 { fees * 10_000 / gross } else { 0 };
     let mut narrative = format!(
-        "{provider} paid {} on {settled_on}: {} payments worth {}{}. It deducted {} in fees and taxes ({}.{:02}% of payment value){}.",
+        "{} paid {} on {settled_on}: {} payments worth {}{}. It deducted {} in fees and taxes ({}.{:02}% of payment value){}.",
+        crate::timeline::provider_title(&provider),
         money(net),
         payments.len(),
         money(gross),

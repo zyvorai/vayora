@@ -418,7 +418,7 @@ export class Zyvor {
     /** Holds the disputed amount on the payment so it cannot also be refunded. */
     open: (p: { attemptId: string; reason: string; amountMinor?: number; providerRef?: string; respondBy?: string }) =>
       this.req<{ id: string }>("POST", "/v1/disputes", { attempt_id: p.attemptId, reason: p.reason, amount_minor: p.amountMinor, provider_ref: p.providerRef, respond_by: p.respondBy }),
-    list: (status?: "open" | "under_review" | "won" | "lost") => this.req<Page<{ id: string; attempt_id: string; amount_minor: number; reason: string; status: string; respond_by: string | null; evidence_count: number }>>("GET", `/v1/disputes${this.qs({ status })}`),
+    list: (status?: "open" | "under_review" | "won" | "lost") => this.req<Page<{ id: string; attempt_id: string; intent_id: string; amount_minor: number; reason: string; status: string; respond_by: string | null; evidence_count: number; created_at: string }>>("GET", `/v1/disputes${this.qs({ status })}`),
     addEvidence: (id: string, p: { note: string; url?: string }) => this.req("POST", `/v1/disputes/${encodeURIComponent(id)}/evidence`, p),
     /** `lost` books the loss on the ledger and re-opens the paid invoice; `won` releases the hold. */
     resolve: (id: string, outcome: "won" | "lost") => this.req("POST", `/v1/disputes/${encodeURIComponent(id)}/resolve`, { outcome }),

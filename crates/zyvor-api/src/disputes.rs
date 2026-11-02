@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use zyvor_core::{Currency, new_id};
@@ -85,10 +85,11 @@ pub async fn list_disputes(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, i64, String, String, Option<NaiveDate>, Value)> = sqlx::query_as("SELECT id, attempt_id, amount_minor, reason, status, respond_by, evidence FROM disputes WHERE ($1::text IS NULL OR status = $1) ORDER BY respond_by NULLS LAST, created_at DESC LIMIT $2")
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(String, String, i64, String, String, Option<NaiveDate>, Value, String, DateTime<Utc>)> = sqlx::query_as("SELECT id, attempt_id, amount_minor, reason, status, respond_by, evidence, intent_id, created_at FROM disputes WHERE ($1::text IS NULL OR status = $1) ORDER BY respond_by NULLS LAST, created_at DESC LIMIT $2")
         .bind(&q.status).bind(q.limit.unwrap_or(50).clamp(1, 200)).fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, att, amt, reason, st, by, ev)| json!({ "id": id, "attempt_id": att, "amount_minor": amt, "reason": reason, "status": st, "respond_by": by, "evidence_count": ev.as_array().map_or(0, Vec::len) })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, att, amt, reason, st, by, ev, intent, at)| json!({ "id": id, "attempt_id": att, "intent_id": intent, "created_at": at, "amount_minor": amt, "reason": reason, "status": st, "respond_by": by, "evidence_count": ev.as_array().map_or(0, Vec::len) })).collect::<Vec<_>>() }),
     ))
 }
 
