@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
-import { createCustomer, createInstalments, createInvoice, type FormState } from "@/lib/actions";
+import { createCustomer, createInstalments, createInvoice, createMilestone, createPlan, createSubscription, type FormState } from "@/lib/actions";
 
 type Customer = { id: string; name: string };
 
@@ -74,6 +74,44 @@ export function NewInstalments({ customers }: { customers: Customer[] }) {
       <label className="field" style={{ flex: "1 1 120px" }}>Total (₹)<input name="total" inputMode="decimal" required /></label>
       <label className="field" style={{ flex: "0 1 90px" }}>Instalments<input name="count" type="number" min={2} max={60} defaultValue={3} required /></label>
       <label className="field" style={{ flex: "1 1 140px" }}>First due<input name="first_due" type="date" required /></label>
+    </Inline>
+  );
+}
+
+export function NewPlan() {
+  return (
+    <Inline action={createPlan} done="Plan created. Subscribe a customer to it on the Subscriptions tab.">
+      <label className="field" style={{ flex: "2 1 180px" }}>Plan name<input name="name" required maxLength={80} placeholder="Monthly tuition" /></label>
+      <label className="field" style={{ flex: "1 1 120px" }}>Price (₹)<input name="price" inputMode="decimal" required placeholder="4500.00" /></label>
+      <label className="field" style={{ flex: "0 1 90px" }}>Every<input name="every" type="number" min={1} max={365} defaultValue={1} required /></label>
+      <label className="field" style={{ flex: "0 1 120px" }}>Period
+        <select name="unit" defaultValue="month"><option value="day">day(s)</option><option value="week">week(s)</option><option value="month">month(s)</option><option value="year">year(s)</option></select>
+      </label>
+    </Inline>
+  );
+}
+
+export function NewSubscription({ customers, plans }: { customers: Customer[]; plans: { id: string; name: string }[] }) {
+  if (plans.length === 0) return <p className="muted">Create a plan first (Plans tab), then subscribe a customer to it.</p>;
+  return (
+    <Inline action={createSubscription} done="Subscribed. Invoices are made automatically as each bill date arrives; the first appears once the next billing run picks it up.">
+      {customerSelect(customers, true)}
+      <label className="field" style={{ flex: "1 1 170px" }}>Plan
+        <select name="plan" required defaultValue=""><option value="" disabled>Choose…</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      </label>
+      <label className="field" style={{ flex: "0 1 90px" }}>Quantity<input name="quantity" type="number" min={1} defaultValue={1} required /></label>
+      <label className="field" style={{ flex: "1 1 140px" }}>Starts (optional)<input name="start" type="date" /></label>
+    </Inline>
+  );
+}
+
+export function NewMilestone({ customers }: { customers: Customer[] }) {
+  return (
+    <Inline action={createMilestone} done="Milestone added. Accept it when it is reached and it becomes an invoice.">
+      {customerSelect(customers, true)}
+      <label className="field" style={{ flex: "2 1 170px" }}>Milestone<input name="name" required maxLength={80} placeholder="Admission deposit" /></label>
+      <label className="field" style={{ flex: "1 1 120px" }}>Amount (₹)<input name="amount" inputMode="decimal" required /></label>
+      <label className="field" style={{ flex: "0 1 130px" }}>Due after (days)<input name="due_days" type="number" min={0} placeholder="e.g. 7" /></label>
     </Inline>
   );
 }
