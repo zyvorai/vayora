@@ -152,6 +152,33 @@ pub fn receipt(
     (subject, lines.join("\n"))
 }
 
+/// The words of a refund receipt. The reason is the merchant's own note, so it is left out: it may not be meant
+/// for the payer.
+pub fn refund_receipt(
+    merchant: &str,
+    payer_name: &str,
+    amount: &str,
+    refunded_on: chrono::NaiveDate,
+    refund_id: &str,
+    payment_id: &str,
+    reference: Option<&str>,
+) -> (String, String) {
+    let subject = format!("Refund: {amount} from {merchant}");
+    let mut lines = vec![
+        format!("Hello {payer_name},"),
+        String::new(),
+        format!("{merchant} refunded {amount} on {refunded_on}."),
+    ];
+    if let Some(r) = reference {
+        lines.push(format!("Reference: {r}"));
+    }
+    lines.push(format!("Refund id: {refund_id}"));
+    lines.push(format!("Original payment id: {payment_id}"));
+    lines.push(String::new());
+    lines.push("The money goes back the way you paid. Your bank can take a few days to show it. If anything looks wrong, reply to the business that sent your bill.".into());
+    (subject, lines.join("\n"))
+}
+
 /// Seconds to wait after the nth failed send: 30s, 1m, 2m ... capped at an hour.
 pub fn backoff_secs(attempts: i32) -> i64 {
     (30i64 << attempts.clamp(0, 7).min(7)).min(3600)

@@ -27,8 +27,8 @@ export default async function Settings() {
         <label className="field">Days between reminders<input name="repeat_days" type="number" min={0} max={365} defaultValue={s.dunning.repeat_after_days} /></label>
       </SettingsForm>
 
-      <SettingsForm title="Receipts" hint="Email the payer a receipt when their payment is captured. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up." action={saveReceipts}>
-        <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment receipts</label>
+      <SettingsForm title="Receipts" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up." action={saveReceipts}>
+        <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment and refund receipts</label>
       </SettingsForm>
 
       <SettingsForm title="Approvals" hint="Amounts above these need a second person. Set payouts to 0 to require one for every payout." action={saveApprovals}>

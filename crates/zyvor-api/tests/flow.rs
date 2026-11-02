@@ -14622,6 +14622,55 @@ async fn a_captured_payment_emails_a_receipt_only_when_turned_on_and_only_once(p
         .bind(format!("receipt:{att}")).execute(&t.root).await;
     assert!(again.is_err(), "the key is unique");
     assert_eq!(mails().await, 1);
+
+    // a refund emails the payer too, once, with the same switch
+    let refund_mails = || t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Refund:%'");
+    let rf = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/refunds"),
+            Some("rcpt-refund-1"),
+            json!({ "amount_minor": 25_000, "reason": "private note", "external_ref": "RET-7" }),
+        )
+        .await;
+    assert_eq!(rf["status"], "processed");
+    assert_eq!(refund_mails().await, 1);
+    let (to, subject, body, key): (String, String, String, String) = sqlx::query_as(
+        "SELECT to_email, subject, body, dedupe_key FROM mail_queue WHERE subject LIKE 'Refund:%'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert_eq!(
+        key,
+        format!("refund_receipt:{}", rf["id"].as_str().unwrap())
+    );
+    assert!(subject.contains("₹250.00"), "{subject}");
+    assert!(body.contains("RET-7") && body.contains(&iid), "{body}");
+    assert!(
+        !body.contains("private note"),
+        "the merchant's note is not sent: {body}"
+    );
+    // switched off: the next refund queues nothing
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "payment_receipts": false }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/refunds"),
+        Some("rcpt-refund-2"),
+        json!({ "amount_minor": 10_000 }),
+    )
+    .await;
+    assert_eq!(refund_mails().await, 1);
 }
 
 async fn rows_of(t: &T, tenant: &str, table: &str) -> i64 {
