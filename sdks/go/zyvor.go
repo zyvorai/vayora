@@ -740,9 +740,13 @@ func (c *Client) ListCases(opts map[string]any) (map[string]any, error) {
 	return c.call("GET", path, nil)
 }
 
-// CaseSuggestions: Evidence and next steps for a case (read only).
-func (c *Client) CaseSuggestions(caseId string) (map[string]any, error) {
+// CaseSuggestions: Evidence and next steps for a case (read only). Pass ai=true to add a
+// plain-words ai_summary from the model (null when the answer is refused).
+func (c *Client) CaseSuggestions(caseId string, ai ...bool) (map[string]any, error) {
 	v := url.Values{}
+	if len(ai) > 0 && ai[0] {
+		v.Set("ai", "true")
+	}
 	path := "/v1/recon/cases/" + caseId + "/suggestions"
 	if len(v) > 0 {
 		path += "?" + v.Encode()

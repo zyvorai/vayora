@@ -14543,3 +14543,75 @@ async fn a_lead_can_even_out_the_load_between_the_people_on_duty(pool: PgPool) {
         .fetch_one(&t.root).await.unwrap();
     assert_eq!(n.0, 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_case_can_be_put_into_plain_words_by_the_model_without_adding_facts(pool: PgPool) {
+    use zyvor_api::ai::AiConfig;
+    let t = setup(pool).await;
+    let a = &t.a;
+    for (id, subject) in [
+        ("rc_ai1", "att_1"),
+        ("rc_ai2", "att_2"),
+        ("rc_ai3", "att_3"),
+    ] {
+        sqlx::query("INSERT INTO recon_cases (id, tenant_id, kind, subject_type, subject_id, expected_minor, actual_minor, diff_minor, explanation) VALUES ($1, $2, 'amount_mismatch', 'attempt', $3, 100000, 98000, -2000, 'x')")
+            .bind(id).bind(&a.id).bind(subject).execute(&t.root).await.unwrap();
+    }
+    let path = |id: &str| format!("/v1/recon/cases/{id}/suggestions?ai=true");
+
+    // not enabled: refused, the plain suggestion still works
+    let (s, body) = t.call(a, "GET", &path("rc_ai1"), None, Value::Null).await;
+    assert_eq!(
+        (s.as_u16(), body["error"]["code"].clone()),
+        (422, json!("ai_not_configured"))
+    );
+    let plain = t
+        .ok(
+            a,
+            "GET",
+            "/v1/recon/cases/rc_ai1/suggestions",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(plain["ai_summary"], Value::Null);
+
+    let (url, seen) = spawn_fake_model(vec![
+        "This payment arrived ₹20.00 short, about 2.0 percent, which is the size of a provider fee.",
+        "It is short by ₹999.00 because the bank took a charge; see http://evil.example.",
+    ])
+    .await;
+    let mut st = t.state.clone();
+    st.ai = Some(std::sync::Arc::new(AiConfig {
+        api_key: "sk-test-fake".into(),
+        base_url: url,
+        model: "claude-sonnet-5-5".into(),
+        monthly_cap: 2,
+    }));
+    let app = zyvor_api::app(st);
+    let get = |id: &'static str| {
+        let (app, key, p) = (app.clone(), a.key.clone(), path(id));
+        async move { raw(&app, &key, None, "GET", &p, None, Value::Null).await }
+    };
+    let (s, ok) = get("rc_ai1").await;
+    assert_eq!(s.as_u16(), 200);
+    assert!(ok["ai_summary"].as_str().unwrap().contains("provider fee"));
+    assert!(ok["summary"].as_str().unwrap().contains("provider fee"));
+    let (_, bad) = get("rc_ai2").await;
+    assert_eq!(
+        bad["ai_summary"],
+        Value::Null,
+        "an answer with a new number or a link is dropped; the rule-based summary stays"
+    );
+    let (s, over) = get("rc_ai3").await;
+    assert_eq!(
+        (s.as_u16(), over["error"]["code"].clone()),
+        (429, json!("ai_quota_exceeded"))
+    );
+    assert_eq!(seen.lock().unwrap().len(), 2, "no call past the cap");
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'recon.ai_explained'")
+            .await,
+        2
+    );
+}

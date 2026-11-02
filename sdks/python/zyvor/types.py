@@ -612,6 +612,7 @@ GetReconCasesByIdSuggestionsResponse = TypedDict("GetReconCasesByIdSuggestionsRe
     "case_id": "str",
     "kind": "str",
     "summary": "str",
+    "ai_summary": "Optional[str]",
     "evidence": "List[Any]",
     "next_steps": "List[str]",
     "note": "Any",

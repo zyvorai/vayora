@@ -628,6 +628,7 @@ type GetReconCasesByIdSuggestionsResponse struct {
 	CaseID    string   `json:"case_id"`
 	Kind      string   `json:"kind"`
 	Summary   string   `json:"summary"`
+	AiSummary *string  `json:"ai_summary"`
 	Evidence  []any    `json:"evidence"`
 	NextSteps []string `json:"next_steps"`
 	Note      any      `json:"note"`
