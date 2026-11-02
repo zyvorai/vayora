@@ -38,7 +38,7 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
         <table>
           <thead><tr><th>Kind</th><th>What happened</th><th className="num">Difference</th><th>Status</th><th>Owner</th><th /></tr></thead>
           <tbody>
-            {cases.data.length === 0 && <tr><td colSpan={6} className="empty">Everything reconciles.</td></tr>}
+            {cases.data.length === 0 && <tr><td colSpan={6} className="empty">{settlements.data.length === 0 ? "Nothing to reconcile yet. A case opens here when a settlement or a bank line does not match your payments." : "Everything reconciles."}</td></tr>}
             {cases.data.map((c) => (
               <tr key={c.id}>
                 <td className="mono">{c.kind}</td>
@@ -65,7 +65,7 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
         <table>
           <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th><th /></tr></thead>
           <tbody>
-            {settlements.data.length === 0 && <tr><td colSpan={8} className="empty">No settlements imported yet.</td></tr>}
+            {settlements.data.length === 0 && <tr><td colSpan={8} className="empty">No settlements yet. In test mode, settle simulated payments with the button above; live, they arrive from your provider's settlement report.</td></tr>}
             {settlements.data.map((s) => {
               const r = s as Record<string, number | string | null>;
               return (

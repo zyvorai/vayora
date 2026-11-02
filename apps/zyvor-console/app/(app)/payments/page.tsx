@@ -68,7 +68,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
         <table>
           <thead><tr><th>ID</th><th>Reference</th><th className="num">Amount</th><th>Status</th><th>Created (IST)</th></tr></thead>
           <tbody>
-            {page.data.length === 0 && <tr><td colSpan={5} className="empty">No payments match.</td></tr>}
+            {page.data.length === 0 && <tr><td colSpan={5} className="empty">{status || term || from || to ? "No payments match these filters." : <>No payments yet. Share a <Link href="/links">payment link</Link>, or in test mode create one in the <Link href="/sandbox">Sandbox</Link>.</>}</td></tr>}
             {page.data.map((i) => (
               <tr key={i.id}>
                 <td className="mono"><Link href={`/payments/${i.id}`}>{i.id.slice(0, 16)}…</Link></td>

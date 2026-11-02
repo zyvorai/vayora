@@ -27,7 +27,7 @@ export default async function Webhooks({ searchParams }: { searchParams: Promise
         <table>
           <thead><tr><th>Event</th><th>Type</th><th>Status</th><th className="num">Attempts</th><th>Last error</th><th>Created (IST)</th><th>Payload</th><th /></tr></thead>
           <tbody>
-            {page.data.length === 0 && <tr><td colSpan={8} className="empty">No events.</td></tr>}
+            {page.data.length === 0 && <tr><td colSpan={8} className="empty">No events yet. They appear here when payments, refunds and invoices change.</td></tr>}
             {page.data.map((e) => {
               const r = e as Record<string, string | number | null>;
               return (

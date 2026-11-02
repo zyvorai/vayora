@@ -14,7 +14,7 @@ export default async function Disputes() {
         <table>
           <thead><tr><th>ID</th><th>Reason</th><th className="num">Amount</th><th>Respond by</th><th className="num">Evidence</th><th>Status</th><th /></tr></thead>
           <tbody>
-            {page.data.length === 0 && <tr><td colSpan={7} className="empty">No disputes.</td></tr>}
+            {page.data.length === 0 && <tr><td colSpan={7} className="empty">No disputes. One appears here when a payer's bank challenges a payment, and you answer it with evidence.</td></tr>}
             {page.data.map((d) => (
               <tr key={d.id}>
                 <td className="mono">{d.id.slice(0, 14)}…</td><td>{d.reason}</td><td className="num">{inr(d.amount_minor)}</td>
