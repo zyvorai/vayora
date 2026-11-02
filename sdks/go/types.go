@@ -59,6 +59,10 @@ type DeletePlatformRotaDaysOffByIdResponse struct {
 	Deleted any    `json:"deleted"`
 }
 
+type DeleteSavedViewsByIdResponse struct {
+	Ok bool `json:"ok"`
+}
+
 type GetAnalyticsCostResponse struct {
 	ByProviderMethod []any `json:"by_provider_method"`
 	Suggestions      any   `json:"suggestions"`
@@ -657,6 +661,10 @@ type GetRefundsByIdResponse struct {
 type GetRefundsResponse struct {
 	Data    []RefundRow `json:"data"`
 	HasMore bool        `json:"has_more"`
+}
+
+type GetSavedViewsResponse struct {
+	Data []any `json:"data"`
 }
 
 type GetSettingsResponse struct {
@@ -1465,6 +1473,15 @@ type PostRefundsByIdRetryResponse struct {
 	UpdatedAt         string  `json:"updated_at"`
 }
 
+type PostSavedViewsResponse struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Query  any    `json:"query"`
+	Shared any    `json:"shared"`
+	Mine   any    `json:"mine"`
+	Owner  any    `json:"owner"`
+}
+
 type PostSettingsResponse struct {
 	Ok bool `json:"ok"`
 }
@@ -1539,6 +1556,11 @@ type PostSubscriptionsResponse struct {
 	ID           string `json:"id"`
 	Status       string `json:"status"`
 	NextBillDate any    `json:"next_bill_date"`
+}
+
+type PostTestDataResetResponse struct {
+	Ok      bool `json:"ok"`
+	Removed any  `json:"removed"`
 }
 
 type PostUsersResponse struct {

@@ -39,6 +39,10 @@ export interface DeletePlatformRotaDaysOffByIdResponse {
   deleted: unknown;
 }
 
+export interface DeleteSavedViewsByIdResponse {
+  ok: boolean;
+}
+
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
@@ -637,6 +641,10 @@ export interface GetRefundsByIdResponse {
 export interface GetRefundsResponse {
   data: RefundRow[];
   has_more: boolean;
+}
+
+export interface GetSavedViewsResponse {
+  data: unknown[];
 }
 
 export interface GetSettingsResponse {
@@ -1445,6 +1453,15 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostSavedViewsResponse {
+  id: string;
+  name: string;
+  query: unknown;
+  shared: unknown;
+  mine: unknown;
+  owner: unknown;
+}
+
 export interface PostSettingsResponse {
   ok: boolean;
 }
@@ -1519,6 +1536,11 @@ export interface PostSubscriptionsResponse {
   id: string;
   status: string;
   next_bill_date: unknown;
+}
+
+export interface PostTestDataResetResponse {
+  ok: boolean;
+  removed: unknown;
 }
 
 export interface PostUsersResponse {

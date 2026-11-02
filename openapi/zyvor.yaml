@@ -2399,6 +2399,106 @@ paths:
                     type: string
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/test_data/reset:
+    post:
+      summary: Clear this test environment's payments and money records, keeping its setup (admin; never live)
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  removed: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body'
+  /v1/saved_views:
+    get:
+      summary: Your saved views and the ones shared with the environment
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: scope
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+    post:
+      summary: Save a named set of Payments filters (status, q, from, to), personal or shared
+      tags:
+      - settings
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  query: {}
+                  shared: {}
+                  mine: {}
+                  owner: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedViewsCreate'
+  /v1/saved_views/{id}:
+    delete:
+      summary: Delete a saved view (its owner, or an admin)
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/signup/resend:
     post:
       summary: 'Public: email a fresh verification link (always answers the same)'
@@ -3060,7 +3160,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Create'
+              $ref: '#/components/schemas/SimCircleCreate'
   /v1/sim/circle/{id}:
     get:
       summary: What the primary payer's bank shows about a simulated circle (test mode only)
@@ -5546,6 +5646,20 @@ paths:
         schema:
           type: string
         x-generated: true
+      - name: created_from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
+      - name: created_to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/payment_intents/{id}/attempts:
     post:
       summary: 'Start a payment attempt on an intent (body: method, vpa; requires an Idempotency-Key)'
@@ -5846,6 +5960,14 @@ components:
           type:
           - string
           - 'null'
+    Body:
+      type: object
+      x-generated: true
+      properties:
+        confirm:
+          type: string
+      required:
+      - confirm
     SimPayPay:
       type: object
       x-generated: true
@@ -5893,7 +6015,7 @@ components:
       required:
       - circle_id
       - upi_uri
-    Create:
+    SimCircleCreate:
       type: object
       x-generated: true
       properties:
@@ -5963,6 +6085,26 @@ components:
       required:
       - email
       - password
+    SavedViewsListQuery:
+      type: object
+      x-generated: true
+      properties:
+        scope:
+          type: string
+    SavedViewsCreate:
+      type: object
+      x-generated: true
+      properties:
+        scope:
+          type: string
+        name:
+          type: string
+        query: {}
+        shared:
+          type: boolean
+      required:
+      - name
+      - query
     RotaIn:
       type: object
       x-generated: true
@@ -6307,6 +6449,12 @@ components:
           type: string
         q:
           type: string
+        created_from:
+          type: string
+          format: date
+        created_to:
+          type: string
+          format: date
     CreateIntent:
       type: object
       x-generated: true

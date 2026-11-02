@@ -14623,3 +14623,450 @@ async fn a_captured_payment_emails_a_receipt_only_when_turned_on_and_only_once(p
     assert!(again.is_err(), "the key is unique");
     assert_eq!(mails().await, 1);
 }
+
+async fn rows_of(t: &T, tenant: &str, table: &str) -> i64 {
+    t.count(&format!(
+        "SELECT count(*) FROM {table} WHERE tenant_id = '{tenant}'"
+    ))
+    .await
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn resetting_test_data_clears_the_money_records_keeps_the_setup_and_never_touches_live(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let cust = t
+        .ok(a, "POST", "/v1/customers", None, json!({ "name": "Asha" }))
+        .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "INV-R1", "amount_minor": 50_000, "customer_id": cust["id"] }),
+        )
+        .await;
+    let (iid, _, _) = t
+        .paid_razorpay(
+            a,
+            50_000,
+            json!({ "customer_id": cust["id"], "invoice_id": inv["id"] }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_intents/{iid}/refunds"),
+        Some("rf-reset"),
+        json!({ "amount_minor": 10_000, "reason": "test" }),
+    )
+    .await;
+    t.ok(
+        b,
+        "POST",
+        "/v1/customers",
+        None,
+        json!({ "name": "Other tenant" }),
+    )
+    .await; // must survive
+    let mine = |table: &'static str| rows_of(&t, &a.id, table);
+    for table in [
+        "payment_intents",
+        "ledger_entries",
+        "invoices",
+        "invoice_allocations",
+        "customers",
+        "refunds",
+    ] {
+        assert!(mine(table).await > 0, "{table} has rows before");
+    }
+
+    // confirmation is required, and the live environment is refused
+    let (s, e) = t
+        .call(
+            a,
+            "POST",
+            "/v1/test_data/reset",
+            None,
+            json!({ "confirm": "yes" }),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].as_str()),
+        (422, Some("confirmation_required"))
+    );
+    let live_tenant: String =
+        sqlx::query_scalar("SELECT id FROM tenants WHERE env = 'live' LIMIT 1")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    let key = zyvor_api::auth::mint_key("live").0;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes) VALUES ('k_live_r', $1, 'live', 'zk_live_xxxxxx', $2, ARRAY['admin'])").bind(&live_tenant).bind(zyvor_api::auth::hash_key(&key)).execute(&t.root).await.unwrap();
+    let live_t = Tenant {
+        id: live_tenant.clone(),
+        key,
+    };
+    let (s, e) = t
+        .call(
+            &live_t,
+            "POST",
+            "/v1/test_data/reset",
+            None,
+            json!({ "confirm": "reset test data" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 403, "{e}");
+    // even naming the live tenant to the database does not let its ledger be deleted
+    sqlx::query("INSERT INTO ledger_transactions (id, tenant_id, reference) VALUES ('lt_live', $1, 'live-1')").bind(&live_tenant).execute(&t.root).await.unwrap();
+    let mut tx = t.root.begin().await.unwrap();
+    sqlx::query("SELECT set_config('zyvor.test_reset', $1, true)")
+        .bind(&live_tenant)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let denied = sqlx::query("DELETE FROM ledger_transactions WHERE id = 'lt_live'")
+        .execute(&mut *tx)
+        .await;
+    assert!(denied.is_err(), "a live tenant's ledger stays append-only");
+    drop(tx);
+    // and without the reset the test tenant's ledger is append-only too
+    assert!(
+        sqlx::query("DELETE FROM ledger_entries WHERE tenant_id = $1")
+            .bind(&a.id)
+            .execute(&t.root)
+            .await
+            .is_err()
+    );
+
+    // the reset itself
+    let (s, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/test_data/reset",
+            None,
+            json!({ "confirm": "reset test data" }),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 200);
+    for table in [
+        "payment_intents",
+        "payment_attempts",
+        "ledger_entries",
+        "ledger_transactions",
+        "invoices",
+        "invoice_allocations",
+        "customers",
+        "refunds",
+        "outbox_events",
+        "idempotency_keys",
+    ] {
+        assert_eq!(mine(table).await, 0, "{table} is empty after");
+    }
+    // setup survives and the same key still works
+    assert!(
+        mine("provider_accounts").await > 0
+            && mine("tenant_settings").await == 1
+            && mine("api_keys").await > 0
+    );
+    t.ok(a, "GET", "/v1/payment_intents", None, Value::Null)
+        .await;
+    assert_eq!(
+        t.count(&format!("SELECT count(*) FROM audit_events WHERE tenant_id = '{}' AND action = 'test_data.reset'", a.id)).await,
+        1,
+        "the reset is on the audit trail, which is never cleared"
+    );
+    assert!(
+        t.count(&format!(
+            "SELECT count(*) FROM audit_events WHERE tenant_id = '{}'",
+            a.id
+        ))
+        .await
+            > 1,
+        "earlier audit events remain"
+    );
+    // the other tenant is untouched, and the tenant can take a fresh payment and balance its ledger again
+    assert_eq!(rows_of(&t, &b.id, "customers").await, 1);
+    t.paid_razorpay(a, 30_000, json!({})).await;
+    assert_eq!(mine("payment_intents").await, 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn saved_views_keep_checked_filters_for_their_owner_or_for_everyone_who_shares_them(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let new = |name: &str, query: Value, shared: bool| json!({ "name": name, "query": query, "shared": shared });
+
+    // filters are checked: nothing unknown, no bad status or dates, at least one
+    for bad in [
+        json!({}),
+        json!({ "status": "paid" }),
+        json!({ "colour": "red" }),
+        json!({ "from": "yesterday" }),
+        json!({ "from": "2026-11-05", "to": "2026-11-01" }),
+        json!({ "q": "x".repeat(101) }),
+        json!({ "status": "" }),
+    ] {
+        let (s, e) = t
+            .call_as(
+                a,
+                "user:asha",
+                "POST",
+                "/v1/saved_views",
+                None,
+                new("Bad", bad.clone(), false),
+            )
+            .await;
+        assert_eq!(
+            (s.as_u16(), e["error"]["code"].as_str()),
+            (422, Some("invalid_view")),
+            "{bad}"
+        );
+    }
+
+    let mine = t
+        .call_as(
+            a,
+            "user:asha",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new(
+                "Failed this week",
+                json!({ "status": "failed", "from": "2026-11-02" }),
+                false,
+            ),
+        )
+        .await
+        .1;
+    let shared = t
+        .call_as(
+            a,
+            "user:asha",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new("Fee payments", json!({ "q": "FEE" }), true),
+        )
+        .await
+        .1;
+    assert_eq!(
+        mine["query"],
+        json!({ "status": "failed", "from": "2026-11-02" })
+    );
+    let (s, e) = t
+        .call_as(
+            a,
+            "user:asha",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new("Fee payments", json!({ "q": "FEE" }), false),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].as_str()),
+        (409, Some("view_exists"))
+    );
+
+    let names = |v: &Value| {
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["name"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let asha = t
+        .call_as(
+            a,
+            "user:asha",
+            "GET",
+            "/v1/saved_views?scope=payments",
+            None,
+            Value::Null,
+        )
+        .await
+        .1;
+    assert_eq!(names(&asha), ["Failed this week", "Fee payments"]);
+    // someone else sees only the shared one, flagged as not theirs
+    let ravi = t
+        .call_as(a, "user:ravi", "GET", "/v1/saved_views", None, Value::Null)
+        .await
+        .1;
+    assert_eq!(names(&ravi), ["Fee payments"]);
+    assert_eq!(ravi["data"][0]["mine"], json!(false));
+    // another environment sees none
+    assert_eq!(
+        names(
+            &t.call_as(
+                &t.b,
+                "user:asha",
+                "GET",
+                "/v1/saved_views",
+                None,
+                Value::Null
+            )
+            .await
+            .1
+        )
+        .len(),
+        0
+    );
+
+    // a read-only key can keep a personal view but not share one
+    let key = zyvor_api::auth::mint_key("test").0;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes) VALUES ('k_ro_sv', $1, 'ro', 'zk_test_xxxxxx', $2, ARRAY['payments:read'])").bind(&a.id).bind(zyvor_api::auth::hash_key(&key)).execute(&t.root).await.unwrap();
+    let ro = Tenant {
+        id: a.id.clone(),
+        key,
+    };
+    let (s, _) = t
+        .call_as(
+            &ro,
+            "user:view",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new("Mine", json!({ "status": "succeeded" }), false),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 201);
+    let (s, _) = t
+        .call_as(
+            &ro,
+            "user:view",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new("Shared", json!({ "status": "succeeded" }), true),
+        )
+        .await;
+    assert_eq!(s.as_u16(), 403);
+
+    // only the owner (or an admin) deletes
+    let sid = shared["id"].as_str().unwrap();
+    let (s, _) = t
+        .call_as(
+            &ro,
+            "user:view",
+            "DELETE",
+            &format!("/v1/saved_views/{sid}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(s.as_u16(), 403);
+    let (s, _) = t
+        .call_as(
+            a,
+            "user:asha",
+            "DELETE",
+            &format!("/v1/saved_views/{sid}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(s.as_u16(), 200);
+    let (s, _) = t
+        .call_as(
+            a,
+            "user:asha",
+            "DELETE",
+            &format!("/v1/saved_views/{sid}"),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(s.as_u16(), 404);
+
+    // a limit per person
+    for i in 0..20 {
+        let (s, _) = t
+            .call_as(
+                a,
+                "user:many",
+                "POST",
+                "/v1/saved_views",
+                None,
+                new(&format!("v{i}"), json!({ "q": format!("n{i}") }), false),
+            )
+            .await;
+        assert_eq!(s.as_u16(), if i < 20 { 201 } else { 409 });
+    }
+    let (s, e) = t
+        .call_as(
+            a,
+            "user:many",
+            "POST",
+            "/v1/saved_views",
+            None,
+            new("one more", json!({ "q": "z" }), false),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].as_str()),
+        (409, Some("too_many_views"))
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_payments_list_can_be_limited_to_a_range_of_days(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let old = t.intent(a, 1_000, json!({ "external_ref": "OLD" })).await;
+    t.intent(a, 2_000, json!({ "external_ref": "NEW" })).await;
+    sqlx::query("UPDATE payment_intents SET created_at = now() - interval '10 days' WHERE id = $1")
+        .bind(old["id"].as_str().unwrap())
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let day = |offset: i64| (zyvor_api::ist_today() + chrono::Duration::days(offset)).to_string();
+    let refs = |v: &Value| {
+        v["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["external_ref"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let from_week = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents?created_from={}", day(-7)),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(refs(&from_week), ["NEW"]);
+    let before_week = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/payment_intents?created_to={}", day(-7)),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(refs(&before_week), ["OLD"]);
+    let both = t
+        .ok(
+            a,
+            "GET",
+            &format!(
+                "/v1/payment_intents?created_from={}&created_to={}",
+                day(-30),
+                day(0)
+            ),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(refs(&both), ["NEW", "OLD"]);
+}

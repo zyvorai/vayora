@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
-import { saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
+import { resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -67,6 +67,12 @@ export default async function Settings() {
           </label>
         ))}
       </SettingsForm>
+
+      {s.env === "test" && (
+        <SettingsForm title="Test data" hint="Clear the payments, invoices, customers, refunds and ledger created while trying things out, so you can start again. Your settings, providers, API keys, people, branches, vendors, plans and coupons stay. The audit trail is kept and records the reset. This cannot be undone, and it is not available in the live environment." action={resetTestData} button="Reset test data" busy="Resetting…" done="Test data cleared.">
+          <label className="field" style={{ gridColumn: "1 / -1" }}>Type <span className="mono">reset test data</span> to confirm<input name="confirm" autoComplete="off" spellCheck={false} /></label>
+        </SettingsForm>
+      )}
     </>
   );
 }

@@ -39,6 +39,7 @@ API keys, customer contact data, the audit trail.
   (`MAX_AMOUNT_MINOR`), so sums in the database and ledger cannot overflow a 64-bit integer; dynamic SQL interpolates
   only constants, never request data, and every value is a bound parameter.
 - **Tampering with money records**: ledger is append-only and balanced per currency; corrections are reversals.
+  One deliberate exception: a **test** environment can clear its own money records (`POST /v1/test_data/reset`, admin, typed confirmation). Migration 0051 lets the append-only tables (ledger, allocations, credit notes, invoice lines) be deleted only when the session names the row's own tenant in `zyvor.test_reset` and that tenant's `env` is `test`, read from the database, not from the request. A live tenant's rows stay undeletable even if the application is told otherwise (tested). The audit trail and its seals are not part of the exception and the reset is written to it. The residual risk is a bug or injected SQL in the API acting on a test tenant, which already holds only simulated money.
 - **SSRF via merchant webhook URL**: https and public addresses only; credentials in URLs refused; the worker pins the
   connection to addresses vetted at delivery time and does not follow redirects.
 - **AI assistant misuse (prompt injection, data leakage, harmful wording)**: off by default; a person approves every

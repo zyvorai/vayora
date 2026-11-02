@@ -223,6 +223,11 @@ class Tests(unittest.TestCase):
             ("z.case_suggestions('cas_1')", 'GET', '/v1/recon/cases/cas_1/suggestions', None),
             ("z.assign_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/assign', {'assignee': 'x1'}),
             ("z.resolve_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/resolve', {'resolution': 'x1'}),
+            ("z.list_saved_views()", 'GET', '/v1/saved_views?scope=payments', None),
+            ("z.create_saved_view('Failed', {'status': 'failed'}, shared=True)", 'POST', '/v1/saved_views', {'scope': 'payments', 'name': 'Failed', 'query': {'status': 'failed'}, 'shared': True}),
+            ("z.delete_saved_view('sv_1')", 'DELETE', '/v1/saved_views/sv_1', None),
+            ("z.list_payments(created_from='2026-11-01', created_to='2026-11-30')", 'GET', '/v1/payment_intents?created_from=2026-11-01&created_to=2026-11-30', None),
+            ("z.reset_test_data()", 'POST', '/v1/test_data/reset', {'confirm': 'reset test data'}),
             ('z.list_plans()', 'GET', '/v1/plans', None),
             ('z.list_subscriptions()', 'GET', '/v1/subscriptions', None),
             ("z.pause_subscription('sub_1')", 'POST', '/v1/subscriptions/sub_1/pause', {}),
@@ -291,7 +296,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 74)
+        self.assertEqual(len(rows), 79)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []
@@ -305,7 +310,7 @@ class Tests(unittest.TestCase):
         go_src = (pathlib.Path(__file__).resolve().parent.parent / "go" / "zyvor.go").read_text()
         go = {re.sub(r"(?<!^)(?=[A-Z])", "_", m).lower() for m in re.findall(r"func \(c \*Client\) ([A-Z]\w+)", go_src)}
         py = {n for n in dir(Zyvor) if not n.startswith("_")}
-        go -= {"create_intent_at", "run_dunning_as_of"}
+        go -= {"create_intent_at", "run_dunning_as_of", "list_payments_in_range"}
         self.assertEqual(sorted(py - go), [], "in Python but not Go")
         self.assertEqual(sorted(go - py), [], "in Go but not Python")
 
