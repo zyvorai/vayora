@@ -1409,6 +1409,11 @@ PostPaymentLinksByIdCancelResponse = TypedDict("PostPaymentLinksByIdCancelRespon
     "status": "str",
 })
 
+PostPaymentLinksByIdSendResponse = TypedDict("PostPaymentLinksByIdSendResponse", {
+    "id": "str",
+    "queued": "bool",
+})
+
 PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "id": "str",
     "token": "Any",

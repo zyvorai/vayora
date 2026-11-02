@@ -375,6 +375,10 @@ export const createLink = async (_: FormState, f: FormData): Promise<FormState> 
   return r?.error ? r : { ok: path };
 };
 export const cancelLink = async (_: FormState, f: FormData) => run(["/links"], (z) => z.paymentLinks.cancel(id(f)));
+export const emailLink = async (_: FormState, f: FormData) => {
+  const r = await run(["/links"], (z) => z.paymentLinks.send(id(f)));
+  return r?.error ? r : { ok: "Emailed." };
+};
 
 // ---- people and security (admin) ----
 export const createUser = async (_: FormState, f: FormData) =>

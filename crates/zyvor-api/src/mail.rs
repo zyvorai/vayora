@@ -179,6 +179,38 @@ pub fn refund_receipt(
     (subject, lines.join("\n"))
 }
 
+/// The words of an email that sends a payment link. `amount` is None for a link whose amount the payer types or
+/// that follows an invoice.
+pub fn payment_link(
+    merchant: &str,
+    payer_name: &str,
+    description: Option<&str>,
+    amount: Option<&str>,
+    url: &str,
+    expires_on: Option<chrono::NaiveDate>,
+) -> (String, String) {
+    let subject = match amount {
+        Some(a) => format!("{merchant} asks you to pay {a}"),
+        None => format!("{merchant} sent you a payment link"),
+    };
+    let mut lines = vec![format!("Hello {payer_name},"), String::new()];
+    lines.push(match amount {
+        Some(a) => format!("{merchant} has asked you to pay {a}."),
+        None => format!("{merchant} has sent you a link to pay."),
+    });
+    if let Some(d) = description {
+        lines.push(format!("For: {d}"));
+    }
+    lines.push(String::new());
+    lines.push(format!("Pay here: {url}"));
+    if let Some(e) = expires_on {
+        lines.push(format!("The link works until {e}."));
+    }
+    lines.push(String::new());
+    lines.push("Only pay through the link above if you were expecting it from this business. Zyvor never asks for a card number, PIN or password by email.".into());
+    (subject, lines.join("\n"))
+}
+
 /// Seconds to wait after the nth failed send: 30s, 1m, 2m ... capped at an hour.
 pub fn backoff_secs(attempts: i32) -> i64 {
     (30i64 << attempts.clamp(0, 7).min(7)).min(3600)

@@ -359,6 +359,7 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			return c.ListMandates(map[string]any{"status": "x1", "customer_id": "x1"})
 		}, "GET", "/v1/mandates?customer_id=x1&status=x1", nil},
 		{"ListMandateDebits", func() (map[string]any, error) { return c.ListMandateDebits("man_1") }, "GET", "/v1/mandates/man_1/debits", nil},
+		{"SendPaymentLink", func() (map[string]any, error) { return c.SendPaymentLink("plk_1") }, "POST", "/v1/payment_links/plk_1/send", map[string]any{}},
 		{"ListPaymentLinks", func() (map[string]any, error) { return c.ListPaymentLinks() }, "GET", "/v1/payment_links", nil},
 		{"Remind", func() (map[string]any, error) { return c.Remind("inv_1", "x1", map[string]any{"message": "x1"}) }, "POST", "/v1/invoices/inv_1/reminders", map[string]any{"channel": "x1", "message": "x1"}},
 		{"ReminderDrafts", func() (map[string]any, error) { return c.ReminderDrafts(map[string]any{"status": "x1"}) }, "GET", "/v1/collections/drafts?status=x1", nil},
@@ -381,8 +382,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 94 {
-		t.Fatalf("expected 94 rows, got %d", len(rows))
+	if len(rows) != 95 {
+		t.Fatalf("expected 95 rows, got %d", len(rows))
 	}
 }
 

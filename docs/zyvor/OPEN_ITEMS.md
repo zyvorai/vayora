@@ -112,7 +112,8 @@ reset. Verified only against a plain local SMTP server.
   receipt in the same transaction as the capture, to the intent's customer when that customer has an email address, once per attempt
   (`mail_queue.dedupe_key`). Checked in the local sandbox: the Settings box saves and persists, and a simulated captured payment for a customer with an email queued one receipt that the worker handed to the log-only mailer (no SMTP configured, so nothing was delivered). Delivery uses the mailer above, so it is as verified as that is (plain local SMTP only).
 - **Done:** refund receipts. The same `payment_receipts` switch also emails the payer when a refund is processed (once per refund, dedupe key `refund_receipt:{id}`; the merchant's private refund reason is never included). Covered by the receipts API test; not yet looked at in the browser, and delivery is only as verified as the mailer above.
-- **Later:** HTML templates, a per-organisation sender and reminder emails (the events exist; add
+- **Done:** emailing a payment link. `POST /v1/payment_links/{id}/send` (`payments:write`; Node `paymentLinks.send(id)`, Python `send_payment_link`, Go `SendPaymentLink`; an Email button on the console Payment links page, shown only when the link's customer has an address) queues the link to that customer. It is a person's action, not the Receipts setting: it needs `ZYVOR_CHECKOUT_PUBLIC_URL`, an active link and a customer with an email, and goes once per link per day (409 `already_sent_today`). Audited as `payment_link.sent`. Covered by an API test; not looked at in a browser, and delivery is only as verified as the mailer above.
+- **Later:** automatic reminders before a link expires, HTML templates, a per-organisation sender and dunning-style reminder emails (the events exist; add
   consumers that enqueue mail), unsubscribe handling for anything that is not transactional.
 
 ---
@@ -154,7 +155,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 
 Mobile was checked on three pages only. Walk every page at 390 px (`apps/zyvor-console/app/globals.css` has the phone
 rules at the end), and add: saved views on Payments (**done**: search `q=`, date range `created_from`/`created_to`, and named views: `GET/POST /v1/saved_views`, `DELETE /v1/saved_views/{id}`; personal by default, shareable with the environment by a person with `payments:write`; 20 per person; filters status, q, from, to are validated on save; Node `savedViews`, Python `*_saved_view`, Go `*SavedView`; chips with a save form on the Payments page and the CSV export keeps the same filters; other lists are not covered). Checked in the local sandbox in a browser: filters, saving a shared view, applying it, deleting it, and the date range. That check found and fixed a bug: the page listed views as a different person from the one who saved them, so a personal view would not have shown,
-payment-link reminders (backend feature), an audit of empty states in a browser (a code scan found every list page has empty-state text except Keys, which cannot be empty because the viewing key is listed; `error.tsx`, `loading.tsx` and `not-found.tsx` exist for the app group), keyboard and screen-reader pass,
+payment-link reminders (**part done**: a link can be emailed to its customer by hand; nothing sends automatically), an audit of empty states in a browser (a code scan found every list page has empty-state text except Keys, which cannot be empty because the viewing key is listed; `error.tsx`, `loading.tsx` and `not-found.tsx` exist for the app group), keyboard and screen-reader pass,
 translations for the new pages (`apps/zyvor-checkout` shows the approach).
 
 ---

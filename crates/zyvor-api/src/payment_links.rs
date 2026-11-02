@@ -169,14 +169,14 @@ pub async fn list_links(State(s): State<AppState>, auth: Auth) -> Result<Json<Va
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, Option<String>, Option<i64>, String, Option<String>, Option<i32>, i32, Option<DateTime<Utc>>, Option<DateTime<Utc>>, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT id, token, description, amount_minor, currency, invoice_id, max_uses, uses, expires_at, canceled_at, created_at FROM payment_links ORDER BY created_at DESC, id DESC LIMIT 200",
+    let rows: Vec<(String, String, Option<String>, Option<i64>, String, Option<String>, Option<i32>, i32, Option<DateTime<Utc>>, Option<DateTime<Utc>>, DateTime<Utc>, bool)> = sqlx::query_as(
+        "SELECT id, token, description, amount_minor, currency, invoice_id, max_uses, uses, expires_at, canceled_at, created_at, COALESCE((SELECT c.email LIKE '%@%' FROM customers c WHERE c.id = payment_links.customer_id), false) FROM payment_links ORDER BY created_at DESC, id DESC LIMIT 200",
     )
     .fetch_all(&mut *tx)
     .await?;
-    let data: Vec<Value> = rows.into_iter().map(|(id, token, description, amount, currency, invoice, max, uses, exp, canc, at)| {
+    let data: Vec<Value> = rows.into_iter().map(|(id, token, description, amount, currency, invoice, max, uses, exp, canc, at, can_email)| {
         let status = state(canc, exp, max, uses);
-        json!({ "id": id, "path": format!("/pay/link/{}/{token}", auth.tenant_id), "description": description, "amount_minor": amount, "currency": currency, "invoice_id": invoice, "max_uses": max, "uses": uses, "expires_at": exp, "status": status, "created_at": at })
+        json!({ "id": id, "path": format!("/pay/link/{}/{token}", auth.tenant_id), "description": description, "amount_minor": amount, "currency": currency, "invoice_id": invoice, "max_uses": max, "uses": uses, "expires_at": exp, "status": status, "created_at": at, "can_email": can_email })
     }).collect();
     Ok(Json(json!({ "data": data })))
 }
@@ -209,6 +209,104 @@ pub async fn cancel_link(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({ "id": id, "status": "canceled" })))
+}
+
+/// `POST /v1/payment_links/{id}/send`: email the link to the customer it was made for. A person's action, not a
+/// setting: it needs an active link, a customer with an email address and `ZYVOR_CHECKOUT_PUBLIC_URL`, and goes
+/// once per link per day (a second try that day is a 409).
+pub async fn send_link(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("payments:write")?;
+    let base = s.checkout_public_url.clone().ok_or_else(|| {
+        ApiError::conflict(
+            "checkout_url_not_configured",
+            "set ZYVOR_CHECKOUT_PUBLIC_URL to your public checkout address",
+        )
+    })?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    #[allow(clippy::type_complexity)]
+    let row: Option<(String, Option<String>, Option<i64>, String, Option<String>, Option<i32>, i32, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT token, description, amount_minor, currency, customer_id, max_uses, uses, expires_at, canceled_at FROM payment_links WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (token, description, amount, currency, customer, max, uses, exp, canc) =
+        row.ok_or_else(|| ApiError::not_found("payment link"))?;
+    if state(canc, exp, max, uses) != "active" {
+        return Err(ApiError::conflict(
+            "link_unavailable",
+            "this payment link is no longer active",
+        ));
+    }
+    let who: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT name, email FROM customers WHERE id = $1")
+            .bind(customer.as_deref())
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (name, email) = match who {
+        Some((n, Some(e))) if e.contains('@') => (n, e),
+        _ => {
+            return Err(ApiError::conflict(
+                "no_customer_email",
+                "this link has no customer with an email address",
+            ));
+        }
+    };
+    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(&auth.tenant_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_else(|| "the business".into());
+    let url = format!(
+        "{}/pay/link/{}/{token}",
+        base.trim_end_matches('/'),
+        auth.tenant_id
+    );
+    let cur: Currency = currency.parse().map_err(|_| ApiError::internal())?;
+    let amount_text = amount.map(|a| crate::ai::money(a, cur.code()));
+    let (subject, body) = crate::mail::payment_link(
+        &merchant,
+        &name,
+        description.as_deref(),
+        amount_text.as_deref(),
+        &url,
+        exp.map(|e| {
+            e.with_timezone(&chrono::FixedOffset::east_opt(19_800).expect("IST"))
+                .date_naive()
+        }),
+    );
+    let fresh = crate::mail::enqueue_once(
+        &mut tx,
+        &format!("link_send:{id}:{}", crate::ist_today()),
+        &email,
+        &subject,
+        &body,
+    )
+    .await?;
+    if !fresh {
+        return Err(ApiError::conflict(
+            "already_sent_today",
+            "this link was already emailed today",
+        ));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "payment_link.sent",
+        Some(&id),
+        json!({ "customer_id": customer }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "id": id, "queued": true })),
+    ))
 }
 
 fn state(

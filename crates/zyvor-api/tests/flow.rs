@@ -5842,6 +5842,148 @@ async fn payment_link_qr_codes_point_at_the_public_checkout_and_only_for_live_li
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn a_payment_link_can_be_emailed_to_its_customer_once_a_day_and_only_while_it_works(
+    pool: PgPool,
+) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut st = t.state.clone();
+    st.checkout_public_url = Some("https://pay.example.com/".into());
+    let app = zyvor_api::app(st);
+    let send = |app: axum::Router, key: String, id: String| async move {
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/payment_links/{id}/send"))
+                    .header("authorization", format!("Bearer {key}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let code = res.status().as_u16();
+        let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (code, String::from_utf8_lossy(&bytes).to_string())
+    };
+    let asha = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let plain = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "No Mail" }),
+        )
+        .await;
+    let mk = |cust: Value| {
+        t.ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 125_050, "description": "Term 2 fee", "customer_id": cust }),
+        )
+    };
+    let (good, nomail) = (mk(asha["id"].clone()).await, mk(plain["id"].clone()).await);
+    let anon = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({ "amount_minor": 5_000 }),
+        )
+        .await;
+    let (gid, nid, aid) = (
+        good["id"].as_str().unwrap().to_string(),
+        nomail["id"].as_str().unwrap().to_string(),
+        anon["id"].as_str().unwrap().to_string(),
+    );
+    let sent = || t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE '%asks you to pay%'");
+
+    // the list says which links can be emailed
+    let list = t.ok(a, "GET", "/v1/payment_links", None, Value::Null).await;
+    let can = |id: &str| {
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["id"] == id)
+            .unwrap()["can_email"]
+            .clone()
+    };
+    assert_eq!(
+        (can(&gid), can(&nid), can(&aid)),
+        (json!(true), json!(false), json!(false))
+    );
+
+    // no checkout address configured: refuse rather than send a link that points nowhere
+    assert_eq!(send(t.app.clone(), a.key.clone(), gid.clone()).await.0, 409);
+    // no customer, or a customer with no address
+    for id in [&nid, &aid] {
+        let (code, body) = send(app.clone(), a.key.clone(), id.clone()).await;
+        assert!(
+            code == 409 && body.contains("no_customer_email"),
+            "{code} {body}"
+        );
+    }
+    assert_eq!(sent().await, 0);
+
+    assert_eq!(send(app.clone(), a.key.clone(), gid.clone()).await.0, 202);
+    let (to, subject, body): (String, String, String) = sqlx::query_as(
+        "SELECT to_email, subject, body FROM mail_queue WHERE subject LIKE '%asks you to pay%'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert!(subject.contains("₹1250.50"), "{subject}");
+    assert!(
+        body.contains("Hello Asha Rao") && body.contains("Term 2 fee"),
+        "{body}"
+    );
+    assert!(
+        body.contains(&format!("https://pay.example.com/pay/link/{}/", a.id)),
+        "{body}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'payment_link.sent'")
+            .await,
+        1
+    );
+
+    // a second try the same day is refused; another tenant cannot send it; a canceled link is not sent
+    let (code, again) = send(app.clone(), a.key.clone(), gid.clone()).await;
+    assert!(
+        code == 409 && again.contains("already_sent_today"),
+        "{code} {again}"
+    );
+    assert_eq!(sent().await, 1);
+    assert_eq!(send(app.clone(), t.b.key.clone(), gid.clone()).await.0, 404);
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/payment_links/{nid}/cancel"),
+        None,
+        json!({}),
+    )
+    .await;
+    assert_eq!(send(app, a.key.clone(), nid).await.0, 409);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn risk_rules_stop_payments_the_merchant_said_to_stop_and_leave_a_trail(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);

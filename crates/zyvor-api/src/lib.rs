@@ -627,6 +627,7 @@ pub fn app(state: AppState) -> Router {
             "/payment_links/{id}/cancel",
             post(payment_links::cancel_link),
         )
+        .route("/payment_links/{id}/send", post(payment_links::send_link))
         .route(
             "/checkout/links/{tenant_id}/{token}",
             get(payment_links::link_info),

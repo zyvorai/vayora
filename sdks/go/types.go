@@ -1425,6 +1425,11 @@ type PostPaymentLinksByIdCancelResponse struct {
 	Status string `json:"status"`
 }
 
+type PostPaymentLinksByIdSendResponse struct {
+	ID     string `json:"id"`
+	Queued bool   `json:"queued"`
+}
+
 type PostPaymentLinksResponse struct {
 	ID        string  `json:"id"`
 	Token     any     `json:"token"`
