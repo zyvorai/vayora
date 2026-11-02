@@ -322,6 +322,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settlement: {}
+                  payments:
+                    type: array
+                    items: {}
+                  refunds:
+                    type: array
+                    items: {}
+                  adjustments:
+                    type: array
+                    items: {}
+                  fees: {}
+                  arithmetic: {}
+                  expected_minor:
+                    type: integer
+                  received_minor:
+                    type: integer
+                  difference_minor:
+                    type: integer
+                  difference_breakdown: {}
+                  bank_match: {}
+                  cases:
+                    type: array
+                    items: {}
+                  narrative:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -343,7 +373,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  imported: {}
+                  imported:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -366,6 +397,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                  settlements_rechecked:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -382,6 +422,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settlement: {}
+                  payments:
+                    type: array
+                    items: {}
+                  refunds:
+                    type: array
+                    items: {}
+                  adjustments:
+                    type: array
+                    items: {}
+                  fees: {}
+                  arithmetic: {}
+                  expected_minor:
+                    type: integer
+                  received_minor:
+                    type: integer
+                  difference_minor:
+                    type: integer
+                  difference_breakdown: {}
+                  bank_match: {}
+                  cases:
+                    type: array
+                    items: {}
+                  narrative:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -403,8 +473,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  added: {}
-                  settlements_rechecked: {}
+                  added:
+                    type: integer
+                  settlements_rechecked:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -468,7 +540,8 @@ paths:
                     type: string
                   status:
                     type: string
-                  assignee: {}
+                  assignee:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -527,7 +600,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  new_cases: {}
+                  new_cases:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
   /v1/analytics/cost:
@@ -609,12 +683,24 @@ paths:
                 properties:
                   id:
                     type: string
-                  key: {}
-                  prefix: {}
-                  scopes: {}
-                  expires_at: {}
-                  allowed_cidrs: {}
-                  note: {}
+                  key:
+                    type: string
+                  prefix:
+                    type: string
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                  expires_at:
+                    type:
+                    - object
+                    - 'null'
+                  allowed_cidrs:
+                    type: array
+                    items:
+                      type: string
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -638,13 +724,20 @@ paths:
                 properties:
                   id:
                     type: string
-                  key: {}
-                  prefix: {}
-                  scopes: {}
+                  key:
+                    type: string
+                  prefix:
+                    type: string
+                  scopes:
+                    type: array
+                    items:
+                      type: string
                   rotated_from:
                     type: string
-                  old_key_expires_in_hours: {}
-                  note: {}
+                  old_key_expires_in_hours:
+                    type: integer
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -767,10 +860,21 @@ paths:
                   name:
                     type: string
                   email:
-                    type: string
-                  phone: {}
-                  external_ref: {}
-                  gstin: {}
+                    type:
+                    - string
+                    - 'null'
+                  phone:
+                    type:
+                    - string
+                    - 'null'
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  gstin:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -798,12 +902,30 @@ paths:
                     type: string
                   email:
                     type: string
-                  phone: {}
-                  external_ref: {}
-                  gstin: {}
-                  address1: {}
-                  location: {}
-                  pincode: {}
+                  phone:
+                    type:
+                    - string
+                    - 'null'
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  gstin:
+                    type:
+                    - string
+                    - 'null'
+                  address1:
+                    type:
+                    - string
+                    - 'null'
+                  location:
+                    type:
+                    - string
+                    - 'null'
+                  pincode:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -819,6 +941,41 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  phone:
+                    type:
+                    - string
+                    - 'null'
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  gstin:
+                    type:
+                    - string
+                    - 'null'
+                  address1:
+                    type:
+                    - string
+                    - 'null'
+                  location:
+                    type:
+                    - string
+                    - 'null'
+                  pincode:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1000,18 +1157,33 @@ paths:
                     type: integer
                   tax_minor:
                     type: integer
-                  external_ref: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
                   status:
                     type: string
-                  due_date: {}
+                  due_date:
+                    type:
+                    - string
+                    - 'null'
                   customer_id:
                     type:
                     - string
                     - 'null'
-                  place_of_supply: {}
-                  buyer_gstin: {}
-                  reverse_charge: {}
-                  issued_on: {}
+                  place_of_supply:
+                    type:
+                    - string
+                    - 'null'
+                  buyer_gstin:
+                    type:
+                    - string
+                    - 'null'
+                  reverse_charge:
+                    type: boolean
+                  issued_on:
+                    type: string
+                    format: date
                   paid_minor:
                     type: integer
                     format: int64
@@ -1053,7 +1225,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  as_of: {}
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
                   data:
                     type: array
                     items: {}
@@ -1062,7 +1237,10 @@ paths:
                     - integer
                     - 'null'
                     format: int64
-                  usd_rate_date: {}
+                  usd_rate_date:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1105,9 +1283,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  reminded: {}
-                  drafts_created: {}
-                  draft_ids: {}
+                  reminded:
+                    type: integer
+                  drafts_created:
+                    type: integer
+                  draft_ids:
+                    type: array
+                    items:
+                      type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -1216,9 +1399,14 @@ paths:
                     type: string
                   invoice_id:
                     type: string
-                  channel: {}
-                  message: {}
-                  source: {}
+                  channel:
+                    type: string
+                  message:
+                    type:
+                    - string
+                    - 'null'
+                  source:
+                    type: string
                   status:
                     type: string
         4XX:
@@ -1279,7 +1467,10 @@ paths:
                     type: string
                   promised_minor:
                     type: integer
-                  promised_date: {}
+                    format: int64
+                  promised_date:
+                    type: string
+                    format: date
                   status:
                     type: string
         4XX:
@@ -1336,7 +1527,8 @@ paths:
                     type: string
                   invoice_id:
                     type: string
-                  channel: {}
+                  channel:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1408,7 +1600,9 @@ paths:
                     type: string
                   amount_minor:
                     type: integer
-                  interval_unit: {}
+                    format: int64
+                  interval_unit:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -1467,7 +1661,10 @@ paths:
                     type: string
                   status:
                     type: string
-                  next_bill_date: {}
+                  next_bill_date:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -1484,6 +1681,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1500,6 +1706,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1516,6 +1731,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1537,8 +1761,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  recorded: {}
-                  quantity: {}
+                  recorded:
+                    type: integer
+                  quantity:
+                    type: integer
+                    format: int64
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1567,7 +1794,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  invoices_created: {}
+                  invoices_created:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -1595,6 +1823,7 @@ paths:
                     type: string
                   amount_minor:
                     type: integer
+                    format: int64
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1682,18 +1911,19 @@ paths:
                   id:
                     type: string
                   plan_id:
-                    type:
-                    - string
-                    - 'null'
-                  quantity: {}
+                    type: string
+                  quantity:
+                    type: integer
                   proration_minor:
                     type: boolean
                   proration_invoice_id:
                     type:
                     - string
                     - 'null'
-                  remaining_days: {}
-                  period_days: {}
+                  remaining_days:
+                    type: integer
+                  period_days:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1829,6 +2059,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -1871,7 +2105,8 @@ paths:
                           - string
                           - 'null'
                           format: date
-                        evidence_count: {}
+                        evidence_count:
+                          type: integer
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -1977,13 +2212,19 @@ paths:
                 properties:
                   refund_approval_threshold_minor:
                     type: integer
+                    format: int64
                   routing: {}
-                  outbound_webhook_url: {}
-                  env: {}
+                  outbound_webhook_url:
+                    type:
+                    - string
+                    - 'null'
+                  env:
+                    type: string
                   dunning: {}
                   gst: {}
                   payout_approval_threshold_minor:
                     type: integer
+                    format: int64
                   payment_receipts:
                     type: boolean
                   risk: {}
@@ -2136,6 +2377,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  ok:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2152,6 +2402,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  ok:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2205,7 +2464,8 @@ paths:
                 type: object
                 properties:
                   secret: {}
-                  otpauth_uri: {}
+                  otpauth_uri:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2231,7 +2491,8 @@ paths:
                     type: array
                     items:
                       type: string
-                  note: {}
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2254,6 +2515,15 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  ok:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -2270,6 +2540,13 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: {}
+                  mfa_enrolled: {}
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2300,7 +2577,8 @@ paths:
                   test_key: {}
                   email:
                     type: string
-                  verification: {}
+                  verification:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2346,6 +2624,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2371,7 +2653,8 @@ paths:
                   session_key: {}
                   tenant_id:
                     type: string
-                  env: {}
+                  env:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2466,7 +2749,8 @@ paths:
                     type: string
                   query: {}
                   shared: {}
-                  mine: {}
+                  mine:
+                    type: boolean
                   owner: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -2566,7 +2850,8 @@ paths:
                 properties:
                   email:
                     type: string
-                  joined: {}
+                  joined:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2741,7 +3026,8 @@ paths:
                   provider:
                     type: string
                   updated: {}
-                  webhook_url: {}
+                  webhook_url:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -2774,7 +3060,8 @@ paths:
                   ok:
                     type: boolean
                   detail: {}
-                  env: {}
+                  env:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
   /v1/mandates:
@@ -2795,7 +3082,11 @@ paths:
           type: string
       responses:
         '201':
-          description: The mandate, pending the payer's approval
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MandateRow'
         '422':
           description: Invalid limit, dates, currency or no provider supports mandates
       requestBody:
@@ -2845,6 +3136,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
   /v1/mandates/{id}:
     get:
       summary: Get a mandate with its recent debits
@@ -2985,7 +3280,11 @@ paths:
           type: string
       responses:
         '201':
-          description: The scheduled debit
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitRow'
         '409':
           description: Not active, or a debit already exists in that period
         '422':
@@ -3103,7 +3402,11 @@ paths:
           type: string
       responses:
         '200':
-          description: The payer's view
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         '404':
           description: Not enabled on this server, or unknown mandate
   /v1/sim/mandate/revoke:
@@ -3175,7 +3478,11 @@ paths:
           type: string
       responses:
         '200':
-          description: The circle as the primary sees it
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         '404':
           description: Not enabled on this server, or unknown circle
   /v1/sim/circle/revoke:
@@ -3293,6 +3600,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -3354,6 +3665,16 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  outcome:
+                    type: string
+                  detail: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/reviews/{organisation_id}/decision:
@@ -3381,7 +3702,10 @@ paths:
                     type: string
                   stage:
                     type: string
-                  needs_second_because: {}
+                  needs_second_because:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -3405,6 +3729,17 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -3428,6 +3763,17 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -3528,8 +3874,10 @@ paths:
                   i_am_lead: {}
                   utc_offset_minutes: {}
                   timezone: {}
-                  local_now: {}
-                  local_date: {}
+                  local_now:
+                    type: string
+                  local_date:
+                    type: string
                   on_duty_now: {}
                   holiday_today: {}
                   reviewers:
@@ -3553,8 +3901,10 @@ paths:
                         desk: {}
                         mine: {}
                         removable: {}
-                        first_day: {}
-                        last_day: {}
+                        first_day:
+                          type: string
+                        last_day:
+                          type: string
                         note:
                           type: string
         4XX:
@@ -3573,7 +3923,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  shifts: {}
+                  shifts:
+                    type: integer
                   on_duty: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -3661,7 +4012,8 @@ paths:
                     type: string
                   name:
                     type: string
-                  shifts: {}
+                  shifts:
+                    type: integer
                   on_duty: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -3704,6 +4056,19 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -3729,13 +4094,16 @@ paths:
                 properties:
                   id:
                     type: string
-                  desk: {}
+                  desk:
+                    type: boolean
                   reviewer_id:
                     type:
                     - string
                     - 'null'
-                  first_day: {}
-                  last_day: {}
+                  first_day:
+                    type: string
+                  last_day:
+                    type: string
                   note:
                     type: string
         4XX:
@@ -3767,7 +4135,8 @@ paths:
                 properties:
                   id:
                     type: string
-                  deleted: {}
+                  deleted:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
   /v1/platform/changes:
@@ -3802,16 +4171,28 @@ paths:
                         status:
                           type: string
                         requested_by: {}
-                        requested_at: {}
-                        note: {}
-                        due_at: {}
+                        requested_at:
+                          type:
+                          - string
+                          - 'null'
+                        note:
+                          type:
+                          - string
+                          - 'null'
+                        due_at:
+                          type:
+                          - string
+                          - 'null'
                         overdue: {}
                         sla_hours: {}
                         stage:
                           type: string
                         first_approved_by: {}
                         first_approved_by_me: {}
-                        needs_second_because: {}
+                        needs_second_because:
+                          type:
+                          - string
+                          - 'null'
                         escalation_note: {}
                         assigned_to: {}
                         assigned_to_name: {}
@@ -3929,7 +4310,10 @@ paths:
                     type: string
                   stage:
                     type: string
-                  needs_second_because: {}
+                  needs_second_because:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -3951,9 +4335,12 @@ paths:
               schema:
                 type: object
                 properties:
-                  draft: {}
-                  note: {}
-                  Version: {}
+                  draft:
+                    type: boolean
+                  note:
+                    type: string
+                  Version:
+                    type: string
                   TranDtls: {}
                   DocDtls: {}
                   SellerDtls: {}
@@ -3987,8 +4374,14 @@ paths:
                     type: string
                   number:
                     type: string
-                  place_of_supply: {}
-                  buyer_gstin: {}
+                  place_of_supply:
+                    type:
+                    - string
+                    - 'null'
+                  buyer_gstin:
+                    type:
+                    - string
+                    - 'null'
                   total_minor:
                     type: integer
                   tax_minor:
@@ -4017,10 +4410,17 @@ paths:
               schema:
                 type: object
                 properties:
-                  note: {}
+                  note:
+                    type: string
                   period: {}
-                  gstin: {}
-                  legal_name: {}
+                  gstin:
+                    type:
+                    - string
+                    - 'null'
+                  legal_name:
+                    type:
+                    - string
+                    - 'null'
                   b2b:
                     type: array
                     items:
@@ -4032,8 +4432,12 @@ paths:
                         invoices: {}
                   b2cl: {}
                   b2cs: {}
-                  cdnr: {}
-                  cdnur: {}
+                  cdnr:
+                    type: array
+                    items: {}
+                  cdnur:
+                    type: array
+                    items: {}
                   hsn: {}
                   totals: {}
         4XX:
@@ -4119,6 +4523,18 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payout_id:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+                  currency:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -4157,6 +4573,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  purpose: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  requested_by: {}
+                  approved_by: {}
+                  paid_by: {}
+                  bank_ref: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4173,6 +4619,17 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payout_id:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4189,6 +4646,17 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payout_id:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4205,6 +4673,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  purpose: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  requested_by: {}
+                  approved_by: {}
+                  paid_by: {}
+                  bank_ref: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4227,6 +4725,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  purpose: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  requested_by: {}
+                  approved_by: {}
+                  paid_by: {}
+                  bank_ref: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4254,7 +4782,10 @@ paths:
                       type: object
                       properties:
                         type: {}
-                        description: {}
+                        description:
+                          type:
+                          - string
+                          - 'null'
         4XX:
           $ref: '#/components/responses/Error'
   /v1/installment_plans:
@@ -4263,8 +4794,38 @@ paths:
       tags:
       - billing
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  customer_id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  total_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  instalments: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  settled_minor:
+                    type: integer
+                    format: int64
+                  remaining_minor:
+                    type: integer
+                  invoices:
+                    type: array
+                    items: {}
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -4281,6 +4842,36 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  customer_id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  total_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  instalments: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  settled_minor:
+                    type: integer
+                    format: int64
+                  remaining_minor:
+                    type: integer
+                  invoices:
+                    type: array
+                    items: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4307,7 +4898,10 @@ paths:
                   currency:
                     type: string
                   rate: {}
-                  as_of: {}
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -4393,8 +4987,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  as_of: {}
-                  rate_date: {}
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  rate_date:
+                    type:
+                    - string
+                    - 'null'
                   outstanding_usd_minor:
                     type: integer
                   complete: {}
@@ -4404,7 +5004,8 @@ paths:
                     type: integer
                   unrealised_inr_minor:
                     type: integer
-                  note: {}
+                  note:
+                    type: string
                   data: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -4456,7 +5057,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  count: {}
+                  count:
+                    type: integer
                   already_existed: {}
                   new_total_minor:
                     type: integer
@@ -4484,7 +5086,8 @@ paths:
                 properties:
                   id:
                     type: string
-                  code: {}
+                  code:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -4561,7 +5164,8 @@ paths:
                         kind:
                           type: string
                         subject: {}
-                        outcome: {}
+                        outcome:
+                          type: string
                         detail: {}
                   status:
                     type: string
@@ -4570,10 +5174,17 @@ paths:
                     items:
                       type: object
                       properties:
-                        legal_name: {}
+                        legal_name:
+                          type:
+                          - string
+                          - 'null'
                         business_type: {}
-                        pan: {}
-                        gstin: {}
+                        pan:
+                          type: string
+                        gstin:
+                          type:
+                          - string
+                          - 'null'
                         address: {}
                         submitted_by: {}
                         reviewed_by: {}
@@ -4599,7 +5210,10 @@ paths:
                           type: string
                         holder_name: {}
                         ifsc: {}
-                        account_last4: {}
+                        account_last4:
+                          type:
+                          - string
+                          - 'null'
                         verified:
                           type: boolean
         4XX:
@@ -4693,13 +5307,17 @@ paths:
                 properties:
                   id:
                     type: string
-                  account_last4: {}
+                  account_last4:
+                    type:
+                    - string
+                    - 'null'
                   check:
                     type: array
                     items:
                       type: object
                       properties:
-                        outcome: {}
+                        outcome:
+                          type: string
                         detail: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -4749,7 +5367,8 @@ paths:
                 properties:
                   status:
                     type: string
-                  automatic: {}
+                  automatic:
+                    type: boolean
                   reasons: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -4792,9 +5411,7 @@ paths:
                   id:
                     type: string
                   branch_id:
-                    type:
-                    - string
-                    - 'null'
+                    type: string
                   name:
                     type: string
         4XX:
@@ -4854,7 +5471,8 @@ paths:
                 properties:
                   id:
                     type: string
-                  active: {}
+                  active:
+                    type: boolean
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -4947,6 +5565,7 @@ paths:
                     format: int64
                   counted_cash_minor:
                     type: integer
+                    format: int64
                   difference_minor:
                     type: integer
                   digital:
@@ -5059,7 +5678,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  as_of: {}
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
                   currency:
                     type: string
                   weeks:
@@ -5085,7 +5707,8 @@ paths:
                     format: int64
                   daily_receipts_run_rate_minor:
                     type: integer
-                  note: {}
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -5109,16 +5732,23 @@ paths:
               schema:
                 type: object
                 properties:
-                  refunds_last_7_days: {}
+                  refunds_last_7_days:
+                    type: integer
+                    format: int64
                   weekly_average_before: {}
                   flags:
                     type: array
                     items:
                       type: object
                       properties:
-                        code: {}
-                        message: {}
-                  note: {}
+                        code:
+                          type: string
+                        message:
+                          type:
+                          - string
+                          - 'null'
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
   /v1/recon/cases/{id}/suggestions:
@@ -5140,6 +5770,10 @@ paths:
                     type: string
                   summary:
                     type: string
+                  ai_summary:
+                    type:
+                    - string
+                    - 'null'
                   evidence:
                     type: array
                     items: {}
@@ -5147,7 +5781,8 @@ paths:
                     type: array
                     items:
                       type: string
-                  note: {}
+                  note:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -5156,6 +5791,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: ai
+        in: query
+        required: false
+        schema:
+          type: boolean
+        x-generated: true
   /v1/audit_events:
     get:
       summary: Audit trail
@@ -5198,6 +5839,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
         4XX:
           $ref: '#/components/responses/Error'
   /v1/outbox:
@@ -5312,9 +5957,18 @@ paths:
                   token: {}
                   currency:
                     type: string
-                  path: {}
-                  max_uses: {}
-                  expires_at: {}
+                  path:
+                    type: string
+                  max_uses:
+                    type:
+                    - integer
+                    - 'null'
+                    format: int32
+                  expires_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -5348,6 +6002,10 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            image/svg+xml:
+              schema:
+                type: string
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -5398,7 +6056,10 @@ paths:
                     type:
                     - string
                     - 'null'
-                  description: {}
+                  description:
+                    type:
+                    - string
+                    - 'null'
                   amount_minor:
                     type: integer
                   discount_minor:
@@ -5412,11 +6073,18 @@ paths:
                     type: string
                   status:
                     type: string
-                  open_amount: {}
+                  open_amount:
+                    type: boolean
                   min_amount_minor:
-                    type: integer
+                    type:
+                    - integer
+                    - 'null'
+                    format: int64
                   max_amount_minor:
-                    type: integer
+                    type:
+                    - integer
+                    - 'null'
+                    format: int64
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -5458,7 +6126,8 @@ paths:
                     type: integer
                   currency:
                     type: string
-                  path: {}
+                  path:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -5504,7 +6173,7 @@ paths:
           type: string
       responses:
         '200':
-          description: SVG image
+          description: OK
           content:
             image/svg+xml:
               schema:
@@ -5530,9 +6199,13 @@ paths:
                     - 'null'
                   amount_minor:
                     type: integer
+                    format: int64
                   currency:
                     type: string
-                  description: {}
+                  description:
+                    type:
+                    - string
+                    - 'null'
                   status:
                     type: string
                   phase: {}
@@ -5968,6 +6641,12 @@ components:
           type: string
       required:
       - confirm
+    SuggestQuery:
+      type: object
+      x-generated: true
+      properties:
+        ai:
+          type: boolean
     SimPayPay:
       type: object
       x-generated: true

@@ -4,9 +4,10 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use chrono::NaiveDate;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{ApiError, AppState, auth::Auth, tenant};
@@ -54,12 +55,26 @@ pub fn median(mut v: Vec<i64>) -> Option<i64> {
     Some(v[(v.len() - 1) / 2])
 }
 
+#[derive(Deserialize)]
+pub struct SuggestQuery {
+    /// Ask the model to put the finding into plain words (needs the AI assistant to be enabled).
+    ai: Option<bool>,
+}
+
 pub async fn case_suggestions(
     State(s): State<AppState>,
     auth: Auth,
     Path(id): Path<String>,
+    Query(q): Query<SuggestQuery>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("recon:read")?;
+    let want_ai = q.ai.unwrap_or(false);
+    if want_ai && s.ai.is_none() {
+        return Err(ApiError::invalid(
+            "ai_not_configured",
+            "the AI assistant is not enabled for this deployment",
+        ));
+    }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let c: Option<(String, String, String, Option<i64>, Option<i64>, String)> = sqlx::query_as(
         "SELECT kind, subject_type, subject_id, expected_minor, actual_minor, explanation FROM recon_cases WHERE id = $1",
@@ -152,10 +167,47 @@ pub async fn case_suggestions(
             explanation.clone()
         }
     };
+    let used: i64 = if want_ai {
+        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'recon.ai_explained' AND created_at >= date_trunc('month', now())")
+            .fetch_one(&mut *tx)
+            .await?
+    } else {
+        0
+    };
+    // the model is called with no transaction held
+    drop(tx);
+    let mut ai_summary: Option<String> = None;
+    if want_ai {
+        let cfg = s.ai.as_ref().expect("checked above");
+        if used >= cfg.monthly_cap {
+            return Err(ApiError::new(
+                axum::http::StatusCode::TOO_MANY_REQUESTS,
+                "ai_quota_exceeded",
+                "this month's AI allowance is used up; the rule-based summary is still available",
+            ));
+        }
+        ai_summary = crate::ai::explain_case(
+            cfg,
+            &json!({ "kind": kind, "summary": summary, "evidence": evidence }),
+        )
+        .await;
+        let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+        tenant::audit(
+            &mut tx,
+            &auth.tenant_id,
+            &auth.actor,
+            "recon.ai_explained",
+            Some(&id),
+            json!({ "accepted": ai_summary.is_some() }),
+        )
+        .await?;
+        tx.commit().await?;
+    }
     Ok(Json(json!({
         "case_id": id,
         "kind": kind,
         "summary": summary,
+        "ai_summary": ai_summary,
         "evidence": evidence,
         "next_steps": next,
         "note": "A suggestion from the data on file. A person decides and resolves the case.",

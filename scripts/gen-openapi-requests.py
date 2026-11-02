@@ -14,6 +14,7 @@ import yaml
 
 SRC = Path("crates/zyvor-api/src")
 SPEC = Path("openapi/zyvor.yaml")
+REQ_FIELDS: dict = {}  # the request body's fields (name -> Rust type) of the handler being read
 ROW_NAMES: set = set()  # Serialize structs that are components
 VERBS = ("get", "post", "put", "patch", "delete")
 
@@ -95,10 +96,50 @@ def object_shape(text: str, at: int, ctx: str = "", params: tuple = ()):
     return {"type": "object", "properties": props}
 
 
+def expr_type(expr: str):
+    """Schema for a value written as an expression, when its shape says what it is."""
+    e = expr.strip()
+    if re.fullmatch(r'"[^"]*"', e):
+        return {"type": "string"}
+    if e in ("true", "false"):
+        return {"type": "boolean"}
+    if re.fullmatch(r"-?\d+", e) or re.search(r"\bas (i64|i32|u32|u64|usize)\s*$", e) or re.search(r"\.len\(\)\s*$", e):
+        return {"type": "integer"}
+    if re.match(r"(format!\(|String::from)", e) or re.search(r"\.to_(string|owned)\(\)\s*$", e):
+        return {"type": "string"}
+    m = re.fullmatch(r"(?:b|req|body)\.(\w+)(\.clone\(\))?", e)  # a field of the request body, echoed back
+    if m and m.group(1) in REQ_FIELDS:
+        return nullable(REQ_FIELDS[m.group(1)])
+    return None
+
+
+def tuple_let(ctx: str, ident: str):
+    """Type of `ident` when it is bound by `let (a, b, ..): (A, B, ..) =` or from a `query_as::<_, (A, B, ..)>` row."""
+    for m in re.finditer(r"\blet\s+(?:mut\s+)?\(([^)]*)\)\s*(?::\s*\(([^=]*)\))?\s*=([^;]*);", ctx, re.S):
+        names = [n.strip().removeprefix("mut ").strip() for n in m.group(1).split(",") if n.strip()]
+        if ident not in names:
+            continue
+        types = m.group(2)
+        if types is None:
+            q = re.search(r"query_as::<[^,>]+,\s*\(", m.group(3))
+            if q:
+                types = m.group(3)[q.end() : balanced(m.group(3), q.end() - 1, "(", ")")]
+        if types:
+            tys = [t.strip() for t in split_top(types) if t.strip()]
+            if len(tys) == len(names):
+                return nullable(tys[names.index(ident)])
+    return None
+
+
 def local_type(ctx: str, ident: str):
     """Schema for a value that is a plain local variable, from `let x: T =` or the shape of what it was set to."""
+    by_expr = expr_type(ident)
+    if by_expr:
+        return by_expr
     if not re.fullmatch(r"[a-z_]\w*", ident) or not ctx:
-        return None
+        return expr_type(ident)
+    if tuple_let(ctx, ident):
+        return tuple_let(ctx, ident)
     m = re.search(r"\blet\s+(?:mut\s+)?" + ident + r"\s*:\s*([^=;]+?)\s*=", ctx)
     if m:
         return nullable(m.group(1))
@@ -109,8 +150,11 @@ def local_type(ctx: str, ident: str):
             return {"type": "boolean"}
         if re.search(r"\.len\(\)\s*(as i64)?\s*$", rhs):
             return {"type": "integer"}
-        if re.match(r"\s*(new_id\(|format!\(|String::from|.*\.to_string\(\)\s*$)", rhs):
+        if re.match(r"\s*new_id\(", rhs):
             return {"type": "string"}
+        by_rhs = expr_type(rhs)
+        if by_rhs:
+            return by_rhs
     if re.search(r"Path\(\s*" + ident + r"\s*\)\s*:\s*Path<String>", ctx):
         return {"type": "string"}
     return None
@@ -121,7 +165,29 @@ STRING_KEYS = {"id", "status", "currency", "provider", "kind", "name", "number",
 BOOL_KEYS = {"ok", "enabled", "verified", "revoked", "escalated"}
 
 
+COUNT_KEYS = {"imported", "added", "settlements_rechecked", "new_cases", "reminded", "recorded", "invoices_created",
+              "drafts_created", "quantity", "remaining_days", "period_days", "evidence_count", "old_key_expires_in_hours"}
+TEXT_KEYS = {"prefix", "key", "path", "source", "channel", "outcome", "code", "env"}
+# text that may be absent (a superset, so safe whichever it is)
+MAYBE_TEXT = {"note", "gstin", "buyer_gstin", "legal_name", "phone", "address1", "location", "pincode", "external_ref",
+              "description", "message", "place_of_supply", "assignee", "outbound_webhook_url", "needs_second_because",
+              "account_last4", "usd_rate_date"}
+LIST_OF_TEXT = {"scopes", "draft_ids", "allowed_cidrs"}
+
+
 def key_type(key: str):
+    if key in COUNT_KEYS:
+        return {"type": "integer"}
+    if key in TEXT_KEYS:
+        return {"type": "string"}
+    if key in MAYBE_TEXT:
+        return {"type": ["string", "null"]}
+    if key in LIST_OF_TEXT:
+        return {"type": "array", "items": {"type": "string"}}
+    if key in ("as_of", "first_day", "last_day", "due_date", "issued_on", "promised_date", "next_bill_date", "expires_at") or key.endswith(("_at", "_on", "_date")):
+        return {"type": ["string", "null"]}  # a date or timestamp, possibly absent
+    if key == "reverse_charge":
+        return {"type": "boolean"}
     if key in STRING_KEYS:
         return {"type": "string"}
     if key in BOOL_KEYS:
@@ -165,7 +231,7 @@ def nullable(ty: str):
     return sch
 
 
-def response_of(src: str, fn: str, rows: dict):
+def response_of(src: str, fn: str, rows: dict, depth: int = 0):
     """(status, schema) for a handler: the first Json(json!({..})) it returns, or a row struct it serialises."""
     m = re.search(r"\bfn\s+" + fn + r"\s*\(", src)
     sig_end = balanced(src, m.end() - 1, "(", ")")
@@ -178,6 +244,15 @@ def response_of(src: str, fn: str, rows: dict):
     r = re.search(r"Json\(\s*(?:\w+::)?(\w+Row)\b", body) or re.search(r"->\s*Result<Json<(\w+)>", src[sig_end : b0])
     if r and r.group(1) in rows:
         return status, {"$ref": "#/components/schemas/" + r.group(1)}
+    if depth == 0:  # the work is handed to a helper in the same file that returns the JSON: read its last literal
+        for callee in dict.fromkeys(re.findall(r"\b([a-z_]\w*)\(", body[body.index("{") :])):
+            h = re.search(r"\bfn\s+" + callee + r"\b[^{;]*->\s*(?:Result<)?(?:\(StatusCode,\s*)?(?:Json<)?Value\b[^{]*\{", src)
+            if callee == fn or not h:
+                continue
+            hb = src[h.end() - 1 : balanced(src, h.end() - 1, "{", "}") + 1]
+            lits = list(re.finditer(r"json!\(\s*\{", hb))
+            if lits:
+                return status, object_shape(hb, lits[-1].end() - 1, hb)
     return status, None
 
 
@@ -192,6 +267,13 @@ OVERRIDES = {
     ("post", "/v1/payment_intents/{id}/attempts"): ("201", _ref("AttemptRow")),
     ("post", "/v1/checkout/{tenant_id}/{intent_id}/attempts"): ("201", _ref("AttemptRow")),
     ("post", "/v1/payment_intents/{id}/refunds"): ("201", _ref("RefundRow")),
+    ("post", "/v1/mandates"): ("201", _ref("MandateRow")),
+    ("post", "/v1/mandates/{id}/debits"): ("201", _ref("DebitRow")),
+}
+# Not JSON: (status, media type, a note on the body)
+NOT_JSON = {
+    ("get", "/v1/payment_links/{id}/qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
+    ("get", "/v1/checkout/{tenant_id}/{intent_id}/upi-qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
 }
 
 
@@ -374,7 +456,18 @@ def main() -> int:
         op = spec["paths"].get(path, {}).get(verb)
         if op is None:
             continue
+        took = wanted.get((verb, path), {})
+        REQ_FIELDS.clear()
+        if "json" in took:
+            REQ_FIELDS.update({f[0]: f[1] for f in per_file[took["json"][0]][took["json"][1]]})
         status, sch = response_of(fn_src[mod], fn, rows)
+        if (verb, path) in NOT_JSON:
+            st, media, body_schema = NOT_JSON[(verb, path)]
+            op["responses"] = {st: {"description": "OK", "content": {media: {"schema": body_schema}}},
+                               **{k: v for k, v in op["responses"].items() if k not in ("200", 200)}}
+            continue
+        if sch is None and verb in ("get", "post", "put", "patch", "delete") and (verb, path) not in OVERRIDES:
+            sch = {"type": "object"}  # it answers with JSON, but nothing in the source says what shape
         sch = OVERRIDES.get((verb, path), (status, sch))[1] if (verb, path) in OVERRIDES else sch
         status = OVERRIDES[(verb, path)][0] if (verb, path) in OVERRIDES else status
         if sch is None:

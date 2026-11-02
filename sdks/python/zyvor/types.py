@@ -40,7 +40,7 @@ DebitRow = TypedDict("DebitRow", {
 
 DeletePlatformRotaDaysOffByIdResponse = TypedDict("DeletePlatformRotaDaysOffByIdResponse", {
     "id": "str",
-    "deleted": "Any",
+    "deleted": "bool",
 })
 
 DeleteSavedViewsByIdResponse = TypedDict("DeleteSavedViewsByIdResponse", {
@@ -110,7 +110,7 @@ GetCheckoutByTenantIdByIntentIdResponse = TypedDict("GetCheckoutByTenantIdByInte
     "merchant": "Optional[str]",
     "amount_minor": "int",
     "currency": "str",
-    "description": "Any",
+    "description": "Optional[str]",
     "status": "str",
     "phase": "Any",
     "methods": "List[Any]",
@@ -119,7 +119,7 @@ GetCheckoutByTenantIdByIntentIdResponse = TypedDict("GetCheckoutByTenantIdByInte
 
 GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantIdByTokenResponse", {
     "merchant": "Optional[str]",
-    "description": "Any",
+    "description": "Optional[str]",
     "amount_minor": "int",
     "discount_minor": "int",
     "fee_minor": "int",
@@ -127,9 +127,9 @@ GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantI
     "coupon_applied": "Any",
     "currency": "str",
     "status": "str",
-    "open_amount": "Any",
-    "min_amount_minor": "int",
-    "max_amount_minor": "int",
+    "open_amount": "bool",
+    "min_amount_minor": "Optional[int]",
+    "max_amount_minor": "Optional[int]",
 })
 
 GetClosingsResponse = TypedDict("GetClosingsResponse", {
@@ -137,10 +137,10 @@ GetClosingsResponse = TypedDict("GetClosingsResponse", {
 })
 
 GetCollectionsAgeingResponse = TypedDict("GetCollectionsAgeingResponse", {
-    "as_of": "Any",
+    "as_of": "Optional[str]",
     "data": "List[Any]",
     "total_outstanding_inr_minor": "Optional[int]",
-    "usd_rate_date": "Any",
+    "usd_rate_date": "Optional[str]",
 })
 
 GetCollectionsDraftsResponse = TypedDict("GetCollectionsDraftsResponse", {
@@ -195,12 +195,12 @@ GetCustomersByIdResponse = TypedDict("GetCustomersByIdResponse", {
     "id": "str",
     "name": "str",
     "email": "str",
-    "phone": "Any",
-    "external_ref": "Any",
-    "gstin": "Any",
-    "address1": "Any",
-    "location": "Any",
-    "pincode": "Any",
+    "phone": "Optional[str]",
+    "external_ref": "Optional[str]",
+    "gstin": "Optional[str]",
+    "address1": "Optional[str]",
+    "location": "Optional[str]",
+    "pincode": "Optional[str]",
 })
 
 GetCustomersByIdStatementResponse = TypedDict("GetCustomersByIdStatementResponse", {
@@ -237,7 +237,7 @@ GetDisputesResponseDataItem = TypedDict("GetDisputesResponseDataItem", {
     "reason": "str",
     "status": "str",
     "respond_by": "Optional[str]",
-    "evidence_count": "Any",
+    "evidence_count": "int",
 })
 
 GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
@@ -246,7 +246,7 @@ GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
 
 GetEventsCatalogueResponseDataItem = TypedDict("GetEventsCatalogueResponseDataItem", {
     "type": "Any",
-    "description": "Any",
+    "description": "Optional[str]",
 })
 
 GetFxConvertResponse = TypedDict("GetFxConvertResponse", {
@@ -256,14 +256,14 @@ GetFxConvertResponse = TypedDict("GetFxConvertResponse", {
 })
 
 GetFxExposureResponse = TypedDict("GetFxExposureResponse", {
-    "as_of": "Any",
-    "rate_date": "Any",
+    "as_of": "Optional[str]",
+    "rate_date": "Optional[str]",
     "outstanding_usd_minor": "int",
     "complete": "Any",
     "booked_inr_minor": "int",
     "current_inr_minor": "int",
     "unrealised_inr_minor": "int",
-    "note": "Any",
+    "note": "str",
     "data": "Any",
 })
 
@@ -272,15 +272,15 @@ GetFxRatesResponse = TypedDict("GetFxRatesResponse", {
 })
 
 GetGstGstr1Response = TypedDict("GetGstGstr1Response", {
-    "note": "Any",
+    "note": "str",
     "period": "Any",
-    "gstin": "Any",
-    "legal_name": "Any",
+    "gstin": "Optional[str]",
+    "legal_name": "Optional[str]",
     "b2b": "List[GetGstGstr1ResponseB2bItem]",
     "b2cl": "Any",
     "b2cs": "Any",
-    "cdnr": "Any",
-    "cdnur": "Any",
+    "cdnr": "List[Any]",
+    "cdnur": "List[Any]",
     "hsn": "Any",
     "totals": "Any",
 })
@@ -304,7 +304,7 @@ GetInboxResponseDataItem = TypedDict("GetInboxResponseDataItem", {
 })
 
 GetInsightsCashflowResponse = TypedDict("GetInsightsCashflowResponse", {
-    "as_of": "Any",
+    "as_of": "Optional[str]",
     "currency": "str",
     "weeks": "List[GetInsightsCashflowResponseWeeksItem]",
     "overdue_minor": "int",
@@ -313,7 +313,7 @@ GetInsightsCashflowResponse = TypedDict("GetInsightsCashflowResponse", {
     "promised_minor": "int",
     "payouts_waiting_minor": "int",
     "daily_receipts_run_rate_minor": "int",
-    "note": "Any",
+    "note": "str",
 })
 
 GetInsightsCashflowResponseWeeksItem = TypedDict("GetInsightsCashflowResponseWeeksItem", {
@@ -322,21 +322,34 @@ GetInsightsCashflowResponseWeeksItem = TypedDict("GetInsightsCashflowResponseWee
 })
 
 GetInsightsRefundAnomaliesResponse = TypedDict("GetInsightsRefundAnomaliesResponse", {
-    "refunds_last_7_days": "Any",
+    "refunds_last_7_days": "int",
     "weekly_average_before": "Any",
     "flags": "List[GetInsightsRefundAnomaliesResponseFlagsItem]",
-    "note": "Any",
+    "note": "str",
 })
 
 GetInsightsRefundAnomaliesResponseFlagsItem = TypedDict("GetInsightsRefundAnomaliesResponseFlagsItem", {
-    "code": "Any",
-    "message": "Any",
+    "code": "str",
+    "message": "Optional[str]",
+})
+
+GetInstallmentPlansByIdResponse = TypedDict("GetInstallmentPlansByIdResponse", {
+    "id": "str",
+    "customer_id": "Optional[str]",
+    "name": "str",
+    "total_minor": "int",
+    "currency": "str",
+    "instalments": "Any",
+    "external_ref": "Optional[str]",
+    "settled_minor": "int",
+    "remaining_minor": "int",
+    "invoices": "List[Any]",
 })
 
 GetInvoicesByIdEinvoiceResponse = TypedDict("GetInvoicesByIdEinvoiceResponse", {
-    "draft": "Any",
-    "note": "Any",
-    "Version": "Any",
+    "draft": "bool",
+    "note": "str",
+    "Version": "str",
     "TranDtls": "Any",
     "DocDtls": "Any",
     "SellerDtls": "Any",
@@ -348,8 +361,8 @@ GetInvoicesByIdEinvoiceResponse = TypedDict("GetInvoicesByIdEinvoiceResponse", {
 GetInvoicesByIdLinesResponse = TypedDict("GetInvoicesByIdLinesResponse", {
     "invoice_id": "str",
     "number": "str",
-    "place_of_supply": "Any",
-    "buyer_gstin": "Any",
+    "place_of_supply": "Optional[str]",
+    "buyer_gstin": "Optional[str]",
     "total_minor": "int",
     "tax_minor": "int",
     "lines": "List[Any]",
@@ -365,14 +378,14 @@ GetInvoicesByIdResponse = TypedDict("GetInvoicesByIdResponse", {
     "currency": "str",
     "amount_minor": "int",
     "tax_minor": "int",
-    "external_ref": "Any",
+    "external_ref": "Optional[str]",
     "status": "str",
-    "due_date": "Any",
+    "due_date": "Optional[str]",
     "customer_id": "Optional[str]",
-    "place_of_supply": "Any",
-    "buyer_gstin": "Any",
-    "reverse_charge": "Any",
-    "issued_on": "Any",
+    "place_of_supply": "Optional[str]",
+    "buyer_gstin": "Optional[str]",
+    "reverse_charge": "bool",
+    "issued_on": "str",
     "paid_minor": "int",
     "credited_minor": "int",
     "outstanding_minor": "int",
@@ -439,14 +452,14 @@ GetOnboardingResponseBankAccountsItem = TypedDict("GetOnboardingResponseBankAcco
     "id": "str",
     "holder_name": "Any",
     "ifsc": "Any",
-    "account_last4": "Any",
+    "account_last4": "Optional[str]",
     "verified": "bool",
 })
 
 GetOnboardingResponseChecksItem = TypedDict("GetOnboardingResponseChecksItem", {
     "kind": "str",
     "subject": "Any",
-    "outcome": "Any",
+    "outcome": "str",
     "detail": "Any",
 })
 
@@ -458,10 +471,10 @@ GetOnboardingResponseDocumentsItem = TypedDict("GetOnboardingResponseDocumentsIt
 })
 
 GetOnboardingResponseProfileItem = TypedDict("GetOnboardingResponseProfileItem", {
-    "legal_name": "Any",
+    "legal_name": "Optional[str]",
     "business_type": "Any",
-    "pan": "Any",
-    "gstin": "Any",
+    "pan": "str",
+    "gstin": "Optional[str]",
     "address": "Any",
     "submitted_by": "Any",
     "reviewed_by": "Any",
@@ -522,6 +535,21 @@ GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
     "data": "List[Any]",
 })
 
+GetPayoutsByIdResponse = TypedDict("GetPayoutsByIdResponse", {
+    "id": "str",
+    "vendor_id": "Optional[str]",
+    "amount_minor": "int",
+    "currency": "str",
+    "status": "str",
+    "purpose": "Any",
+    "external_ref": "Optional[str]",
+    "requested_by": "Any",
+    "approved_by": "Any",
+    "paid_by": "Any",
+    "bank_ref": "Any",
+    "created_at": "Optional[str]",
+})
+
 GetPayoutsResponse = TypedDict("GetPayoutsResponse", {
     "data": "Any",
 })
@@ -553,15 +581,15 @@ GetPlatformChangesResponseDataItem = TypedDict("GetPlatformChangesResponseDataIt
     "summary": "Any",
     "status": "str",
     "requested_by": "Any",
-    "requested_at": "Any",
-    "note": "Any",
-    "due_at": "Any",
+    "requested_at": "Optional[str]",
+    "note": "Optional[str]",
+    "due_at": "Optional[str]",
     "overdue": "Any",
     "sla_hours": "Any",
     "stage": "str",
     "first_approved_by": "Any",
     "first_approved_by_me": "Any",
-    "needs_second_because": "Any",
+    "needs_second_because": "Optional[str]",
     "escalation_note": "Any",
     "assigned_to": "Any",
     "assigned_to_name": "Any",
@@ -572,6 +600,12 @@ GetPlatformMeResponse = TypedDict("GetPlatformMeResponse", {
     "id": "str",
     "name": "str",
     "email": "Optional[str]",
+})
+
+GetPlatformReviewsByOrganisationIdResponse = TypedDict("GetPlatformReviewsByOrganisationIdResponse", {
+    "kind": "str",
+    "outcome": "str",
+    "detail": "Any",
 })
 
 GetPlatformReviewsResponse = TypedDict("GetPlatformReviewsResponse", {
@@ -588,8 +622,8 @@ GetPlatformRotaResponse = TypedDict("GetPlatformRotaResponse", {
     "i_am_lead": "Any",
     "utc_offset_minutes": "Any",
     "timezone": "Any",
-    "local_now": "Any",
-    "local_date": "Any",
+    "local_now": "str",
+    "local_date": "str",
     "on_duty_now": "Any",
     "holiday_today": "Any",
     "reviewers": "List[Any]",
@@ -603,8 +637,8 @@ GetPlatformRotaResponseDaysOffItem = TypedDict("GetPlatformRotaResponseDaysOffIt
     "desk": "Any",
     "mine": "Any",
     "removable": "Any",
-    "first_day": "Any",
-    "last_day": "Any",
+    "first_day": "str",
+    "last_day": "str",
     "note": "str",
 })
 
@@ -616,9 +650,10 @@ GetReconCasesByIdSuggestionsResponse = TypedDict("GetReconCasesByIdSuggestionsRe
     "case_id": "str",
     "kind": "str",
     "summary": "str",
+    "ai_summary": "Optional[str]",
     "evidence": "List[Any]",
     "next_steps": "List[str]",
-    "note": "Any",
+    "note": "str",
 })
 
 GetReconCasesResponse = TypedDict("GetReconCasesResponse", {
@@ -654,14 +689,30 @@ GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
 GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "refund_approval_threshold_minor": "int",
     "routing": "Any",
-    "outbound_webhook_url": "Any",
-    "env": "Any",
+    "outbound_webhook_url": "Optional[str]",
+    "env": "str",
     "dunning": "Any",
     "gst": "Any",
     "payout_approval_threshold_minor": "int",
     "payment_receipts": "bool",
     "risk": "Any",
     "webhook_events": "Any",
+})
+
+GetSettlementsByIdExplainResponse = TypedDict("GetSettlementsByIdExplainResponse", {
+    "settlement": "Any",
+    "payments": "List[Any]",
+    "refunds": "List[Any]",
+    "adjustments": "List[Any]",
+    "fees": "Any",
+    "arithmetic": "Any",
+    "expected_minor": "int",
+    "received_minor": "int",
+    "difference_minor": "int",
+    "difference_breakdown": "Any",
+    "bank_match": "Any",
+    "cases": "List[Any]",
+    "narrative": "bool",
 })
 
 GetSettlementsResponse = TypedDict("GetSettlementsResponse", {
@@ -732,6 +783,18 @@ MandateRow = TypedDict("MandateRow", {
     "updated_at": "str",
 })
 
+PatchCustomersByIdResponse = TypedDict("PatchCustomersByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "email": "str",
+    "phone": "Optional[str]",
+    "external_ref": "Optional[str]",
+    "gstin": "Optional[str]",
+    "address1": "Optional[str]",
+    "location": "Optional[str]",
+    "pincode": "Optional[str]",
+})
+
 PostApiKeysByIdRevokeResponse = TypedDict("PostApiKeysByIdRevokeResponse", {
     "id": "str",
     "revoked": "bool",
@@ -739,22 +802,22 @@ PostApiKeysByIdRevokeResponse = TypedDict("PostApiKeysByIdRevokeResponse", {
 
 PostApiKeysByIdRotateResponse = TypedDict("PostApiKeysByIdRotateResponse", {
     "id": "str",
-    "key": "Any",
-    "prefix": "Any",
-    "scopes": "Any",
+    "key": "str",
+    "prefix": "str",
+    "scopes": "List[str]",
     "rotated_from": "str",
-    "old_key_expires_in_hours": "Any",
-    "note": "Any",
+    "old_key_expires_in_hours": "int",
+    "note": "str",
 })
 
 PostApiKeysResponse = TypedDict("PostApiKeysResponse", {
     "id": "str",
-    "key": "Any",
-    "prefix": "Any",
-    "scopes": "Any",
+    "key": "str",
+    "prefix": "str",
+    "scopes": "List[str]",
     "expires_at": "Any",
-    "allowed_cidrs": "Any",
-    "note": "Any",
+    "allowed_cidrs": "List[str]",
+    "note": "str",
 })
 
 PostAuditEventsSealResponse = TypedDict("PostAuditEventsSealResponse", {
@@ -762,12 +825,12 @@ PostAuditEventsSealResponse = TypedDict("PostAuditEventsSealResponse", {
 })
 
 PostBankStatementsImportResponse = TypedDict("PostBankStatementsImportResponse", {
-    "added": "Any",
-    "settlements_rechecked": "Any",
+    "added": "int",
+    "settlements_rechecked": "int",
 })
 
 PostBillingRunResponse = TypedDict("PostBillingRunResponse", {
-    "invoices_created": "Any",
+    "invoices_created": "int",
 })
 
 PostBranchesResponse = TypedDict("PostBranchesResponse", {
@@ -803,7 +866,7 @@ PostCheckoutLinksByTenantIdByTokenStartResponse = TypedDict("PostCheckoutLinksBy
     "client_secret": "str",
     "amount_minor": "int",
     "currency": "str",
-    "path": "Any",
+    "path": "str",
 })
 
 PostClosingsByIdSignoffResponse = TypedDict("PostClosingsByIdSignoffResponse", {
@@ -832,14 +895,19 @@ PostCollectionsDraftsByIdRejectResponse = TypedDict("PostCollectionsDraftsByIdRe
 })
 
 PostCollectionsDunningRunResponse = TypedDict("PostCollectionsDunningRunResponse", {
-    "reminded": "Any",
-    "drafts_created": "Any",
-    "draft_ids": "Any",
+    "reminded": "int",
+    "drafts_created": "int",
+    "draft_ids": "List[str]",
 })
 
 PostCollectionsPromisesByIdCancelResponse = TypedDict("PostCollectionsPromisesByIdCancelResponse", {
     "id": "str",
     "status": "str",
+})
+
+PostConsoleAuthenticateResponse = TypedDict("PostConsoleAuthenticateResponse", {
+    "user": "Any",
+    "mfa_enrolled": "Any",
 })
 
 PostConsoleInvitationsByIdRevokeResponse = TypedDict("PostConsoleInvitationsByIdRevokeResponse", {
@@ -863,17 +931,32 @@ PostConsoleSwitchEnvResponse = TypedDict("PostConsoleSwitchEnvResponse", {
     "user": "Any",
     "session_key": "Any",
     "tenant_id": "str",
-    "env": "Any",
+    "env": "str",
+})
+
+PostConsoleUsersByIdDisableResponse = TypedDict("PostConsoleUsersByIdDisableResponse", {
+    "id": "str",
+    "ok": "bool",
+})
+
+PostConsoleUsersByIdEnableResponse = TypedDict("PostConsoleUsersByIdEnableResponse", {
+    "id": "str",
+    "ok": "bool",
 })
 
 PostConsoleUsersByIdMfaBeginResponse = TypedDict("PostConsoleUsersByIdMfaBeginResponse", {
     "secret": "Any",
-    "otpauth_uri": "Any",
+    "otpauth_uri": "str",
 })
 
 PostConsoleUsersByIdMfaConfirmResponse = TypedDict("PostConsoleUsersByIdMfaConfirmResponse", {
     "recovery_codes": "List[str]",
-    "note": "Any",
+    "note": "str",
+})
+
+PostConsoleUsersByIdMfaResetResponse = TypedDict("PostConsoleUsersByIdMfaResetResponse", {
+    "id": "str",
+    "ok": "bool",
 })
 
 PostConsoleUsersByIdPasswordResponse = TypedDict("PostConsoleUsersByIdPasswordResponse", {
@@ -890,12 +973,12 @@ PostConsoleUsersResponse = TypedDict("PostConsoleUsersResponse", {
 
 PostCountersByIdDeactivateResponse = TypedDict("PostCountersByIdDeactivateResponse", {
     "id": "str",
-    "active": "Any",
+    "active": "bool",
 })
 
 PostCountersResponse = TypedDict("PostCountersResponse", {
     "id": "str",
-    "branch_id": "Optional[str]",
+    "branch_id": "str",
     "name": "str",
 })
 
@@ -906,16 +989,16 @@ PostCouponsByIdDeactivateResponse = TypedDict("PostCouponsByIdDeactivateResponse
 
 PostCouponsResponse = TypedDict("PostCouponsResponse", {
     "id": "str",
-    "code": "Any",
+    "code": "str",
 })
 
 PostCustomersResponse = TypedDict("PostCustomersResponse", {
     "id": "str",
     "name": "str",
-    "email": "str",
-    "phone": "Any",
-    "external_ref": "Any",
-    "gstin": "Any",
+    "email": "Optional[str]",
+    "phone": "Optional[str]",
+    "external_ref": "Optional[str]",
+    "gstin": "Optional[str]",
 })
 
 PostDisputesByIdEvidenceResponse = TypedDict("PostDisputesByIdEvidenceResponse", {
@@ -938,12 +1021,25 @@ PostFxRatesResponse = TypedDict("PostFxRatesResponse", {
     "id": "str",
     "currency": "str",
     "rate": "Any",
-    "as_of": "Any",
+    "as_of": "Optional[str]",
+})
+
+PostInstallmentPlansResponse = TypedDict("PostInstallmentPlansResponse", {
+    "id": "str",
+    "customer_id": "Optional[str]",
+    "name": "str",
+    "total_minor": "int",
+    "currency": "str",
+    "instalments": "Any",
+    "external_ref": "Optional[str]",
+    "settled_minor": "int",
+    "remaining_minor": "int",
+    "invoices": "List[Any]",
 })
 
 PostInvitationsAcceptResponse = TypedDict("PostInvitationsAcceptResponse", {
     "email": "str",
-    "joined": "Any",
+    "joined": "bool",
 })
 
 PostInvitationsLookupResponse = TypedDict("PostInvitationsLookupResponse", {
@@ -962,23 +1058,23 @@ PostInvoicesByIdPromisesResponse = TypedDict("PostInvoicesByIdPromisesResponse",
     "id": "str",
     "invoice_id": "str",
     "promised_minor": "int",
-    "promised_date": "Any",
+    "promised_date": "str",
     "status": "str",
 })
 
 PostInvoicesByIdRemindersDraftResponse = TypedDict("PostInvoicesByIdRemindersDraftResponse", {
     "id": "str",
     "invoice_id": "str",
-    "channel": "Any",
-    "message": "Any",
-    "source": "Any",
+    "channel": "str",
+    "message": "Optional[str]",
+    "source": "str",
     "status": "str",
 })
 
 PostInvoicesByIdRemindersResponse = TypedDict("PostInvoicesByIdRemindersResponse", {
     "id": "str",
     "invoice_id": "str",
-    "channel": "Any",
+    "channel": "str",
 })
 
 PostInvoicesByIdVoidResponse = TypedDict("PostInvoicesByIdVoidResponse", {
@@ -996,6 +1092,21 @@ PostInvoicesResponse = TypedDict("PostInvoicesResponse", {
 
 PostLiveAccessResponse = TypedDict("PostLiveAccessResponse", {
     "status": "str",
+})
+
+PostMandatesByIdDebitsResponse = TypedDict("PostMandatesByIdDebitsResponse", {
+    "id": "str",
+    "mandate_id": "str",
+    "amount_minor": "int",
+    "currency": "str",
+    "due_date": "str",
+    "notified_at": "Optional[str]",
+    "invoice_id": "Optional[str]",
+    "state": "str",
+    "attempt_id": "Optional[str]",
+    "retry_no": "int",
+    "failure_reason": "Optional[str]",
+    "created_at": "str",
 })
 
 PostMandatesByIdPauseResponse = TypedDict("PostMandatesByIdPauseResponse", {
@@ -1074,6 +1185,25 @@ PostMandatesByIdRevokeResponse = TypedDict("PostMandatesByIdRevokeResponse", {
     "updated_at": "str",
 })
 
+PostMandatesResponse = TypedDict("PostMandatesResponse", {
+    "id": "str",
+    "customer_id": "str",
+    "currency": "str",
+    "max_amount_minor": "int",
+    "frequency": "str",
+    "start_date": "str",
+    "end_date": "str",
+    "status": "str",
+    "provider": "str",
+    "provider_mandate_ref": "Optional[str]",
+    "authorization": "Any",
+    "failure_reason": "Optional[str]",
+    "revoked_by": "Optional[str]",
+    "external_ref": "Optional[str]",
+    "created_at": "str",
+    "updated_at": "str",
+})
+
 PostMilestonesByIdCancelResponse = TypedDict("PostMilestonesByIdCancelResponse", {
     "id": "str",
     "status": "str",
@@ -1097,12 +1227,12 @@ PostOnboardingBankAccountsByIdVerifyResponse = TypedDict("PostOnboardingBankAcco
 
 PostOnboardingBankAccountsResponse = TypedDict("PostOnboardingBankAccountsResponse", {
     "id": "str",
-    "account_last4": "Any",
+    "account_last4": "Optional[str]",
     "check": "List[PostOnboardingBankAccountsResponseCheckItem]",
 })
 
 PostOnboardingBankAccountsResponseCheckItem = TypedDict("PostOnboardingBankAccountsResponseCheckItem", {
-    "outcome": "Any",
+    "outcome": "str",
     "detail": "Any",
 })
 
@@ -1122,7 +1252,7 @@ PostOnboardingReviewResponse = TypedDict("PostOnboardingReviewResponse", {
 
 PostOnboardingSubmitResponse = TypedDict("PostOnboardingSubmitResponse", {
     "status": "str",
-    "automatic": "Any",
+    "automatic": "bool",
     "reasons": "Any",
 })
 
@@ -1283,23 +1413,69 @@ PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "id": "str",
     "token": "Any",
     "currency": "str",
-    "path": "Any",
-    "max_uses": "Any",
-    "expires_at": "Any",
+    "path": "str",
+    "max_uses": "Optional[int]",
+    "expires_at": "Optional[str]",
 })
 
 PostPayoutsBulkResponse = TypedDict("PostPayoutsBulkResponse", {
-    "count": "Any",
+    "count": "int",
     "already_existed": "Any",
     "new_total_minor": "int",
     "data": "Any",
+})
+
+PostPayoutsByIdApproveResponse = TypedDict("PostPayoutsByIdApproveResponse", {
+    "payout_id": "Optional[str]",
+    "amount_minor": "int",
+})
+
+PostPayoutsByIdCancelResponse = TypedDict("PostPayoutsByIdCancelResponse", {
+    "id": "str",
+    "vendor_id": "Optional[str]",
+    "amount_minor": "int",
+    "currency": "str",
+    "status": "str",
+    "purpose": "Any",
+    "external_ref": "Optional[str]",
+    "requested_by": "Any",
+    "approved_by": "Any",
+    "paid_by": "Any",
+    "bank_ref": "Any",
+    "created_at": "Optional[str]",
+})
+
+PostPayoutsByIdMarkPaidResponse = TypedDict("PostPayoutsByIdMarkPaidResponse", {
+    "id": "str",
+    "vendor_id": "Optional[str]",
+    "amount_minor": "int",
+    "currency": "str",
+    "status": "str",
+    "purpose": "Any",
+    "external_ref": "Optional[str]",
+    "requested_by": "Any",
+    "approved_by": "Any",
+    "paid_by": "Any",
+    "bank_ref": "Any",
+    "created_at": "Optional[str]",
+})
+
+PostPayoutsByIdRejectResponse = TypedDict("PostPayoutsByIdRejectResponse", {
+    "payout_id": "Optional[str]",
+    "amount_minor": "int",
+})
+
+PostPayoutsResponse = TypedDict("PostPayoutsResponse", {
+    "payout_id": "str",
+    "amount_minor": "int",
+    "currency": "str",
 })
 
 PostPlansResponse = TypedDict("PostPlansResponse", {
     "id": "str",
     "name": "str",
     "amount_minor": "int",
-    "interval_unit": "Any",
+    "interval_unit": "str",
 })
 
 PostPlatformChangesByIdAssignResponse = TypedDict("PostPlatformChangesByIdAssignResponse", {
@@ -1312,7 +1488,7 @@ PostPlatformChangesByIdDecisionResponse = TypedDict("PostPlatformChangesByIdDeci
     "id": "str",
     "status": "str",
     "stage": "str",
-    "needs_second_because": "Any",
+    "needs_second_because": "Optional[str]",
 })
 
 PostPlatformChangesByIdEscalateResponse = TypedDict("PostPlatformChangesByIdEscalateResponse", {
@@ -1331,7 +1507,7 @@ PostPlatformReviewsByOrganisationIdDecisionResponse = TypedDict("PostPlatformRev
     "organisation_id": "str",
     "status": "str",
     "stage": "str",
-    "needs_second_because": "Any",
+    "needs_second_because": "Optional[str]",
 })
 
 PostPlatformReviewsByOrganisationIdEscalateResponse = TypedDict("PostPlatformReviewsByOrganisationIdEscalateResponse", {
@@ -1340,12 +1516,22 @@ PostPlatformReviewsByOrganisationIdEscalateResponse = TypedDict("PostPlatformRev
     "escalated": "bool",
 })
 
+PostPlatformReviewsByOrganisationIdRestoreResponse = TypedDict("PostPlatformReviewsByOrganisationIdRestoreResponse", {
+    "organisation_id": "Optional[str]",
+    "status": "str",
+})
+
+PostPlatformReviewsByOrganisationIdRevokeResponse = TypedDict("PostPlatformReviewsByOrganisationIdRevokeResponse", {
+    "organisation_id": "Optional[str]",
+    "status": "str",
+})
+
 PostPlatformRotaDaysOffResponse = TypedDict("PostPlatformRotaDaysOffResponse", {
     "id": "str",
-    "desk": "Any",
+    "desk": "bool",
     "reviewer_id": "Optional[str]",
-    "first_day": "Any",
-    "last_day": "Any",
+    "first_day": "str",
+    "last_day": "str",
     "note": "str",
 })
 
@@ -1359,7 +1545,7 @@ PostProviderAccountsByProviderCheckResponse = TypedDict("PostProviderAccountsByP
     "provider": "str",
     "ok": "bool",
     "detail": "Any",
-    "env": "Any",
+    "env": "str",
 })
 
 PostProviderAccountsByProviderEnabledResponse = TypedDict("PostProviderAccountsByProviderEnabledResponse", {
@@ -1371,13 +1557,13 @@ PostProviderAccountsResponse = TypedDict("PostProviderAccountsResponse", {
     "id": "str",
     "provider": "str",
     "updated": "Any",
-    "webhook_url": "Any",
+    "webhook_url": "str",
 })
 
 PostReconCasesByIdAssignResponse = TypedDict("PostReconCasesByIdAssignResponse", {
     "id": "str",
     "status": "str",
-    "assignee": "Any",
+    "assignee": "str",
 })
 
 PostReconCasesByIdResolveResponse = TypedDict("PostReconCasesByIdResolveResponse", {
@@ -1386,7 +1572,7 @@ PostReconCasesByIdResolveResponse = TypedDict("PostReconCasesByIdResolveResponse
 })
 
 PostReconScanResponse = TypedDict("PostReconScanResponse", {
-    "new_cases": "Any",
+    "new_cases": "int",
 })
 
 PostRefundsByIdApproveResponse = TypedDict("PostRefundsByIdApproveResponse", {
@@ -1462,7 +1648,7 @@ PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
     "name": "str",
     "query": "Any",
     "shared": "Any",
-    "mine": "Any",
+    "mine": "bool",
     "owner": "Any",
 })
 
@@ -1470,8 +1656,29 @@ PostSettingsResponse = TypedDict("PostSettingsResponse", {
     "ok": "bool",
 })
 
+PostSettlementsByIdSimulateBankResponse = TypedDict("PostSettlementsByIdSimulateBankResponse", {
+    "added": "int",
+    "settlements_rechecked": "int",
+})
+
+PostSettlementsImportResponse = TypedDict("PostSettlementsImportResponse", {
+    "settlement": "Any",
+    "payments": "List[Any]",
+    "refunds": "List[Any]",
+    "adjustments": "List[Any]",
+    "fees": "Any",
+    "arithmetic": "Any",
+    "expected_minor": "int",
+    "received_minor": "int",
+    "difference_minor": "int",
+    "difference_breakdown": "Any",
+    "bank_match": "Any",
+    "cases": "List[Any]",
+    "narrative": "bool",
+})
+
 PostSettlementsSyncResponse = TypedDict("PostSettlementsSyncResponse", {
-    "imported": "Any",
+    "imported": "int",
 })
 
 PostSignupResendResponse = TypedDict("PostSignupResendResponse", {
@@ -1483,7 +1690,7 @@ PostSignupResponse = TypedDict("PostSignupResponse", {
     "test_tenant": "Any",
     "test_key": "Any",
     "email": "str",
-    "verification": "Any",
+    "verification": "str",
 })
 
 PostSignupVerifyResponse = TypedDict("PostSignupVerifyResponse", {
@@ -1516,14 +1723,19 @@ PostSimPayResponse = TypedDict("PostSimPayResponse", {
     "status": "str",
 })
 
+PostSubscriptionsByIdCancelResponse = TypedDict("PostSubscriptionsByIdCancelResponse", {
+    "id": "str",
+    "status": "str",
+})
+
 PostSubscriptionsByIdChangePlanResponse = TypedDict("PostSubscriptionsByIdChangePlanResponse", {
     "id": "str",
-    "plan_id": "Optional[str]",
-    "quantity": "Any",
+    "plan_id": "str",
+    "quantity": "int",
     "proration_minor": "bool",
     "proration_invoice_id": "Optional[str]",
-    "remaining_days": "Any",
-    "period_days": "Any",
+    "remaining_days": "int",
+    "period_days": "int",
 })
 
 PostSubscriptionsByIdMandateResponse = TypedDict("PostSubscriptionsByIdMandateResponse", {
@@ -1531,15 +1743,25 @@ PostSubscriptionsByIdMandateResponse = TypedDict("PostSubscriptionsByIdMandateRe
     "mandate_id": "Optional[str]",
 })
 
+PostSubscriptionsByIdPauseResponse = TypedDict("PostSubscriptionsByIdPauseResponse", {
+    "id": "str",
+    "status": "str",
+})
+
+PostSubscriptionsByIdResumeResponse = TypedDict("PostSubscriptionsByIdResumeResponse", {
+    "id": "str",
+    "status": "str",
+})
+
 PostSubscriptionsByIdUsageResponse = TypedDict("PostSubscriptionsByIdUsageResponse", {
-    "recorded": "Any",
-    "quantity": "Any",
+    "recorded": "int",
+    "quantity": "int",
 })
 
 PostSubscriptionsResponse = TypedDict("PostSubscriptionsResponse", {
     "id": "str",
     "status": "str",
-    "next_bill_date": "Any",
+    "next_bill_date": "Optional[str]",
 })
 
 PostTestDataResetResponse = TypedDict("PostTestDataResetResponse", {
@@ -1566,15 +1788,21 @@ PutOnboardingResponse = TypedDict("PutOnboardingResponse", {
     "status": "str",
 })
 
+PutPlatformMeResponse = TypedDict("PutPlatformMeResponse", {
+    "id": "str",
+    "name": "str",
+    "email": "Optional[str]",
+})
+
 PutPlatformRotaMeResponse = TypedDict("PutPlatformRotaMeResponse", {
-    "shifts": "Any",
+    "shifts": "int",
     "on_duty": "Any",
 })
 
 PutPlatformRotaReviewersByIdResponse = TypedDict("PutPlatformRotaReviewersByIdResponse", {
     "reviewer": "str",
     "name": "str",
-    "shifts": "Any",
+    "shifts": "int",
     "on_duty": "Any",
 })
 
