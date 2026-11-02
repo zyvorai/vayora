@@ -283,6 +283,7 @@ class Tests(unittest.TestCase):
             ('z.list_providers()', 'GET', '/v1/provider_accounts', None),
             ("z.check_provider('pro_1')", 'POST', '/v1/provider_accounts/pro_1/check', {}),
             ("z.set_provider_enabled('pro_1', True)", 'POST', '/v1/provider_accounts/pro_1/enabled', {'enabled': True}),
+            ("z.create_payment_link(5000, customer_id='cus_1', expires_at='2026-11-03T18:29:59Z', remind_before_expiry=True)", 'POST', '/v1/payment_links', {'amount_minor': 5000, 'customer_id': 'cus_1', 'expires_at': '2026-11-03T18:29:59Z', 'remind_before_expiry': True}),
             ("z.send_payment_link('plk_1')", 'POST', '/v1/payment_links/plk_1/send', None),
             ('z.live_access_status()', 'GET', '/v1/live_access', None),
             ('z.request_live_access()', 'POST', '/v1/live_access', {}),
@@ -297,7 +298,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 80)
+        self.assertEqual(len(rows), 81)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []
@@ -311,7 +312,7 @@ class Tests(unittest.TestCase):
         go_src = (pathlib.Path(__file__).resolve().parent.parent / "go" / "zyvor.go").read_text()
         go = {re.sub(r"(?<!^)(?=[A-Z])", "_", m).lower() for m in re.findall(r"func \(c \*Client\) ([A-Z]\w+)", go_src)}
         py = {n for n in dir(Zyvor) if not n.startswith("_")}
-        go -= {"create_intent_at", "run_dunning_as_of", "list_payments_in_range"}
+        go -= {"create_intent_at", "run_dunning_as_of", "list_payments_in_range", "create_payment_link_for"}
         self.assertEqual(sorted(py - go), [], "in Python but not Go")
         self.assertEqual(sorted(go - py), [], "in Go but not Python")
 

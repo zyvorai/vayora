@@ -501,12 +501,39 @@ func (c *Client) RunBilling(asOf string) (map[string]any, error) {
 	return out, err
 }
 
+// PaymentLinkOptions are the optional extras of CreatePaymentLinkFor.
+type PaymentLinkOptions struct {
+	// CustomerID ties the link to a customer, so it can be emailed to them.
+	CustomerID string
+	// ExpiresAt is when the link stops working (zero: never).
+	ExpiresAt time.Time
+	// RemindBeforeExpiry emails the customer once in the last day before ExpiresAt. Needs CustomerID and ExpiresAt.
+	RemindBeforeExpiry bool
+}
+
 // CreatePaymentLink makes one URL many payers can open. Pass amountMinor or invoiceID (the other zero/empty).
 func (c *Client) CreatePaymentLink(amountMinor int64, invoiceID, description string, maxUses int) (map[string]any, error) {
+	return c.CreatePaymentLinkFor(amountMinor, invoiceID, description, maxUses, PaymentLinkOptions{})
+}
+
+// CreatePaymentLinkFor is CreatePaymentLink with a customer, an expiry and a one-time reminder before it.
+func (c *Client) CreatePaymentLinkFor(amountMinor int64, invoiceID, description string, maxUses int, o PaymentLinkOptions) (map[string]any, error) {
 	if (amountMinor > 0) == (invoiceID != "") {
 		return nil, fmt.Errorf("give exactly one of amountMinor or invoiceID")
 	}
+	if o.RemindBeforeExpiry && (o.CustomerID == "" || o.ExpiresAt.IsZero()) {
+		return nil, fmt.Errorf("RemindBeforeExpiry needs CustomerID and ExpiresAt")
+	}
 	body := map[string]any{}
+	if o.CustomerID != "" {
+		body["customer_id"] = o.CustomerID
+	}
+	if !o.ExpiresAt.IsZero() {
+		body["expires_at"] = o.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if o.RemindBeforeExpiry {
+		body["remind_before_expiry"] = true
+	}
 	if amountMinor > 0 {
 		body["amount_minor"] = amountMinor
 	}

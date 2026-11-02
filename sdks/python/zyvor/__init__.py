@@ -167,7 +167,7 @@ class Zyvor:
 
     # ---- payment links and keys ----
     def create_payment_link(self, amount_minor: Optional[int] = None, invoice_id: Optional[str] = None, **extra) -> types.GetPaymentIntentsByIdTimelineResponse:
-        """One URL, many payers. Give `amount_minor` or `invoice_id`; extras: description, max_uses, expires_at, customer_id, currency."""
+        """One URL, many payers. Give `amount_minor` or `invoice_id`; extras: description, max_uses, expires_at, customer_id, currency, remind_before_expiry (email the customer once in the last day; needs customer_id and expires_at)."""
         body = {k: v for k, v in {"amount_minor": amount_minor, "invoice_id": invoice_id, **extra}.items() if v is not None}
         return self._req("POST", "/v1/payment_links", body)
 
