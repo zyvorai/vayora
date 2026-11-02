@@ -27,8 +27,8 @@ export default async function Overview() {
   const overdue = inrBuckets.filter((b) => b.bucket !== "current" && b.bucket !== "no_due_date").reduce((n, b) => n + b.outstanding_minor, 0);
 
   const stats = [
-    { k: "Collected", v: inr(succeeded.reduce((n, i) => n + i.amount_minor, 0)), n: `${succeeded.length} successful of your last ${intents.data.length} payments`, href: "/payments" },
-    { k: "Outstanding", v: inr(outstanding), n: overdue ? `${inr(overdue)} is overdue` : "Nothing is overdue", href: "/collections", hot: overdue > 0 },
+    { k: "Collected", v: inr(succeeded.reduce((n, i) => n + i.amount_minor, 0)), n: intents.data.length === 0 ? "No payments yet. Share a payment link, or try one in the Sandbox." : `${succeeded.length} successful of your last ${intents.data.length} payments`, href: "/payments" },
+    { k: "Outstanding", v: inr(outstanding), n: overdue ? `${inr(overdue)} is overdue` : outstanding ? "Nothing is overdue" : "No unpaid invoices", href: "/collections", hot: overdue > 0 },
   ];
   const todo = [
     { n: refunds.data.length, text: "refunds waiting for a second person to approve", href: "/refunds", tone: "warn" },
@@ -49,7 +49,10 @@ export default async function Overview() {
           </Link>
         ))}
       </div>
-      {cash && (
+      {cash && cash.weeks.every((w) => w.due_minor === 0) && cash.overdue_minor === 0 && !cash.payouts_waiting_minor && (
+        <p className="muted" style={{ marginTop: 20 }}>Nothing is due to come in over the next four weeks. Invoices you create under <Link href="/billing">Billing</Link> show up here by due date.</p>
+      )}
+      {cash && !(cash.weeks.every((w) => w.due_minor === 0) && cash.overdue_minor === 0 && !cash.payouts_waiting_minor) && (
         <>
           <h2 style={{ marginTop: 28 }}>Due to come in</h2>
           <div className="grid stats">
