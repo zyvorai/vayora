@@ -10,12 +10,12 @@ const base = () => (process.env.CHECKOUT_PUBLIC_URL ?? "http://localhost:3002").
 
 export default async function Links() {
   const z = await api();
-  const [page, coupons, counters, branches] = await Promise.all([z.paymentLinks.list(), z.coupons.list(), z.counters.list(), z.branches.list()]);
+  const [page, coupons, counters, branches, customers] = await Promise.all([z.paymentLinks.list(), z.coupons.list(), z.counters.list(), z.branches.list(), z.customers.list()]);
   const branchName = new Map(branches.data.map((b) => [b.id, b.name]));
   return (
     <>
       <div className="head"><div><h1>Payment links</h1><p className="lede">One URL, many payers. Each person who opens it gets their own checkout, so a link can collect a fee from a whole class.</p></div></div>
-      <LinkForm base={base()} counters={counters.data.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, branch: branchName.get(c.branch_id) ?? "" }))} />
+      <LinkForm base={base()} customers={customers.data.filter((c) => c.email?.includes("@")).map((c) => ({ id: c.id, name: c.name, email: c.email as string }))} counters={counters.data.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, branch: branchName.get(c.branch_id) ?? "" }))} />
       <div className="tablewrap">
         <table>
           <thead><tr><th>Link</th><th className="num">Amount</th><th className="num">Used</th><th>Status</th><th /></tr></thead>

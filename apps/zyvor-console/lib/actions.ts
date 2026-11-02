@@ -363,6 +363,11 @@ export const createLink = async (_: FormState, f: FormData): Promise<FormState> 
   }
   const amount = money("amount");
   if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const customerId = String(f.get("customer_id") ?? "") || undefined;
+  const day = String(f.get("expires_on") ?? "");
+  if (day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)))) return { error: "Choose a valid last day." };
+  const remind = f.get("remind") === "on";
+  if (remind && (!customerId || !day)) return { error: "To send a reminder, choose a customer and a last day." };
   const r = await run(["/links"], async (z) => {
     path = (await z.paymentLinks.create({
       description,
@@ -370,6 +375,9 @@ export const createLink = async (_: FormState, f: FormData): Promise<FormState> 
       maxUses: maxUses ? Number(maxUses) : undefined,
       convenienceFeeBp: String(f.get("fee") ?? "").trim() ? Math.round(Number(String(f.get("fee")).replace(/,/g, "")) * 100) : undefined,
       counterId,
+      customerId,
+      expiresAt: day ? `${day}T23:59:59+05:30` : undefined,
+      remindBeforeExpiry: remind || undefined,
     })).path;
   });
   return r?.error ? r : { ok: path };
