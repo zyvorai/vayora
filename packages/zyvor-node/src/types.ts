@@ -647,6 +647,7 @@ export interface GetSettingsResponse {
   dunning: unknown;
   gst: unknown;
   payout_approval_threshold_minor: number;
+  payment_receipts: boolean;
   risk: unknown;
   webhook_events: unknown;
 }

@@ -1088,6 +1088,84 @@ async fn on_captured(
         refresh_invoice_status(conn, inv).await?;
     }
     tenant::emit(conn, tenant_id, "payment.captured", json!({ "intent_id": intent_id, "attempt_id": attempt_id, "provider": provider, "amount_minor": amount, "currency": currency, "invoice_id": invoice_id, "external_ref": external_ref })).await?;
+    queue_receipt(
+        conn,
+        tenant_id,
+        attempt_id,
+        intent_id,
+        amount,
+        currency,
+        invoice_id.as_deref(),
+        external_ref.as_deref(),
+    )
+    .await?;
+    Ok(())
+}
+
+/// With receipts turned on, email the payer a receipt: only when the intent's customer has an email address.
+#[allow(clippy::too_many_arguments)]
+async fn queue_receipt(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    attempt_id: &str,
+    intent_id: &str,
+    amount: i64,
+    currency: Currency,
+    invoice_id: Option<&str>,
+    external_ref: Option<&str>,
+) -> Result<(), ApiError> {
+    let on: bool =
+        sqlx::query_scalar("SELECT payment_receipts FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .unwrap_or(false);
+    if !on {
+        return Ok(());
+    }
+    let who: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT c.name, c.email FROM payment_intents p JOIN customers c ON c.id = p.customer_id WHERE p.id = $1",
+    )
+    .bind(intent_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((name, Some(email))) = who else {
+        return Ok(());
+    };
+    if !email.contains('@') {
+        return Ok(());
+    }
+    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .unwrap_or_else(|| "the business".into());
+    let number: Option<String> = match invoice_id {
+        Some(i) => {
+            sqlx::query_scalar("SELECT number FROM invoices WHERE id = $1")
+                .bind(i)
+                .fetch_optional(&mut *conn)
+                .await?
+        }
+        None => None,
+    };
+    let (subject, body) = crate::mail::receipt(
+        &merchant,
+        &name,
+        &crate::ai::money(amount, currency.code()),
+        crate::ist_today(),
+        intent_id,
+        external_ref,
+        number.as_deref(),
+    );
+    crate::mail::enqueue_once(
+        conn,
+        &format!("receipt:{attempt_id}"),
+        &email,
+        &subject,
+        &body,
+    )
+    .await?;
     Ok(())
 }
 

@@ -1984,6 +1984,8 @@ paths:
                   gst: {}
                   payout_approval_threshold_minor:
                     type: integer
+                  payment_receipts:
+                    type: boolean
                   risk: {}
                   webhook_events: {}
         4XX:
@@ -7031,6 +7033,8 @@ components:
           $ref: '#/components/schemas/GstProfile'
         risk:
           type: object
+        payment_receipts:
+          type: boolean
     GstProfile:
       type: object
       x-generated: true

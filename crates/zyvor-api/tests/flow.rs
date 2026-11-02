@@ -14543,3 +14543,83 @@ async fn a_lead_can_even_out_the_load_between_the_people_on_duty(pool: PgPool) {
         .fetch_one(&t.root).await.unwrap();
     assert_eq!(n.0, 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_captured_payment_emails_a_receipt_only_when_turned_on_and_only_once(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let with_email = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let no_email = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "No Mail" }),
+        )
+        .await;
+    let mails = || t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Receipt:%'");
+
+    // off by default: a payment queues nothing
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["payment_receipts"],
+        json!(false)
+    );
+    t.paid_razorpay(a, 125_050, json!({ "customer_id": with_email["id"] }))
+        .await;
+    assert_eq!(mails().await, 0);
+
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "payment_receipts": true }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["payment_receipts"],
+        json!(true)
+    );
+    // no customer, or a customer with no address: nothing to send to
+    t.paid_razorpay(a, 10_000, json!({})).await;
+    t.paid_razorpay(a, 10_000, json!({ "customer_id": no_email["id"] }))
+        .await;
+    assert_eq!(mails().await, 0);
+
+    let (iid, att, _) = t
+        .paid_razorpay(
+            a,
+            125_050,
+            json!({ "customer_id": with_email["id"], "external_ref": "FEE-7" }),
+        )
+        .await;
+    assert_eq!(mails().await, 1);
+    let (to, subject, body, key): (String, String, String, String) = sqlx::query_as(
+        "SELECT to_email, subject, body, dedupe_key FROM mail_queue WHERE subject LIKE 'Receipt:%'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert_eq!(key, format!("receipt:{att}"));
+    assert!(subject.contains("₹1250.50"), "{subject}");
+    assert!(
+        body.contains("Hello Asha Rao") && body.contains("FEE-7") && body.contains(&iid),
+        "{body}"
+    );
+
+    // the same capture arriving again (a repeated webhook) queues no second receipt
+    let again = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key) VALUES ('m_x', 'x@y.z', 's', 'b', $1)")
+        .bind(format!("receipt:{att}")).execute(&t.root).await;
+    assert!(again.is_err(), "the key is unique");
+    assert_eq!(mails().await, 1);
+}

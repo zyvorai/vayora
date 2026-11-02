@@ -651,6 +651,7 @@ GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "dunning": "Any",
     "gst": "Any",
     "payout_approval_threshold_minor": "int",
+    "payment_receipts": "bool",
     "risk": "Any",
     "webhook_events": "Any",
 })

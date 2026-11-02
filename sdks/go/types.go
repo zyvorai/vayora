@@ -667,6 +667,7 @@ type GetSettingsResponse struct {
 	Dunning                      any   `json:"dunning"`
 	Gst                          any   `json:"gst"`
 	PayoutApprovalThresholdMinor int64 `json:"payout_approval_threshold_minor"`
+	PaymentReceipts              bool  `json:"payment_receipts"`
 	Risk                         any   `json:"risk"`
 	WebhookEvents                any   `json:"webhook_events"`
 }
