@@ -1,3 +1,4 @@
+import { NewCustomer } from "@/components/BillingForms";
 import { SettingsForm } from "@/components/SettingsForm";
 import { updateCustomer } from "@/lib/actions";
 import { api } from "@/lib/zyvor";
@@ -8,11 +9,15 @@ export default async function Customers() {
   const { data } = await (await api()).customers.list();
   return (
     <>
-      <div className="head"><div><h1>Customers</h1><p className="lede">Fix a name, GSTIN or address here. Invoices already issued keep the GSTIN they were issued with; printed invoices and draft e-invoices read the address from this record.</p></div></div>
-      {data.length === 0 && <div className="card"><p className="muted" style={{ margin: 0 }}>No customers yet. Add one on the Billing page.</p></div>}
+      <div className="head"><div><h1>Customers</h1><p className="lede">Everyone you bill or collect from. Open one to fix a name, email, GSTIN or address. Invoices already issued keep the GSTIN they were issued with; printed invoices and draft e-invoices read the address from this record.</p></div></div>
+      <details className="card" style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Add a customer</summary>
+        <div style={{ marginTop: 14 }}><NewCustomer /></div>
+      </details>
+      {data.length === 0 && <div className="card"><p className="muted" style={{ margin: 0 }}>No customers yet. Add one above, then bill them under Billing or send them a payment link.</p></div>}
       {data.map((c) => (
         <details key={c.id} className="card" style={{ marginBottom: 12 }}>
-          <summary><strong>{c.name}</strong> <span className="muted">· {c.gstin ?? "no GSTIN"} · {[c.address1, c.location, c.pincode].filter(Boolean).join(", ") || "no address"}</span></summary>
+          <summary><strong>{c.name}</strong> <span className="muted">· {[c.email, c.phone, c.gstin, [c.address1, c.location, c.pincode].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "no contact details yet"}</span></summary>
           <div style={{ marginTop: 12 }}>
             <SettingsForm title="Edit customer" hint="Empty a box to clear it." action={updateCustomer}>
               <input type="hidden" name="id" value={c.id} />

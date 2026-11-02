@@ -44,6 +44,9 @@ export interface Refund {
   requested_by: string;
   approved_by: string | null;
   external_ref: string | null;
+  reason: string | null;
+  failure_reason: string | null;
+  created_at: string;
 }
 
 export interface ReconCase {
