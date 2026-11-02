@@ -3,9 +3,27 @@ import { Chip } from "@/components/Chip";
 import { assignCase, simulateBankCredit, simulateSettlement } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
+import { ZyvorError } from "@zyvor/node";
 
-export default async function Reconciliation() {
+// What "Explain in words" says when the model gave nothing usable or could not be asked.
+const EXPLAIN_FAILED: Record<string, string> = {
+  ai_not_configured: "The AI assistant is not turned on for this deployment.",
+  ai_quota_exceeded: "This month's AI allowance is used up.",
+};
+
+export default async function Reconciliation({ searchParams }: { searchParams: Promise<{ explain?: string }> }) {
+  const { explain } = await searchParams;
   const z = await api();
+  // asked for by a link, so the model is called only when someone clicks
+  let explained: { id: string; text: string | null; problem: string | null } | null = null;
+  if (explain) {
+    try {
+      const r = await z.cases.suggestions(explain, { ai: true });
+      explained = { id: explain, text: r.ai_summary, problem: null };
+    } catch (e) {
+      explained = { id: explain, text: null, problem: e instanceof ZyvorError ? (EXPLAIN_FAILED[e.code] ?? "Could not ask the assistant.") : "Could not ask the assistant." };
+    }
+  }
   const [cases, settlements, settings] = await Promise.all([z.cases.list({}), z.settlements.list(), z.settings.get()]);
   const open = cases.data.filter((c) => c.status !== "resolved");
   // a likeliest explanation for the first few open cases; failures just leave the row without a hint
@@ -27,6 +45,11 @@ export default async function Reconciliation() {
                 <td style={{ maxWidth: 420 }}>
                   {c.explanation}
                   {hints.get(c.id) && <div className="muted" style={{ marginTop: 4 }}>Likely: {hints.get(c.id)!.summary}{hints.get(c.id)!.next_steps[0] ? ` Next: ${hints.get(c.id)!.next_steps[0]}` : ""}</div>}
+                  {explained?.id === c.id ? (
+                    <div style={{ marginTop: 6 }}>
+                      {explained.text ? <><strong>In words:</strong> {explained.text} <span className="muted">(written by the AI assistant from the facts above; check before acting)</span></> : <span className="muted">{explained.problem ?? "The assistant's wording was not usable, so the summary above stands."}</span>}
+                    </div>
+                  ) : c.status !== "resolved" && <div style={{ marginTop: 4 }}><a href={`/reconciliation?explain=${encodeURIComponent(c.id)}`}>Explain in words</a></div>}
                 </td>
                 <td className="num">{c.actual_minor !== null && c.expected_minor !== null ? inr(c.actual_minor - c.expected_minor) : "—"}</td>
                 <td><Chip status={c.status} /></td><td>{c.assignee ?? <span className="muted">unassigned</span>}</td>
