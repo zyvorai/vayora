@@ -415,6 +415,8 @@ GetInvoicesResponseDataItem = TypedDict("GetInvoicesResponseDataItem", {
     "outstanding_minor": "int",
     "status": "str",
     "due_date": "Optional[str]",
+    "customer_id": "Optional[str]",
+    "customer_name": "Optional[str]",
 })
 
 GetMandatesByIdDebitsResponse = TypedDict("GetMandatesByIdDebitsResponse", {

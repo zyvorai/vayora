@@ -431,6 +431,8 @@ type GetInvoicesResponseDataItem struct {
 	OutstandingMinor int64   `json:"outstanding_minor"`
 	Status           string  `json:"status"`
 	DueDate          *string `json:"due_date"`
+	CustomerID       *string `json:"customer_id"`
+	CustomerName     *string `json:"customer_name"`
 }
 
 type GetMandatesByIdDebitsResponse struct {

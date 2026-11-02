@@ -27,7 +27,6 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
         <a className="btn small" href="/export/invoices">Export invoices CSV</a>
         <Act action={runBilling} label="Run billing now" primary />
       </div>
-      {testMode && <TestClock />}
       <div className="facts">
         <div className="card"><div className="k">Outstanding</div><div className="v">{inr(sum(unpaid))}</div><div className="n muted">{unpaid.length} open invoice{unpaid.length === 1 ? "" : "s"}</div></div>
         <div className="card"><div className="k">Overdue</div><div className="v" style={overdue.length ? { color: "var(--bad)" } : undefined}>{inr(sum(overdue))}</div><div className="n muted">{overdue.length ? `${overdue.length} past their due date` : "Nothing is overdue"}</div></div>
@@ -42,10 +41,10 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
       {tab === "invoices" && (
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Number</th><th>Due</th><th className="num">Amount</th><th className="num">Outstanding</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Number</th><th>Customer</th><th>Due</th><th className="num">Amount</th><th className="num">Outstanding</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {invoices.data.length === 0 && <tr><td colSpan={6} className="empty">No invoices yet.</td></tr>}
-              {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.due_date ?? "—"}{i.status === "open" && i.outstanding_minor > 0 && i.due_date && i.due_date < today && <> <span className="chip bad">overdue</span></>}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td><td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><a className="btn small" href={`/invoice/${i.id}`} target="_blank" rel="noreferrer">Print</a><a className="btn small" href={`/einvoice/${i.id}`} title="Draft e-invoice JSON for a GST invoice to a registered buyer; not submitted">E-invoice draft</a>{i.status === "open" && i.outstanding_minor === i.amount_minor && <Act action={voidInvoice} id={i.id} label="Void" />}</td></tr>)}
+              {invoices.data.length === 0 && <tr><td colSpan={7} className="empty">No invoices yet. Create one from “New customer, invoice or instalment plan” above.</td></tr>}
+              {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.customer_name ?? <span className="muted">—</span>}</td><td>{i.due_date ?? "—"}{i.status === "open" && i.outstanding_minor > 0 && i.due_date && i.due_date < today && <> <span className="chip bad">overdue</span></>}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td><td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><a className="btn small" href={`/invoice/${i.id}`} target="_blank" rel="noreferrer">Print</a><a className="btn small" href={`/einvoice/${i.id}`} title="Draft e-invoice JSON for a GST invoice to a registered buyer; not submitted">E-invoice draft</a>{i.status === "open" && i.outstanding_minor === i.amount_minor && <Act action={voidInvoice} id={i.id} label="Void" />}</td></tr>)}
             </tbody>
           </table>
         </div>
@@ -82,6 +81,13 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             </tbody>
           </table>
         </div>
+      )}
+      {testMode && (
+        <details style={{ marginTop: 28 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Test clock: run billing or reminders as of another day</summary>
+          <p className="muted">Only in test mode. Pick a day and run billing or reminders as if it were that day; nothing else in the business follows it.</p>
+          <TestClock />
+        </details>
       )}
     </>
   );

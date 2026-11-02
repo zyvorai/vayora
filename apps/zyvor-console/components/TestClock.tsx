@@ -7,8 +7,8 @@ export function TestClock() {
   const [state, run, pending] = useActionState(runAsOf, undefined);
   return (
     <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-      <span className="muted">Test mode: run as of</span>
-      <input type="date" name="day" required aria-label="Day to run as of" />
+      <span className="muted">Run as of</span>
+      <input type="date" name="day" required aria-label="Day to run as of" style={{ width: "11rem" }} />
       <button className="btn small" name="what" value="billing" disabled={pending}>{pending ? "…" : "Billing"}</button>
       <button className="btn small" name="what" value="reminders" disabled={pending}>{pending ? "…" : "Reminders"}</button>
       {state?.ok && <span className="muted" role="status">{state.ok}</span>}

@@ -10241,6 +10241,64 @@ async fn a_reviewer_opens_an_uploaded_document_only_for_a_business_that_asked_an
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn the_invoice_list_says_who_each_invoice_is_for(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao" }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "INV-C1", "amount_minor": 125_050, "customer_id": cust["id"] }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/invoices",
+        None,
+        json!({ "number": "INV-C2", "amount_minor": 5_000 }),
+    )
+    .await;
+    let list = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let row = |n: &str| {
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["number"] == n)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        (
+            row("INV-C1")["customer_id"].clone(),
+            row("INV-C1")["customer_name"].clone()
+        ),
+        (cust["id"].clone(), json!("Asha Rao"))
+    );
+    assert_eq!(
+        (
+            row("INV-C2")["customer_id"].clone(),
+            row("INV-C2")["customer_name"].clone()
+        ),
+        (Value::Null, Value::Null)
+    );
+    // another business sees neither the invoices nor the customer's name
+    let other = t.ok(&t.b, "GET", "/v1/invoices", None, Value::Null).await;
+    assert_eq!(other["data"], json!([]));
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
     let t = setup(pool).await;
     let (url, got) = smtp_sink().await;

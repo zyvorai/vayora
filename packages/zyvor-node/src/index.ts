@@ -265,7 +265,7 @@ export class Zyvor {
   };
 
   readonly invoices = {
-    list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
+    list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null; customer_id: string | null; customer_name: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
     retrieve: (id: string) => this.req<GetInvoicesByIdResponse>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
     /** Give `amountMinor`, or GST `lines` and the server computes tax and total (needs `gst.gstin` in settings). */
     create: (p: { number: string; amountMinor?: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string; lines?: GstLine[]; placeOfSupply?: string; buyerGstin?: string; reverseCharge?: boolean }) =>
