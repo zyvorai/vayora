@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Act } from "@/components/Act";
-import { Chip } from "@/components/Chip";
+import { Chip, statusLabel } from "@/components/Chip";
 import { SaveView } from "@/components/SaveView";
 import { deleteView, saveView } from "@/lib/actions";
 import { inr, istDateTime } from "@/lib/format";
@@ -37,7 +37,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
         <div><h1>Payments</h1><p className="lede">Every payment intent, with the reference of the thing it paid for.</p></div>
         <a className="btn small" href={`/export/payments${keep()}`}>Export CSV</a>
         <div className="seg" role="group" aria-label="Filter by status">
-          {FILTERS.map((f) => <Link key={f} href={`/payments${queryOf({ status: f || undefined, q: term, from, to })}`} aria-current={(status ?? "") === f}>{f ? f.replace(/_/g, " ") : "All"}</Link>)}
+          {FILTERS.map((f) => <Link key={f} href={`/payments${queryOf({ status: f || undefined, q: term, from, to })}`} aria-current={(status ?? "") === f}>{f ? statusLabel(f) : "All"}</Link>)}
         </div>
       </div>
       <form method="get" action="/payments" role="search" className="filterbar">
