@@ -315,12 +315,62 @@ pub async fn apply_refund_result(
             refresh_invoice_status(conn, &inv).await?;
         }
         tenant::emit(conn, tenant_id, "refund.processed", json!({ "refund_id": refund_id, "intent_id": intent_id, "attempt_id": attempt_id, "amount_minor": amount })).await?;
+        queue_refund_receipt(conn, tenant_id, refund_id, &intent_id, amount, currency).await?;
     } else {
         sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor - $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *conn).await?;
         tenant::emit(conn, tenant_id, "refund.failed", json!({ "refund_id": refund_id, "intent_id": intent_id, "amount_minor": amount, "reason": reason })).await?;
     }
     sqlx::query("UPDATE recon_cases SET status = 'resolved', resolution = 'resolved automatically', resolved_at = now() WHERE kind = 'unresolved_refund' AND subject_id = $1 AND status <> 'resolved'").bind(refund_id).execute(&mut *conn).await?;
     Ok(true)
+}
+
+/// With receipts turned on, email the payer that a refund went through: same switch and same rules as the payment
+/// receipt, once per refund.
+async fn queue_refund_receipt(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    refund_id: &str,
+    intent_id: &str,
+    amount: i64,
+    currency: Currency,
+) -> Result<(), ApiError> {
+    let on: bool =
+        sqlx::query_scalar("SELECT payment_receipts FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .unwrap_or(false);
+    if !on {
+        return Ok(());
+    }
+    let Some((merchant, name, email)) =
+        crate::payments::payer_contact(conn, tenant_id, intent_id).await?
+    else {
+        return Ok(());
+    };
+    let reference: Option<String> =
+        sqlx::query_scalar("SELECT external_ref FROM refunds WHERE id = $1")
+            .bind(refund_id)
+            .fetch_one(&mut *conn)
+            .await?;
+    let (subject, body) = crate::mail::refund_receipt(
+        &merchant,
+        &name,
+        &crate::ai::money(amount, currency.code()),
+        crate::ist_today(),
+        refund_id,
+        intent_id,
+        reference.as_deref(),
+    );
+    crate::mail::enqueue_once(
+        conn,
+        &format!("refund_receipt:{refund_id}"),
+        &email,
+        &subject,
+        &body,
+    )
+    .await?;
+    Ok(())
 }
 
 /// Ask the provider about a refund whose outcome we don't know.

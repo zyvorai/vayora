@@ -1110,6 +1110,33 @@ async fn on_captured(
     Ok(())
 }
 
+/// Who a payment's emails go to: the business name, the customer's name and a usable address. None when the
+/// intent has no customer, or the customer has no email address.
+pub(crate) async fn payer_contact(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    intent_id: &str,
+) -> Result<Option<(String, String, String)>, ApiError> {
+    let who: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT c.name, c.email FROM payment_intents p JOIN customers c ON c.id = p.customer_id WHERE p.id = $1",
+    )
+    .bind(intent_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((name, Some(email))) = who else {
+        return Ok(None);
+    };
+    if !email.contains('@') {
+        return Ok(None);
+    }
+    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .unwrap_or_else(|| "the business".into());
+    Ok(Some((merchant, name, email)))
+}
+
 /// With receipts turned on, email the payer a receipt: only when the intent's customer has an email address.
 #[allow(clippy::too_many_arguments)]
 async fn queue_receipt(
@@ -1131,23 +1158,9 @@ async fn queue_receipt(
     if !on {
         return Ok(());
     }
-    let who: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT c.name, c.email FROM payment_intents p JOIN customers c ON c.id = p.customer_id WHERE p.id = $1",
-    )
-    .bind(intent_id)
-    .fetch_optional(&mut *conn)
-    .await?;
-    let Some((name, Some(email))) = who else {
+    let Some((merchant, name, email)) = payer_contact(conn, tenant_id, intent_id).await? else {
         return Ok(());
     };
-    if !email.contains('@') {
-        return Ok(());
-    }
-    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
-        .bind(tenant_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .unwrap_or_else(|| "the business".into());
     let number: Option<String> = match invoice_id {
         Some(i) => {
             sqlx::query_scalar("SELECT number FROM invoices WHERE id = $1")
