@@ -38,6 +38,9 @@ pub struct NewLink {
     splits: Option<Vec<crate::splits::SplitIn>>,
     /// A fee the payer covers on top of the amount, in basis points (200 = 2%, at most 1000). Fixed-amount links only.
     convenience_fee_bp: Option<i32>,
+    /// Email the link's customer once, in the last 24 hours before `expires_at`, if the link is still unused up
+    /// and the invoice (if any) still owes money. Needs `customer_id` and `expires_at`.
+    remind_before_expiry: Option<bool>,
 }
 
 pub async fn create_link(
@@ -96,6 +99,14 @@ pub async fn create_link(
             "expires_at must be in the future",
         ));
     }
+    if b.remind_before_expiry.unwrap_or(false)
+        && (b.customer_id.is_none() || b.expires_at.is_none())
+    {
+        return Err(ApiError::invalid(
+            "invalid_link",
+            "remind_before_expiry needs both customer_id and expires_at",
+        ));
+    }
     if let (Some(sp), Some(total)) = (&b.splits, b.amount_minor) {
         crate::splits::validate(sp, total)?;
     }
@@ -145,11 +156,11 @@ pub async fn create_link(
         b.counter_id.as_deref(),
     )
     .await?;
-    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id, open_amount, min_amount_minor, max_amount_minor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)")
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id, open_amount, min_amount_minor, max_amount_minor, remind_before_expiry) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
         .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
         .bind(b.convenience_fee_bp.unwrap_or(0))
-        .bind(&branch).bind(&counter).bind(open).bind(b.min_amount_minor).bind(b.max_amount_minor)
+        .bind(&branch).bind(&counter).bind(open).bind(b.min_amount_minor).bind(b.max_amount_minor).bind(b.remind_before_expiry.unwrap_or(false))
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_foreign_key_violation() => ApiError::not_found("customer"),
@@ -307,6 +318,72 @@ pub async fn send_link(
         StatusCode::ACCEPTED,
         Json(json!({ "id": id, "queued": true })),
     ))
+}
+
+/// The worker's pass over one tenant: email the customer of every link that asked for it and expires within a
+/// day. Once per link (`expiry_reminded_at`, plus a unique mail key). Returns how many were queued.
+pub async fn remind_expiring(
+    conn: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    checkout_base: &str,
+) -> Result<usize, ApiError> {
+    #[allow(clippy::type_complexity)]
+    let due: Vec<(String, String, Option<String>, Option<i64>, String, DateTime<Utc>, String, String)> = sqlx::query_as(
+        "SELECT l.id, l.token, l.description, l.amount_minor, l.currency, l.expires_at, c.name, c.email
+           FROM payment_links l JOIN customers c ON c.id = l.customer_id
+          WHERE l.remind_before_expiry AND l.expiry_reminded_at IS NULL AND l.canceled_at IS NULL
+            AND l.expires_at > now() AND l.expires_at <= now() + interval '24 hours'
+            AND (l.max_uses IS NULL OR l.uses < l.max_uses)
+            AND (l.invoice_id IS NULL OR invoice_settled(l.invoice_id) < (SELECT amount_minor FROM invoices WHERE id = l.invoice_id))
+            AND c.email LIKE '%@%'
+          ORDER BY l.expires_at LIMIT 100",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    if due.is_empty() {
+        return Ok(0);
+    }
+    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .unwrap_or_else(|| "the business".into());
+    let ist = chrono::FixedOffset::east_opt(19_800).expect("IST");
+    let mut n = 0;
+    for (id, token, description, amount, currency, exp, name, email) in due {
+        let cur: Currency = currency.parse().map_err(|_| ApiError::internal())?;
+        let amount_text = amount.map(|a| crate::ai::money(a, cur.code()));
+        let (subject, body) = crate::mail::payment_link_expiring(
+            &merchant,
+            &name,
+            description.as_deref(),
+            amount_text.as_deref(),
+            &format!(
+                "{}/pay/link/{tenant_id}/{token}",
+                checkout_base.trim_end_matches('/')
+            ),
+            exp.with_timezone(&ist).date_naive(),
+        );
+        if crate::mail::enqueue_once(conn, &format!("link_expiry:{id}"), &email, &subject, &body)
+            .await?
+        {
+            n += 1;
+        }
+        sqlx::query("UPDATE payment_links SET expiry_reminded_at = now() WHERE id = $1")
+            .bind(&id)
+            .execute(&mut *conn)
+            .await?;
+        tenant::audit(
+            conn,
+            tenant_id,
+            "system:worker",
+            "payment_link.expiry_reminded",
+            Some(&id),
+            json!({}),
+        )
+        .await?;
+    }
+    Ok(n)
 }
 
 fn state(

@@ -7268,6 +7268,8 @@ components:
         convenience_fee_bp:
           type: integer
           format: int32
+        remind_before_expiry:
+          type: boolean
     CouponQuery:
       type: object
       x-generated: true

@@ -211,6 +211,34 @@ pub fn payment_link(
     (subject, lines.join("\n"))
 }
 
+/// The words of the one reminder a payment link sends before it expires.
+pub fn payment_link_expiring(
+    merchant: &str,
+    payer_name: &str,
+    description: Option<&str>,
+    amount: Option<&str>,
+    url: &str,
+    expires_on: chrono::NaiveDate,
+) -> (String, String) {
+    let subject = format!("Reminder: your payment link to {merchant} expires on {expires_on}");
+    let mut lines = vec![format!("Hello {payer_name},"), String::new()];
+    lines.push(match amount {
+        Some(a) => format!("{merchant} is still waiting for your payment of {a}."),
+        None => format!("{merchant} is still waiting for your payment."),
+    });
+    if let Some(d) = description {
+        lines.push(format!("For: {d}"));
+    }
+    lines.push(String::new());
+    lines.push(format!("Pay here: {url}"));
+    lines.push(format!(
+        "The link stops working after {expires_on}. This is the only reminder we will send."
+    ));
+    lines.push(String::new());
+    lines.push("Ignore this email if you have already paid. Only pay through the link above if you were expecting it from this business.".into());
+    (subject, lines.join("\n"))
+}
+
 /// Seconds to wait after the nth failed send: 30s, 1m, 2m ... capped at an hour.
 pub fn backoff_secs(attempts: i32) -> i64 {
     (30i64 << attempts.clamp(0, 7).min(7)).min(3600)
