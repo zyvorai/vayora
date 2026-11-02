@@ -56,7 +56,7 @@ API keys, customer contact data, the audit trail.
 
 - **Uploaded onboarding documents (certificates, PAN card, cancelled cheque)**: the file is limited to 5 MB and to
   PDF, PNG or JPEG by its first bytes (not its name); the bytes are stored encrypted with the master key, never in the
-  clear, and every download is audited, including a Zyvor reviewer's (written to the business's own trail as `reviewer:<name>`, and only for a business that has asked for review); an Aadhaar card or letter is refused before anything is stored. Reading a
+  clear, and every download is audited, including a Zyvor reviewer's (written to the business's own trail as `reviewer:<name>`, and only for the reviewer who holds that business's case); an Aadhaar card or letter is refused before anything is stored. Reading a
   file runs `pdftotext`, `pdftoppm` and `tesseract` on untrusted input, so each runs in its own empty private
   directory with an empty environment, a 40 second limit, a 3-page limit, a cap on what it may print, one OCR thread
   and an address-space limit (`ulimit -v`), and the pod mounts a small `emptyDir` at `/tmp` because the root

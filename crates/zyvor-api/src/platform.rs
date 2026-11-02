@@ -612,20 +612,27 @@ pub async fn list_reviews(
 
 /// `GET /v1/platform/reviews/{organisation_id}`
 /// `GET /v1/platform/reviews/{organisation_id}/uploads/{id}/file`: a reviewer opens a document the business uploaded.
-/// Only for a business that asked for review, and every opening is written to that business's own audit trail (as
+/// Only for the reviewer who holds that business's case, and every opening is written to that business's own audit trail (as
 /// `reviewer:<name>`), so the business can see who looked.
 pub async fn review_file(
     State(s): State<AppState>,
     p: PlatformAuth,
     Path((org, id)): Path<(String, String)>,
 ) -> Result<axum::response::Response, ApiError> {
-    let asked: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM live_access WHERE organisation_id = $1)")
+    // only the reviewer who holds the case may open its documents (and only a business that asked has a case)
+    let holder: Option<Option<String>> =
+        sqlx::query_scalar("SELECT assigned_to FROM live_access WHERE organisation_id = $1")
             .bind(&org)
-            .fetch_one(&s.pool)
+            .fetch_optional(&s.pool)
             .await?;
-    if !asked {
-        return Err(ApiError::not_found("review"));
+    match holder {
+        None => return Err(ApiError::not_found("review")),
+        Some(Some(h)) if h == p.id => {}
+        Some(_) => {
+            return Err(ApiError::forbidden(
+                "take this review first: a business's documents open only for the reviewer who holds its case",
+            ));
+        }
     }
     let tid = test_tenant_of(&s, &org).await?;
     let mut tx = tenant::begin(&s.pool, &tid).await?;
