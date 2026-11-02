@@ -1541,6 +1541,11 @@ type PostSubscriptionsResponse struct {
 	NextBillDate any    `json:"next_bill_date"`
 }
 
+type PostTestDataResetResponse struct {
+	Ok      bool `json:"ok"`
+	Removed any  `json:"removed"`
+}
+
 type PostUsersResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`

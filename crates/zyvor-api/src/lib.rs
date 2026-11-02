@@ -49,6 +49,7 @@ pub mod state_machine;
 pub mod suggestions;
 pub mod telemetry;
 pub mod tenant;
+pub mod testdata;
 pub mod timeline;
 pub mod webhooks_in;
 pub mod worker;
@@ -440,6 +441,7 @@ pub fn app(state: AppState) -> Router {
             post(reminders::create_draft),
         )
         .route("/settings", get(get_settings).post(put_settings))
+        .route("/test_data/reset", post(testdata::reset))
         .route("/audit_events", get(audit_log))
         // console users (the console signs people in through these)
         .route(

@@ -1521,6 +1521,11 @@ export interface PostSubscriptionsResponse {
   next_bill_date: unknown;
 }
 
+export interface PostTestDataResetResponse {
+  ok: boolean;
+  removed: unknown;
+}
+
 export interface PostUsersResponse {
   id: string;
   email: string;

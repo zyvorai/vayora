@@ -2399,6 +2399,30 @@ paths:
                     type: string
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/test_data/reset:
+    post:
+      summary: Clear this test environment's payments and money records, keeping its setup (admin; never live)
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  removed: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body'
   /v1/signup/resend:
     post:
       summary: 'Public: email a fresh verification link (always answers the same)'
@@ -5846,6 +5870,14 @@ components:
           type:
           - string
           - 'null'
+    Body:
+      type: object
+      x-generated: true
+      properties:
+        confirm:
+          type: string
+      required:
+      - confirm
     SimPayPay:
       type: object
       x-generated: true

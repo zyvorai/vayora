@@ -304,6 +304,11 @@ export class Zyvor {
     exposure: (p: { asOf?: string } = {}) => this.req<{ as_of: string; rate_date: string | null; outstanding_usd_minor: number; complete: boolean; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null; data: Array<{ invoice_id: string; number: string; outstanding_usd_minor: number; raised_on: string; booked_inr_minor: number | null; current_inr_minor: number | null; unrealised_inr_minor: number | null }> }>("GET", `/v1/fx/exposure${this.qs({ as_of: p.asOf })}`),
   };
 
+  readonly testData = {
+    /** Test environments only: clears payments, invoices, customers and the ledger; keeps settings, keys, providers, branches, vendors, plans, coupons. */
+    reset: () => this.req<{ ok: boolean; removed: Record<string, number> }>("POST", "/v1/test_data/reset", { confirm: "reset test data" }),
+  };
+
   readonly settings = {
     get: () => this.req<Settings>("GET", "/v1/settings"),
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),

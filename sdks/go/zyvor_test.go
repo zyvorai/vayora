@@ -257,6 +257,7 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"ListSettlements", func() (map[string]any, error) { return c.ListSettlements() }, "GET", "/v1/settlements", nil},
 		{"ListCases", func() (map[string]any, error) { return c.ListCases(map[string]any{"status": "x1", "kind": "x1"}) }, "GET", "/v1/recon/cases?kind=x1&status=x1", nil},
 		{"CaseSuggestions", func() (map[string]any, error) { return c.CaseSuggestions("cas_1") }, "GET", "/v1/recon/cases/cas_1/suggestions", nil},
+		{"ResetTestData", func() (map[string]any, error) { return c.ResetTestData() }, "POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"}},
 		{"AssignCase", func() (map[string]any, error) { return c.AssignCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/assign", map[string]any{"assignee": "x1"}},
 		{"ResolveCase", func() (map[string]any, error) { return c.ResolveCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/resolve", map[string]any{"resolution": "x1"}},
 		{"ListPlans", func() (map[string]any, error) { return c.ListPlans() }, "GET", "/v1/plans", nil},
@@ -374,8 +375,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 89 {
-		t.Fatalf("expected 89 rows, got %d", len(rows))
+	if len(rows) != 90 {
+		t.Fatalf("expected 90 rows, got %d", len(rows))
 	}
 }
 

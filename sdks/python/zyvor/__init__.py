@@ -608,6 +608,10 @@ class Zyvor:
         """Queue a webhook event again."""
         return self._req("POST", f"/v1/outbox/{event_id}/replay", {})
 
+    def reset_test_data(self) -> types.PostTestDataResetResponse:
+        """Test environments only: clear payments, invoices, customers and the ledger; keep settings, keys, providers and other setup."""
+        return self._req("POST", "/v1/test_data/reset", {"confirm": "reset test data"})
+
     def update_settings(self, patch: dict) -> types.PostSettingsResponse:
         """Change organisation settings; send only the fields to change (see GET /v1/settings for the shape)."""
         return self._req("POST", "/v1/settings", patch)

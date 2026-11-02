@@ -444,6 +444,10 @@ const on = (f: FormData, k: string) => f.get(k) === "on";
 
 export const saveCollections = async (_: FormState, f: FormData) =>
   run(["/settings"], (z) => z.settings.update({ dunning: { enabled: on(f, "enabled"), requires_approval: on(f, "requires_approval"), channel: String(f.get("channel") ?? "email") as "email", min_days_overdue: Number(f.get("min_days") ?? 1), repeat_after_days: Number(f.get("repeat_days") ?? 7) } }), "admin");
+export const resetTestData = async (_: FormState, f: FormData) => {
+  if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
+  return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
+};
 export const saveReceipts = async (_: FormState, f: FormData) => run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts") }), "admin");
 export const saveApprovals = async (_: FormState, f: FormData) => {
   const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];

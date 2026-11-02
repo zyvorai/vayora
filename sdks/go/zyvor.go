@@ -1466,6 +1466,11 @@ func (c *Client) RefundAnomalies() (map[string]any, error) {
 	return c.call("GET", path, nil)
 }
 
+// ResetTestData clears a test environment's payments, invoices, customers and ledger, keeping its setup. Refused in live.
+func (c *Client) ResetTestData() (map[string]any, error) {
+	return c.call("POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"})
+}
+
 // UpdateSettings changes organisation settings; send only the fields to change (see GetSettings for the shape).
 func (c *Client) UpdateSettings(patch map[string]any) (map[string]any, error) {
 	return c.call("POST", "/v1/settings", patch)

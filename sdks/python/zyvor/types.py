@@ -1525,6 +1525,11 @@ PostSubscriptionsResponse = TypedDict("PostSubscriptionsResponse", {
     "next_bill_date": "Any",
 })
 
+PostTestDataResetResponse = TypedDict("PostTestDataResetResponse", {
+    "ok": "bool",
+    "removed": "Any",
+})
+
 PostUsersResponse = TypedDict("PostUsersResponse", {
     "id": "str",
     "email": "str",

@@ -132,7 +132,7 @@ Built: every new test tenant gets the simulator; a Sandbox page creates payments
 - **Test clock, in part:** `POST /v1/billing/run` and `POST /v1/collections/dunning/run` accept `as_of` (a date) in test mode, so a test
   organisation can see the next period invoiced or the reminders due on a later day (Node, Python and Go). Nothing else
   moves with it: the worker, mandates, due dates on new invoices and the console still use today. Still open: a real clock the
-  whole test organisation follows; and a "reset test data" button (delete everything for a test tenant, never live).
+  whole test organisation follows; and ~~a "reset test data" button~~ **Done:** `POST /v1/test_data/reset` (admin, test environments only, body `{"confirm":"reset test data"}`; Node `testData.reset()`, Python `reset_test_data()`, Go `ResetTestData()`; a Test data card on the console Settings page) clears payments, invoices, refunds, customers, settlements, mandates, payouts, cash entries and the ledger for that tenant and keeps settings, provider accounts, keys, people, branches, counters, vendors, plans and coupons (coupon use counts go back to 0). The audit trail is never cleared and records the reset with row counts. Checked in the local sandbox in a browser: a wrong confirmation is refused with the form kept, the right one clears the two payments, the invoice, the customer and the ledger, Payments then shows its empty state, and the provider accounts, keys and settings are still there.
 - ~~A payment's timeline can show "Payment captured" after a later refund.~~ **Done:** a capture is dated by its ledger
   posting (`crates/zyvor-api/src/timeline.rs`); the test fails without the fix.
 

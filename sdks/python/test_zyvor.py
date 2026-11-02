@@ -223,6 +223,7 @@ class Tests(unittest.TestCase):
             ("z.case_suggestions('cas_1')", 'GET', '/v1/recon/cases/cas_1/suggestions', None),
             ("z.assign_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/assign', {'assignee': 'x1'}),
             ("z.resolve_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/resolve', {'resolution': 'x1'}),
+            ("z.reset_test_data()", 'POST', '/v1/test_data/reset', {'confirm': 'reset test data'}),
             ('z.list_plans()', 'GET', '/v1/plans', None),
             ('z.list_subscriptions()', 'GET', '/v1/subscriptions', None),
             ("z.pause_subscription('sub_1')", 'POST', '/v1/subscriptions/sub_1/pause', {}),
@@ -291,7 +292,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 74)
+        self.assertEqual(len(rows), 75)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []
