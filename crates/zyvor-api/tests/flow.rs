@@ -5984,6 +5984,104 @@ async fn a_payment_link_can_be_emailed_to_its_customer_once_a_day_and_only_while
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn a_link_that_asked_for_it_reminds_its_customer_once_in_the_last_day_before_it_expires(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let asha = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let soon = (chrono::Utc::now() + chrono::Duration::hours(12)).to_rfc3339();
+    let later = (chrono::Utc::now() + chrono::Duration::days(3)).to_rfc3339();
+    let mk = |expires: &str, remind: bool| {
+        t.ok(
+            a,
+            "POST",
+            "/v1/payment_links",
+            None,
+            json!({
+                "amount_minor": 125_050, "description": "Term 2 fee", "customer_id": asha["id"],
+                "expires_at": expires, "remind_before_expiry": remind,
+            }),
+        )
+    };
+    // the reminder needs somebody to send to and a time to count back from
+    for bad in [
+        json!({ "amount_minor": 100, "remind_before_expiry": true, "expires_at": soon }),
+        json!({ "amount_minor": 100, "remind_before_expiry": true, "customer_id": asha["id"] }),
+    ] {
+        assert_eq!(
+            t.call(a, "POST", "/v1/payment_links", None, bad)
+                .await
+                .0
+                .as_u16(),
+            422
+        );
+    }
+    let _due = mk(&soon, true).await;
+    let _far = mk(&later, true).await;
+    let _not_asked = mk(&soon, false).await;
+    let canceled = mk(&soon, true).await;
+    t.ok(
+        a,
+        "POST",
+        &format!(
+            "/v1/payment_links/{}/cancel",
+            canceled["id"].as_str().unwrap()
+        ),
+        None,
+        json!({}),
+    )
+    .await;
+
+    let mails = || {
+        t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Reminder: your payment link%'")
+    };
+    let client = zyvor_api::outbox::http_client();
+    // without a public checkout address there is no link to put in the email
+    zyvor_api::worker::run_cycle(&t.state, &client)
+        .await
+        .unwrap();
+    assert_eq!(mails().await, 0);
+
+    let mut st = t.state.clone();
+    st.checkout_public_url = Some("https://pay.example.com".into());
+    zyvor_api::worker::run_cycle(&st, &client).await.unwrap();
+    assert_eq!(
+        mails().await,
+        1,
+        "only the link that asked, is active and expires within a day"
+    );
+    let (to, body): (String, String) = sqlx::query_as(
+        "SELECT to_email, body FROM mail_queue WHERE subject LIKE 'Reminder: your payment link%'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert!(
+        body.contains("Term 2 fee") && body.contains("https://pay.example.com/pay/link/"),
+        "{body}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'payment_link.expiry_reminded'")
+            .await,
+        1
+    );
+
+    // another cycle sends nothing more
+    zyvor_api::worker::run_cycle(&st, &client).await.unwrap();
+    assert_eq!(mails().await, 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn risk_rules_stop_payments_the_merchant_said_to_stop_and_leave_a_trail(pool: PgPool) {
     let t = setup(pool).await;
     let (a, b) = (&t.a, &t.b);

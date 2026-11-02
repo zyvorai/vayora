@@ -97,6 +97,18 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3b2. the one reminder a payment link asked for before it expires (not for a business whose live mode was taken away)
+        if let Some(base) = &s.checkout_public_url
+            && !crate::platform::live_frozen(&s.pool, &tid).await?
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::payment_links::remind_expiring(&mut tx, &tid, base).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "payment link reminders failed")
+                }
+            }
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
