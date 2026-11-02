@@ -1,3 +1,4 @@
+import { methodLabel, providerLabel } from "@/lib/labels";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Chip } from "@/components/Chip";
@@ -33,7 +34,7 @@ export default async function Payment({ params }: { params: Promise<{ id: string
       <div className="facts">
         <div className="card"><div className="k">Amount</div><div className="v">{inr(p.intent.amount_minor)}</div></div>
         <div className="card"><div className="k">Reference</div><div className="v">{p.intent.external_ref ?? "—"}</div></div>
-        <div className="card"><div className="k">Paid with</div><div className="v">{paid ? `${paid.method.toUpperCase()} · ${paid.provider}` : "—"}</div></div>
+        <div className="card"><div className="k">Paid with</div><div className="v">{paid ? `${methodLabel(paid.method)} · ${providerLabel(paid.provider)}` : "—"}</div></div>
         <div className="card"><div className="k">Refunded</div><div className="v">{paid ? inr(paid.refunded_minor) : "—"}</div></div>
       </div>
       <div className="card" style={{ marginBottom: 24 }}><strong>Where it stands</strong><p style={{ margin: "6px 0 0" }}>{t.standing}</p></div>
@@ -41,7 +42,7 @@ export default async function Payment({ params }: { params: Promise<{ id: string
         <h2>Attempts</h2>
         <div className="tablewrap" style={{ marginBottom: 24 }}><table>
           <thead><tr><th>Provider</th><th>Method</th><th className="num">Amount</th><th>Status</th><th>Why it failed</th><th /></tr></thead>
-          <tbody>{p.attempts.map((a) => <tr key={a.id}><td>{a.provider}</td><td>{a.method}</td><td className="num">{inr(a.amount_minor)}</td><td><Chip status={a.status} /></td><td className="muted">{a.failure_reason ?? "—"}</td><td>{testMode && a.provider === "sim" && a.status === "pending" && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "captured" }} label="Provider says paid" showOk /><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "failed" }} label="…failed" showOk /></span>}</td></tr>)}</tbody>
+          <tbody>{p.attempts.map((a) => <tr key={a.id}><td>{providerLabel(a.provider)}</td><td>{methodLabel(a.method)}</td><td className="num">{inr(a.amount_minor)}</td><td><Chip status={a.status} /></td><td className="muted">{a.failure_reason ?? "—"}</td><td>{testMode && a.provider === "sim" && a.status === "pending" && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "captured" }} label="Provider says paid" showOk /><Act action={simulateProviderUpdate} id={a.id} extra={{ outcome: "failed" }} label="…failed" showOk /></span>}</td></tr>)}</tbody>
         </table></div>
       </>)}
       <h2>Timeline</h2>

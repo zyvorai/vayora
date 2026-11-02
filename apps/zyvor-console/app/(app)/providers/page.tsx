@@ -1,10 +1,10 @@
+import { methodLabel, providerLabel } from "@/lib/labels";
 import { Chip } from "@/components/Chip";
 import { ProviderControls } from "@/components/ProviderControls";
 import { ProviderForm } from "@/components/ProviderForm";
 import { requireRole } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
-const LABEL: Record<string, string> = { razorpay: "Razorpay", cashfree: "Cashfree", sim: "Simulator", custom: "Your own gateway" };
 
 export default async function Providers() {
   await requireRole("admin");
@@ -22,8 +22,8 @@ export default async function Providers() {
           {accounts.data.length === 0 && <tr><td colSpan={5} className="empty">No provider connected yet.</td></tr>}
           {accounts.data.map((a) => (
             <tr key={a.id}>
-              <td>{LABEL[a.provider] ?? a.provider}</td>
-              <td className="muted">{(a.capabilities?.methods ?? []).join(", ") || "—"}</td>
+              <td>{providerLabel(a.provider)}</td>
+              <td className="muted">{(a.capabilities?.methods ?? []).map(methodLabel).join(", ") || "—"}</td>
               <td><Chip status={a.enabled ? "active" : "paused"} /></td>
               <td className="mono muted" style={{ overflowWrap: "anywhere" }}>{a.base_url ?? "provider default"}</td>
               <td>{a.provider === "sim" ? <span className="muted">built in</span> : <ProviderControls provider={a.provider} enabled={a.enabled} />}</td>
@@ -36,7 +36,7 @@ export default async function Providers() {
         <div className="card" style={{ display: "grid", gap: 10 }}>
           {onLocalhost && <p className="note bad" role="alert" style={{ margin: 0 }}>The providers cannot reach <code>localhost</code> or an internal address. Set <code>ZYVOR_PUBLIC_API_URL</code> on the console to the public address of the API, or use a tunnel while testing, then paste the address below into the provider&apos;s dashboard.</p>}
           {accounts.data.filter((a) => a.provider !== "sim").map((a) => (
-            <div key={a.id}><strong>{LABEL[a.provider] ?? a.provider}</strong><div className="mono" style={{ overflowWrap: "anywhere" }}>{(publicBase || "https://<your-api-address>") + a.webhook_url}</div></div>
+            <div key={a.id}><strong>{providerLabel(a.provider)}</strong><div className="mono" style={{ overflowWrap: "anywhere" }}>{(publicBase || "https://<your-api-address>") + a.webhook_url}</div></div>
           ))}
           <p className="muted" style={{ margin: 0 }}>Enter the same webhook secret you saved above. Without webhooks a payment can still be found by polling, but refunds and settlement updates arrive late.</p>
         </div>
