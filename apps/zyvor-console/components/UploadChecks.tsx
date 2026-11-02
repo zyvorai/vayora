@@ -24,6 +24,7 @@ export function UploadChecks({ u }: { u: Pick<OnboardingUpload, "read_method" | 
       <div className="muted" style={{ fontSize: ".8125rem" }}>
         {u.read_method === "none" ? <span className="chip warn">{HOW.none}: a person will look at it</span> : HOW[u.read_method]}
       </div>
+      {u.facts.ocr_corrected && <div className="muted" style={{ fontSize: ".8125rem" }}>A character was misread by the scan and corrected by its position; confirm the numbers on the file.</div>}
       <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 0", display: "grid", gap: 4 }}>
         {u.checks.map((c) => {
           const [tone, word] = WORDS[c.result] ?? ["", c.result];
