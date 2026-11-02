@@ -201,8 +201,8 @@ tbody tr { transition: background .15s; }
 @keyframes pop { from { opacity: 0; transform: scale(.96) translateY(-6px); } }
 .pal input { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; min-height: 58px; font-size: 1.125rem; padding: 0 22px; outline: none; }
 .pal ul { list-style: none; margin: 0; padding: 8px; max-height: 340px; overflow: auto; }
-.pal li button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px; border-radius: 12px; cursor: pointer; }
-.pal li button[aria-selected="true"] { background: var(--accent); color: #fff; }
+.pal li[role="option"] { box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px; border-radius: 12px; cursor: pointer; }
+.pal li[role="option"][aria-selected="true"] { background: var(--accent); color: #fff; }
 .pal li small { margin-left: auto; opacity: .7; }
 .pal .none { padding: 22px; text-align: center; color: var(--muted); }
 
