@@ -320,3 +320,6 @@ main:focus { outline: none; }
 .skip { position: absolute; left: 12px; top: -60px; z-index: 100; padding: 10px 16px; border-radius: 980px; background: var(--accent-text); color: #fff; font-weight: 600; text-decoration: none; }
 .skip:focus { top: 12px; }
 :root[data-theme="dark"] .skip { color: #000; }
+
+/* hint text in empty fields is the muted text colour (the browser's default grey was about 4:1) */
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
