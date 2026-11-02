@@ -523,7 +523,16 @@ export const createPlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (!["day", "week", "month", "year"].includes(unit)) return { error: "Choose how often it is billed." };
   const count = Number(f.get("every") ?? 1);
   if (!Number.isInteger(count) || count < 1 || count > 365) return { error: "Every how many periods? Enter a whole number from 1 to 365." };
-  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count }));
+  const perUnitText = String(f.get("per_unit") ?? "").trim();
+  const perUnit = perUnitText ? money(f, "per_unit") : 0;
+  if (!Number.isFinite(perUnit) || perUnit < 0) return { error: "Enter the usage price as an amount, or leave it empty." };
+  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined }));
+};
+export const recordUsage = async (_: FormState, f: FormData): Promise<FormState> => {
+  const quantity = Number(f.get("quantity") ?? 0);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Enter the units used as a whole number, 1 or more." };
+  const r = await run(["/billing"], (z) => z.billing.recordUsage(id(f), { quantity, reference: String(f.get("ref") ?? "") || undefined, note: String(f.get("note") ?? "").trim() || undefined }));
+  return r?.error ? r : { ok: "Recorded. It is added to this customer's next invoice." };
 };
 export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> => {
   const price = money(f, "price");
