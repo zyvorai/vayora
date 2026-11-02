@@ -34,6 +34,11 @@ export interface DebitRow {
   created_at: string;
 }
 
+export interface DeleteOnboardingUploadsByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
 export interface DeletePlatformRotaDaysOffByIdResponse {
   id: string;
   deleted: boolean;
@@ -441,6 +446,8 @@ export interface GetOnboardingResponse {
   status: string;
   profile: GetOnboardingResponseProfileItem[];
   documents: GetOnboardingResponseDocumentsItem[];
+  uploads: unknown;
+  document_reader_available: unknown;
   bank_accounts: GetOnboardingResponseBankAccountsItem[];
 }
 
@@ -475,6 +482,11 @@ export interface GetOnboardingResponseProfileItem {
   submitted_by: unknown;
   reviewed_by: unknown;
   review_note: unknown;
+}
+
+export interface GetOnboardingUploadsResponse {
+  data: unknown;
+  reader_available: unknown;
 }
 
 export interface GetOutboxResponse {
@@ -1252,6 +1264,19 @@ export interface PostOnboardingSubmitResponse {
   status: string;
   automatic: boolean;
   reasons: unknown;
+}
+
+export interface PostOnboardingUploadsResponse {
+  id: string;
+  kind: string;
+  filename: unknown;
+  content_type: unknown;
+  size_bytes: unknown;
+  read_method: unknown;
+  facts: unknown;
+  checks: unknown;
+  uploaded_by: unknown;
+  created_at: string | null;
 }
 
 export interface PostOutboxByIdReplayResponse {

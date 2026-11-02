@@ -1,6 +1,6 @@
-//! Merchant onboarding: a profile, document references and bank accounts that a different person
+//! Merchant onboarding: a profile, documents (linked, or uploaded and read: see `uploads`) and bank accounts that a different person
 //! reviews before the merchant is approved. Zyvor records the decision; it does not perform KYC.
-//! Only references and last-four digits are kept. A tenant with no profile is unaffected; once a
+//! Of the numbers entered, only the last four digits are kept; an uploaded file is kept encrypted. A tenant with no profile is unaffected; once a
 //! profile exists, payouts wait for approval.
 
 use axum::{
@@ -81,7 +81,7 @@ const BUSINESS_TYPES: [&str; 6] = [
     "trust_or_society",
     "other",
 ];
-const DOC_KINDS: [&str; 6] = [
+pub(crate) const DOC_KINDS: [&str; 6] = [
     "pan",
     "gst_certificate",
     "incorporation",
@@ -589,6 +589,8 @@ pub async fn get_onboarding(
         "status": p.as_ref().map_or("not_started", |p| p.5.as_str()),
         "profile": p.as_ref().map(|p| json!({ "legal_name": p.0, "business_type": p.1, "pan": format!("XXXXXX{}", &p.2[..]), "gstin": p.3, "address": p.4, "submitted_by": p.6, "reviewed_by": p.7, "review_note": p.8 })),
         "documents": docs.into_iter().map(|d| json!({ "id": d.0, "kind": d.1, "reference": d.2, "status": d.3 })).collect::<Vec<_>>(),
+        "uploads": crate::uploads::summaries(&mut tx).await?,
+        "document_reader_available": s.doc_reader.available(),
         "bank_accounts": banks.into_iter().map(|b| json!({ "id": b.0, "holder_name": b.1, "ifsc": b.2, "account_last4": b.3, "verified": b.4 })).collect::<Vec<_>>(),
     })))
 }
@@ -606,10 +608,12 @@ pub async fn submit(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
             format!("onboarding is {st}"),
         ));
     }
-    let docs: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM onboarding_documents WHERE kind = 'pan'")
-            .fetch_one(&mut *tx)
-            .await?;
+    // a PAN document, linked or uploaded
+    let docs: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM onboarding_documents WHERE kind = 'pan') + (SELECT count(*) FROM onboarding_uploads WHERE kind = 'pan')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     let banks: i64 = sqlx::query_scalar("SELECT count(*) FROM merchant_bank_accounts")
         .fetch_one(&mut *tx)
         .await?;
@@ -644,6 +648,17 @@ pub async fn submit(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
         Some(kyc::decide(pick("pan"), pick("gstin"), &banks, &bt))
     } else {
         None
+    };
+    // what the uploaded documents say can only add reasons for a person to look: it never approves anybody
+    let flags = crate::uploads::review_reasons(&mut tx).await?;
+    let decision = match decision {
+        Some(kyc::Decision::Approve) if !flags.is_empty() => Some(kyc::Decision::Review(flags)),
+        Some(kyc::Decision::Review(mut r)) => {
+            r.extend(flags);
+            Some(kyc::Decision::Review(r))
+        }
+        None if !flags.is_empty() => Some(kyc::Decision::Review(flags)),
+        d => d,
     };
     if let Some(kyc::Decision::Approve) = decision {
         sqlx::query("UPDATE merchant_profiles SET status = 'approved', submitted_by = $1, submitted_at = now(), reviewed_by = 'system:auto', reviewed_at = now(), review_note = 'Approved automatically: every identity and bank check passed', review_reasons = '{}'")

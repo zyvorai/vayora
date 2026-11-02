@@ -19,6 +19,8 @@ pub mod counters;
 pub mod coupons;
 pub mod crypto;
 pub mod disputes;
+pub mod docfacts;
+pub mod docread;
 pub mod error;
 pub mod events;
 pub mod fx;
@@ -52,6 +54,7 @@ pub mod telemetry;
 pub mod tenant;
 pub mod testdata;
 pub mod timeline;
+pub mod uploads;
 pub mod webhooks_in;
 pub mod worker;
 
@@ -97,6 +100,8 @@ pub struct AppState {
     pub console_url: String,
     /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
     pub sim_payer: bool,
+    /// Reads uploaded onboarding documents into text (`docread`); off unless the binary turns it on.
+    pub doc_reader: docread::DocReader,
     /// The highest per-debit limit a mandate may be created with, in minor units (`ZYVOR_MANDATE_MAX_MINOR`).
     /// The default is the strict reading of the no-extra-authentication limit; check it against the current
     /// NPCI circular and your provider before any live use.
@@ -145,6 +150,7 @@ impl AppState {
             mailer: mail::Mailer::Log,
             console_url: "http://localhost:3000".to_string(),
             sim_payer: false,
+            doc_reader: docread::DocReader::Off,
             mandate_max_minor: 1_500_000,
             mandate_notice_hours: 24,
             review_sla_hours: 24,
@@ -612,6 +618,17 @@ pub fn app(state: AppState) -> Router {
             post(onboarding::request_profile_change),
         )
         .route("/onboarding/documents", post(onboarding::add_document))
+        .route(
+            "/onboarding/uploads",
+            get(uploads::list)
+                .post(uploads::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
+            "/onboarding/uploads/{id}",
+            axum::routing::delete(uploads::delete),
+        )
+        .route("/onboarding/uploads/{id}/file", get(uploads::file))
         .route(
             "/onboarding/bank_accounts",
             post(onboarding::add_bank_account),

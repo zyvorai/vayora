@@ -360,6 +360,11 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		}, "GET", "/v1/mandates?customer_id=x1&status=x1", nil},
 		{"ListMandateDebits", func() (map[string]any, error) { return c.ListMandateDebits("man_1") }, "GET", "/v1/mandates/man_1/debits", nil},
 		{"SendPaymentLink", func() (map[string]any, error) { return c.SendPaymentLink("plk_1") }, "POST", "/v1/payment_links/plk_1/send", map[string]any{}},
+		{"ListOnboardingUploads", func() (map[string]any, error) { return c.ListOnboardingUploads() }, "GET", "/v1/onboarding/uploads", nil},
+		{"UploadOnboardingDocument", func() (map[string]any, error) {
+			return c.UploadOnboardingDocument("gst_certificate", "gst.pdf", []byte("%PDF-1.4 x"))
+		}, "POST", "/v1/onboarding/uploads", map[string]any{"kind": "gst_certificate", "filename": "gst.pdf", "data_base64": "JVBERi0xLjQgeA=="}},
+		{"DeleteOnboardingUpload", func() (map[string]any, error) { return c.DeleteOnboardingUpload("oup_1") }, "DELETE", "/v1/onboarding/uploads/oup_1", map[string]any{}},
 		{"ListPaymentLinks", func() (map[string]any, error) { return c.ListPaymentLinks() }, "GET", "/v1/payment_links", nil},
 		{"Remind", func() (map[string]any, error) { return c.Remind("inv_1", "x1", map[string]any{"message": "x1"}) }, "POST", "/v1/invoices/inv_1/reminders", map[string]any{"channel": "x1", "message": "x1"}},
 		{"ReminderDrafts", func() (map[string]any, error) { return c.ReminderDrafts(map[string]any{"status": "x1"}) }, "GET", "/v1/collections/drafts?status=x1", nil},
@@ -382,8 +387,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 95 {
-		t.Fatalf("expected 95 rows, got %d", len(rows))
+	if len(rows) != 98 {
+		t.Fatalf("expected 98 rows, got %d", len(rows))
 	}
 }
 
@@ -442,5 +447,20 @@ func TestCreatePaymentLinkForSendsTheCustomerExpiryAndReminder(t *testing.T) {
 	_, _ = c.CreatePaymentLink(5000, "", "", 0)
 	if _, has := body["customer_id"]; has || body["remind_before_expiry"] != nil {
 		t.Fatalf("plain call body %v", body)
+	}
+}
+
+func TestDownloadOnboardingUploadReturnsTheFileBytesNotJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/onboarding/uploads/oup_1/file" {
+			t.Errorf("path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("%PDF-1.4 not json"))
+	}))
+	defer srv.Close()
+	b, err := New("k", srv.URL).DownloadOnboardingUpload("oup_1")
+	if err != nil || string(b) != "%PDF-1.4 not json" {
+		t.Fatalf("got %q, %v", b, err)
 	}
 }

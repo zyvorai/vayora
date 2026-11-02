@@ -5207,6 +5207,8 @@ paths:
                         reference: {}
                         status:
                           type: string
+                  uploads: {}
+                  document_reader_available: {}
                   bank_accounts:
                     type: array
                     items:
@@ -5298,6 +5300,104 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/DocIn'
+  /v1/onboarding/uploads:
+    get:
+      summary: List uploaded documents, what was read from each and how it compares with the profile
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+                  reader_available: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Upload a document file (PDF, PNG or JPEG, up to 5 MB); stored encrypted, read, and compared with the profile
+      tags:
+      - onboarding
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  filename: {}
+                  content_type: {}
+                  size_bytes: {}
+                  read_method: {}
+                  facts: {}
+                  checks: {}
+                  uploaded_by: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadIn'
+  /v1/onboarding/uploads/{id}:
+    delete:
+      summary: Delete an uploaded document (only while the profile is a draft or was sent back)
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/onboarding/uploads/{id}/file:
+    get:
+      summary: Download an uploaded document
+      tags:
+      - onboarding
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/onboarding/bank_accounts:
     post:
       summary: Add a bank account (only the last four digits are kept)
@@ -6675,6 +6775,20 @@ components:
           type:
           - string
           - 'null'
+    UploadIn:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: string
+        filename:
+          type: string
+        data_base64:
+          type: string
+      required:
+      - kind
+      - filename
+      - data_base64
     Body:
       type: object
       x-generated: true

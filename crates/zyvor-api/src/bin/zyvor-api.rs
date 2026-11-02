@@ -192,6 +192,14 @@ async fn main() {
         .ok()
         .filter(|u| u.starts_with("http"));
     state.sim_payer = env::var("ZYVOR_SIM_PAYER").as_deref() == Ok("1");
+    state.doc_reader = zyvor_api::docread::DocReader::from_env();
+    if state.doc_reader.available() {
+        tracing::info!("uploaded onboarding documents are read with pdftotext and tesseract");
+    } else {
+        tracing::warn!(
+            "document reading is off or its programs (pdftotext, pdftoppm, tesseract) are not installed: uploaded documents will go to a person unread"
+        );
+    }
     state.sim.set_manual_payer(state.sim_payer);
     if let Some(v) = env::var("ZYVOR_MANDATE_MAX_MINOR")
         .ok()

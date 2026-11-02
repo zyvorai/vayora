@@ -285,6 +285,10 @@ class Tests(unittest.TestCase):
             ("z.set_provider_enabled('pro_1', True)", 'POST', '/v1/provider_accounts/pro_1/enabled', {'enabled': True}),
             ("z.create_payment_link(5000, customer_id='cus_1', expires_at='2026-11-03T18:29:59Z', remind_before_expiry=True)", 'POST', '/v1/payment_links', {'amount_minor': 5000, 'customer_id': 'cus_1', 'expires_at': '2026-11-03T18:29:59Z', 'remind_before_expiry': True}),
             ("z.send_payment_link('plk_1')", 'POST', '/v1/payment_links/plk_1/send', None),
+            ("z.list_onboarding_uploads()", 'GET', '/v1/onboarding/uploads', None),
+            ("z.upload_onboarding_document('gst_certificate', 'gst.pdf', b'%PDF-1.4 x')", 'POST', '/v1/onboarding/uploads', {'kind': 'gst_certificate', 'filename': 'gst.pdf', 'data_base64': 'JVBERi0xLjQgeA=='}),
+            ("z.delete_onboarding_upload('oup_1')", 'DELETE', '/v1/onboarding/uploads/oup_1', None),
+            ("z.download_onboarding_upload('oup_1')", 'GET', '/v1/onboarding/uploads/oup_1/file', None),
             ('z.live_access_status()', 'GET', '/v1/live_access', None),
             ('z.request_live_access()', 'POST', '/v1/live_access', {}),
             ('z.event_catalogue()', 'GET', '/v1/events/catalogue', None),
@@ -298,7 +302,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 81)
+        self.assertEqual(len(rows), 85)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []

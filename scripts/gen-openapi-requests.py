@@ -273,6 +273,7 @@ OVERRIDES = {
 # Not JSON: (status, media type, a note on the body)
 NOT_JSON = {
     ("get", "/v1/payment_links/{id}/qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
+    ("get", "/v1/onboarding/uploads/{id}/file"): ("200", "application/octet-stream", {"type": "string", "format": "binary"}),
     ("get", "/v1/checkout/{tenant_id}/{intent_id}/upi-qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
 }
 

@@ -53,6 +53,9 @@ never put a live key in a test environment (Zyvor refuses it, and so should you)
   trust the header when the hop count is 0.
 - **Check:** two simulated visitors with different `X-Forwarded-For` values get separate buckets.
 
+### 1.4a Uploaded documents are read and compared — **BUILT, checked on real documents** (`docs/zyvor/ONBOARDING_DOCUMENTS.md`)
+- A business uploads its GST certificate, certificate of incorporation, PAN card or cancelled cheque; Zyvor stores the file encrypted, reads it (the PDF's text layer, or OCR for a scan) and compares the GSTIN, PAN ending, CIN, IFSC and legal name with what was entered. Checked with the company's real GST certificate (text layer) and a scanned certificate of incorporation (OCR): every comparison matched, and changing the profile to another business made the same documents flag. What is **not** done: a person at Zyvor cannot open the file (they see what was found and which comparisons failed); a PAN card image and a cancelled cheque photo are only as good as OCR on a photo; no check that a certificate is genuine (a forged but well-formed one reads the same; only the provider check or a person can catch that); the reading runs inside the API container (see THREAT_MODEL); Aadhaar documents are refused.
+
 ### 1.5 Real identity and bank checks — **BUILT, not yet run against Cashfree** (`docs/zyvor/KYC_CASHFREE.md`; needs Secure ID credentials, then `zyvor-api kyc-selftest`)
 - **Why:** `kyc.rs` only has a simulator. Zyvor does not do KYC (`docs/zyvor/REGULATORY.md`).
 - **How:** the Cashfree account in use has **Secure ID** activated (PAN, GSTIN and bank-account verification). Add

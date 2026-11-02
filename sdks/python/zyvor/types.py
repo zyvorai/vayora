@@ -38,6 +38,11 @@ DebitRow = TypedDict("DebitRow", {
     "created_at": "str",
 })
 
+DeleteOnboardingUploadsByIdResponse = TypedDict("DeleteOnboardingUploadsByIdResponse", {
+    "id": "str",
+    "deleted": "bool",
+})
+
 DeletePlatformRotaDaysOffByIdResponse = TypedDict("DeletePlatformRotaDaysOffByIdResponse", {
     "id": "str",
     "deleted": "bool",
@@ -445,6 +450,8 @@ GetOnboardingResponse = TypedDict("GetOnboardingResponse", {
     "status": "str",
     "profile": "List[GetOnboardingResponseProfileItem]",
     "documents": "List[GetOnboardingResponseDocumentsItem]",
+    "uploads": "Any",
+    "document_reader_available": "Any",
     "bank_accounts": "List[GetOnboardingResponseBankAccountsItem]",
 })
 
@@ -479,6 +486,11 @@ GetOnboardingResponseProfileItem = TypedDict("GetOnboardingResponseProfileItem",
     "submitted_by": "Any",
     "reviewed_by": "Any",
     "review_note": "Any",
+})
+
+GetOnboardingUploadsResponse = TypedDict("GetOnboardingUploadsResponse", {
+    "data": "Any",
+    "reader_available": "Any",
 })
 
 GetOutboxResponse = TypedDict("GetOutboxResponse", {
@@ -1256,6 +1268,19 @@ PostOnboardingSubmitResponse = TypedDict("PostOnboardingSubmitResponse", {
     "status": "str",
     "automatic": "bool",
     "reasons": "Any",
+})
+
+PostOnboardingUploadsResponse = TypedDict("PostOnboardingUploadsResponse", {
+    "id": "str",
+    "kind": "str",
+    "filename": "Any",
+    "content_type": "Any",
+    "size_bytes": "Any",
+    "read_method": "Any",
+    "facts": "Any",
+    "checks": "Any",
+    "uploaded_by": "Any",
+    "created_at": "Optional[str]",
 })
 
 PostOutboxByIdReplayResponse = TypedDict("PostOutboxByIdReplayResponse", {

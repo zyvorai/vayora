@@ -106,6 +106,15 @@ export interface SettingsPatch {
 
 export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }
 
+/** What was read from an uploaded document, and how it compares with the profile (`result`: match, mismatch, not_found or not_checked). */
+export type OnboardingUpload = {
+  id: string; kind: string; filename: string; content_type: string; size_bytes: number;
+  read_method: "text" | "ocr" | "none";
+  facts: { gstin?: string | null; pan_last4?: string | null; pan_in_gstin?: boolean | null; cin?: string | null; legal_name?: string | null; ifsc?: string | null };
+  checks: { name: string; result: "match" | "mismatch" | "not_found" | "not_checked"; detail: string }[];
+  uploaded_by: string; created_at: string;
+};
+
 export type Customer = { id: string; name: string; email: string | null; phone: string | null; external_ref?: string | null; gstin: string | null; address1: string | null; location: string | null; pincode: string | null };
 
 export class ZyvorError extends Error {
@@ -140,9 +149,9 @@ export class Zyvor {
     this.f = o.fetch ?? fetch;
   }
 
-  private async req<T>(method: string, path: string, body?: unknown, idem?: string): Promise<T> {
+  private headers(hasBody: boolean, idem?: string): Record<string, string> {
     const h: Record<string, string> = { authorization: `Bearer ${this.o.apiKey}` };
-    if (body !== undefined) h["content-type"] = "application/json";
+    if (hasBody) h["content-type"] = "application/json";
     if (idem) h["idempotency-key"] = idem;
     if (this.o.actor) {
       h["zyvor-actor"] = this.o.actor;
@@ -151,6 +160,21 @@ export class Zyvor {
         h["zyvor-actor-signature"] = `t=${t},v1=${createHmac("sha256", this.o.actorSecret).update(`${t}.${this.o.actor}`).digest("hex")}`;
       }
     }
+    return h;
+  }
+
+  /** A response that is a file, not JSON. */
+  private async bytes(path: string): Promise<Uint8Array> {
+    const res = await this.f(`${this.base}${path}`, { method: "GET", headers: this.headers(false) });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new ZyvorError(res.status, json?.error?.code ?? "unknown", json?.error?.message ?? res.statusText);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
+  private async req<T>(method: string, path: string, body?: unknown, idem?: string): Promise<T> {
+    const h = this.headers(body !== undefined, idem);
     const res = await this.f(`${this.base}${path}`, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
     const json = await res.json().catch(() => null);
     if (!res.ok) throw new ZyvorError(res.status, json?.error?.code ?? "unknown", json?.error?.message ?? res.statusText);
@@ -341,13 +365,21 @@ export class Zyvor {
   };
 
   readonly onboarding = {
-    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[]; /** `true` when the deployment runs identity and bank checks itself */ automated_checks: boolean; /** why a submission went to a person */ review_reasons: string[]; checks: { kind: "pan" | "gstin" | "bank"; subject: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[] }>("GET", "/v1/onboarding"),
+    get: () => this.req<{ status: "not_started" | "draft" | "in_review" | "approved" | "rejected"; profile: { legal_name: string; business_type: string; pan: string; gstin: string | null; address: string; submitted_by: string | null; reviewed_by: string | null; review_note: string | null } | null; documents: { id: string; kind: string; reference: string; status: string }[]; /** uploaded files, what was read from each and how it compares with the profile */ uploads: OnboardingUpload[]; document_reader_available: boolean; bank_accounts: { id: string; holder_name: string; ifsc: string; account_last4: string; verified: boolean }[]; /** `true` when the deployment runs identity and bank checks itself */ automated_checks: boolean; /** why a submission went to a person */ review_reasons: string[]; checks: { kind: "pan" | "gstin" | "bank"; subject: string; outcome: "pass" | "fail" | "inconclusive"; detail: string }[] }>("GET", "/v1/onboarding"),
     saveProfile: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string }) =>
       this.req("PUT", "/v1/onboarding", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address }),
     /** After approval the details are locked; ask Zyvor to change them. Nothing changes (and live payouts are held) until a reviewer decides. */
     requestProfileChange: (p: { legalName: string; businessType: string; pan: string; gstin?: string; address: string; reason: string }) =>
       this.req<{ id: string; status: "pending"; summary: string }>("POST", "/v1/onboarding/profile_change", { legal_name: p.legalName, business_type: p.businessType, pan: p.pan, gstin: p.gstin, address: p.address, reason: p.reason }),
     addDocument: (p: { kind: string; reference: string }) => this.req<{ id: string }>("POST", "/v1/onboarding/documents", p),
+    /** Document files: stored encrypted, read for the facts on them and compared with the profile. PDF, PNG or JPEG, up to 5 MB. */
+    uploads: {
+      list: () => this.req<{ data: OnboardingUpload[]; reader_available: boolean }>("GET", "/v1/onboarding/uploads"),
+      upload: (p: { kind: string; filename: string; data: Uint8Array }) =>
+        this.req<OnboardingUpload>("POST", "/v1/onboarding/uploads", { kind: p.kind, filename: p.filename, data_base64: Buffer.from(p.data).toString("base64") }),
+      delete: (id: string) => this.req<{ id: string; deleted: boolean }>("DELETE", `/v1/onboarding/uploads/${encodeURIComponent(id)}`),
+      download: (id: string) => this.bytes(`/v1/onboarding/uploads/${encodeURIComponent(id)}/file`),
+    },
     addBankAccount: (p: { holderName: string; ifsc: string; accountNumber: string }) =>
       this.req<{ id: string; account_last4: string; check: { outcome: "pass" | "fail" | "inconclusive"; detail: string } | null }>("POST", "/v1/onboarding/bank_accounts", { holder_name: p.holderName, ifsc: p.ifsc, account_number: p.accountNumber }),
     verifyBankAccount: (id: string) => this.req("POST", `/v1/onboarding/bank_accounts/${encodeURIComponent(id)}/verify`),

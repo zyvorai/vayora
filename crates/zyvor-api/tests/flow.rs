@@ -9774,6 +9774,309 @@ async fn payment_reminders_are_emailed_only_when_turned_on_for_the_email_channel
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn uploaded_documents_are_read_compared_with_the_profile_and_kept_encrypted(pool: PgPool) {
+    use axum::body::Body;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use tower::ServiceExt;
+    use zyvor_api::docread::DocReader;
+    let t = setup(pool).await;
+    let (a, b) = (&t.a, &t.b);
+    let send = |app: axum::Router,
+                method: &'static str,
+                path: String,
+                key: String,
+                body: Option<Value>| async move {
+        let mut r = axum::http::Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {key}"))
+            .header("content-type", "application/json");
+        r = r.header("zyvor-actor", "priya");
+        let res = app
+            .oneshot(
+                r.body(body.map_or(Body::empty(), |v| Body::from(v.to_string())))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (code, headers) = (res.status().as_u16(), res.headers().clone());
+        let bytes = axum::body::to_bytes(res.into_body(), 16 << 20)
+            .await
+            .unwrap()
+            .to_vec();
+        (code, headers, bytes)
+    };
+    let json_of = |bytes: &[u8]| serde_json::from_slice::<Value>(bytes).unwrap_or(Value::Null);
+    let reader = |text: &str| {
+        let mut st = t.state.clone();
+        st.doc_reader = DocReader::Fixed(text.to_string());
+        zyvor_api::app(st)
+    };
+    let file = |n: u8| {
+        let mut v = b"%PDF-1.4\n% a test file ".to_vec();
+        v.extend_from_slice(&[b'0' + n; 40]);
+        v
+    };
+    let up = |app: axum::Router, kind: &str, name: &str, bytes: &[u8]| {
+        send(
+            app,
+            "POST",
+            "/v1/onboarding/uploads".into(),
+            a.key.clone(),
+            Some(json!({ "kind": kind, "filename": name, "data_base64": STANDARD.encode(bytes) })),
+        )
+    };
+
+    // a profile comes first, so there is something to compare with
+    assert_eq!(up(reader("x"), "pan", "pan.pdf", &file(1)).await.0, 409);
+    let first14 = "27ABCCE1234F1Z";
+    let gstin = format!("{first14}{}", zyvor_api::gst::gstin_check_char(first14));
+    t.call_as(a, "priya", "PUT", "/v1/onboarding", None, json!({ "legal_name": "Acme Testing Private Limited", "business_type": "private_limited", "pan": "ABCCE1234F", "gstin": gstin, "address": "12 MG Road, Pune" })).await;
+
+    // a GST certificate that agrees with the profile
+    let gst_text = format!(
+        " Registration Number : {gstin}\n 1.   Legal Name                         ACME TESTING PRIVATE LIMITED\n 2.   Trade Name, if any                 ACME\n"
+    );
+    let (code, _, body) = up(
+        reader(&gst_text),
+        "gst_certificate",
+        "../../GST certificate.pdf",
+        &file(1),
+    )
+    .await;
+    let good = json_of(&body);
+    assert_eq!(code, 201, "{good}");
+    assert_eq!(
+        (good["read_method"].clone(), good["filename"].clone()),
+        (json!("text"), json!("GST certificate.pdf"))
+    );
+    assert_eq!(good["facts"]["gstin"], json!(gstin));
+    assert!(
+        good["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["result"] == "match"),
+        "{good}"
+    );
+
+    // refused: not a PDF or image, too big, the same file twice, an Aadhaar card
+    assert_eq!(
+        up(reader("x"), "pan", "a.pdf", b"MZ an executable").await.0,
+        422
+    );
+    // a little over 5 MB is refused by the handler, a lot more by the request size limit
+    assert_eq!(
+        up(
+            reader("x"),
+            "pan",
+            "a.pdf",
+            &vec![b'%'; 5 * 1024 * 1024 + 1024]
+        )
+        .await
+        .0,
+        422
+    );
+    assert_eq!(
+        up(reader("x"), "pan", "a.pdf", &vec![b'%'; 7 * 1024 * 1024])
+            .await
+            .0,
+        413
+    );
+    assert_eq!(
+        up(reader(&gst_text), "gst_certificate", "again.pdf", &file(1))
+            .await
+            .0,
+        409
+    );
+    let (code, _, body) = up(
+        reader("Government of India Aadhaar 1234 5678 9012"),
+        "address_proof",
+        "id.pdf",
+        &file(2),
+    )
+    .await;
+    assert_eq!(
+        (code, json_of(&body)["error"]["code"].clone()),
+        (422, json!("aadhaar_not_accepted"))
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM onboarding_uploads").await,
+        1,
+        "nothing of the refused ones was kept"
+    );
+    assert_eq!(
+        up(reader("x"), "aadhaar", "a.pdf", &file(3)).await.0,
+        422,
+        "there is no document kind for it"
+    );
+
+    // a certificate of incorporation for a different company disagrees
+    let inc = "Certificate of Incorporation I hereby certify that GLOBEX CORPORATION PRIVATE LIMITED is incorporated on this day\nThe Corporate Identity Number of the company is U12345MH2026PTC123456\nThe Permanent Account Number (PAN) of the company is ZZZPQ9999R*\n";
+    let (code, _, body) = up(reader(inc), "incorporation", "incorporation.pdf", &file(4)).await;
+    let bad = json_of(&body);
+    assert_eq!(code, 201);
+    let mism: Vec<&str> = bad["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["result"] == "mismatch")
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        mism,
+        ["pan_matches_profile", "legal_name_matches_profile"],
+        "{bad}"
+    );
+
+    // a scan nothing could read, because no reading program is available
+    let (code, _, body) = up(
+        t.app.clone(),
+        "cancelled_cheque",
+        "cheque.jpg.pdf",
+        &file(5),
+    )
+    .await;
+    assert_eq!(
+        (code, json_of(&body)["read_method"].clone()),
+        (201, json!("none"))
+    );
+
+    // the bytes are not stored in the clear, and come back exactly
+    let stored: Vec<u8> = sqlx::query_scalar(
+        "SELECT data_enc FROM onboarding_uploads WHERE kind = 'gst_certificate'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert!(
+        !stored.windows(8).any(|w| w == b"%PDF-1.4")
+            && !stored.windows(10).any(|w| w == b"a test fil"),
+        "stored in the clear"
+    );
+    let id = good["id"].as_str().unwrap().to_string();
+    let (code, h, bytes) = send(
+        t.app.clone(),
+        "GET",
+        format!("/v1/onboarding/uploads/{id}/file"),
+        a.key.clone(),
+        None,
+    )
+    .await;
+    assert_eq!((code, bytes), (200, file(1)));
+    assert_eq!(h["content-type"], "application/pdf");
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .starts_with("attachment; filename=\"GST certificate.pdf\"")
+    );
+    assert_eq!(h["x-content-type-options"], "nosniff");
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action = 'onboarding.upload_downloaded'")
+            .await,
+        1
+    );
+
+    // another business sees none of it
+    let (_, _, body) = send(
+        t.app.clone(),
+        "GET",
+        "/v1/onboarding/uploads".into(),
+        b.key.clone(),
+        None,
+    )
+    .await;
+    assert_eq!(json_of(&body)["data"], json!([]));
+    assert_eq!(
+        send(
+            t.app.clone(),
+            "GET",
+            format!("/v1/onboarding/uploads/{id}/file"),
+            b.key.clone(),
+            None
+        )
+        .await
+        .0,
+        404
+    );
+
+    // the comparison follows the profile: correcting the name makes the incorporation certificate agree on the name
+    let (_, _, body) = send(
+        t.app.clone(),
+        "GET",
+        "/v1/onboarding/uploads".into(),
+        a.key.clone(),
+        None,
+    )
+    .await;
+    assert_eq!(json_of(&body)["data"].as_array().unwrap().len(), 3);
+
+    // submitting: what the documents say adds reasons for a person; nothing is approved by them
+    // a PAN card uploaded (rather than linked) is the PAN document the submission needs, and is compared too
+    let pan_card = "INCOME TAX DEPARTMENT\nPermanent Account Number\nABCCE1234F\nName\nACME TESTING PRIVATE LIMITED\n";
+    let (code, _, body) = up(reader(pan_card), "pan", "pan card.pdf", &file(6)).await;
+    assert_eq!(code, 201, "{}", json_of(&body));
+    assert!(
+        json_of(&body)["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["result"] == "match")
+    );
+    assert_eq!(
+        t.call_as(a, "priya", "POST", "/v1/onboarding/submit", None, json!({}))
+            .await
+            .1["error"]["code"],
+        "onboarding_incomplete",
+        "a bank account is still missing"
+    );
+    t.call_as(a, "priya", "POST", "/v1/onboarding/bank_accounts", None, json!({ "holder_name": "Acme Testing Private Limited", "ifsc": "HDFC0001234", "account_number": "123456789012" })).await;
+    let sub = t
+        .call_as(a, "priya", "POST", "/v1/onboarding/submit", None, json!({}))
+        .await
+        .1;
+    assert_eq!(
+        (sub["status"].clone(), sub["automatic"].clone()),
+        (json!("in_review"), json!(false)),
+        "{sub}"
+    );
+    let why = sub["reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.as_str().unwrap().to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(
+        why.contains("incorporation.pdf") && why.contains("legal_name_matches_profile"),
+        "{why}"
+    );
+    assert!(
+        why.contains("cheque.jpg.pdf") && why.contains("could not be read"),
+        "{why}"
+    );
+    assert!(
+        !why.contains("GST certificate.pdf"),
+        "the agreeing document adds no reason: {why}"
+    );
+
+    // a submitted profile's documents are kept as filed
+    assert_eq!(
+        send(
+            t.app.clone(),
+            "DELETE",
+            format!("/v1/onboarding/uploads/{id}"),
+            a.key.clone(),
+            None
+        )
+        .await
+        .0,
+        409
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
     let t = setup(pool).await;
     let (url, got) = smtp_sink().await;
