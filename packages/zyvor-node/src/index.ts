@@ -72,6 +72,8 @@ export interface Settings {
   payout_approval_threshold_minor: number;
   /** Email each payer a receipt when a payment is captured (needs the customer's email). */
   payment_receipts: boolean;
+  /** Where replies to the emails sent for this business go; null when none is set. */
+  reply_to_email: string | null;
   outbound_webhook_url: string | null;
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
@@ -88,6 +90,8 @@ export interface SettingsPatch {
   refund_approval_threshold_minor?: number;
   payout_approval_threshold_minor?: number;
   payment_receipts?: boolean;
+  /** One plain email address; an empty string clears it. */
+  reply_to_email?: string;
   outbound_webhook_url?: string;
   outbound_webhook_secret?: string;
   webhook_events?: string[];

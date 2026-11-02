@@ -9535,6 +9535,101 @@ async fn smtp_sink() -> (String, tokio::task::JoinHandle<String>) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn a_business_can_have_replies_to_its_emails_go_to_its_own_address(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let get = || async {
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["reply_to_email"].clone()
+    };
+    assert_eq!(get().await, Value::Null);
+    // one plain address only: no display name, no list, no junk
+    for bad in [
+        "not an address",
+        "Accounts <a@b.example>",
+        "a@b.example, c@d.example",
+        &"x".repeat(201),
+    ] {
+        let code = t
+            .call(
+                a,
+                "POST",
+                "/v1/settings",
+                None,
+                json!({ "reply_to_email": bad }),
+            )
+            .await
+            .0
+            .as_u16();
+        assert_eq!(code, 422, "{bad}");
+    }
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "reply_to_email": " accounts@school.example " }),
+    )
+    .await;
+    assert_eq!(get().await, json!("accounts@school.example"));
+    // another tenant is unaffected
+    assert_eq!(
+        t.ok(&t.b, "GET", "/v1/settings", None, Value::Null).await["reply_to_email"],
+        Value::Null
+    );
+
+    // a receipt queued now carries it, and goes out with a Reply-To header
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "payment_receipts": true }),
+    )
+    .await;
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    t.paid_razorpay(a, 50_000, json!({ "customer_id": cust["id"] }))
+        .await;
+    let queued: Option<String> =
+        sqlx::query_scalar("SELECT reply_to FROM mail_queue WHERE subject LIKE 'Receipt:%'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert_eq!(queued.as_deref(), Some("accounts@school.example"));
+    let (url, got) = smtp_sink().await;
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::smtp(&url, "Zyvor <no-reply@example.com>").unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 1);
+    let raw = got.await.unwrap();
+    assert!(
+        raw.contains("Reply-To: accounts@school.example") && raw.contains("no-reply@example.com"),
+        "{raw}"
+    );
+
+    // cleared: later mail has none
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "reply_to_email": "" }),
+    )
+    .await;
+    assert_eq!(get().await, Value::Null);
+    t.paid_razorpay(a, 60_000, json!({ "customer_id": cust["id"] }))
+        .await;
+    let none: i64 = t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Receipt:%' AND status = 'pending' AND reply_to IS NULL").await;
+    assert_eq!(none, 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn the_smtp_mailer_delivers_queued_mail_and_retries_what_fails(pool: PgPool) {
     let t = setup(pool).await;
     let (url, got) = smtp_sink().await;

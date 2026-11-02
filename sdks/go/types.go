@@ -711,6 +711,7 @@ type GetSettingsResponse struct {
 	Gst                          any     `json:"gst"`
 	PayoutApprovalThresholdMinor int64   `json:"payout_approval_threshold_minor"`
 	PaymentReceipts              bool    `json:"payment_receipts"`
+	ReplyToEmail                 *string `json:"reply_to_email"`
 	Risk                         any     `json:"risk"`
 	WebhookEvents                any     `json:"webhook_events"`
 }

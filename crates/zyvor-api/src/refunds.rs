@@ -364,6 +364,7 @@ async fn queue_refund_receipt(
     );
     crate::mail::enqueue_once(
         conn,
+        tenant_id,
         &format!("refund_receipt:{refund_id}"),
         &email,
         &subject,

@@ -292,6 +292,7 @@ pub async fn send_link(
     );
     let fresh = crate::mail::enqueue_once(
         &mut tx,
+        &auth.tenant_id,
         &format!("link_send:{id}:{}", crate::ist_today()),
         &email,
         &subject,
@@ -364,8 +365,15 @@ pub async fn remind_expiring(
             ),
             exp.with_timezone(&ist).date_naive(),
         );
-        if crate::mail::enqueue_once(conn, &format!("link_expiry:{id}"), &email, &subject, &body)
-            .await?
+        if crate::mail::enqueue_once(
+            conn,
+            tenant_id,
+            &format!("link_expiry:{id}"),
+            &email,
+            &subject,
+            &body,
+        )
+        .await?
         {
             n += 1;
         }

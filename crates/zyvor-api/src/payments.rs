@@ -1181,6 +1181,7 @@ async fn queue_receipt(
     );
     crate::mail::enqueue_once(
         conn,
+        tenant_id,
         &format!("receipt:{attempt_id}"),
         &email,
         &subject,
