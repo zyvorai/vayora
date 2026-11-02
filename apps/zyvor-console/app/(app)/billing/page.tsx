@@ -65,7 +65,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
                 {r.status === "active" && <Act action={pauseSubscription} id={String(r.id)} label="Pause" />}
                 {r.status === "paused" && <Act action={resumeSubscription} id={String(r.id)} label="Resume" />}
                 {(r.status === "active" || r.status === "paused") && <>
-                  <ChangePlan id={String(r.id)} plans={plans.data.filter((x) => x.id !== r.plan_id).map((x) => ({ id: String(x.id), name: String(x.name) }))} />
+                  <ChangePlan id={String(r.id)} plans={plans.data.filter((x) => x.active !== false || x.id === r.plan_id).map((x) => ({ id: String(x.id), name: String(x.name) }))} planId={String(r.plan_id)} quantity={Number(r.quantity)} />
                   <ConfirmAct action={cancelSubscription} id={String(r.id)} label="Cancel subscription" question="Stop billing this customer?" yes="Yes, cancel" />
                 </>}
               </td></tr>; })}

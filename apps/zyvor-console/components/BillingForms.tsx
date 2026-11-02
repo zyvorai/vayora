@@ -135,17 +135,17 @@ export function EditPlan({ id, name, priceMinor }: { id: string; name: string; p
   );
 }
 
-export function ChangePlan({ id, plans }: { id: string; plans: { id: string; name: string }[] }) {
+export function ChangePlan({ id, plans, planId, quantity }: { id: string; plans: { id: string; name: string }[]; planId: string; quantity: number }) {
   const [state, run, pending] = useActionState(changeSubscriptionPlan, undefined);
-  if (plans.length === 0) return null;
   return (
     <details>
-      <summary style={{ cursor: "pointer" }}>Change plan</summary>
+      <summary style={{ cursor: "pointer" }}>Change plan or quantity</summary>
       <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
         <input type="hidden" name="id" value={id} />
-        <select name="plan" required defaultValue="" aria-label="New plan"><option value="" disabled>Choose…</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-        <button className="btn small" disabled={pending}>{pending ? "…" : "Change"}</button>
-        <span className="muted" style={{ flexBasis: "100%" }}>An upgrade is charged now for the rest of the period; a downgrade applies from the next invoice.</span>
+        <select name="plan" required defaultValue={planId} aria-label="Plan">{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <input name="quantity" type="number" min={1} defaultValue={quantity} required aria-label="Quantity" style={{ width: 80 }} />
+        <button className="btn small" disabled={pending}>{pending ? "…" : "Save"}</button>
+        <span className="muted" style={{ flexBasis: "100%" }}>More value (a dearer plan or more seats) is charged now for the rest of the period; less applies from the next invoice.</span>
         {state?.error && <span className="note bad" role="alert">{state.error}</span>}
         {state?.ok && <span className="note" role="status">{state.ok}</span>}
       </form>

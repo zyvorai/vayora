@@ -544,8 +544,10 @@ export const cancelSubscription = async (_: FormState, f: FormData) => run(["/bi
 export const changeSubscriptionPlan = async (_: FormState, f: FormData): Promise<FormState> => {
   const plan = String(f.get("plan") ?? "");
   if (!plan) return { error: "Choose the plan to move to." };
-  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: plan }));
-  return r?.error ? r : { ok: "Plan changed." };
+  const quantity = Number(f.get("quantity") ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Quantity must be a whole number, 1 or more." };
+  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: plan, quantity }));
+  return r?.error ? r : { ok: "Saved." };
 };
 export const pauseSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.pause(id(f)));
 export const resumeSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.resume(id(f)));
