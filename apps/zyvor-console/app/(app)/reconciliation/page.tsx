@@ -60,7 +60,7 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
         </table>
       </div>
       <h2>Settlements</h2>
-      {settings.env === "test" && <p className="muted" style={{ marginTop: 0 }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</p>}
+      {settings.env === "test" && <div className="muted" style={{ marginTop: 0, marginBottom: "1em" }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</div>}
       <div className="tablewrap">
         <table>
           <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th><th /></tr></thead>
