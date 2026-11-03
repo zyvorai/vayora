@@ -23,6 +23,8 @@ public final class DemoBank: @unchecked Sendable {
     private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
     private var links: [String: Link] = [:]
     private var linkOrder: [String] = []
+    private var payoutsToPay: [String: String] = ["po_demo2": "approved"]
+    private var refundsFailed: [String: String] = ["re_demo2": "failed"]
     private var disputes: [String: (status: String, evidence: Int)] = ["dp_demo1": ("open", 0)]
     private var approvals: [String: String] = ["re_demo1": "pending_approval", "po_demo1": "pending_approval"]
     private var drafts: [(id: String, number: String, message: String, status: String)] = [
@@ -92,12 +94,13 @@ public final class DemoBank: @unchecked Sendable {
     }
 
     /// Handles one request. `path` includes the `/v1` prefix, as the client sends it.
-    public func handle(method: String, path: String, body: Data?) -> (status: Int, data: Data) {
+    public func handle(method: String, path: String, body: Data?, query: String? = nil) -> (status: Int, data: Data) {
         lock.lock(); defer { lock.unlock() }
         let obj = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
         let segs = path.split(separator: "/").map(String.init)
         guard segs.first == "v1" else { return Self.err(404, "not_found", "Unknown path") }
         let s = Array(segs.dropFirst())
+        let wanted = Self.query("x://x?" + (query ?? ""))["status"]   // the list filter a client asked for, if any
         switch (method, s.count, s.first ?? "") {
         case ("POST", 1, "payment_intents"):
             guard let amt = (obj["amount_minor"] as? NSNumber)?.int64Value, amt > 0 else { return Self.err(422, "invalid_amount", "Enter an amount above zero.") }
@@ -147,6 +150,19 @@ public final class DemoBank: @unchecked Sendable {
                             "overdue_minor": 125000, "due_later_minor": 0, "no_due_date_minor": 0, "promised_minor": 60000, "payouts_waiting_minor": 1200000, "daily_receipts_run_rate_minor": 410000])
         case ("GET", 1, "settlements"):
             return Self.ok(["data": [["id": "st_demo1", "provider": "demo", "utr": "DEMOUTR0001", "gross_minor": 500000, "refunds_minor": 25000, "fee_minor": 11800, "adjustment_minor": 0, "net_minor": 463200, "settled_on": "2026-11-02", "status": "matched"] as [String: Any]]])
+        case ("GET", 1, "payouts") where wanted == "approved":
+            return Self.ok(["data": payoutsToPay.filter { $0.value == "approved" }.map { ["id": $0.key, "amount_minor": 350000, "currency": "INR", "status": "approved", "purpose": "Rent for November"] as [String: Any] }])
+        case ("POST", 3, "payouts") where s[2] == "mark_paid":
+            guard payoutsToPay[s[1]] == "approved" else { return Self.err(409, "not_approved", "That payout is not waiting to be paid.") }
+            guard let ref = (obj["bank_ref"] as? String)?.trimmingCharacters(in: .whitespaces), (6...40).contains(ref.count) else { return Self.err(422, "invalid_bank_ref", "bank_ref (the UTR) must be 6-40 characters") }
+            payoutsToPay[s[1]] = "paid"
+            return Self.ok(["id": s[1], "status": "paid"])
+        case ("GET", 1, "refunds") where wanted == "failed":
+            return Self.ok(["data": refundsFailed.filter { $0.value == "failed" }.map { ["id": $0.key, "amount_minor": 12000, "currency": "INR", "status": "failed", "failure_reason": "The customer's bank did not accept it"] as [String: Any] }])
+        case ("POST", 3, "refunds") where s[2] == "retry":
+            guard refundsFailed[s[1]] == "failed" else { return Self.err(409, "not_failed", "Only a failed refund can be retried.") }
+            refundsFailed[s[1]] = "processing"
+            return Self.ok(["id": s[1], "status": "processing"])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):

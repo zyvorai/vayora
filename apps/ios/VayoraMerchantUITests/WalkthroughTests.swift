@@ -57,4 +57,19 @@ final class WalkthroughTests: XCTestCase {
         see("Subscriptions")
         shot("subscriptions")
     }
+
+    func testAnApprovedPayoutCanBeRecordedPaidAndAFailedRefundRetried() {
+        app.tabBars.buttons["Owed"].tap()
+        see("Approved, ready to pay")
+        app.buttons["Record the transfer of ₹3,500.00"].tap()
+        see("Record the transfer")
+        XCTAssertFalse(app.buttons["Record transfer"].isEnabled, "a reference is needed first")
+        let ref = app.textFields.element(boundBy: 0); ref.tap(); ref.typeText("UTR123456789")
+        shot("mark-paid-sheet")
+        app.buttons["Record transfer"].tap()
+        see("Payout marked paid.")
+        see("Refunds that failed")
+        app.buttons["Retry the failed refund of ₹120.00"].tap()
+        see("Refund sent again.")
+    }
 }
