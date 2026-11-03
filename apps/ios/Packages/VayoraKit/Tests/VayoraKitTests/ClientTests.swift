@@ -484,6 +484,10 @@ final class ReconCaseTests: XCTestCase {
         StubProtocol.handler = { _ in (200, #"{"data":[{"id":"c1","kind":"settlement_arithmetic","status":"open","subject_type":"settlement","subject_id":"s","expected_minor":1,"actual_minor":2,"diff_minor":-30000,"explanation":"x","assignee":null,"created_at":"2026-11-03T00:00:00Z"},{"id":"c2","kind":"unresolved_payment","status":"resolved","diff_minor":null,"explanation":null,"assignee":"asha"},{"id":"c3","kind":"duplicate_payment","status":"assigned","assignee":"ravi"}]}"#) }
         let cases = try await client().openReconCases()
         XCTAssertEqual(cases.map(\.id), ["c1", "c3"])
+        XCTAssertEqual(cases[0].settlementID, "s", "the payload names the settlement the case is about")
+        XCTAssertNil(cases[1].settlementID, "a case with no subject has nothing to open")
+        XCTAssertEqual(ReconCase(id: "a", kind: "k", subjectType: "settlement", subjectID: "stl_9").settlementID, "stl_9")
+        XCTAssertNil(ReconCase(id: "b", kind: "k", subjectType: "refund", subjectID: "rf_1").settlementID, "only a settlement opens the settlement screen")
         XCTAssertEqual(cases[0].title, "Settlement Arithmetic"); XCTAssertEqual(cases[0].diffMinor, -30000); XCTAssertEqual(cases[1].assignee, "ravi")
     }
 

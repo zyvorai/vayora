@@ -145,7 +145,10 @@ struct CashflowView: View {
 struct SettlementSheet: View {
     @EnvironmentObject var store: MerchantStore
     @Environment(\.dismiss) var dismiss
-    let settlement: SettlementInfo
+    let settlementID: String
+    var netMinor: Int64?          // known when opened from the settlements list; otherwise read from the explanation
+    init(settlement: SettlementInfo) { settlementID = settlement.id; netMinor = settlement.netMinor }
+    init(settlementID: String) { self.settlementID = settlementID; netMinor = nil }
     @State private var why: SettlementExplanation?
     @State private var message: String?
 
@@ -159,7 +162,7 @@ struct SettlementSheet: View {
                         Spacer()
                         Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(VUI.textPrimary).frame(width: 36, height: 36).background(.white.opacity(0.14), in: Circle()) }.accessibilityLabel("Close")
                     }
-                    Text(Money(minor: settlement.netMinor).display).vfont(32, .bold).foregroundStyle(VUI.mint)
+                    if let shown = netMinor ?? why?.receivedMinor { Text(Money(minor: shown).display).vfont(32, .bold).foregroundStyle(VUI.mint) }
                     if let message { Text(message).vfont(13).foregroundStyle(VUI.coral) }
                     if let w = why {
                         GlassCard { Text(w.narrative).vfont(15).foregroundStyle(VUI.textPrimary).fixedSize(horizontal: false, vertical: true) }
@@ -187,7 +190,7 @@ struct SettlementSheet: View {
         .presentationDetents([.large])
         .task {
             guard let c = store.client else { return }
-            do { why = try await c.explainSettlement(id: settlement.id) } catch { message = (error as? APIError)?.message ?? "Couldn't explain this settlement." }
+            do { why = try await c.explainSettlement(id: settlementID) } catch { message = (error as? APIError)?.message ?? "Couldn't explain this settlement." }
         }
     }
 

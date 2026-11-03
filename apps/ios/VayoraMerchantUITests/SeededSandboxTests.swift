@@ -84,4 +84,14 @@ final class SeededSandboxTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["With Asha"].firstMatch.waitForExistence(timeout: 5), "the server kept the assignee")
         shot("seeded-case-assigned")
     }
+
+    /// A case about a settlement opens that settlement's explanation, which says the provider's own figures do not add up.
+    func testARealCaseOpensItsSettlement() throws {
+        let see = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'See the settlement behind'")).firstMatch
+        try XCTSkipUnless(see.waitForExistence(timeout: 12), "no open settlement case in this sandbox")
+        see.tap()
+        XCTAssertTrue(app.staticTexts["This settlement"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'do not add up'")).firstMatch.waitForExistence(timeout: 10), "the explanation warns that the figures do not balance")
+        shot("seeded-case-settlement")
+    }
 }

@@ -8,10 +8,15 @@ public struct ReconCase: Codable, Equatable, Hashable, Sendable, Identifiable {
     public let explanation: String?
     public let assignee: String?
     public let diffMinor: Int64?
-    enum CodingKeys: String, CodingKey { case id, kind, status, explanation, assignee, diffMinor = "diff_minor" }
-    public init(id: String, kind: String, status: String = "open", explanation: String? = nil, assignee: String? = nil, diffMinor: Int64? = nil) {
-        self.id = id; self.kind = kind; self.status = status; self.explanation = explanation; self.assignee = assignee; self.diffMinor = diffMinor
+    /// What the case is about (`settlement`, `payment_attempt`, `refund`) and its id.
+    public let subjectType: String?
+    public let subjectID: String?
+    enum CodingKeys: String, CodingKey { case id, kind, status, explanation, assignee, diffMinor = "diff_minor", subjectType = "subject_type", subjectID = "subject_id" }
+    public init(id: String, kind: String, status: String = "open", explanation: String? = nil, assignee: String? = nil, diffMinor: Int64? = nil, subjectType: String? = nil, subjectID: String? = nil) {
+        self.id = id; self.kind = kind; self.status = status; self.explanation = explanation; self.assignee = assignee; self.diffMinor = diffMinor; self.subjectType = subjectType; self.subjectID = subjectID
     }
+    /// The settlement this case is about, when it is about one: the screen that explains it can be opened from here.
+    public var settlementID: String? { subjectType == "settlement" ? subjectID : nil }
     public var isOpen: Bool { status != "resolved" }
     /// "Settlement arithmetic" from `settlement_arithmetic`.
     public var title: String { kind.replacingOccurrences(of: "_", with: " ").capitalized }

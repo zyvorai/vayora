@@ -14,6 +14,7 @@ struct OwedView: View {
     @State private var paying: ApprovedPayout?
     @State private var cases: [ReconCase] = []
     @State private var caseWork: CaseWork?
+    @State private var settlementShown: String?
     @State private var noting: DisputeInfo?
     @State private var deciding: DisputeInfo?
     @State private var message: String?
@@ -62,6 +63,7 @@ struct OwedView: View {
             Button("We lost: book the loss", role: .destructive) { resolve(d, won: false) }
             Button("Cancel", role: .cancel) {}
         } message: { d in Text("\(Money(minor: d.amountMinor).display). A loss is booked on your ledger and cannot be undone here.") }
+        .sheet(item: Binding(get: { settlementShown.map { SettlementRef(id: $0) } }, set: { settlementShown = $0?.id })) { SettlementSheet(settlementID: $0.id).environmentObject(store) }
         .sheet(item: $caseWork) { w in CaseSheet(work: w) { notice = w.resolving ? "Case resolved." : "Case assigned."; Task { await load() } }.environmentObject(store) }
         .sheet(item: $paying) { p in MarkPaidSheet(payout: p) { notice = "Payout marked paid."; Task { await load() } }.environmentObject(store) }
         .sheet(item: $promising) { inv in PromiseSheet(invoice: inv) { notice = "Promise saved for \(inv.number)."; Task { await load() } }.environmentObject(store) }
@@ -192,6 +194,7 @@ struct OwedView: View {
                         HStack(spacing: 16) {
                             Button("Give to someone") { caseWork = CaseWork(item: c, resolving: false) }.accessibilityLabel("Assign the \(c.title) case to someone")
                             Button("Mark resolved") { caseWork = CaseWork(item: c, resolving: true) }.accessibilityLabel("Resolve the \(c.title) case")
+                            if let sid = c.settlementID { Button("See the settlement") { settlementShown = sid }.accessibilityLabel("See the settlement behind the \(c.title) case") }
                         }.vfont(14, .semibold).foregroundStyle(VUI.mint)
                     }
                     if c.id != cases.last?.id { Divider().overlay(.white.opacity(0.1)) }
@@ -453,3 +456,5 @@ struct CaseSheet: View {
         }
     }
 }
+
+struct SettlementRef: Identifiable { let id: String }
