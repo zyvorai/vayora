@@ -17967,6 +17967,37 @@ async fn a_test_clock_moves_billing_and_dates_for_the_whole_organisation(pool: P
     let cleared = t.ok(a, "DELETE", "/v1/test_clock", None, Value::Null).await;
     assert_eq!(cleared["frozen"], false);
     assert_eq!(cleared["date"], today.to_string());
+    // a live environment cannot set or clear the clock, and always reads the calendar
+    let live_tenant: String =
+        sqlx::query_scalar("SELECT id FROM tenants WHERE env = 'live' LIMIT 1")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    let live_key = zyvor_api::auth::mint_key("live").0;
+    sqlx::query("INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes) VALUES ('k_live_clock', $1, 'live', 'zk_live_clockxx', $2, ARRAY['admin'])")
+        .bind(&live_tenant)
+        .bind(zyvor_api::auth::hash_key(&live_key))
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let live_t = Tenant {
+        id: live_tenant,
+        key: live_key,
+    };
+    for (m, body) in [
+        ("POST", json!({ "advance_days": 1 })),
+        ("DELETE", Value::Null),
+    ] {
+        let (st, _) = t.call(&live_t, m, "/v1/test_clock", None, body).await;
+        assert_eq!(st.as_u16(), 403, "{m} on live");
+    }
+    let lc = t
+        .ok(&live_t, "GET", "/v1/test_clock", None, Value::Null)
+        .await;
+    assert_eq!(
+        (lc["frozen"].clone(), lc["date"].clone()),
+        (json!(false), json!(today.to_string()))
+    );
     // the clock moves and clears are in the audit trail
     assert_eq!(
         t.count("SELECT count(*) FROM audit_events WHERE action IN ('test_clock.set','test_clock.cleared')")
