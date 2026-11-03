@@ -17004,6 +17004,52 @@ async fn a_metered_plan_can_include_free_units_each_period(pool: PgPool) {
         "{:?}",
         amounts().await
     );
+    // the invoice says what it is made of, and the lines add up to the total
+    let list = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let id = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["amount_minor"] == 107_500)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let inv = t
+        .ok(a, "GET", &format!("/v1/invoices/{id}"), None, Value::Null)
+        .await;
+    let lines = inv["details"].as_array().unwrap();
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert_eq!(
+        lines
+            .iter()
+            .map(|l| l["amount_minor"].as_i64().unwrap())
+            .sum::<i64>(),
+        107_500
+    );
+    assert_eq!(lines[0]["description"], "Metered");
+    assert_eq!(lines[1]["quantity"], 30);
+    assert_eq!(lines[2]["quantity"], 100);
+    // an invoice typed in by hand has none
+    let hand = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "HAND-1", "amount_minor": 5_000 }),
+        )
+        .await;
+    let hand = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}", hand["id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(hand["details"], Value::Null);
 
     // a plan with no base price: usage inside the allowance makes no invoice, and is not counted again next period
     let pure = t

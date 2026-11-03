@@ -7,6 +7,7 @@ import { api } from "@/lib/zyvor";
 
 export const dynamic = "force-dynamic";
 
+type Detail = { description: string; quantity: number; unit_price_minor: number; amount_minor: number };
 type Line = { position: number; description: string; hsn_sac: string; quantity: number; unit_price_minor: number; taxable_minor: number; rate_bp: number; cgst_minor: number; sgst_minor: number; igst_minor: number };
 const addr = (...p: (string | null | undefined)[]) => p.filter(Boolean).join(", ");
 
@@ -17,7 +18,7 @@ export default async function InvoicePrint({ params }: { params: Promise<{ id: s
   if (!me || !allows(me.r, "finance")) notFound();
   const { id } = await params;
   const z = await api(me.u);
-  const inv = await z.invoices.retrieve(id).catch(() => null) as null | { number: string; currency: string; amount_minor: number; tax_minor: number; status: string; due_date: string | null; issued_on: string; customer_id: string | null; place_of_supply: string | null; buyer_gstin: string | null; reverse_charge: boolean; paid_minor: number; credited_minor: number; outstanding_minor: number };
+  const inv = await z.invoices.retrieve(id).catch(() => null) as null | { details?: Detail[] | null; number: string; currency: string; amount_minor: number; tax_minor: number; status: string; due_date: string | null; issued_on: string; customer_id: string | null; place_of_supply: string | null; buyer_gstin: string | null; reverse_charge: boolean; paid_minor: number; credited_minor: number; outstanding_minor: number };
   if (!inv) notFound();
   const [settings, customer, tax] = await Promise.all([
     z.settings.get(),
@@ -45,6 +46,13 @@ export default async function InvoicePrint({ params }: { params: Promise<{ id: s
             {lines.map((l) => (
               <tr key={l.position}><td>{l.position}</td><td>{l.description}</td><td>{l.hsn_sac}</td><td className="r">{l.quantity}</td><td className="r">{money(l.unit_price_minor)}</td><td className="r">{money(l.taxable_minor)}</td><td className="r">{(l.rate_bp / 100).toFixed(2)}</td><td className="r">{money(l.cgst_minor)}</td><td className="r">{money(l.sgst_minor)}</td><td className="r">{money(l.igst_minor)}</td></tr>
             ))}
+          </tbody>
+        </table></div>
+      ) : inv.details && inv.details.length > 0 ? (
+        <div style={{ overflowX: "auto" }}><table>
+          <thead><tr><th>Description</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
+          <tbody>
+            {inv.details.map((d, i) => <tr key={i}><td>{d.description}</td><td className="r">{d.quantity.toLocaleString("en-IN")}</td><td className="r">{d.unit_price_minor === 0 ? "free" : money(d.unit_price_minor)}</td><td className="r">{money(d.amount_minor)}</td></tr>)}
           </tbody>
         </table></div>
       ) : (

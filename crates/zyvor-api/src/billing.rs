@@ -524,9 +524,10 @@ pub async fn run_billing(
             let total = amount * i64::from(qty) + (usage - included).max(0) * usage_price;
             if total > 0 {
                 let inv = new_id("inv");
-                let n = sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, subscription_id, period_start, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING")
+                let details = invoice_details(&name, amount, qty, usage, included, usage_price);
+                let n = sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, subscription_id, period_start, external_ref, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING")
                     .bind(&inv).bind(tenant_id).bind(&customer).bind(format!("SUB-{}-{}", &sub_id[sub_id.len().saturating_sub(8)..], date))
-                    .bind(&ccy).bind(total).bind(date.checked_add_days(Days::new(due_days as u64))).bind(&sub_id).bind(date).bind(format!("plan:{name}"))
+                    .bind(&ccy).bind(total).bind(date.checked_add_days(Days::new(due_days as u64))).bind(&sub_id).bind(date).bind(format!("plan:{name}")).bind(details)
                     .execute(&mut *conn).await?.rows_affected();
                 if n == 1 {
                     sqlx::query("UPDATE usage_records SET billed_invoice_id = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL AND waived_on IS NULL").bind(&sub_id).bind(&inv).execute(&mut *conn).await?;
@@ -563,6 +564,38 @@ pub async fn run_billing(
     }
     announce_trials_ending(conn, tenant_id, today).await?;
     Ok(created)
+}
+
+/// The plain lines of a subscription invoice: the plan times its quantity, and metered usage with the free units
+/// said plainly. They add up to the invoice's total.
+fn invoice_details(
+    plan: &str,
+    price: i64,
+    qty: i32,
+    usage: i64,
+    included: i64,
+    usage_price: i64,
+) -> Value {
+    let mut lines = Vec::new();
+    if price > 0 {
+        lines.push(json!({ "description": plan, "quantity": qty, "unit_price_minor": price, "amount_minor": price * i64::from(qty) }));
+    }
+    if usage > 0 {
+        let charged = (usage - included).max(0);
+        let free = usage - charged;
+        if charged > 0 {
+            let d = if free > 0 {
+                format!("{plan}: usage beyond the first {free} free units")
+            } else {
+                format!("{plan}: usage")
+            };
+            lines.push(json!({ "description": d, "quantity": charged, "unit_price_minor": usage_price, "amount_minor": charged * usage_price }));
+        }
+        if free > 0 {
+            lines.push(json!({ "description": format!("{plan}: {free} free units used"), "quantity": free, "unit_price_minor": 0, "amount_minor": 0 }));
+        }
+    }
+    Value::Array(lines)
 }
 
 /// Days before a free trial ends that the business is told (a `subscription.trial_will_end` event).

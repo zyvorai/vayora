@@ -393,6 +393,7 @@ GetInvoicesByIdResponse = TypedDict("GetInvoicesByIdResponse", {
     "buyer_gstin": "Optional[str]",
     "reverse_charge": "bool",
     "issued_on": "str",
+    "details": "Any",
     "paid_minor": "int",
     "credited_minor": "int",
     "outstanding_minor": "int",
