@@ -27,6 +27,16 @@ class Tests(unittest.TestCase):
         self.assertTrue(seen["headers"]["idempotency-key"])
         self.assertEqual(seen["body"], {"amount_minor": 49900, "currency": "INR", "external_ref": "FEE-1"})
 
+    def test_email_logo_goes_up_as_raw_bytes(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], req.data, {k.lower(): v for k, v in req.header_items()}.get("content-type")))
+            return FakeRes(b'{"email_logo_url":null}')
+        z = Zyvor("k", opener=opener)
+        z.upload_email_logo(b"\x89PNG\r\n\x1a\nxx"); z.remove_email_logo()
+        self.assertEqual(seen[0], ("POST", "/v1/settings/logo", b"\x89PNG\r\n\x1a\nxx", "application/octet-stream"))
+        self.assertEqual(seen[1][:2], ("DELETE", "/v1/settings/logo"))
+
     def test_rejects_bad_amounts(self):
         z = Zyvor("k", opener=lambda *a, **k: self.fail("no request expected"))
         for bad in (10.5, 0, -1, True, "5"):

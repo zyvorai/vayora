@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -470,5 +471,27 @@ func TestDownloadOnboardingUploadReturnsTheFileBytesNotJSON(t *testing.T) {
 	b, err := New("k", srv.URL).DownloadOnboardingUpload("oup_1")
 	if err != nil || string(b) != "%PDF-1.4 not json" {
 		t.Fatalf("got %q, %v", b, err)
+	}
+}
+
+func TestEmailLogoGoesUpAsRawBytes(t *testing.T) {
+	var gotType, gotMethod, gotPath string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType, gotMethod, gotPath = r.Header.Get("Content-Type"), r.Method, r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Write([]byte(`{"email_logo_url":"https://x/logo/t/1"}`))
+	}))
+	defer srv.Close()
+	c := &Client{BaseURL: srv.URL, APIKey: "k", HTTP: srv.Client()}
+	out, err := c.UploadEmailLogo([]byte("\x89PNG\r\n\x1a\nxx"))
+	if err != nil || out["email_logo_url"] == nil {
+		t.Fatalf("upload: %v %v", out, err)
+	}
+	if gotType != "application/octet-stream" || gotMethod != "POST" || gotPath != "/v1/settings/logo" || string(gotBody) != "\x89PNG\r\n\x1a\nxx" {
+		t.Fatalf("sent %q %s %s %q", gotType, gotMethod, gotPath, gotBody)
+	}
+	if _, err := c.RemoveEmailLogo(); err != nil || gotMethod != "DELETE" {
+		t.Fatalf("remove: %v %s", err, gotMethod)
 	}
 }
