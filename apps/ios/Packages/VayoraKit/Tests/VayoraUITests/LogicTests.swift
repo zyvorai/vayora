@@ -50,3 +50,25 @@ final class SlideAndPinTests: XCTestCase {
         p.clear(); XCTAssertEqual(p.code, "")
     }
 }
+
+final class PayeeTotalsTests: XCTestCase {
+    func row(_ day: Int, _ payee: String, _ minor: Int64, paid: Bool = true, name: String = "") -> HistoryRow {
+        HistoryRow(date: Date(timeIntervalSince1970: Double(day) * 86400), name: name, payee: payee, amountMinor: minor, paid: paid, category: .other, note: "", kind: "pay")
+    }
+
+    func testBiggestFirstCaseInsensitiveAndOnlyPaidInsideTheSpan() {
+        let rows = [row(1, "Asha Stores", 500), row(2, "asha stores ", 300), row(3, "Bob", 900), row(4, "Bob", 50, paid: false),
+                    row(9, "Late", 99999), row(0, "Early", 99999)]
+        let t = PayeeTotals.top(rows, from: Date(timeIntervalSince1970: 86400), to: Date(timeIntervalSince1970: 5 * 86400))
+        XCTAssertEqual(t.map(\.payee), ["Bob", "Asha Stores"])      // 900 vs 800, first spelling kept
+        XCTAssertEqual(t.map(\.minor), [900, 800]); XCTAssertEqual(t.map(\.count), [1, 2])
+    }
+
+    func testTiesLimitAndMissingNames() {
+        let rows = [row(1, "B", 100), row(1, "A", 100), row(1, "", 100, name: "Chai"), row(1, "", 100)]
+        let t = PayeeTotals.top(rows, from: .distantPast, to: .distantFuture, limit: 3)
+        XCTAssertEqual(t.map(\.payee), ["A", "B", "Chai"])
+        XCTAssertEqual(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture, limit: 0), [])
+        XCTAssertTrue(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture).map(\.payee).contains("Someone"))
+    }
+}
