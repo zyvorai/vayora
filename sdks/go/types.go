@@ -788,6 +788,7 @@ type GetSubscriptionsResponseDataItem struct {
 	UnbilledUsage   int64   `json:"unbilled_usage"`
 	UnitAmountMinor *int64  `json:"unit_amount_minor"`
 	TrialEndsOn     *string `json:"trial_ends_on"`
+	Billed          bool    `json:"billed"`
 }
 
 type GetVendorsByIdBalanceResponse struct {

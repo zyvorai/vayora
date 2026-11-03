@@ -768,6 +768,7 @@ export interface GetSubscriptionsResponseDataItem {
   unbilled_usage: number;
   unit_amount_minor: number | null;
   trial_ends_on: string | null;
+  billed: boolean;
 }
 
 export interface GetVendorsByIdBalanceResponse {

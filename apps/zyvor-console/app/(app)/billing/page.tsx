@@ -19,6 +19,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const who = new Map(customers.data.map((c) => [c.id, c.name]));
   const hasEmail = new Set(customers.data.filter((c) => c.email?.includes("@")).map((c) => c.id));
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const inTwoWeeks = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
   const overdue = unpaid.filter((i) => i.due_date && i.due_date < today);
   const sum = (xs: { outstanding_minor: number }[]) => xs.reduce((a, i) => a + i.outstanding_minor, 0);
@@ -68,6 +69,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
                 {r.status === "paused" && <Act action={resumeSubscription} id={String(r.id)} label="Resume" />}
                 {(r.status === "active" || r.status === "paused") && <>
                   {r.trial_ends_on && String(r.trial_ends_on) > today && String(r.status) === "active" && <ChangeTrial id={String(r.id)} endsOn={String(r.trial_ends_on)} />}
+                  {!(r.trial_ends_on && String(r.trial_ends_on) > today) && r.billed === false && String(r.status) === "active" && <ChangeTrial id={String(r.id)} endsOn={inTwoWeeks} start />}
                   {p && Number(p.usage_unit_minor) > 0 && <RecordUsage id={String(r.id)} unit={inr(Number(p.usage_unit_minor))} waiting={Number(r.unbilled_usage ?? 0)} />}
                   <ChangePlan id={String(r.id)} plans={plans.data.filter((x) => x.active !== false || x.id === r.plan_id).map((x) => ({ id: String(x.id), name: String(x.name) }))} planId={String(r.plan_id)} quantity={Number(r.quantity)} />
                   <ConfirmAct action={cancelSubscription} id={String(r.id)} label="Cancel subscription" question="Stop billing this customer?" yes="Yes, cancel" />
