@@ -51,11 +51,12 @@ extension VayoraClient {
     }
 
     /// A fixed-amount link. `expiresAt` is an ISO-8601 time; `maxUses` stops it after that many checkouts.
-    public func createPaymentLink(amount: Money, description: String?, maxUses: Int? = nil, expiresAt: Date? = nil, idempotencyKey: String = UUID().uuidString) async throws -> CreatedPaymentLink {
+    public func createPaymentLink(amount: Money, description: String?, maxUses: Int? = nil, expiresAt: Date? = nil, customerID: String? = nil, idempotencyKey: String = UUID().uuidString) async throws -> CreatedPaymentLink {
         var body: [String: Any] = ["amount_minor": amount.minor, "currency": amount.currency]
         if let description, !description.isEmpty { body["description"] = description }
         if let maxUses { body["max_uses"] = maxUses }
         if let expiresAt { body["expires_at"] = ISO8601DateFormatter().string(from: expiresAt) }
+        if let customerID, !customerID.isEmpty { body["customer_id"] = customerID }   // the link can then be emailed to them
         let data = try JSONSerialization.data(withJSONObject: body)
         return try await send(request("POST", "/payment_links", body: data, idempotencyKey: idempotencyKey), as: CreatedPaymentLink.self)
     }

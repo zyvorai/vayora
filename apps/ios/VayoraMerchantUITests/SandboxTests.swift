@@ -78,4 +78,27 @@ final class SandboxTests: XCTestCase {
         XCTAssertTrue(ok.waitForExistence(timeout: 10) || again.waitForExistence(timeout: 2))
         shot("sandbox-email-sent")
     }
+
+    /// A link made for a customer with an address can be emailed from the phone; the server answers (sent, or the sandbox's missing checkout
+    /// address), and either way the answer is on screen. A link with no customer has no Email button.
+    func testALinkForACustomerCanBeEmailed() {
+        app.tabBars.buttons["Collect"].tap()
+        app.buttons["Payment links"].tap()
+        let amount = app.textFields["Amount in rupees"]; amount.tap(); amount.typeText("77")
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'For'")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), "the customer picker appears when the server has customers")
+        picker.tap()
+        app.buttons["Asha Rao"].firstMatch.tap()
+        app.buttons["Create link"].tap()
+        let email = app.buttons["Email"].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 10), "a link for a customer with an address can be emailed")
+        shot("sandbox-link-for-customer")
+        email.tap()
+        let sent = app.staticTexts["Link emailed."]
+        let refused = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Error:'")).firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 10) || refused.waitForExistence(timeout: 3), "the server's answer is shown")
+        if refused.exists { XCTAssertTrue(refused.label.contains("Ask whoever runs your Zyvor server"), "an operator's instruction is turned into plain words: \(refused.label)") }
+        shot("sandbox-link-email-result")
+        app.buttons["Cancel link"].firstMatch.tap()
+    }
 }
