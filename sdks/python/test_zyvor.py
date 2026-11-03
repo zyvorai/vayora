@@ -229,6 +229,9 @@ class Tests(unittest.TestCase):
             ("z.list_payments(created_from='2026-11-01', created_to='2026-11-30')", 'GET', '/v1/payment_intents?created_from=2026-11-01&created_to=2026-11-30', None),
             ("z.mail_suppressions()", 'GET', '/v1/mail_suppressions', None),
             ("z.remove_mail_suppression('a@b.c')", 'DELETE', '/v1/mail_suppressions/a%40b.c', None),
+            ("z.test_clock()", 'GET', '/v1/test_clock', None),
+            ("z.set_test_clock(advance_days=10)", 'POST', '/v1/test_clock', {'advance_days': 10}),
+            ("z.clear_test_clock()", 'DELETE', '/v1/test_clock', None),
             ("z.reset_test_data()", 'POST', '/v1/test_data/reset', {'confirm': 'reset test data'}),
             ('z.list_plans()', 'GET', '/v1/plans', None),
             ('z.list_subscriptions()', 'GET', '/v1/subscriptions', None),
@@ -305,7 +308,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 88)
+        self.assertEqual(len(rows), 91)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []

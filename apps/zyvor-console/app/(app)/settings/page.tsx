@@ -2,7 +2,7 @@ import { Act } from "@/components/Act";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
 import { slug } from "@/lib/labels";
-import { removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
+import { clearTestClock, moveTestClock, removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -13,6 +13,7 @@ export default async function Settings() {
   if (me?.r !== "admin") redirect("/");
   const z = await api();
   const [s, cat, fx, stopped] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates(), z.mailSuppressions.list()]);
+  const clock = s.env === "test" ? await z.testClock.get() : null;
   const all = s.webhook_events.includes("*");
   const chosen = (t: string) => s.webhook_events.some((p) => p === t || (p.endsWith(".*") && t.startsWith(p.slice(0, -1))));
   return (
@@ -20,7 +21,7 @@ export default async function Settings() {
       <div className="head"><div><h1>Settings</h1><p className="lede">How reminders, approvals, tax and webhooks behave for this {s.env} environment.</p></div></div>
       <nav aria-label="On this page" style={{ marginBottom: 20 }}>
         <div className="seg">
-          {[["Collections", "Collections"], ["Receipts, invoices, reminders and replies", "Emails"], ["Approvals", "Approvals"], ["Risk limits", "Risk"], ["GST", "GST"], ["Exchange rate", "Exchange rate"], ["Webhooks", "Webhooks"], ...(s.env === "test" ? [["Test data", "Test data"]] : [])].map(([title, label]) => <a key={title} href={`#${slug(title)}`}>{label}</a>)}
+          {[["Collections", "Collections"], ["Receipts, invoices, reminders and replies", "Emails"], ["Approvals", "Approvals"], ["Risk limits", "Risk"], ["GST", "GST"], ["Exchange rate", "Exchange rate"], ["Webhooks", "Webhooks"], ...(s.env === "test" ? [["Test clock", "Test clock"], ["Test data", "Test data"]] : [])].map(([title, label]) => <a key={title} href={`#${slug(title)}`}>{label}</a>)}
         </div>
       </nav>
 
@@ -88,6 +89,16 @@ export default async function Settings() {
           </label>
         ))}
       </SettingsForm>
+
+      {s.env === "test" && clock && (
+        <>
+          <SettingsForm title="Test clock" hint={`Move this test environment forward in time to see the next billing period, a trial ending or an overdue invoice. Billing, reminders and new dates follow it, including the automatic billing run. It stands still on the day you set (it does not tick) and only moves forward. ${clock.frozen ? `The clock is set to ${clock.date} (today is ${clock.real_date}).` : `It is following real time (${clock.date}).`} UPI AutoPay and payment times are not on it.`} action={moveTestClock} button="Move clock" busy="Moving…" done="Clock moved.">
+            <label className="field">Move to day<input name="date" type="date" min={String(clock.date)} /></label>
+            <label className="field">Or forward by (days)<input name="days" type="number" min={1} inputMode="numeric" /></label>
+          </SettingsForm>
+          {clock.frozen && <div style={{ margin: "-8px 0 20px" }}><Act action={clearTestClock} id="clock" label="Back to real time" showOk /></div>}
+        </>
+      )}
 
       {s.env === "test" && (
         <SettingsForm title="Test data" hint="Clear the payments, invoices, customers, refunds and ledger created while trying things out, so you can start again. Your settings, providers, API keys, people, branches, vendors, plans and coupons stay. The audit trail is kept and records the reset. This cannot be undone, and it is not available in the live environment." action={resetTestData} button="Reset test data" busy="Resetting…" done="Test data cleared.">

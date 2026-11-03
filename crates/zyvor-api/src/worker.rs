@@ -55,10 +55,11 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         // 3. recurring invoices that have come due
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
+            let today = crate::clock::today(&mut tx).await?;
             if crate::billing::run_billing(
                 &mut tx,
                 &tid,
-                crate::ist_today(),
+                today,
                 s.mandate_notice_hours,
                 s.checkout_public_url.as_deref(),
             )
@@ -78,7 +79,7 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
             let pol: Option<(String, i32, i32, bool)> = sqlx::query_as("SELECT dunning_channel, dunning_min_days, dunning_repeat_days, dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1 AND auto_dunning")
                 .bind(&tid).fetch_optional(&mut *tx).await?;
             if let Some((ch, min, rep, approval)) = pol {
-                let today = crate::ist_today();
+                let today = crate::clock::today(&mut tx).await?;
                 if crate::collections::run_dunning_tx(
                     &mut tx,
                     &tid,

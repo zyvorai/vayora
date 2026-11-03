@@ -57,6 +57,12 @@ DeleteSavedViewsByIdResponse = TypedDict("DeleteSavedViewsByIdResponse", {
     "ok": "bool",
 })
 
+DeleteTestClockResponse = TypedDict("DeleteTestClockResponse", {
+    "date": "Any",
+    "frozen": "bool",
+    "real_date": "Optional[str]",
+})
+
 GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
     "by_provider_method": "List[Any]",
     "suggestions": "Any",
@@ -773,6 +779,12 @@ GetSubscriptionsResponseDataItem = TypedDict("GetSubscriptionsResponseDataItem",
     "unit_amount_minor": "Optional[int]",
     "trial_ends_on": "Optional[str]",
     "billed": "bool",
+})
+
+GetTestClockResponse = TypedDict("GetTestClockResponse", {
+    "date": "Any",
+    "frozen": "Any",
+    "real_date": "Optional[str]",
 })
 
 GetVendorsByIdBalanceResponse = TypedDict("GetVendorsByIdBalanceResponse", {
@@ -1845,6 +1857,12 @@ PostSubscriptionsResponse = TypedDict("PostSubscriptionsResponse", {
     "status": "str",
     "next_bill_date": "Optional[str]",
     "trial_ends_on": "Optional[str]",
+})
+
+PostTestClockResponse = TypedDict("PostTestClockResponse", {
+    "date": "Any",
+    "frozen": "bool",
+    "real_date": "Optional[str]",
 })
 
 PostTestDataResetResponse = TypedDict("PostTestDataResetResponse", {

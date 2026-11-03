@@ -53,6 +53,12 @@ export interface DeleteSavedViewsByIdResponse {
   ok: boolean;
 }
 
+export interface DeleteTestClockResponse {
+  date: unknown;
+  frozen: boolean;
+  real_date: string | null;
+}
+
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
@@ -769,6 +775,12 @@ export interface GetSubscriptionsResponseDataItem {
   unit_amount_minor: number | null;
   trial_ends_on: string | null;
   billed: boolean;
+}
+
+export interface GetTestClockResponse {
+  date: unknown;
+  frozen: unknown;
+  real_date: string | null;
 }
 
 export interface GetVendorsByIdBalanceResponse {
@@ -1841,6 +1853,12 @@ export interface PostSubscriptionsResponse {
   status: string;
   next_bill_date: string | null;
   trial_ends_on: string | null;
+}
+
+export interface PostTestClockResponse {
+  date: unknown;
+  frozen: boolean;
+  real_date: string | null;
 }
 
 export interface PostTestDataResetResponse {

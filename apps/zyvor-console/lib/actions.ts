@@ -470,6 +470,18 @@ export const resetTestData = async (_: FormState, f: FormData) => {
   if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
   return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
 };
+/** Move this test environment's clock forward (billing, reminders and dates follow it). */
+export const moveTestClock = async (_: FormState, f: FormData): Promise<FormState> => {
+  const date = String(f.get("date") ?? "").trim();
+  const days = String(f.get("days") ?? "").trim();
+  if (!date && !days) return { error: "Choose a day, or a number of days to move forward." };
+  if (date && days) return { error: "Use either a day or a number of days, not both." };
+  if (days && !/^\d+$/.test(days)) return { error: "Days must be a whole number." };
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Choose a valid day." };
+  const r = await run(["/", "/settings", "/billing", "/collections"], (z) => z.testClock.set(date ? { date } : { advanceDays: Number(days) }), "admin");
+  return r?.error ? r : { ok: "Clock moved. The next billing run, reminders and new dates now follow it." };
+};
+export const clearTestClock = async (_: FormState, _f: FormData) => run(["/", "/settings", "/billing", "/collections"], (z) => z.testClock.clear(), "admin");
 /** Send automatic emails to an address that had unsubscribed again. */
 export const removeSuppression = async (_: FormState, f: FormData): Promise<FormState> => {
   const r = await run(["/settings"], (z) => z.mailSuppressions.remove(String(f.get("email") ?? "")), "admin");

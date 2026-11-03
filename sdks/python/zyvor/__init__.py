@@ -668,6 +668,19 @@ class Zyvor:
         """Send automatic emails to the address again."""
         return self._req("DELETE", f"/v1/mail_suppressions/{urllib.parse.quote(email, safe='')}")
 
+    def test_clock(self) -> types.GetTestClockResponse:
+        """The date this test environment sees, and whether its test clock is set."""
+        return self._req("GET", "/v1/test_clock")
+
+    def set_test_clock(self, date: Optional[str] = None, advance_days: Optional[int] = None) -> types.PostTestClockResponse:
+        """Test environments only: move the clock forward to `date` (YYYY-MM-DD) or by `advance_days` (send one). Billing, reminders and dates follow it."""
+        body = {k: v for k, v in {"date": date, "advance_days": advance_days}.items() if v is not None}
+        return self._req("POST", "/v1/test_clock", body)
+
+    def clear_test_clock(self) -> types.DeleteTestClockResponse:
+        """Test environments only: back to real time."""
+        return self._req("DELETE", "/v1/test_clock")
+
     def reset_test_data(self) -> types.PostTestDataResetResponse:
         """Test environments only: clear payments, invoices, customers and the ledger; keep settings, keys, providers and other setup."""
         return self._req("POST", "/v1/test_data/reset", {"confirm": "reset test data"})

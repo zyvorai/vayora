@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse } from "./types.js";
+import type { DeleteTestClockResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -373,6 +373,15 @@ export class Zyvor {
     list: () => this.req<GetMailSuppressionsResponse>("GET", "/v1/mail_suppressions"),
     /** Send automatic emails to the address again. */
     remove: (email: string) => this.req<{ email: string; removed: boolean }>("DELETE", `/v1/mail_suppressions/${encodeURIComponent(email)}`),
+  };
+  readonly testClock = {
+    /** The date this test environment sees, and whether its test clock is set. */
+    get: () => this.req<GetTestClockResponse>("GET", "/v1/test_clock"),
+    /** Test environments only: move the clock forward to `date` (YYYY-MM-DD) or by `advanceDays` (send one). Billing, reminders and dates follow it. */
+    set: (to: { date: string } | { advanceDays: number }) =>
+      this.req<PostTestClockResponse>("POST", "/v1/test_clock", "date" in to ? { date: to.date } : { advance_days: to.advanceDays }),
+    /** Test environments only: back to real time. */
+    clear: () => this.req<DeleteTestClockResponse>("DELETE", "/v1/test_clock"),
   };
   readonly testData = {
     /** Test environments only: clears payments, invoices, customers and the ledger; keeps settings, keys, providers, branches, vendors, plans, coupons. */
