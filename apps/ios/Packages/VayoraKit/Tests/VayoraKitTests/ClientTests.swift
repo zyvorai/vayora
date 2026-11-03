@@ -197,3 +197,43 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(left.isEmpty)
     }
 }
+
+final class DisputeTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testOnlyOpenDisputesAreListedAndDaysLeftCountsInIndianDays() async throws {
+        StubProtocol.handler = { _ in (200, #"{"data":[{"id":"d1","amount_minor":45000,"reason":"duplicate","status":"open","respond_by":"2026-11-10","evidence_count":0},{"id":"d2","amount_minor":1,"reason":"x","status":"won","respond_by":null,"evidence_count":2},{"id":"d3","amount_minor":9,"reason":"y","status":"under_review","respond_by":null,"evidence_count":1}]}"#) }
+        let d = try await client().openDisputes()
+        XCTAssertEqual(d.map(\.id), ["d1", "d3"])
+        XCTAssertEqual(d[0].daysLeft(today: "2026-11-03"), 7)
+        XCTAssertEqual(d[0].daysLeft(today: "2026-11-12"), -2)
+        XCTAssertNil(d[1].daysLeft(today: "2026-11-03"))
+    }
+
+    func testEvidenceAndOutcomeBodies() async throws {
+        nonisolated(unsafe) var seen: [URLRequest] = []
+        StubProtocol.handler = { r in seen.append(r); return (200, #"{"id":"d1","status":"under_review"}"#) }
+        try await client().addDisputeEvidence(id: "d1", note: "Delivered, signed receipt", url: "https://files.example.com/r.pdf")
+        try await client().resolveDispute(id: "d1", won: false)
+        let e = try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[0])) as? [String: Any]
+        XCTAssertEqual(e?["note"] as? String, "Delivered, signed receipt"); XCTAssertEqual(e?["url"] as? String, "https://files.example.com/r.pdf")
+        XCTAssertEqual(seen[0].url?.path, "/v1/disputes/d1/evidence")
+        let r = try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[1])) as? [String: Any]
+        XCTAssertEqual(r?["outcome"] as? String, "lost"); XCTAssertEqual(seen[1].url?.path, "/v1/disputes/d1/resolve")
+    }
+
+    func testDemoBankEvidenceThenResolveClosesIt() async throws {
+        let c = VayoraClient.demo(bank: DemoBank())
+        try await c.addDisputeEvidence(id: "dp_demo1", note: "Receipt")
+        var d = try await c.openDisputes()
+        XCTAssertEqual(d.first?.evidenceCount, 1)
+        do { try await c.addDisputeEvidence(id: "dp_demo1", note: "  "); XCTFail("blank note") } catch let e as APIError { XCTAssertEqual(e.code, "note_required") }
+        try await c.resolveDispute(id: "dp_demo1", won: true)
+        d = try await c.openDisputes()
+        XCTAssertTrue(d.isEmpty)
+    }
+}
