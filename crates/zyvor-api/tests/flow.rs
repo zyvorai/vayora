@@ -1819,10 +1819,19 @@ async fn upgrades_are_prorated_and_milestones_invoice_exactly_once(pool: PgPool)
         .await;
     assert_eq!(up["proration_minor"], 10_000);
     let inv = up["proration_invoice_id"].as_str().unwrap();
-    assert_eq!(
-        t.ok(a, "GET", &format!("/v1/invoices/{inv}"), None, Value::Null)
-            .await["amount_minor"],
-        10_000
+    let pro_inv = t
+        .ok(a, "GET", &format!("/v1/invoices/{inv}"), None, Value::Null)
+        .await;
+    assert_eq!(pro_inv["amount_minor"], 10_000);
+    // the proration invoice says what it is for, and the line is the whole amount
+    let lines = pro_inv["details"].as_array().unwrap();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["amount_minor"], 10_000);
+    assert!(
+        lines[0]["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("Change to ")
     );
     // downgrade is free now; the lower price applies from the next invoice
     let down = t
@@ -1865,6 +1874,17 @@ async fn upgrades_are_prorated_and_milestones_invoice_exactly_once(pool: PgPool)
     );
     assert!(r1.0.is_success() && r2.0.is_success());
     assert_eq!(r1.1["invoice_id"], r2.1["invoice_id"]);
+    let ms_inv = t
+        .ok(
+            a,
+            "GET",
+            &format!("/v1/invoices/{}", r1.1["invoice_id"].as_str().unwrap()),
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(ms_inv["details"][0]["description"], "Machine delivered");
+    assert_eq!(ms_inv["details"][0]["amount_minor"], 500_000);
     assert_eq!(
         t.count("SELECT count(*) FROM invoices WHERE number LIKE 'MS-%'")
             .await,

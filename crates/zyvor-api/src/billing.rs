@@ -1105,10 +1105,24 @@ pub async fn change_plan(
     let mut invoice_id = None;
     if charge > 0 {
         let inv = new_id("inv");
-        sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+        let (new_name,): (String,) = sqlx::query_as("SELECT name FROM plans WHERE id = $1")
+            .bind(&b.plan_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        let what = if same_plan {
+            format!(
+                "{new_name}: quantity {old_qty} to {new_qty}, for the {remaining} of {total_days} days left in this period"
+            )
+        } else {
+            format!(
+                "Change to {new_name}, for the {remaining} of {total_days} days left in this period"
+            )
+        };
+        let details = json!([{ "description": what, "quantity": 1, "unit_price_minor": charge, "amount_minor": charge }]);
+        sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
             .bind(&inv).bind(&auth.tenant_id).bind(&customer)
             .bind(format!("PRO-{}-{}", &id[id.len().saturating_sub(8)..], new_id("p")))
-            .bind(&old.0).bind(charge).bind(today).bind(format!("proration:{old_plan}->{}", b.plan_id))
+            .bind(&old.0).bind(charge).bind(today).bind(format!("proration:{old_plan}->{}", b.plan_id)).bind(details)
             .execute(&mut *tx).await?;
         tenant::emit(
             &mut tx,
@@ -1230,9 +1244,10 @@ pub async fn complete_milestone(
     }
     let inv = new_id("inv");
     let today = crate::ist_today();
-    sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+    let details = json!([{ "description": name, "quantity": 1, "unit_price_minor": amount, "amount_minor": amount }]);
+    sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(&inv).bind(&auth.tenant_id).bind(&customer).bind(format!("MS-{}", &id[id.len().saturating_sub(10)..])).bind(&ccy).bind(amount)
-        .bind(today.checked_add_days(Days::new(due_days as u64))).bind(ext.unwrap_or_else(|| format!("milestone:{name}")))
+        .bind(today.checked_add_days(Days::new(due_days as u64))).bind(ext.unwrap_or_else(|| format!("milestone:{name}"))).bind(details)
         .execute(&mut *tx).await?;
     sqlx::query("UPDATE milestones SET status = 'invoiced', invoice_id = $2, completed_by = $3 WHERE id = $1").bind(&id).bind(&inv).bind(&auth.actor).execute(&mut *tx).await?;
     tenant::audit(
