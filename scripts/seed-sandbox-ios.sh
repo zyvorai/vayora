@@ -2,6 +2,7 @@
 # Adds what the iPhone merchant app's inbox screens need to a sandbox made by zyvor-sandbox.sh:
 # one refund and one payout waiting for approval, one open dispute, one reminder draft (INV-1001 must be overdue,
 # as startdata-style seeding leaves it). Usage: API=http://localhost:8081 KEY=zk_test_... scripts/seed-sandbox-ios.sh
+# Set APPROVER_KEY_OUT=<file> to also mint a second key (for a successful approval) and write it there.
 # Needs the simulated Cashfree mock (SIM_URL, default http://localhost:9090) the sandbox script starts, and TENANT (the
 # tenant id the sandbox script prints). Test environment only. Prints ids, never the key.
 set -euo pipefail
@@ -38,4 +39,9 @@ PO=$(post /payouts "{\"vendor_id\":\"$VD\",\"amount_minor\":120000,\"purpose\":\
 
 # a reminder draft for the overdue invoice
 post /collections/dunning/run '{}' >/dev/null || true
+# a second person, so an approval can succeed (the person who asked cannot approve): its key goes to a file, never the screen
+if [ -n "${APPROVER_KEY_OUT:-}" ]; then
+  ( umask 077; post /api_keys '{"name":"ios approver","scopes":["payments:read","refunds:approve","payouts:approve","disputes:write"]}' | jq_ '["key"]' > "$APPROVER_KEY_OUT" )
+  echo "approver key written to $APPROVER_KEY_OUT"
+fi
 echo "refund=$RF dispute=$DP payout=$PO"
