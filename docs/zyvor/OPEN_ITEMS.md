@@ -173,6 +173,11 @@ translations for the new pages (`apps/zyvor-checkout` shows the approach).
 
 ---
 
+## 6a. iPhone apps (plan: `~/.claude/plans`, eight phases)
+
+- **Phase 1 done: payment links in the merchant app.** A Payment links chip on Collect (hidden in cashier mode) opens a screen to make a fixed-amount link (optional note, stop after one payment), see the list, cancel, email (when the customer has an address) and share the address and a QR from the phone. Settings has a Checkout address field: a link is only shareable when that is an https address (`PaymentLinkInfo.shareURL`; no userinfo, no `..`, only `/pay/link/` paths). The built-in demo bank supports create, list and cancel, and refuses email. Checked: package tests (client calls, idempotency key, URL rules, demo bank), both app schemes build, the Collect chip seen in the iOS Simulator in demo mode. **Not** done: the new screen was not opened or tapped (no tap driver here), not run against the local sandbox, no VoiceOver or large-text check, no open-amount or invoice links, no expiry picker.
+- **Next:** Owed to me (ageing, invoices, dunning drafts), approvals inbox, disputes with photo evidence, today dashboard, subscriptions and test clock, notifications and widgets, payer additions.
+
 ## 7. Operations and process
 
 - **History.** PR #19 was squash-merged, so the 16 individual commits are not on `main`. They remain on the

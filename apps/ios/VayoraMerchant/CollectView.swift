@@ -16,6 +16,7 @@ struct CollectView: View {
     @State private var unlocking = false
     @State private var bill = Bill()
     @State private var billShown = false
+    @State private var linksShown = false
     @State private var billUsed: Bill?
     @AppStorage("lastAmountMinor") private var lastMinor = 0
 
@@ -39,6 +40,7 @@ struct CollectView: View {
                                         onChip: { note = (note == $0 ? "" : $0) }, onShowQR: start)
                     staffRow
                     itemsRow
+                    linksRow
                     helpers
                     if store.client == nil { Text("Add your API key in Settings first, or scan a setup QR.").font(.footnote).foregroundStyle(VUI.textSecondary).padding(.bottom, 8).background(VUI.ink) }
                 }
@@ -94,6 +96,16 @@ struct CollectView: View {
                 }.padding(.horizontal, 20)
             }
             .padding(.vertical, 6).background(VUI.ink)
+        }
+    }
+    /// Payment links: for a customer who is not at the counter. Hidden in cashier mode, like the other money controls.
+    @ViewBuilder var linksRow: some View {
+        if phase == .entering, !store.cashierLocked {
+            HStack {
+                Button { linksShown = true } label: { chip("Payment links", on: false) }.buttonStyle(PressScale()).accessibilityHint("Make, share or cancel a link a customer can pay from anywhere")
+                Spacer()
+            }.padding(.horizontal, 20).padding(.vertical, 6).background(VUI.ink)
+            .sheet(isPresented: $linksShown) { PaymentLinksView().environmentObject(store) }
         }
     }
     /// Build the amount from items; the bill is kept with the payment so sales can be grouped by item.

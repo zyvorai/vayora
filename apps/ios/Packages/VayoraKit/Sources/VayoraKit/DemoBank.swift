@@ -20,6 +20,9 @@ public final class DemoBank: @unchecked Sendable {
     private var order: [String] = []
     private var attempts: [String: Attempt] = [:]
     private var circles: [String: Circle] = [:]
+    private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
+    private var links: [String: Link] = [:]
+    private var linkOrder: [String] = []
     private var counter = 0
 
     public init(now: @escaping () -> Date = Date.init, customerPaysAfter: TimeInterval = 4) {
@@ -44,6 +47,14 @@ public final class DemoBank: @unchecked Sendable {
     private func json(_ a: Attempt) -> [String: Any] {
         var d: [String: Any] = ["id": a.id, "status": a.status, "amount_minor": a.amount, "refunded_minor": a.refunded, "reserved_refund_minor": 0]
         d["client_action"] = ["type": "upi_intent", "uri": a.uri]
+        return d
+    }
+    private func json(_ l: Link) -> [String: Any] {
+        var d: [String: Any] = ["id": l.id, "path": "/pay/link/demo/\(l.id)", "amount_minor": l.amount, "currency": "INR", "uses": 0,
+                                "status": l.canceled ? "canceled" : "active", "created_at": Self.iso(l.created), "can_email": false]
+        if let n = l.note { d["description"] = n }
+        if let m = l.maxUses { d["max_uses"] = m }
+        if let e = l.expires { d["expires_at"] = e }
         return d
     }
     private func json(_ c: Circle) -> [String: Any] {
@@ -114,6 +125,20 @@ public final class DemoBank: @unchecked Sendable {
             guard var a = attempts[s[1]] else { return Self.err(404, "not_found", "No such attempt") }
             if a.status == "pending", now().timeIntervalSince(a.created) >= customerPaysAfter { a.status = "captured"; attempts[a.id] = a }
             return Self.ok(json(a))
+        case ("POST", 1, "payment_links"):
+            guard let amt = (obj["amount_minor"] as? NSNumber)?.int64Value, amt > 0 else { return Self.err(422, "invalid_link", "Enter an amount above zero.") }
+            let id = nextID("pl")
+            links[id] = Link(id: id, amount: amt, note: obj["description"] as? String, maxUses: (obj["max_uses"] as? NSNumber)?.intValue, expires: obj["expires_at"] as? String, canceled: false, created: now())
+            linkOrder.append(id)
+            return (201, (try? JSONSerialization.data(withJSONObject: ["id": id, "path": "/pay/link/demo/\(id)"])) ?? Data())
+        case ("GET", 1, "payment_links"):
+            return Self.ok(["data": linkOrder.reversed().compactMap { links[$0] }.map(json)])
+        case ("POST", 3, "payment_links") where s[2] == "cancel":
+            guard var l = links[s[1]], !l.canceled else { return Self.err(404, "not_found", "No active payment link.") }
+            l.canceled = true; links[l.id] = l
+            return Self.ok(["id": l.id, "status": "canceled"])
+        case ("POST", 3, "payment_links") where s[2] == "send":
+            return Self.err(409, "checkout_url_not_configured", "The built-in demo has no mail. Connect a test server to email a link.")
         case ("POST", 2, "sim") where s[1] == "pay":
             let uri = (obj["upi_uri"] as? String) ?? ""
             let q = Self.query(uri)
