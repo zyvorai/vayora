@@ -222,6 +222,7 @@ struct MerchantSettings: View {
     @State private var setupMessage: String?
     @State private var closingDay = false
     @State private var seeRegulars = false
+    @State private var subscribing = false
     @State private var exporting = false
     @State private var staffing = false
     @State private var cataloguing = false
@@ -248,6 +249,13 @@ struct MerchantSettings: View {
                                 }.vfont(15, .semibold).foregroundStyle(VUI.mint)
                                 if let pinMessage { Text(pinMessage).vfont(13).foregroundStyle(VUI.coral) }
                                 Text("Hides AutoPay, Settings and refunds until you enter the PIN from the Collect screen. It is a convenience for a shared counter phone, not security: the key on this phone still opens everything.").vfont(12).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Subscriptions", systemImage: "repeat").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                Button("Open subscriptions") { subscribing = true }.vfont(15, .semibold).foregroundStyle(VUI.mint)
+                                Text("Pause, resume or end a customer's subscription. In a test organisation you can also move its clock.").vfont(12).foregroundStyle(VUI.textTertiary)
                             }
                         }
                         GlassCard {
@@ -333,6 +341,7 @@ struct MerchantSettings: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $closingDay) { EndOfDayView().environmentObject(store) }
             .sheet(isPresented: $seeRegulars) { RegularsView().environmentObject(store) }
+            .sheet(isPresented: $subscribing) { SubscriptionsView().environmentObject(store) }
             .sheet(isPresented: $exporting) { AccountantExportView().environmentObject(store) }
             .sheet(isPresented: $staffing) { StaffView().environmentObject(store) }
             .sheet(isPresented: $cataloguing) { CatalogueView().environmentObject(store) }
