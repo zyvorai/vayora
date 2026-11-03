@@ -10,6 +10,9 @@ struct CashflowView: View {
     @State private var flow: Cashflow?
     @State private var settlements: [SettlementInfo] = []
     @State private var message: String?
+    @State private var period = GSTPeriod.containing(Date()).shifted(by: -1)   // the last full month, which is the one being filed
+    @State private var gst: GSTSummary?
+    @State private var gstNote: String?
 
     var body: some View {
         ZStack {
@@ -24,13 +27,14 @@ struct CashflowView: View {
                     if let message { Text(message).vfont(13).foregroundStyle(VUI.coral) }
                     if let f = flow { owedCard(f); weeksCard(f) }
                     settlementsCard
+                    gstCard
                     Text("A schedule of what is owed by its due date. It does not predict when people will actually pay. Rupee invoices only.").vfont(12).foregroundStyle(VUI.textTertiary)
                 }.padding(20)
             }
             .refreshable { await load() }
         }
         .environment(\.colorScheme, .dark)
-        .task { await load() }
+        .task { await load(); await loadGST() }
     }
 
     func line(_ label: String, _ minor: Int64, hot: Bool = false) -> some View {
@@ -68,6 +72,40 @@ struct CashflowView: View {
                 if f.noDueDateMinor > 0 { line("No due date", f.noDueDateMinor) }
             }
         }
+    }
+
+    /// The month's GST totals from the GSTR-1 style report. Zyvor prepares it to file from; it does not file it.
+    var gstCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("GST", systemImage: "percent").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                    Spacer()
+                    Button { period = period.shifted(by: -1); Task { await loadGST() } } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }.accessibilityLabel("Earlier month")
+                    Text(period.title).vfont(14, .semibold).foregroundStyle(VUI.textPrimary)
+                    Button { period = period.shifted(by: 1); Task { await loadGST() } } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
+                        .disabled(period == GSTPeriod.containing(Date())).accessibilityLabel("Later month")
+                }.foregroundStyle(VUI.mint)
+                if let g = gst {
+                    if g.isEmpty { Text("No sales or credit notes in \(period.title).").vfont(14).foregroundStyle(VUI.textSecondary) }
+                    else {
+                        line("Taxable value", g.taxableMinor)
+                        line("CGST", g.cgstMinor); line("SGST", g.sgstMinor); line("IGST", g.igstMinor)
+                        HStack { Text("Tax in total").vfont(14, .semibold).foregroundStyle(VUI.textPrimary); Spacer(); Text(Money(minor: g.taxMinor).display).vfont(14, .semibold).foregroundStyle(VUI.mint) }
+                            .accessibilityElement(children: .combine)
+                        Text("\(g.b2bInvoices) invoice\(g.b2bInvoices == 1 ? "" : "s") to registered businesses, \(g.creditNotes) credit note\(g.creditNotes == 1 ? "" : "s").").vfont(12).foregroundStyle(VUI.textTertiary)
+                    }
+                }
+                if let gstNote { Text(gstNote).vfont(13).foregroundStyle(VUI.textSecondary) }
+                Text("A summary to prepare your return from. Zyvor does not file it and the figures are not checked against the GST portal.").vfont(12).foregroundStyle(VUI.textTertiary)
+            }
+        }
+    }
+
+    func loadGST() async {
+        guard let c = store.client else { return }
+        do { gst = try await c.gstSummary(period: period); gstNote = nil }
+        catch { gst = nil; gstNote = (error as? APIError)?.message ?? "Couldn't load the GST summary." }
     }
 
     var settlementsCard: some View {

@@ -385,3 +385,33 @@ final class PayoutActionTests: XCTestCase {
         let pending = try await c.pendingApprovals(); XCTAssertEqual(pending.count, 2)
     }
 }
+
+final class GSTTests: XCTestCase {
+    func testPeriodsRollOverYearsAndNameThemselves() {
+        XCTAssertEqual(GSTPeriod(year: 2026, month: 1).shifted(by: -1), GSTPeriod(year: 2025, month: 12))
+        XCTAssertEqual(GSTPeriod(year: 2026, month: 12).shifted(by: 1), GSTPeriod(year: 2027, month: 1))
+        XCTAssertEqual(GSTPeriod(year: 2026, month: 3).shifted(by: -14).id, "2025-01")
+        XCTAssertEqual(GSTPeriod(year: 2026, month: 10).id, "2026-10")
+        XCTAssertTrue(GSTPeriod(year: 2026, month: 10).title.contains("2026"))
+        // 23:30 UTC on 31 October is already 1 November in India
+        let utc = ISO8601DateFormatter().date(from: "2026-10-31T23:30:00Z")!
+        XCTAssertEqual(GSTPeriod.containing(utc), GSTPeriod(year: 2026, month: 11))
+    }
+
+    func testSummaryReadsTotalsAndCountsInvoicesAndCreditNotes() async throws {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        let c = VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+        nonisolated(unsafe) var url = ""
+        StubProtocol.handler = { r in url = r.url!.absoluteString; return (200, #"{"note":"x","period":"2026-10","gstin":"29ABCDE1234F1Z5","legal_name":"A","b2b":[{"buyer_gstin":"27X","invoices":[{"number":"1"},{"number":"2"}]},{"buyer_gstin":"27Y","invoices":[{"number":"3"}]}],"b2cs":[],"cdnr":[{"note_id":"a"}],"cdnur":[{"note_id":"b"},{"note_id":"c"}],"hsn":[],"totals":{"taxable_minor":500000,"cgst_minor":45000,"sgst_minor":45000,"igst_minor":10000}}"#) }
+        let s = try await c.gstSummary(period: GSTPeriod(year: 2026, month: 10))
+        XCTAssertTrue(url.hasSuffix("/v1/gst/gstr1?period=2026-10"))
+        XCTAssertEqual(s.taxableMinor, 500000); XCTAssertEqual(s.taxMinor, 100000); XCTAssertEqual(s.b2bInvoices, 3); XCTAssertEqual(s.creditNotes, 3)
+        XCTAssertFalse(s.isEmpty)
+        StubProtocol.handler = { _ in (200, #"{"period":"2026-09","gstin":null,"b2b":[],"b2cs":[],"cdnr":[],"cdnur":[],"hsn":[],"totals":{"taxable_minor":0,"cgst_minor":0,"sgst_minor":0,"igst_minor":0}}"#) }
+        let empty = try await c.gstSummary(period: GSTPeriod(year: 2026, month: 9))
+        XCTAssertTrue(empty.isEmpty)
+        let demo = try await VayoraClient.demo(bank: DemoBank()).gstSummary(period: GSTPeriod(year: 2026, month: 10))
+        XCTAssertEqual(demo.taxMinor, 180000); XCTAssertEqual(demo.b2bInvoices, 2); XCTAssertEqual(demo.creditNotes, 1)
+    }
+}

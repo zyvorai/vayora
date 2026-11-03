@@ -47,6 +47,7 @@ final class SandboxTests: XCTestCase {
         app.tabBars.buttons["Payments"].tap()
         app.buttons["Cashflow"].tap()
         see("Still to come in")
+        see("GST")
         shot("sandbox-cashflow")
         app.buttons["Close"].tap()
         app.tabBars.buttons["Settings"].tap()

@@ -50,6 +50,13 @@ final class WalkthroughTests: XCTestCase {
         app.buttons["Cashflow"].tap()
         see("Still to come in")
         see("Settled to your bank")
+        see("GST")
+        see("Tax in total")
+        XCTAssertTrue(app.buttons["Earlier month"].exists)
+        let later = app.buttons["Later month"]
+        XCTAssertTrue(later.isEnabled, "it opens on the last full month, so the current one is a step later")
+        later.tap()
+        XCTAssertFalse(later.isEnabled, "and it cannot go past the current month")
         shot("cashflow")
     }
 
