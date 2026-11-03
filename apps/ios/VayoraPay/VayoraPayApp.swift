@@ -29,9 +29,10 @@ struct RootView: View {
             .overlay { if phase != .active || (locked && lockOn && onboarded) { shield } }
             .onChange(of: phase) { _, new in
                 switch new {
-                case .background: backgroundedAt = backgroundedAt ?? Date()
+                // while the Face ID or passcode sheet is up the app can be reported as backgrounded; that is the sheet, not the person leaving
+                case .background: if !authenticating { backgroundedAt = backgroundedAt ?? Date() }
                 case .active:
-                    if LockPolicy.shouldLock(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true }
+                    if LockPolicy.shouldLockOnReturn(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true }
                     // Ask whenever the app is active and still locked: a prompt started at launch is cancelled by iOS while the app is not yet active
                     if locked && lockOn && onboarded && !authFailed && !authenticating { authenticate() }
                     backgroundedAt = nil

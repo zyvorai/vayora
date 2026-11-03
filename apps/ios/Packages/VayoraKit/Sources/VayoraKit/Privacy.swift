@@ -10,6 +10,17 @@ public enum LockPolicy {
     }
 }
 
+extension LockPolicy {
+    /// Whether to lock when the app becomes active again. Unlike `shouldLock`, no recorded background time means the app never left
+    /// (the Face ID sheet and the system's permission alerts make it inactive and active again without a background trip), so it must
+    /// NOT lock: treating that as a launch locked the app again right after a successful unlock, and the prompt came back forever.
+    /// The launch lock is the app's initial locked state, not this.
+    public static func shouldLockOnReturn(enabled: Bool, backgroundedAt: Date?, now: Date, timeoutMinutes: Int) -> Bool {
+        guard backgroundedAt != nil else { return false }
+        return shouldLock(enabled: enabled, backgroundedAt: backgroundedAt, now: now, timeoutMinutes: timeoutMinutes)
+    }
+}
+
 /// A plain warning for the oldest trick in UPI: someone says scanning or paying will bring you money.
 public enum ScamHints {
     static let words = ["refund", "cashback", "reward", "prize", "lottery", "kyc", "claim", "receive money", "get money", "winning", "gift card", "verify"]
