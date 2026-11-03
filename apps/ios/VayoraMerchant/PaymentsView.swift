@@ -8,6 +8,7 @@ struct PaymentsView: View {
     @State private var refunds: [String: RefundState] = [:]
     @State private var error: String?
     @State private var open: PaymentIntent?
+    @State private var cashflowShown = false
 
     func state(_ i: PaymentIntent) -> PaymentRowModel.State {
         if let r = refunds[i.id], r.isFullyRefunded { return .refunded }
@@ -54,6 +55,13 @@ struct PaymentsView: View {
                                 trend: trend.count > 1 ? trend : [0, 0], rows: rows, error: error, hourly: hourly, onOpen: { r in open = items.first { $0.id == r.id } })
                 .refreshable { await load() }
                 .task { await load() }
+                .sheet(isPresented: $cashflowShown) { CashflowView().environmentObject(store) }
+                .overlay(alignment: .topTrailing) {
+                    if !store.cashierLocked {
+                        Button { cashflowShown = true } label: { Label("Cashflow", systemImage: "chart.bar.xaxis").vfont(13, .semibold).foregroundStyle(VUI.textSecondary).padding(.horizontal, 12).padding(.vertical, 7).background(.white.opacity(0.1), in: Capsule()) }
+                            .padding(.trailing, 16).padding(.top, 6).accessibilityHint("Money owed by due week and bank settlements")
+                    }
+                }
                 .safeAreaInset(edge: .top) {
                     if let line = RefundPattern.line(store.refundLog, since: Date().addingTimeInterval(-7 * 86400), days: 7, paidCount: paid.count) {
                         Text(line).vfont(12).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 6).background(VUI.ink)

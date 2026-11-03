@@ -237,3 +237,29 @@ final class DisputeTests: XCTestCase {
         XCTAssertTrue(d.isEmpty)
     }
 }
+
+final class CashflowTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testCashflowDecodesAndTotalsEverythingOwed() async throws {
+        nonisolated(unsafe) var url = ""
+        StubProtocol.handler = { r in url = r.url!.absoluteString; return (200, #"{"as_of":"2026-11-03","currency":"INR","weeks":[{"starts":"2026-11-03","due_minor":100},{"starts":"2026-11-10","due_minor":200}],"overdue_minor":50,"due_later_minor":7,"no_due_date_minor":3,"promised_minor":40,"payouts_waiting_minor":900,"daily_receipts_run_rate_minor":1000,"note":"x"}"#) }
+        let c = try await client().cashflow(weeks: 99)
+        XCTAssertEqual(c.totalOwedMinor, 360); XCTAssertEqual(c.payoutsWaitingMinor, 900); XCTAssertEqual(c.weeks.count, 2)
+        XCTAssertTrue(url.hasSuffix("/v1/insights/cashflow?weeks=12"))   // clamped, and the query stays a query
+    }
+
+    func testSettlementDeductionsAndDemo() async throws {
+        let s = SettlementInfo(id: "s", provider: "x", grossMinor: 1000, netMinor: 940)
+        XCTAssertEqual(s.deductionsMinor, 60)
+        let c = VayoraClient.demo(bank: DemoBank())
+        let list = try await c.settlements()
+        XCTAssertEqual(list.first?.deductionsMinor, 36800)
+        let f = try await c.cashflow()
+        XCTAssertEqual(f.totalOwedMinor, 355000)
+    }
+}

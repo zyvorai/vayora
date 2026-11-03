@@ -142,6 +142,11 @@ public final class DemoBank: @unchecked Sendable {
             guard let o = obj["outcome"] as? String, o == "won" || o == "lost" else { return Self.err(422, "invalid_outcome", "outcome must be won or lost") }
             disputes[s[1]] = (o, d.evidence)
             return Self.ok(["id": s[1], "status": o])
+        case ("GET", 2, "insights") where s[1].hasPrefix("cashflow"):
+            return Self.ok(["as_of": "2026-11-03", "currency": "INR", "weeks": [["starts": "2026-11-03", "due_minor": 80000], ["starts": "2026-11-10", "due_minor": 0], ["starts": "2026-11-17", "due_minor": 150000], ["starts": "2026-11-24", "due_minor": 0]],
+                            "overdue_minor": 125000, "due_later_minor": 0, "no_due_date_minor": 0, "promised_minor": 60000, "payouts_waiting_minor": 1200000, "daily_receipts_run_rate_minor": 410000])
+        case ("GET", 1, "settlements"):
+            return Self.ok(["data": [["id": "st_demo1", "provider": "demo", "utr": "DEMOUTR0001", "gross_minor": 500000, "refunds_minor": 25000, "fee_minor": 11800, "adjustment_minor": 0, "net_minor": 463200, "settled_on": "2026-11-02", "status": "matched"] as [String: Any]]])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):
