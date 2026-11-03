@@ -49,7 +49,7 @@ struct OwedView: View {
                 }
                 .refreshable { await load() }
             }
-            .safeAreaInset(edge: .top, spacing: 0) { banner }
+            .safeAreaInset(edge: .top, spacing: 0) { FeedbackBanner(message: $message, notice: $notice) }
             .environment(\.colorScheme, .dark)
         }
         .task { await load() }
@@ -168,19 +168,6 @@ struct OwedView: View {
         Task {
             do { try await c.retryRefund(id: r.id); notice = "Refund sent again."; message = nil; Haptics.success(); await load() }
             catch { message = (error as? APIError)?.message ?? "Couldn't retry that."; notice = nil; Haptics.error() }
-        }
-    }
-
-    /// What just happened (or went wrong), pinned to the top so it is seen however far the list is scrolled.
-    @ViewBuilder var banner: some View {
-        if let message {
-            Text(message).vfont(14, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                .background(VUI.coral, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).padding(.horizontal, 16).padding(.top, 4)
-                .accessibilityLabel("Error: \(message)").onTapGesture { self.message = nil }
-        } else if let notice {
-            Text(notice).vfont(14, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                .background(VUI.mint, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).padding(.horizontal, 16).padding(.top, 4)
-                .accessibilityLabel(notice).onTapGesture { self.notice = nil }
         }
     }
 

@@ -9,6 +9,7 @@ struct PaymentLinksView: View {
     @State private var links: [PaymentLinkInfo] = []
     @State private var loaded = false
     @State private var message: String?
+    @State private var notice: String?
     @State private var entry = AmountEntry()
     @State private var note = ""
     @State private var oneUse = false
@@ -26,7 +27,6 @@ struct PaymentLinksView: View {
                         Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(VUI.textPrimary).frame(width: 36, height: 36).background(.white.opacity(0.14), in: Circle()) }.accessibilityLabel("Close")
                     }
                     newLink
-                    if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
                     if loaded, links.isEmpty { GlassCard { Text("No links yet. Make one above and share it with a customer.").vfont(14).foregroundStyle(VUI.textSecondary) } }
                     ForEach(links) { l in row(l) }
                     if store.demoMode { Text("Test money. The built-in demo cannot email a link.").vfont(12).foregroundStyle(VUI.textTertiary) }
@@ -34,6 +34,7 @@ struct PaymentLinksView: View {
                 }.padding(20)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { FeedbackBanner(message: $message, notice: $notice) }
         .environment(\.colorScheme, .dark)
         .task { await load() }
         .sheet(item: $shown) { l in LinkShareSheet(link: l, url: l.shareURL(checkoutBase: store.checkoutURL)) }
@@ -99,7 +100,7 @@ struct PaymentLinksView: View {
             defer { busy = false }
             do {
                 _ = try await c.createPaymentLink(amount: amount, description: note.trimmingCharacters(in: .whitespaces), maxUses: oneUse ? 1 : nil)
-                entry = AmountEntry(); note = ""; oneUse = false; Haptics.success()
+                entry = AmountEntry(); note = ""; oneUse = false; notice = "Link created."; message = nil; Haptics.success()
                 await load()
             } catch { message = (error as? APIError)?.message ?? "Couldn't create the link."; Haptics.error() }
         }
@@ -107,14 +108,14 @@ struct PaymentLinksView: View {
     func cancel(_ l: PaymentLinkInfo) {
         guard let c = store.client else { return }
         Task {
-            do { try await c.cancelPaymentLink(id: l.id); Haptics.tap(); await load() }
+            do { try await c.cancelPaymentLink(id: l.id); notice = "Link canceled."; message = nil; Haptics.tap(); await load() }
             catch { message = (error as? APIError)?.message ?? "Couldn't cancel the link."; Haptics.error() }
         }
     }
     func email(_ l: PaymentLinkInfo) {
         guard let c = store.client else { return }
         Task {
-            do { try await c.emailPaymentLink(id: l.id); message = nil; Haptics.success() }
+            do { try await c.emailPaymentLink(id: l.id); message = nil; notice = "Link emailed."; Haptics.success() }
             catch { message = (error as? APIError)?.message ?? "Couldn't email the link."; Haptics.error() }
         }
     }

@@ -26,8 +26,6 @@ struct SubscriptionsView: View {
                         Spacer()
                         Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(VUI.textPrimary).frame(width: 36, height: 36).background(.white.opacity(0.14), in: Circle()) }.accessibilityLabel("Close")
                     }
-                    if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
-                    if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
                     if isTestKey, let clock { clockCard(clock) }
                     if loaded, subs.isEmpty, message == nil { GlassCard { Text("No subscriptions yet.").vfont(14).foregroundStyle(VUI.textSecondary) } }
                     ForEach(subs) { s in row(s) }
@@ -36,6 +34,7 @@ struct SubscriptionsView: View {
             }
             .refreshable { await load() }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { FeedbackBanner(message: $message, notice: $notice) }
         .environment(\.colorScheme, .dark)
         .task { await load() }
         .confirmationDialog("End this subscription?", isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }), titleVisibility: .visible, presenting: ending) { s in

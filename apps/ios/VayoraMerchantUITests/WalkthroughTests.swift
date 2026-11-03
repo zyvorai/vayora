@@ -25,9 +25,11 @@ final class WalkthroughTests: XCTestCase {
         let amount = app.textFields["Amount in rupees"]; amount.tap(); amount.typeText("250")
         app.buttons["Create link"].tap()
         see("₹250.00")
+        see("Link created.")
         shot("payment-links")
         app.buttons["Cancel link"].firstMatch.tap()
         see("Canceled")
+        see("Link canceled.")
     }
 
     func testOwedShowsAgeingApprovalsDisputesAndDrafts() {
