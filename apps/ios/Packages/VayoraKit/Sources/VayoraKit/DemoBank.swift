@@ -23,6 +23,7 @@ public final class DemoBank: @unchecked Sendable {
     private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
     private var links: [String: Link] = [:]
     private var linkOrder: [String] = []
+    private var reconCases: [String: (assignee: String?, status: String)] = ["rc_demo1": (nil, "open")]
     private var payoutsToPay: [String: String] = ["po_demo2": "approved"]
     private var refundsFailed: [String: String] = ["re_demo2": "failed"]
     private var disputes: [String: (status: String, evidence: Int)] = ["dp_demo1": ("open", 0)]
@@ -181,6 +182,15 @@ public final class DemoBank: @unchecked Sendable {
                             "arithmetic": ["balances": true], "expected_minor": 493200, "received_minor": 463200, "difference_minor": -30000,
                             "difference_breakdown": [["reason": "provider fees and taxes (no fee schedule configured)", "amount_minor": -11800], ["reason": "settlement adjustments", "amount_minor": -18200]],
                             "narrative": "Demo paid ₹4,632.00 on 2026-11-02: 2 payments worth ₹5,000.00, less ₹250.00 of refunds. It deducted ₹118.00 in fees and taxes (2.36% of payment value)."])
+        case ("GET", 2, "recon") where s[1] == "cases":
+            return Self.ok(["data": reconCases.map { ["id": $0.key, "kind": "settlement_arithmetic", "status": $0.value.status, "diff_minor": -30000, "assignee": $0.value.assignee as Any? ?? NSNull(),
+                                                       "explanation": "The provider's own figures do not add up: payments less refunds less fees is not what it paid."] as [String: Any] }])
+        case ("POST", 4, "recon") where s[1] == "cases" && (s[3] == "assign" || s[3] == "resolve"):
+            guard var c = reconCases[s[2]], c.status != "resolved" else { return Self.err(404, "not_found", "No open case.") }
+            if s[3] == "assign" { guard let who = obj["assignee"] as? String, !who.isEmpty else { return Self.err(422, "invalid", "Who should look at it?") }; c = (who, "assigned") }
+            else { guard let r = obj["resolution"] as? String, !r.isEmpty else { return Self.err(422, "invalid", "Say what was found.") }; c.status = "resolved" }
+            reconCases[s[2]] = c
+            return Self.ok(["id": s[2], "status": c.status])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):

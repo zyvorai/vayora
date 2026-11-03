@@ -108,4 +108,22 @@ final class WalkthroughTests: XCTestCase {
         see("Settlement adjustments")
         shot("settlement-explained")
     }
+
+    func testAReconciliationCaseCanBeAssignedThenResolved() {
+        app.tabBars.buttons["Owed"].tap()
+        see("Money to check")
+        app.buttons["Assign the Settlement Arithmetic case to someone"].tap()
+        XCTAssertFalse(app.buttons["Give it"].isEnabled, "a name is needed")
+        let name = app.textFields.element(boundBy: 0); name.tap(); name.typeText("Asha")
+        app.buttons["Give it"].tap()
+        see("Case assigned.")
+        see("With Asha")
+        app.buttons["Resolve the Settlement Arithmetic case"].tap()
+        let note = app.textFields.element(boundBy: 0).exists ? app.textFields.element(boundBy: 0) : app.textViews.element(boundBy: 0)
+        note.tap(); note.typeText("Fee confirmed with the bank")
+        app.buttons["Mark resolved"].firstMatch.tap()
+        see("Case resolved.")
+        XCTAssertFalse(app.staticTexts["Money to check"].waitForExistence(timeout: 3), "the card goes away with its last case")
+        shot("case-resolved")
+    }
 }

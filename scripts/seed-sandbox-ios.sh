@@ -37,6 +37,9 @@ DP=$(post /disputes "{\"attempt_id\":\"$AT\",\"amount_minor\":45000,\"reason\":\
 CFREF=$(printf '%s' "$SIM" | python3 -c 'import sys,json;print(json.load(sys.stdin)["payment"]["cf_payment_id"])')
 post /settlements/import "{\"provider\":\"cashfree\",\"provider_ref\":\"seed-$RANDOM-$(date +%s)\",\"utr\":\"SEEDUTR$RANDOM\",\"settled_on\":\"$(date +%F)\",\"net_minor\":48200,\"items\":[{\"kind\":\"payment\",\"provider_ref\":\"$CFREF\",\"amount_minor\":50000},{\"kind\":\"fee\",\"amount_minor\":-1500,\"description\":\"Gateway fee\"},{\"kind\":\"fee\",\"amount_minor\":-300,\"description\":\"GST on fee\"}]}" >/dev/null
 
+# a settlement whose own figures do not add up (500.00 gross, 18.00 fee, but it says it paid 400.00): the server opens a reconciliation case
+post /settlements/import "{\"provider\":\"cashfree\",\"provider_ref\":\"seedbad-$RANDOM-$(date +%s)\",\"utr\":\"SEEDBAD$RANDOM\",\"settled_on\":\"$(date +%F)\",\"net_minor\":40000,\"items\":[{\"kind\":\"payment\",\"provider_ref\":\"unknown-$RANDOM\",\"amount_minor\":50000},{\"kind\":\"fee\",\"amount_minor\":-1800,\"description\":\"Gateway fee\"}]}" >/dev/null
+
 # a payout waiting for approval
 VD=$(post /vendors '{"name":"Seed Supplier","vpa":"supplier@upi"}' | jq_ '["id"]')
 PO=$(post /payouts "{\"vendor_id\":\"$VD\",\"amount_minor\":120000,\"purpose\":\"Supplier invoice 88\"}" | jq_ '["id"]')

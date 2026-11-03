@@ -12,6 +12,8 @@ struct OwedView: View {
     @State private var toPay: [ApprovedPayout] = []
     @State private var failed: [FailedRefund] = []
     @State private var paying: ApprovedPayout?
+    @State private var cases: [ReconCase] = []
+    @State private var caseWork: CaseWork?
     @State private var noting: DisputeInfo?
     @State private var deciding: DisputeInfo?
     @State private var message: String?
@@ -37,6 +39,7 @@ struct OwedView: View {
                         if let line = store.attention.summary { Text("Waiting: \(line)").vfont(13, .semibold).foregroundStyle(VUI.amber).accessibilityLabel("Waiting for you: \(line)") }
                         if !approvals.isEmpty { approvalsCard }
                         if !toPay.isEmpty { payCard }
+                        if !cases.isEmpty { casesCard }
                         if !failed.isEmpty { failedCard }
                         if !disputes.isEmpty { disputesCard }
                         if !drafts.isEmpty { draftsCard }
@@ -59,6 +62,7 @@ struct OwedView: View {
             Button("We lost: book the loss", role: .destructive) { resolve(d, won: false) }
             Button("Cancel", role: .cancel) {}
         } message: { d in Text("\(Money(minor: d.amountMinor).display). A loss is booked on your ledger and cannot be undone here.") }
+        .sheet(item: $caseWork) { w in CaseSheet(work: w) { notice = w.resolving ? "Case resolved." : "Case assigned."; Task { await load() } }.environmentObject(store) }
         .sheet(item: $paying) { p in MarkPaidSheet(payout: p) { notice = "Payout marked paid."; Task { await load() } }.environmentObject(store) }
         .sheet(item: $promising) { inv in PromiseSheet(invoice: inv) { notice = "Promise saved for \(inv.number)."; Task { await load() } }.environmentObject(store) }
     }
@@ -171,6 +175,31 @@ struct OwedView: View {
         }
     }
 
+    /// Money that does not match up and needs a person: a settlement that does not add up, a payment the provider never confirmed.
+    var casesCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Money to check", systemImage: "magnifyingglass").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                ForEach(cases) { c in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(c.title).vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                            Spacer()
+                            if let d = c.diffMinor, d != 0 { Text((d < 0 ? "−" : "+") + Money(minor: abs(d)).display).vfont(13, .semibold).foregroundStyle(VUI.amber) }
+                        }
+                        if let e = c.explanation, !e.isEmpty { Text(e).vfont(13).foregroundStyle(VUI.textSecondary) }
+                        if let who = c.assignee, !who.isEmpty { Text("With \(who)").vfont(12).foregroundStyle(VUI.textTertiary) }
+                        HStack(spacing: 16) {
+                            Button("Give to someone") { caseWork = CaseWork(item: c, resolving: false) }.accessibilityLabel("Assign the \(c.title) case to someone")
+                            Button("Mark resolved") { caseWork = CaseWork(item: c, resolving: true) }.accessibilityLabel("Resolve the \(c.title) case")
+                        }.vfont(14, .semibold).foregroundStyle(VUI.mint)
+                    }
+                    if c.id != cases.last?.id { Divider().overlay(.white.opacity(0.1)) }
+                }
+            }
+        }
+    }
+
     var draftsCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -228,6 +257,7 @@ struct OwedView: View {
             disputes = (try? await c.openDisputes()) ?? []
             toPay = (try? await c.approvedPayouts()) ?? []
             failed = (try? await c.failedRefunds()) ?? []
+            cases = (try? await c.openReconCases()) ?? []
             await store.refreshAttention()
         } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
     }
@@ -375,6 +405,51 @@ struct MarkPaidSheet: View {
             defer { busy = false }
             do { try await c.markPayoutPaid(id: payout.id, bankRef: ref); Haptics.success(); onSaved(); dismiss() }
             catch { message = (error as? APIError)?.message ?? "Couldn't record the transfer."; Haptics.error() }
+        }
+    }
+}
+
+struct CaseWork: Identifiable { let item: ReconCase; let resolving: Bool; var id: String { item.id + (resolving ? "r" : "a") } }
+
+/// Gives a reconciliation case to someone, or closes it with a note of what was found.
+struct CaseSheet: View {
+    @EnvironmentObject var store: MerchantStore
+    @Environment(\.dismiss) var dismiss
+    let work: CaseWork
+    var onSaved: () -> Void
+    @State private var text = ""
+    @State private var message: String?
+    @State private var busy = false
+
+    var body: some View {
+        ZStack {
+            AmbientBackground(brand: .merchant, phase: 0.15)
+            VStack(alignment: .leading, spacing: 14) {
+                Text(work.resolving ? "Close this case" : "Give this case to someone").vfont(24, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                Text(work.item.title).vfont(14).foregroundStyle(VUI.textSecondary)
+                TextField(work.resolving ? "What you found or did" : "Their name", text: $text, axis: .vertical).lineLimit(work.resolving ? 3...6 : 1...1).foregroundStyle(VUI.textPrimary)
+                    .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                if work.resolving { Text("This is kept with the case. Closing it does not change any money; it only says a person looked.").vfont(12).foregroundStyle(VUI.textTertiary) }
+                if let message { Text(message).vfont(13).foregroundStyle(VUI.coral) }
+                Button(action: save) { Text(busy ? "Saving…" : (work.resolving ? "Mark resolved" : "Give it")).vfont(16, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity).padding(.vertical, 14).background(VUI.mint, in: Capsule()) }
+                    .buttonStyle(PressScale()).disabled(!CaseNote.isUsable(text) || busy).opacity(CaseNote.isUsable(text) && !busy ? 1 : 0.5)
+                Button("Cancel") { dismiss() }.vfont(16).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity)
+                Spacer()
+            }.padding(24)
+        }
+        .environment(\.colorScheme, .dark)
+        .presentationDetents([.medium])
+    }
+
+    func save() {
+        guard let c = store.client, CaseNote.isUsable(text), !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                if work.resolving { try await c.resolveReconCase(id: work.item.id, resolution: text) } else { try await c.assignReconCase(id: work.item.id, to: text) }
+                Haptics.success(); onSaved(); dismiss()
+            } catch { message = (error as? APIError)?.message ?? "Couldn't save that."; Haptics.error() }
         }
     }
 }
