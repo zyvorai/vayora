@@ -101,7 +101,11 @@ public struct VayoraClient: Sendable {
     }
 
     func request(_ method: String, _ path: String, body: Data? = nil, idempotencyKey: String? = nil) -> URLRequest {
-        var r = URLRequest(url: baseURL.appendingPathComponent("v1" + path))
+        // a path may carry a query ("/refunds?status=failed"): keep it a query, not an encoded part of the path
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var url = baseURL.appendingPathComponent("v1" + String(parts[0]))
+        if parts.count == 2, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) { c.percentEncodedQuery = String(parts[1]); url = c.url ?? url }
+        var r = URLRequest(url: url)
         r.httpMethod = method
         r.timeoutInterval = 15
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")

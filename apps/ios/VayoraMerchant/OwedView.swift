@@ -7,6 +7,7 @@ struct OwedView: View {
     @EnvironmentObject var store: MerchantStore
     @State private var ageing: Ageing?
     @State private var drafts: [ReminderDraft] = []
+    @State private var approvals: [PendingApproval] = []
     @State private var message: String?
     @State private var notice: String?
     @State private var promising: OwedInvoice?
@@ -29,6 +30,7 @@ struct OwedView: View {
                         }
                         if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
                         if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
+                        if !approvals.isEmpty { approvalsCard }
                         if !drafts.isEmpty { draftsCard }
                         if let a = ageing {
                             if a.inrBuckets.isEmpty { GlassCard { Text("Nothing is owed right now.").vfont(14).foregroundStyle(VUI.textSecondary) } }
@@ -43,6 +45,31 @@ struct OwedView: View {
         }
         .task { await load() }
         .sheet(item: $promising) { inv in PromiseSheet(invoice: inv) { notice = "Promise saved for \(inv.number)."; Task { await load() } }.environmentObject(store) }
+    }
+
+    /// Refunds and payouts someone else asked for. The server refuses the person who asked, and anyone without the approve permission.
+    var approvalsCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Waiting for your approval", systemImage: "checkmark.shield").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                ForEach(approvals) { a in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("\(a.title) · \(Money(minor: a.amountMinor).display)").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                            Spacer()
+                            if !a.requestedBy.isEmpty { Text("by \(a.requestedBy)").vfont(12).foregroundStyle(VUI.textTertiary) }
+                        }
+                        if !a.detail.isEmpty { Text(a.detail).vfont(13).foregroundStyle(VUI.textSecondary) }
+                        HStack(spacing: 16) {
+                            Button("Approve") { decide(a, approve: true) }.foregroundStyle(VUI.mint)
+                            Button("Reject", role: .destructive) { decide(a, approve: false) }
+                        }.vfont(14, .semibold)
+                        .accessibilityHint(a.kind == .payout ? "Approving lets the payout go ahead" : "Approving sends the refund to the customer")
+                    }
+                    if a.id != approvals.last?.id { Divider().overlay(.white.opacity(0.1)) }
+                }
+            }
+        }
     }
 
     var draftsCard: some View {
@@ -97,7 +124,16 @@ struct OwedView: View {
         do {
             async let a = c.ageing(); async let d = c.reminderDrafts()
             (ageing, drafts) = try await (a, d); message = nil
+            // a key without approval rights may not read refunds or payouts: that must not hide the rest of the screen
+            approvals = (try? await c.pendingApprovals()) ?? []
         } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
+    }
+    func decide(_ a: PendingApproval, approve: Bool) {
+        guard let c = store.client else { return }
+        Task {
+            do { try await c.decide(a, approve: approve); notice = "\(a.title) \(approve ? "approved" : "rejected")."; message = nil; Haptics.success(); await load() }
+            catch { message = (error as? APIError)?.message ?? "Couldn't save that."; notice = nil; Haptics.error() }
+        }
     }
     func decide(_ d: ReminderDraft, approve: Bool) {
         guard let c = store.client else { return }

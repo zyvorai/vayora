@@ -23,6 +23,7 @@ public final class DemoBank: @unchecked Sendable {
     private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
     private var links: [String: Link] = [:]
     private var linkOrder: [String] = []
+    private var approvals: [String: String] = ["re_demo1": "pending_approval", "po_demo1": "pending_approval"]
     private var drafts: [(id: String, number: String, message: String, status: String)] = [
         ("rd_demo1", "INV-1001", "Hello, this is a reminder that invoice INV-1001 for Rs 1,250.00 is 12 days past due.", "pending"),
         ("rd_demo2", "INV-1002", "A gentle reminder that invoice INV-1002 is due this week.", "pending")]
@@ -128,6 +129,14 @@ public final class DemoBank: @unchecked Sendable {
             guard var a = attempts[s[1]] else { return Self.err(404, "not_found", "No such attempt") }
             if a.status == "pending", now().timeIntervalSince(a.created) >= customerPaysAfter { a.status = "captured"; attempts[a.id] = a }
             return Self.ok(json(a))
+        case ("GET", 1, "refunds"):
+            return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
+        case ("GET", 1, "payouts"):
+            return Self.ok(["data": approvals["po_demo1"] == "pending_approval" ? [["id": "po_demo1", "amount_minor": 1200000, "currency": "INR", "status": "pending_approval", "purpose": "Supplier invoice 88", "requested_by": "accounts"] as [String: Any]] : []])
+        case ("POST", 3, "refunds"), ("POST", 3, "payouts"):
+            guard (s[2] == "approve" || s[2] == "reject"), approvals[s[1]] == "pending_approval" else { return Self.err(409, "not_pending_approval", "That is not waiting for approval.") }
+            approvals[s[1]] = s[2] == "approve" ? "approved" : "rejected"
+            return Self.ok(["id": s[1], "status": approvals[s[1]] ?? ""])
         case ("GET", 2, "collections") where s[1] == "ageing":
             func inv(_ id: String, _ n: String, _ due: String, _ amt: Int64, _ days: Int) -> [String: Any] { ["id": id, "number": n, "due_date": due, "outstanding_minor": amt, "days_past_due": days] }
             return Self.ok(["as_of": "2026-11-03", "data": [
