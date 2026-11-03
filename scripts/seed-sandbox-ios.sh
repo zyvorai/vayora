@@ -33,6 +33,10 @@ urllib.request.urlopen(req).read()' "$API/v1/webhooks/cashfree/$TENANT"
 RF=$(post "/payment_intents/$PI/refunds" '{"amount_minor":2500,"reason":"Seed refund"}' | jq_ '["id"]')
 DP=$(post /disputes "{\"attempt_id\":\"$AT\",\"amount_minor\":45000,\"reason\":\"Customer says they were charged twice\",\"respond_by\":\"$(python3 -c 'import datetime;print(datetime.date.today()+datetime.timedelta(days=2))')\"}" | jq_ '["id"]')
 
+# a settlement for that payment (gross 500.00, fee 15.00 and GST 3.00), so the phone's settlement explanation has something real to read
+CFREF=$(printf '%s' "$SIM" | python3 -c 'import sys,json;print(json.load(sys.stdin)["payment"]["cf_payment_id"])')
+post /settlements/import "{\"provider\":\"cashfree\",\"provider_ref\":\"seed-$RANDOM-$(date +%s)\",\"utr\":\"SEEDUTR$RANDOM\",\"settled_on\":\"$(date +%F)\",\"net_minor\":48200,\"items\":[{\"kind\":\"payment\",\"provider_ref\":\"$CFREF\",\"amount_minor\":50000},{\"kind\":\"fee\",\"amount_minor\":-1500,\"description\":\"Gateway fee\"},{\"kind\":\"fee\",\"amount_minor\":-300,\"description\":\"GST on fee\"}]}" >/dev/null
+
 # a payout waiting for approval
 VD=$(post /vendors '{"name":"Seed Supplier","vpa":"supplier@upi"}' | jq_ '["id"]')
 PO=$(post /payouts "{\"vendor_id\":\"$VD\",\"amount_minor\":120000,\"purpose\":\"Supplier invoice 88\"}" | jq_ '["id"]')

@@ -96,4 +96,16 @@ final class WalkthroughTests: XCTestCase {
         see("What happened")
         shot("payment-timeline")
     }
+
+    func testASettlementCanBeExplained() {
+        app.tabBars.buttons["Payments"].tap()
+        app.buttons["Cashflow"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Gross'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        see("This settlement")
+        see("₹300.00 less than expected.")
+        see("Settlement adjustments")
+        shot("settlement-explained")
+    }
 }
