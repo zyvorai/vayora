@@ -38,7 +38,7 @@ final class WalkthroughTests: XCTestCase {
         see("Reminders to approve")
         see("1 to 30 days late")
         shot("owed")
-        app.buttons["Approve"].firstMatch.tap()      // the first card with an Approve is the approvals card
+        app.buttons["Approve refund of ₹250.00"].tap()
         see("Refund approved.")
         shot("owed-after-approve")
     }

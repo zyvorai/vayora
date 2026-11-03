@@ -69,7 +69,8 @@ extension VayoraClient {
     /// Approves a draft. Pass `message` only when the person edited the wording.
     public func approveReminderDraft(id: String, message: String? = nil) async throws {
         struct Done: Decodable {}
-        let body = message.flatMap { try? JSONSerialization.data(withJSONObject: ["message": $0]) }
+        // the server reads a JSON body here, and an empty body with a JSON content type is a 400: send an empty object
+        let body = (try? JSONSerialization.data(withJSONObject: message.map { ["message": $0] } ?? [:])) ?? Data("{}".utf8)
         _ = try await send(request("POST", "/collections/drafts/\(id)/approve", body: body), as: Done.self)
     }
 

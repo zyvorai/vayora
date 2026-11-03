@@ -128,7 +128,7 @@ final class CollectionsTests: XCTestCase {
         try await client().approveReminderDraft(id: "rd", message: "Please pay")
         try await client().rejectReminderDraft(id: "rd")
         XCTAssertEqual(paths, ["/v1/collections/drafts/rd/approve", "/v1/collections/drafts/rd/approve", "/v1/collections/drafts/rd/reject"])
-        XCTAssertTrue(bodies[0].isEmpty)
+        XCTAssertEqual(String(data: bodies[0], encoding: .utf8), "{}")   // never an empty body: the server answers that with a 400
         XCTAssertEqual((try JSONSerialization.jsonObject(with: bodies[1]) as? [String: Any])?["message"] as? String, "Please pay")
     }
 
