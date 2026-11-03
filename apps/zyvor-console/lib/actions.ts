@@ -549,6 +549,10 @@ export const createSubscription = async (_: FormState, f: FormData): Promise<For
   const start = String(f.get("start") ?? "");
   return run(["/billing"], (z) => z.billing.subscribe({ customerId: String(f.get("customer") ?? ""), planId: String(f.get("plan") ?? ""), quantity, startDate: start || undefined }));
 };
+export const followPlanPrice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: String(f.get("plan") ?? ""), followPlanPrice: true }));
+  return r?.error ? r : { ok: "Done." };
+};
 export const cancelSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.cancel(id(f)));
 export const changeSubscriptionPlan = async (_: FormState, f: FormData): Promise<FormState> => {
   const plan = String(f.get("plan") ?? "");

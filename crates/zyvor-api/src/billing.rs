@@ -635,6 +635,9 @@ pub async fn statement(
 pub struct ChangePlan {
     plan_id: String,
     quantity: Option<i32>,
+    /// Same plan only: end a kept (locked) price, so the subscription pays the plan's current price from its next
+    /// invoice. Nothing is charged or refunded for the current period.
+    follow_plan_price: Option<bool>,
 }
 
 /// Switch plan mid-period. An upgrade is charged now for the unused part of the period at the price
@@ -697,6 +700,13 @@ pub async fn change_plan(
     let remaining = (next - today).num_days().clamp(0, total_days);
     // a locked price carries over a quantity change on the same plan, and ends when the plan changes
     let same_plan = b.plan_id == old_plan;
+    let follow = b.follow_plan_price == Some(true);
+    if follow && !same_plan {
+        return Err(ApiError::invalid(
+            "invalid_change",
+            "follow_plan_price applies only when staying on the same plan",
+        ));
+    }
     let old_price = locked.unwrap_or(old.1);
     let new_price = if same_plan { old_price } else { new.1 };
     let diff = new_price * i64::from(new_qty) - old_price * i64::from(old_qty);
@@ -722,11 +732,12 @@ pub async fn change_plan(
         .await?;
         invoice_id = Some(inv);
     }
-    sqlx::query("UPDATE subscriptions SET plan_id = $2, quantity = $3, unit_amount_minor = CASE WHEN $4 THEN unit_amount_minor END WHERE id = $1")
+    sqlx::query("UPDATE subscriptions SET plan_id = $2, quantity = $3, unit_amount_minor = CASE WHEN $4 AND NOT $5 THEN unit_amount_minor END WHERE id = $1")
         .bind(&id)
         .bind(&b.plan_id)
         .bind(new_qty)
         .bind(same_plan)
+        .bind(follow)
         .execute(&mut *tx)
         .await?;
     tenant::audit(

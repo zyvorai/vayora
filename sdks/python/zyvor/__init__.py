@@ -104,9 +104,9 @@ class Zyvor:
         body = {k: v for k, v in {"customer_id": customer_id, "plan_id": plan_id, "quantity": quantity, "start_date": start_date}.items() if v is not None}
         return self._req("POST", "/v1/subscriptions", body)
 
-    def change_plan(self, subscription_id: str, plan_id: str, quantity: Optional[int] = None) -> types.PostSubscriptionsByIdUsageResponse:
-        """Upgrades are prorated for the rest of the period; downgrades apply from the next invoice."""
-        body = {k: v for k, v in {"plan_id": plan_id, "quantity": quantity}.items() if v is not None}
+    def change_plan(self, subscription_id: str, plan_id: str, quantity: Optional[int] = None, follow_plan_price: Optional[bool] = None) -> types.PostSubscriptionsByIdUsageResponse:
+        """Upgrades are prorated for the rest of the period; downgrades apply from the next invoice. follow_plan_price=True (same plan) ends a kept price: the plan's current price applies from the next invoice."""
+        body = {k: v for k, v in {"plan_id": plan_id, "quantity": quantity, "follow_plan_price": follow_plan_price}.items() if v is not None}
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/change_plan", body)
 
     def record_usage(self, subscription_id: str, quantity: int, reference: Optional[str] = None) -> types.PostSubscriptionsByIdUsageResponse:
