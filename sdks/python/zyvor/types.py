@@ -748,6 +748,7 @@ GetSubscriptionsResponseDataItem = TypedDict("GetSubscriptionsResponseDataItem",
     "quantity": "int",
     "status": "str",
     "next_bill_date": "str",
+    "unbilled_usage": "int",
 })
 
 GetVendorsByIdBalanceResponse = TypedDict("GetVendorsByIdBalanceResponse", {

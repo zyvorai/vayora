@@ -1685,6 +1685,9 @@ paths:
                         next_bill_date:
                           type: string
                           format: date
+                        unbilled_usage:
+                          type: integer
+                          format: int64
         4XX:
           $ref: '#/components/responses/Error'
     post:

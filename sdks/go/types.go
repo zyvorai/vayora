@@ -758,12 +758,13 @@ type GetSubscriptionsResponse struct {
 }
 
 type GetSubscriptionsResponseDataItem struct {
-	ID           string `json:"id"`
-	CustomerID   string `json:"customer_id"`
-	PlanID       string `json:"plan_id"`
-	Quantity     int64  `json:"quantity"`
-	Status       string `json:"status"`
-	NextBillDate string `json:"next_bill_date"`
+	ID            string `json:"id"`
+	CustomerID    string `json:"customer_id"`
+	PlanID        string `json:"plan_id"`
+	Quantity      int64  `json:"quantity"`
+	Status        string `json:"status"`
+	NextBillDate  string `json:"next_bill_date"`
+	UnbilledUsage int64  `json:"unbilled_usage"`
 }
 
 type GetVendorsByIdBalanceResponse struct {

@@ -118,13 +118,13 @@ export function NewMilestone({ customers }: { customers: Customer[] }) {
 }
 
 /** Move a subscription to another plan. An upgrade is charged now for the unused part of the period; a downgrade applies from the next invoice. */
-export function RecordUsage({ id, unit }: { id: string; unit: string }) {
+export function RecordUsage({ id, unit, waiting }: { id: string; unit: string; waiting: number }) {
   const [state, run, pending] = useActionState(recordUsage, undefined);
   // one reference per form load, so pressing Save twice records once
   const [ref] = useState(() => crypto.randomUUID());
   return (
     <details>
-      <summary style={{ cursor: "pointer" }}>Record usage</summary>
+      <summary style={{ cursor: "pointer" }}>Record usage{waiting > 0 && <span className="muted"> · {waiting.toLocaleString("en-IN")} unit{waiting === 1 ? "" : "s"} so far</span>}</summary>
       <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
         <input type="hidden" name="id" value={id} />
         <input type="hidden" name="ref" value={ref} />
