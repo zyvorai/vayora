@@ -5,7 +5,7 @@ Two SwiftUI apps and a shared package, for testing Vayora Payments end to end on
 | Target | What it is |
 |---|---|
 | `VayoraPay` | Payer: scan a QR or paste a `upi://pay` link, confirm with a local test PIN, see history and receipts. The wallet is a test balance kept on the phone |
-| `VayoraMerchant` | Merchant: create a payment, show its QR, watch it complete, list payments, refund |
+| `VayoraMerchant` | Merchant: create a payment, show its QR, watch it complete, list payments (with a timeline of what happened to each), refund. Payment links (create, share, email, cancel). An **Owed** tab: unpaid invoices by how late, emailing an invoice, promises to pay, reminders and refunds and payouts waiting for approval, approved payouts to record as paid, failed refunds to retry, disputes (evidence note, outcome), reconciliation cases (assign, resolve), and a badge counting what waits on you. **Cashflow**: what is owed by week, settlements and why each paid what it did, a month of GST totals. Settings: subscriptions (pause, resume, end), the test clock in a test organisation |
 | `Packages/VayoraKit` | API client, `Money` (integer paise), `UPIPayload` parser for hostile QR input, QR rendering, Keychain, shared theme |
 
 ## Run it
@@ -20,8 +20,33 @@ Flow: Merchant "Collect" → QR → Pay "Scan & pay" → PIN → the Merchant sc
 ## Honest limits
 - `POST /v1/sim/pay` exists only when `ZYVOR_SIM_PAYER=1` and only touches the in-process simulator; with a live provider it can pay nothing.
 - With Cashfree sandbox the QR is Cashfree's simulator, which no scanner app pays; use its simulator page instead.
-- Verified so far: `VayoraKit` unit tests and a build of both apps for the iOS Simulator SDK. Not yet run on a simulator or device.
+- Verified so far: `VayoraKit` unit tests, a build of both apps for the iOS Simulator SDK in CI, UI tests driven on a Simulator (below), and the merchant screens run against a real local test server. Both apps were installed on a real iPhone, and a Face ID unlock loop found there was fixed. Not checked by a person: VoiceOver, large text, haptics, the camera, and an unlock with a real face.
 
+
+## UI tests (Simulator)
+Two UI test bundles drive the apps on a booted Simulator. Run them by hand; they are not in CI (they need a booted Simulator and the runners are slow).
+```sh
+cd apps/ios && xcodegen generate
+# demo mode: no server, test money (merchant: 8 cases, payer: 7)
+xcodebuild test -project Vayora.xcodeproj -scheme VayoraMerchant -destination 'platform=iOS Simulator,name=<a Simulator>' -only-testing:VayoraMerchantUITests/WalkthroughTests
+xcodebuild test -project Vayora.xcodeproj -scheme VayoraPay      -destination 'platform=iOS Simulator,name=<a Simulator>' -only-testing:VayoraPayUITests
+```
+Each case attaches screenshots to the result bundle. The Simulator keeps an app's data between runs, so the payer tests use a fresh payee each time.
+
+### Against a real local test server
+`SandboxTests`, `SeededSandboxTests` and `ApproverSandboxTests` sign in to a local API (made with `scripts/zyvor-sandbox.sh`) through two launch arguments that only a **debug** build reads (`-uitestServer`, `-uitestKey`, and only for a `zk_test` key). They are skipped unless the runner is given the address and key:
+```sh
+TEST_RUNNER_VAYORA_SANDBOX_URL=http://localhost:8081 TEST_RUNNER_VAYORA_SANDBOX_KEY=zk_test_… \
+  xcodebuild test … -only-testing:VayoraMerchantUITests/SandboxTests
+```
+`scripts/seed-sandbox-ios.sh` fills a sandbox with what the inbox screens need (a refund and a payout waiting for approval, an open dispute, a reminder draft, a settlement, a settlement that does not add up so the server opens a case). Set `TENANT`, and `APPROVER_KEY_OUT=<file>` to also mint a second key: the person who asked cannot approve, so a successful approval needs another key (`TEST_RUNNER_VAYORA_SANDBOX_APPROVER_KEY`, `ApproverSandboxTests`). Those tests use their rows up, so re-seed between runs. The seeded cases need `TEST_RUNNER_VAYORA_SANDBOX_SEEDED=1`.
+
+## On a real iPhone
+```sh
+xcodebuild -project Vayora.xcodeproj -scheme VayoraPay -destination 'id=<device UDID>' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <device UDID> <path to VayoraPay.app>
+```
+(`xcrun devicectl list devices` shows the UDID.) These are debug builds signed with the team in `project.yml`; trust the developer under Settings, General, VPN & Device Management the first time.
 
 ## Previewing the screens without a simulator
 `VayoraGallery` renders the screens (fixture data only, no network) to PNG on a Mac:
