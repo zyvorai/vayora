@@ -1192,6 +1192,7 @@ paths:
                   issued_on:
                     type: string
                     format: date
+                  details: {}
                   paid_minor:
                     type: integer
                     format: int64

@@ -409,6 +409,7 @@ type GetInvoicesByIdResponse struct {
 	BuyerGSTIN       *string                                  `json:"buyer_gstin"`
 	ReverseCharge    bool                                     `json:"reverse_charge"`
 	IssuedOn         string                                   `json:"issued_on"`
+	Details          any                                      `json:"details"`
 	PaidMinor        int64                                    `json:"paid_minor"`
 	CreditedMinor    int64                                    `json:"credited_minor"`
 	OutstandingMinor int64                                    `json:"outstanding_minor"`

@@ -389,6 +389,7 @@ export interface GetInvoicesByIdResponse {
   buyer_gstin: string | null;
   reverse_charge: boolean;
   issued_on: string;
+  details: unknown;
   paid_minor: number;
   credited_minor: number;
   outstanding_minor: number;
