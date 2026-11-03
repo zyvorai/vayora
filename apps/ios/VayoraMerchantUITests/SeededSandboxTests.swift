@@ -72,4 +72,16 @@ final class SeededSandboxTests: XCTestCase {
         see("Payout marked paid.")
         shot("seeded-paid")
     }
+
+    /// The seed script imports a settlement that does not add up, so the server opens cases; one is given to someone on the real server.
+    func testARealReconciliationCaseCanBeAssigned() throws {
+        let give = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Assign the' AND label ENDSWITH 'case to someone'")).firstMatch
+        try XCTSkipUnless(give.waitForExistence(timeout: 12), "no open reconciliation case in this sandbox")
+        give.tap()
+        let name = app.textFields.element(boundBy: 0); name.tap(); name.typeText("Asha")
+        app.buttons["Give it"].tap()
+        XCTAssertTrue(app.staticTexts["Case assigned."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["With Asha"].firstMatch.waitForExistence(timeout: 5), "the server kept the assignee")
+        shot("seeded-case-assigned")
+    }
 }

@@ -464,3 +464,38 @@ final class SettlementExplainTests: XCTestCase {
         XCTAssertEqual(demo.differenceMinor, -30000); XCTAssertEqual(demo.breakdown.count, 2)
     }
 }
+
+final class ReconCaseTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testOnlyUnresolvedCasesAreListedAndTitlesAreReadable() async throws {
+        StubProtocol.handler = { _ in (200, #"{"data":[{"id":"c1","kind":"settlement_arithmetic","status":"open","subject_type":"settlement","subject_id":"s","expected_minor":1,"actual_minor":2,"diff_minor":-30000,"explanation":"x","assignee":null,"created_at":"2026-11-03T00:00:00Z"},{"id":"c2","kind":"unresolved_payment","status":"resolved","diff_minor":null,"explanation":null,"assignee":"asha"},{"id":"c3","kind":"duplicate_payment","status":"assigned","assignee":"ravi"}]}"#) }
+        let cases = try await client().openReconCases()
+        XCTAssertEqual(cases.map(\.id), ["c1", "c3"])
+        XCTAssertEqual(cases[0].title, "Settlement Arithmetic"); XCTAssertEqual(cases[0].diffMinor, -30000); XCTAssertEqual(cases[1].assignee, "ravi")
+    }
+
+    func testAssignAndResolveSendTrimmedTextToTheirPaths() async throws {
+        nonisolated(unsafe) var seen: [URLRequest] = []
+        StubProtocol.handler = { r in seen.append(r); return (200, #"{"id":"c1","status":"assigned"}"#) }
+        try await client().assignReconCase(id: "c1", to: "  Asha  ")
+        try await client().resolveReconCase(id: "c1", resolution: " Bank confirmed the fee ")
+        XCTAssertEqual(seen.map(\.url!.path), ["/v1/recon/cases/c1/assign", "/v1/recon/cases/c1/resolve"])
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[0])) as? [String: Any])?["assignee"] as? String, "Asha")
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[1])) as? [String: Any])?["resolution"] as? String, "Bank confirmed the fee")
+        XCTAssertFalse(CaseNote.isUsable("  ok")); XCTAssertTrue(CaseNote.isUsable("fee ok"))
+    }
+
+    func testDemoBankAssignsThenResolves() async throws {
+        let c = VayoraClient.demo(bank: DemoBank())
+        var open = try await c.openReconCases(); XCTAssertEqual(open.count, 1); XCTAssertNil(open[0].assignee)
+        try await c.assignReconCase(id: open[0].id, to: "Asha")
+        open = try await c.openReconCases(); XCTAssertEqual(open[0].assignee, "Asha"); XCTAssertEqual(open[0].status, "assigned")
+        try await c.resolveReconCase(id: open[0].id, resolution: "Fee confirmed")
+        let none = try await c.openReconCases(); XCTAssertTrue(none.isEmpty)
+    }
+}
