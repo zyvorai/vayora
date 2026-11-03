@@ -278,6 +278,8 @@ export class Zyvor {
   readonly invoices = {
     list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null; customer_id: string | null; customer_name: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
     retrieve: (id: string) => this.req<GetInvoicesByIdResponse>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
+    /** Email an invoice to its customer: what it is made of, what is owed and by when (once per invoice per day; needs a customer with an email address and an invoice that is still owed). */
+    send: (id: string) => this.req<{ id: string; queued: boolean }>("POST", `/v1/invoices/${encodeURIComponent(id)}/send`),
     /** Give `amountMinor`, or GST `lines` and the server computes tax and total (needs `gst.gstin` in settings). */
     create: (p: { number: string; amountMinor?: number; customerId?: string; dueDate?: string; taxMinor?: number; externalRef?: string; lines?: GstLine[]; placeOfSupply?: string; buyerGstin?: string; reverseCharge?: boolean }) =>
       this.req<{ id: string; amount_minor: number; tax_minor: number }>("POST", "/v1/invoices", { number: p.number, amount_minor: p.amountMinor, customer_id: p.customerId, due_date: p.dueDate, tax_minor: p.taxMinor, external_ref: p.externalRef, lines: p.lines?.map((l) => ({ description: l.description, hsn_sac: l.hsnSac, quantity: l.quantity, unit_price_minor: l.unitPriceMinor, rate_bp: l.rateBp })), place_of_supply: p.placeOfSupply, buyer_gstin: p.buyerGstin, reverse_charge: p.reverseCharge }),

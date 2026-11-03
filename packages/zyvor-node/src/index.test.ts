@@ -120,15 +120,16 @@ describe("payment links, dunning and key rotation", () => {
     const c = client(f);
     await c.paymentLinks.create({ description: "Term fee", amountMinor: 125000, maxUses: 40 });
     await c.paymentLinks.cancel("plk_1");
+    await c.invoices.send("inv_1");
     await c.collections.runDunning({ channel: "sms", repeatAfterDays: 3 });
     await c.keys.rotate("key_1", 2);
     const seen = f.mock.calls.map((x) => { const [u, i] = x as unknown as [string, RequestInit]; return [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]; });
     expect(seen.map((x) => x.slice(0, 2))).toEqual([
-      ["POST", "/v1/payment_links"], ["POST", "/v1/payment_links/plk_1/cancel"], ["POST", "/v1/collections/dunning/run"], ["POST", "/v1/api_keys/key_1/rotate"],
+      ["POST", "/v1/payment_links"], ["POST", "/v1/payment_links/plk_1/cancel"], ["POST", "/v1/invoices/inv_1/send"], ["POST", "/v1/collections/dunning/run"], ["POST", "/v1/api_keys/key_1/rotate"],
     ]);
     expect(seen[0][2]).toMatchObject({ description: "Term fee", amount_minor: 125000, max_uses: 40 });
-    expect(seen[2][2]).toMatchObject({ channel: "sms", repeat_after_days: 3 });
-    expect(seen[3][2]).toEqual({ overlap_hours: 2 });
+    expect(seen[3][2]).toMatchObject({ channel: "sms", repeat_after_days: 3 });
+    expect(seen[4][2]).toEqual({ overlap_hours: 2 });
   });
 });
 

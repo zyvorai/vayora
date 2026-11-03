@@ -284,6 +284,7 @@ class Tests(unittest.TestCase):
             ("z.check_provider('pro_1')", 'POST', '/v1/provider_accounts/pro_1/check', {}),
             ("z.set_provider_enabled('pro_1', True)", 'POST', '/v1/provider_accounts/pro_1/enabled', {'enabled': True}),
             ("z.create_payment_link(5000, customer_id='cus_1', expires_at='2026-11-03T18:29:59Z', remind_before_expiry=True)", 'POST', '/v1/payment_links', {'amount_minor': 5000, 'customer_id': 'cus_1', 'expires_at': '2026-11-03T18:29:59Z', 'remind_before_expiry': True}),
+            ("z.send_invoice('inv_1')", 'POST', '/v1/invoices/inv_1/send', None),
             ("z.send_payment_link('plk_1')", 'POST', '/v1/payment_links/plk_1/send', None),
             ("z.list_onboarding_uploads()", 'GET', '/v1/onboarding/uploads', None),
             ("z.upload_onboarding_document('gst_certificate', 'gst.pdf', b'%PDF-1.4 x')", 'POST', '/v1/onboarding/uploads', {'kind': 'gst_certificate', 'filename': 'gst.pdf', 'data_base64': 'JVBERi0xLjQgeA=='}),
@@ -302,7 +303,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 85)
+        self.assertEqual(len(rows), 86)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []

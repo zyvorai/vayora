@@ -4,7 +4,7 @@ import { ChangePlan, ChangeTrial, EditPlan, RecordUsage, NewCustomer, NewInstalm
 import { ConfirmAct } from "@/components/ConfirmAct";
 import { Tabs } from "@/components/Tabs";
 import { TestClock } from "@/components/TestClock";
-import { cancelSubscription, completeMilestone, followPlanPrice, pauseSubscription, resumeSubscription, runBilling, setPlanActive, voidInvoice } from "@/lib/actions";
+import { cancelSubscription, completeMilestone, emailInvoice, followPlanPrice, pauseSubscription, resumeSubscription, runBilling, setPlanActive, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -17,6 +17,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const testMode = (await z.settings.get()).env === "test";
   const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
   const who = new Map(customers.data.map((c) => [c.id, c.name]));
+  const hasEmail = new Set(customers.data.filter((c) => c.email?.includes("@")).map((c) => c.id));
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
   const overdue = unpaid.filter((i) => i.due_date && i.due_date < today);
@@ -46,7 +47,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>Number</th><th>Customer</th><th>Due</th><th className="num">Amount</th><th className="num">Outstanding</th><th>Status</th><th /></tr></thead>
             <tbody>
               {invoices.data.length === 0 && <tr><td colSpan={7} className="empty">No invoices yet. Create one from “New customer, invoice or instalment plan” above.</td></tr>}
-              {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.customer_name ?? <span className="muted">—</span>}</td><td>{i.due_date ?? "—"}{i.status === "open" && i.outstanding_minor > 0 && i.due_date && i.due_date < today && <> <span className="chip bad">overdue</span></>}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td><td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><a className="btn small" href={`/invoice/${i.id}`} target="_blank" rel="noreferrer">Print</a><a className="btn small" href={`/einvoice/${i.id}`} title="Draft e-invoice JSON for a GST invoice to a registered buyer; not submitted">E-invoice draft</a>{i.status === "open" && i.outstanding_minor === i.amount_minor && <Act action={voidInvoice} id={i.id} label="Void" />}</td></tr>)}
+              {invoices.data.map((i) => <tr key={i.id}><td>{i.number}</td><td>{i.customer_name ?? <span className="muted">—</span>}</td><td>{i.due_date ?? "—"}{i.status === "open" && i.outstanding_minor > 0 && i.due_date && i.due_date < today && <> <span className="chip bad">overdue</span></>}</td><td className="num">{inr(i.amount_minor)}</td><td className="num">{inr(i.outstanding_minor)}</td><td><Chip status={i.status} /></td><td style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><a className="btn small" href={`/invoice/${i.id}`} target="_blank" rel="noreferrer">Print</a>{["open", "partially_paid"].includes(i.status) && i.customer_id && hasEmail.has(i.customer_id) && <Act action={emailInvoice} id={i.id} label="Email" showOk />}<a className="btn small" href={`/einvoice/${i.id}`} title="Draft e-invoice JSON for a GST invoice to a registered buyer; not submitted">E-invoice draft</a>{i.status === "open" && i.outstanding_minor === i.amount_minor && <Act action={voidInvoice} id={i.id} label="Void" />}</td></tr>)}
             </tbody>
           </table>
         </div>

@@ -1818,6 +1818,42 @@ paths:
         required: true
         schema:
           type: string
+  /v1/invoices/{id}/send:
+    post:
+      summary: Email an invoice to its customer
+      tags:
+      - invoices
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  queued:
+                    type: boolean
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  queued:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/subscriptions/{id}/trial:
     post:
       summary: End a free trial early, or move its end, for one subscriber

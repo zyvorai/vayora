@@ -408,6 +408,10 @@ class Zyvor:
         q = urllib.parse.urlencode(sorted({k: v for k, v in {"status": status}.items() if v not in (None, '')}.items()))
         return self._req("GET", "/v1/invoices" + ("?" + q if q else ""))
 
+    def send_invoice(self, invoice_id: str) -> types.PostInvoicesByIdSendResponse:
+        """Email an invoice to its customer (once per invoice per day; it must still be owed, and the customer needs an email address)."""
+        return self._req("POST", f"/v1/invoices/{invoice_id}/send")
+
     def get_invoice(self, invoice_id: str) -> types.GetInvoicesByIdResponse:
         """One invoice."""
         return self._req("GET", f"/v1/invoices/{invoice_id}")

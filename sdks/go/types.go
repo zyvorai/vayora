@@ -1127,6 +1127,11 @@ type PostInvoicesByIdRemindersResponse struct {
 	Channel   string `json:"channel"`
 }
 
+type PostInvoicesByIdSendResponse struct {
+	ID     string `json:"id"`
+	Queued bool   `json:"queued"`
+}
+
 type PostInvoicesByIdVoidResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`

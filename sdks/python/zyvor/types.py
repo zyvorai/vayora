@@ -1111,6 +1111,11 @@ PostInvoicesByIdRemindersResponse = TypedDict("PostInvoicesByIdRemindersResponse
     "channel": "str",
 })
 
+PostInvoicesByIdSendResponse = TypedDict("PostInvoicesByIdSendResponse", {
+    "id": "str",
+    "queued": "bool",
+})
+
 PostInvoicesByIdVoidResponse = TypedDict("PostInvoicesByIdVoidResponse", {
     "id": "str",
     "status": "str",

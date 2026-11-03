@@ -17118,3 +17118,149 @@ async fn a_metered_plan_can_include_free_units_each_period(pool: PgPool) {
         .await;
     assert_eq!(patched["included_units"], 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_invoice_can_be_emailed_to_its_customer(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let with_email = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let without = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "No Mail" }),
+        )
+        .await;
+    // a billing-run invoice carries its breakdown into the email
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "API", "amount_minor": 100_000, "interval_unit": "day", "interval_count": 30, "usage_unit_minor": 250, "included_units": 100 }))
+        .await;
+    let sub = t
+        .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": with_email["id"], "plan_id": plan["id"], "start_date": today.to_string() }))
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{}/usage", sub["id"].as_str().unwrap()),
+        None,
+        json!({ "quantity": 130 }),
+    )
+    .await;
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    let list = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let inv = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["amount_minor"] == 107_500)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let path = format!("/v1/invoices/{inv}/send");
+    let sent = t.ok(a, "POST", &path, None, json!({})).await;
+    assert_eq!(sent["queued"], true);
+    let (to, subject, body): (String, String, String) = sqlx::query_as(
+        "SELECT to_email, subject, body FROM mail_queue WHERE subject LIKE 'Invoice %'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert!(subject.contains("₹1075.00"), "{subject}");
+    assert!(
+        body.contains("usage beyond the first 100 free units: 30 × ₹2.50 = ₹75.00")
+            && body.contains("Total: ₹1075.00")
+            && body.contains("Amount due: ₹1075.00")
+            && body.contains("Zyvor never asks for a card number"),
+        "{body}"
+    );
+    // a second try the same day is refused
+    let (st, _) = t.call(a, "POST", &path, None, json!({})).await;
+    assert_eq!(st.as_u16(), 409);
+    // no customer email: refused; no customer at all: refused
+    let no_mail = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "NM-1", "amount_minor": 5_000, "customer_id": without["id"] }),
+        )
+        .await;
+    let (st, v) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{}/send", no_mail["id"].as_str().unwrap()),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        (st.as_u16(), v["error"]["code"].as_str()),
+        (409, Some("no_customer_email"))
+    );
+    let none = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "NC-1", "amount_minor": 5_000 }),
+        )
+        .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{}/send", none["id"].as_str().unwrap()),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    // a void invoice is not asked for; an unknown one is a 404
+    let v1 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "V-1", "amount_minor": 5_000, "customer_id": with_email["id"] }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/void", v1["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{}/send", v1["id"].as_str().unwrap()),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    let (st, _) = t
+        .call(a, "POST", "/v1/invoices/inv_nope/send", None, json!({}))
+        .await;
+    assert_eq!(st.as_u16(), 404);
+}
