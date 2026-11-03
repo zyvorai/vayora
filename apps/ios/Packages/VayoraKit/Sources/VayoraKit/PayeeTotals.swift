@@ -8,14 +8,16 @@ public struct PayeeTotal: Equatable, Sendable {
 }
 
 public enum PayeeTotals {
-    /// `rows` are history rows; only paid ones count. A payee is matched ignoring case and surrounding spaces,
-    /// and is shown the way it was first written. Rows without a payee name are counted under `name`, then "Someone".
+    /// `rows` are history rows; only paid ones count. Payments are grouped by the payee's UPI id (ignoring case and surrounding spaces),
+    /// falling back to the name when a row has no id, and shown by the name the person recognises (the first one written), falling back to the id.
+    /// A row with neither is counted under "Someone".
     public static func top(_ rows: [HistoryRow], from start: Date, to endExclusive: Date, limit: Int = 5) -> [PayeeTotal] {
         var sums: [String: (shown: String, count: Int, minor: Int64)] = [:]
         for r in rows.sorted(by: { $0.date < $1.date }) where r.paid && r.date >= start && r.date < endExclusive {
-            let raw = [r.payee, r.name].map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? "Someone"
-            let key = raw.lowercased()
-            let cur = sums[key] ?? (raw, 0, 0)
+            let id = r.payee.trimmingCharacters(in: .whitespaces), name = r.name.trimmingCharacters(in: .whitespaces)
+            let key = (id.isEmpty ? name : id).lowercased()
+            let shown = name.isEmpty ? (id.isEmpty ? "Someone" : id) : name
+            let cur = sums[key] ?? (shown, 0, 0)
             sums[key] = (cur.shown, cur.count + 1, cur.minor + r.amountMinor)
         }
         return sums.values.map { PayeeTotal(payee: $0.shown, count: $0.count, minor: $0.minor) }
