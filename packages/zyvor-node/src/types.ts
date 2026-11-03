@@ -603,6 +603,7 @@ export interface GetPlansResponseDataItem {
   active: boolean;
   trial_days: number;
   included_units: number;
+  included_per_seat: boolean;
 }
 
 export interface GetPlatformChangesResponse {
@@ -853,6 +854,7 @@ export interface PatchPlansByIdResponse {
   active: unknown;
   trial_days: unknown;
   included_units: unknown;
+  included_per_seat: unknown;
   subscribers_kept_on_old_price: unknown;
 }
 

@@ -1574,6 +1574,7 @@ paths:
                   active: {}
                   trial_days: {}
                   included_units: {}
+                  included_per_seat: {}
                   subscribers_kept_on_old_price: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -1632,6 +1633,8 @@ paths:
                         included_units:
                           type: integer
                           format: int64
+                        included_per_seat:
+                          type: boolean
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -8200,6 +8203,8 @@ components:
         included_units:
           type: integer
           format: int64
+        included_per_seat:
+          type: boolean
         keep_existing:
           type: boolean
     NewUsage:
@@ -8260,6 +8265,8 @@ components:
         included_units:
           type: integer
           format: int64
+        included_per_seat:
+          type: boolean
       required:
       - name
       - amount_minor

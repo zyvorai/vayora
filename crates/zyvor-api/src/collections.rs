@@ -29,8 +29,11 @@ pub async fn ageing(
     Query(q): Query<AgeingQuery>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
-    let as_of = q.as_of.unwrap_or_else(crate::ist_today);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let as_of = match q.as_of {
+        Some(d) => d,
+        None => crate::clock::today(&mut tx).await?,
+    };
     let rows: Vec<(
         String,
         String,
