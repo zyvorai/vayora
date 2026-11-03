@@ -83,6 +83,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("subscription.created", "A subscription started."),
     (
+        "subscription.trial_will_end",
+        "A subscription's free trial ends in three days or less; once per trial end date. Use it to remind the customer.",
+    ),
+    (
         "subscription.paused",
         "A subscription was paused; no invoices until it resumes.",
     ),
