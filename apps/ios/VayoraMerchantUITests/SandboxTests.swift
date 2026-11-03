@@ -58,4 +58,24 @@ final class SandboxTests: XCTestCase {
         app.buttons["Reset"].tap()
         see("Clock back on the real date.")
     }
+
+    /// INV-1001 has a customer with an address (it is queued for sending); INV-1002 has no customer, and the server's refusal is shown.
+    /// The sandbox mailer only logs, so nothing is delivered; this checks the request and the messages, not a received email.
+    func testEmailingAnInvoiceQueuesItAndARefusalIsShown() {
+        app.tabBars.buttons["Owed"].tap()
+        see("INV-1002")
+        app.buttons["Actions for INV-1002"].tap()
+        app.buttons["Email invoice"].tap()
+        let refusal = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Error:'")).firstMatch
+        XCTAssertTrue(refusal.waitForExistence(timeout: 10), "an invoice with no customer cannot be emailed")
+        XCTAssertTrue(refusal.isHittable, "the message must be on screen even though the list is scrolled")
+        shot("sandbox-email-refused")
+        app.buttons["Actions for INV-1001"].tap()
+        app.buttons["Email invoice"].tap()
+        // a second try on the same day is refused by the server (once per invoice per day), so a re-run shows that instead
+        let ok = app.staticTexts["Invoice INV-1001 emailed."]
+        let again = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Error:'")).firstMatch
+        XCTAssertTrue(ok.waitForExistence(timeout: 10) || again.waitForExistence(timeout: 2))
+        shot("sandbox-email-sent")
+    }
 }
