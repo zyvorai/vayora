@@ -101,7 +101,7 @@ struct SubscriptionsView: View {
     func move(days: Int?) {
         guard let c = store.client else { return }
         Task {
-            do { clock = try await (days.map { try await c.advanceTestClock(days: $0) } ?? c.resetTestClock()); notice = days == nil ? "Clock back on the real date." : "Moved forward \(days ?? 0) day\(days == 1 ? "" : "s")."; message = nil; Haptics.tap(); await load() }
+            do { if let days { clock = try await c.advanceTestClock(days: days) } else { clock = try await c.resetTestClock() }; notice = days == nil ? "Clock back on the real date." : "Moved forward \(days ?? 0) day\(days == 1 ? "" : "s")."; message = nil; Haptics.tap(); await load() }
             catch { message = (error as? APIError)?.message ?? "Couldn't move the clock."; notice = nil; Haptics.error() }
         }
     }
