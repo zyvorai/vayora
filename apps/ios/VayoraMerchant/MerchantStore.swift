@@ -11,6 +11,8 @@ final class MerchantStore: ObservableObject {
     @Published var cashierLocked: Bool { didSet { UserDefaults.standard.set(cashierLocked, forKey: "cashierLocked") } }
     @Published var regulars: RegularsBook { didSet { if let d = try? JSONEncoder().encode(regulars) { UserDefaults.standard.set(d, forKey: "regulars") } } }
     @Published var gate = PinGate()
+    /// The public address of the checkout page (https), so a payment link's path can be turned into an address to share.
+    @Published var checkoutURL: String { didSet { UserDefaults.standard.set(checkoutURL, forKey: "checkoutURL") } }
     @Published var closeReminder: Bool { didSet { UserDefaults.standard.set(closeReminder, forKey: "closeReminder"); syncReminder() } }
     @Published var closeMinutes: Int { didSet { UserDefaults.standard.set(closeMinutes, forKey: "closeMinutes"); syncReminder() } }
     /// Staff names for this till, who is on now, and a name on each sale made. Local records for a shift summary; not accounts.
@@ -35,6 +37,7 @@ final class MerchantStore: ObservableObject {
     init() {
         let d = UserDefaults.standard
         cashierLocked = d.bool(forKey: "cashierLocked")
+        checkoutURL = d.string(forKey: "checkoutURL") ?? ""
         regulars = (d.data(forKey: "regulars")).flatMap { try? JSONDecoder().decode(RegularsBook.self, from: $0) } ?? RegularsBook()
         catalogue = (d.data(forKey: "catalogue")).flatMap { try? JSONDecoder().decode(Catalogue.self, from: $0) } ?? Catalogue()
         billLog = (d.data(forKey: "billLog")).flatMap { try? JSONDecoder().decode([BillRecord].self, from: $0) } ?? []

@@ -244,6 +244,14 @@ struct MerchantSettings: View {
                         }
                         GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
+                                Label("Checkout address", systemImage: "link").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                                TextField("https://pay.example.com", text: $store.checkoutURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                Text("Where your customers open payment links. Needed to share a link or its QR from this phone.").vfont(12).foregroundStyle(VUI.textTertiary)
+                            }
+                        }
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
                                 Label("Closing reminder", systemImage: "bell.fill").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
                                 Toggle("Remind me every day", isOn: $store.closeReminder).tint(VUI.mint).foregroundStyle(VUI.textPrimary)
                                 if store.closeReminder {
