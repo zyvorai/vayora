@@ -580,6 +580,7 @@ export interface GetPlansResponseDataItem {
   usage_unit_minor: number;
   active: boolean;
   trial_days: number;
+  included_units: number;
 }
 
 export interface GetPlatformChangesResponse {
@@ -819,6 +820,7 @@ export interface PatchPlansByIdResponse {
   amount_minor: number;
   active: unknown;
   trial_days: unknown;
+  included_units: unknown;
   subscribers_kept_on_old_price: unknown;
 }
 

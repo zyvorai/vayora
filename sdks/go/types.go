@@ -600,6 +600,7 @@ type GetPlansResponseDataItem struct {
 	UsageUnitMinor int64  `json:"usage_unit_minor"`
 	Active         bool   `json:"active"`
 	TrialDays      int64  `json:"trial_days"`
+	IncludedUnits  int64  `json:"included_units"`
 }
 
 type GetPlatformChangesResponse struct {
@@ -839,6 +840,7 @@ type PatchPlansByIdResponse struct {
 	AmountMinor               int64  `json:"amount_minor"`
 	Active                    any    `json:"active"`
 	TrialDays                 any    `json:"trial_days"`
+	IncludedUnits             any    `json:"included_units"`
 	SubscribersKeptOnOldPrice any    `json:"subscribers_kept_on_old_price"`
 }
 
