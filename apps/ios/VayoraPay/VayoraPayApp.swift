@@ -23,6 +23,7 @@ struct RootView: View {
     @State private var backgroundedAt: Date?
     @State private var authFailed = false
     @State private var authenticating = false
+    @State private var promptGuard = AutoPromptGuard()
 
     var body: some View {
         content
@@ -34,12 +35,12 @@ struct RootView: View {
                 case .active:
                     if LockPolicy.shouldLockOnReturn(enabled: lockOn, backgroundedAt: backgroundedAt, now: Date(), timeoutMinutes: lockTimeout) { locked = true }
                     // Ask whenever the app is active and still locked: a prompt started at launch is cancelled by iOS while the app is not yet active
-                    if locked && lockOn && onboarded && !authFailed && !authenticating { authenticate() }
+                    if locked && lockOn && onboarded && !authFailed && !authenticating { autoAuthenticate() }
                     backgroundedAt = nil
                 default: break
                 }
             }
-            .onAppear { if lockOn { authenticate() } else { locked = false } }
+            .onAppear { if lockOn { autoAuthenticate() } else { locked = false } }
     }
 
     /// Covers the app in the app switcher, and while locked until Face ID or the passcode says yes.
@@ -48,10 +49,16 @@ struct RootView: View {
             VUI.ink.ignoresSafeArea()
             VStack(spacing: 14) {
                 Image(systemName: "lock.fill").font(.system(size: 36)).foregroundStyle(VUI.textSecondary)
-                if locked && lockOn { Button("Unlock") { authenticate() }.vfont(17, .semibold).foregroundStyle(VUI.violet)
+                if locked && lockOn { Button("Unlock") { promptGuard.reset(); authFailed = false; authenticate() }.vfont(17, .semibold).foregroundStyle(VUI.violet)
                     if authFailed { Text("Couldn't unlock. Try again.").vfont(13).foregroundStyle(VUI.textSecondary) } }
             }
         }
+    }
+
+    /// The prompts the app starts by itself. If it keeps asking over and over, stop and show Unlock instead of looping.
+    func autoAuthenticate() {
+        guard promptGuard.allowAutomatic(now: Date()) else { authFailed = true; return }
+        authenticate()
     }
 
     func authenticate() {
