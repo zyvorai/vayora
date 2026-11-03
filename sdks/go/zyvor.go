@@ -1441,7 +1441,8 @@ func (c *Client) CreatePlan(name string, amountMinor int64, intervalUnit string,
 }
 
 // UpdatePlan renames a plan (name), changes its price (amount_minor, from each subscriber's next invoice) or archives it
-// (active: false). Keys left out stay as they are.
+// (active: false). With a new price, keep_existing: true leaves today's subscribers on the price they pay now.
+// Keys left out stay as they are.
 func (c *Client) UpdatePlan(planID string, fields map[string]any) (map[string]any, error) {
 	var out map[string]any
 	err := c.do("PATCH", "/v1/plans/"+planID, fields, "", &out)

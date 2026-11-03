@@ -97,7 +97,7 @@ class Zyvor:
         return self._req("POST", "/v1/plans", {"name": name, "amount_minor": amount_minor, "interval_unit": interval_unit, **extra})
 
     def update_plan(self, plan_id: str, **fields) -> types.PatchPlansByIdResponse:
-        """Rename a plan (name), change its price (amount_minor, applies from each subscriber's next invoice) or archive it (active=False)."""
+        """Rename a plan (name), change its price (amount_minor, applies from each subscriber's next invoice) or archive it (active=False). With a new price, keep_existing=True leaves today's subscribers on the price they pay now."""
         return self._req("PATCH", f"/v1/plans/{plan_id}", fields)
 
     def subscribe(self, customer_id: str, plan_id: str, quantity: int = 1, start_date: Optional[str] = None) -> dict:

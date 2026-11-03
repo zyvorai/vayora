@@ -745,6 +745,7 @@ export interface GetSubscriptionsResponseDataItem {
   status: string;
   next_bill_date: string;
   unbilled_usage: number;
+  unit_amount_minor: number | null;
 }
 
 export interface GetVendorsByIdBalanceResponse {
@@ -815,6 +816,7 @@ export interface PatchPlansByIdResponse {
   name: string;
   amount_minor: number;
   active: unknown;
+  subscribers_kept_on_old_price: unknown;
 }
 
 export interface PostApiKeysByIdRevokeResponse {

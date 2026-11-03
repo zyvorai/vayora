@@ -749,6 +749,7 @@ GetSubscriptionsResponseDataItem = TypedDict("GetSubscriptionsResponseDataItem",
     "status": "str",
     "next_bill_date": "str",
     "unbilled_usage": "int",
+    "unit_amount_minor": "Optional[int]",
 })
 
 GetVendorsByIdBalanceResponse = TypedDict("GetVendorsByIdBalanceResponse", {
@@ -819,6 +820,7 @@ PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
     "name": "str",
     "amount_minor": "int",
     "active": "Any",
+    "subscribers_kept_on_old_price": "Any",
 })
 
 PostApiKeysByIdRevokeResponse = TypedDict("PostApiKeysByIdRevokeResponse", {

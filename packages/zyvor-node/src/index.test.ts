@@ -41,11 +41,11 @@ describe("client", () => {
 
   it("renames, reprices and archives a plan with a PATCH that omits what was left out", async () => {
     const f = vi.fn(async () => json(200, {}));
-    await client(f).billing.updatePlan("plan_1", { amountMinor: 12500, active: false });
+    await client(f).billing.updatePlan("plan_1", { amountMinor: 12500, active: false, keepExisting: true });
     const [url, init] = (f.mock.calls as unknown as [string, RequestInit][])[0];
     expect(url).toBe("http://localhost:8080/v1/plans/plan_1");
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ amount_minor: 12500, active: false });
+    expect(JSON.parse(init.body as string)).toEqual({ amount_minor: 12500, active: false, keep_existing: true });
   });
 
   it("changes a subscription's plan and cancels it", async () => {
