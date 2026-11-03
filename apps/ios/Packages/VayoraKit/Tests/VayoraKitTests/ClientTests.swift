@@ -325,6 +325,14 @@ final class AttentionTests: XCTestCase {
         XCTAssertNil(Attention().summary)
     }
 
+    func testPayoutsToPayAndOpenCasesCountToo() {
+        let a = Attention(approvals: [], drafts: [], disputes: [], today: "2026-11-03",
+                          payouts: [ApprovedPayout(id: "p", amountMinor: 1)],
+                          cases: [ReconCase(id: "c1", kind: "x"), ReconCase(id: "c2", kind: "y", status: "assigned"), ReconCase(id: "c3", kind: "z", status: "resolved")])
+        XCTAssertEqual(a.total, 3)       // one payout, two unresolved cases; the resolved one does not count
+        XCTAssertEqual(a.summary, "1 payout to pay, 2 cases to check")
+    }
+
     func testTheCountWorksWhenAListIsRefused() async {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubProtocol.self]
