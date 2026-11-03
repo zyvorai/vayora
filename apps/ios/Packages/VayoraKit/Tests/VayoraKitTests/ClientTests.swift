@@ -156,3 +156,44 @@ final class CollectionsTests: XCTestCase {
         XCTAssertEqual(a.inrTotalMinor, 205000)
     }
 }
+
+final class ApprovalTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testPendingApprovalsMergeRefundsAndPayoutsAndAskForTheRightStatus() async throws {
+        nonisolated(unsafe) var queries: [String] = []
+        StubProtocol.handler = { r in
+            queries.append(r.url?.absoluteString ?? "")
+            if r.url!.path.hasSuffix("refunds") { return (200, #"{"data":[{"id":"re_1","amount_minor":500,"currency":"INR","status":"pending_approval","reason":"Wrong item","requested_by":"a"},{"id":"re_2","amount_minor":9,"currency":"INR","status":"failed","reason":null,"requested_by":"a"}],"has_more":false}"#) }
+            return (200, #"{"data":[{"id":"po_1","amount_minor":90000,"currency":"INR","status":"pending_approval","purpose":"Rent","requested_by":"b"}]}"#)
+        }
+        let a = try await client().pendingApprovals()
+        XCTAssertEqual(a.map(\.id), ["refund:re_1", "payout:po_1"])
+        XCTAssertEqual(a[0].detail, "Wrong item"); XCTAssertEqual(a[1].title, "Payout")
+        XCTAssertTrue(queries.allSatisfy { $0.hasSuffix("status=pending_approval") })
+    }
+
+    func testDecisionsGoToTheRightPathAndSeparationOfDutiesIsShown() async throws {
+        nonisolated(unsafe) var paths: [String] = []
+        StubProtocol.handler = { r in paths.append(r.url!.path); return (200, #"{"id":"x","status":"approved"}"#) }
+        try await client().decide(PendingApproval(kind: .refund, rawID: "re_1", amountMinor: 1), approve: true)
+        try await client().decide(PendingApproval(kind: .payout, rawID: "po_1", amountMinor: 1), approve: false)
+        XCTAssertEqual(paths, ["/v1/refunds/re_1/approve", "/v1/payouts/po_1/reject"])
+        StubProtocol.handler = { _ in (403, #"{"error":{"code":"separation_of_duties","message":"the person who requested a payout cannot approve it"}}"#) }
+        do { try await client().decide(PendingApproval(kind: .payout, rawID: "po_1", amountMinor: 1), approve: true); XCTFail("should throw") }
+        catch let e as APIError { XCTAssertEqual(e.code, "separation_of_duties"); XCTAssertEqual(e.status, 403) }
+    }
+
+    func testDemoBankApprovalLeavesTheInbox() async throws {
+        let c = VayoraClient.demo(bank: DemoBank())
+        let first = try await c.pendingApprovals()
+        XCTAssertEqual(first.count, 2)
+        for a in first { try await c.decide(a, approve: true) }
+        let left = try await c.pendingApprovals()
+        XCTAssertTrue(left.isEmpty)
+    }
+}
