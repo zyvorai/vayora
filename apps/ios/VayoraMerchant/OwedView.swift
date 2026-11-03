@@ -33,6 +33,7 @@ struct OwedView: View {
                         }
                         if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
                         if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
+                        if let line = store.attention.summary { Text("Waiting: \(line)").vfont(13, .semibold).foregroundStyle(VUI.amber).accessibilityLabel("Waiting for you: \(line)") }
                         if !approvals.isEmpty { approvalsCard }
                         if !disputes.isEmpty { disputesCard }
                         if !drafts.isEmpty { draftsCard }
@@ -176,6 +177,7 @@ struct OwedView: View {
             // a key without approval rights may not read refunds or payouts: that must not hide the rest of the screen
             approvals = (try? await c.pendingApprovals()) ?? []
             disputes = (try? await c.openDisputes()) ?? []
+            await store.refreshAttention()
         } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
     }
     func decide(_ a: PendingApproval, approve: Bool) {

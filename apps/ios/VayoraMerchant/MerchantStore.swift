@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 import VayoraKit
 
 @MainActor
@@ -31,6 +32,23 @@ final class MerchantStore: ObservableObject {
     @Published var refundLog: [RefundEntry] { didSet { if let d = try? JSONEncoder().encode(refundLog) { UserDefaults.standard.set(d, forKey: "refundLog") } } }
     func logRefund(_ e: RefundEntry) { refundLog.append(e); if refundLog.count > 500 { refundLog.removeFirst(refundLog.count - 500) } }
     var ownerPIN: String { get { Keychain.get("ownerPIN") ?? "" } set { Keychain.set(newValue, for: "ownerPIN") } }
+
+    /// What is waiting on the owner (approvals, reminders to approve, disputes due soon). Shown as a badge on the Owed tab and, only if
+    /// the person already allowed badges, on the app icon. Not computed in cashier mode, and cleared there.
+    @Published var attention = Attention()
+    func refreshAttention() async {
+        guard !cashierLocked, let c = client else { attention = Attention(); await Self.setIconBadge(0); return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Kolkata")
+        let a = await c.attention(today: f.string(from: Date()))
+        attention = a
+        await Self.setIconBadge(a.total)
+    }
+    private static func setIconBadge(_ n: Int) async {
+        let center = UNUserNotificationCenter.current()
+        let st = await center.notificationSettings()
+        guard st.authorizationStatus == .authorized, st.badgeSetting == .enabled else { return }   // never asks: the closing reminder owns the permission prompt
+        try? await center.setBadgeCount(n)
+    }
 
     func syncReminder() { Task { await ClosingReminder.sync(enabled: closeReminder, minutes: closeMinutes) } }
 
