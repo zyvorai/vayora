@@ -249,12 +249,12 @@ export class Zyvor {
   };
 
   readonly billing = {
-    createPlan: (p: { name: string; amountMinor: number; intervalUnit: "day" | "week" | "month" | "year"; intervalCount?: number; usageUnitMinor?: number; dueDays?: number; trialDays?: number; currency?: Currency }) =>
-      this.req<{ id: string }>("POST", "/v1/plans", { name: p.name, amount_minor: p.amountMinor, interval_unit: p.intervalUnit, interval_count: p.intervalCount, usage_unit_minor: p.usageUnitMinor, due_days: p.dueDays, trial_days: p.trialDays, currency: p.currency }),
+    createPlan: (p: { name: string; amountMinor: number; intervalUnit: "day" | "week" | "month" | "year"; intervalCount?: number; usageUnitMinor?: number; dueDays?: number; trialDays?: number; includedUnits?: number; currency?: Currency }) =>
+      this.req<{ id: string }>("POST", "/v1/plans", { name: p.name, amount_minor: p.amountMinor, interval_unit: p.intervalUnit, interval_count: p.intervalCount, usage_unit_minor: p.usageUnitMinor, due_days: p.dueDays, trial_days: p.trialDays, included_units: p.includedUnits, currency: p.currency }),
     plans: () => this.req<GetPlansResponse>("GET", "/v1/plans"),
-    /** Rename a plan, change its price (from each subscriber's next invoice), set the free trial new subscribers get (`trialDays`) or archive it (`active: false`). With a new price, `keepExisting: true` leaves today's subscribers on the price they pay now. */
-    updatePlan: (id: string, p: { name?: string; amountMinor?: number; active?: boolean; trialDays?: number; keepExisting?: boolean }) =>
-      this.req<{ id: string; name: string; amount_minor: number; active: boolean; trial_days: number; subscribers_kept_on_old_price: number }>("PATCH", `/v1/plans/${encodeURIComponent(id)}`, { name: p.name, amount_minor: p.amountMinor, active: p.active, trial_days: p.trialDays, keep_existing: p.keepExisting }),
+    /** Rename a plan, change its price (from each subscriber's next invoice), set the free trial new subscribers get (`trialDays`), the free units per period on a metered plan (`includedUnits`) or archive it (`active: false`). With a new price, `keepExisting: true` leaves today's subscribers on the price they pay now. */
+    updatePlan: (id: string, p: { name?: string; amountMinor?: number; active?: boolean; trialDays?: number; includedUnits?: number; keepExisting?: boolean }) =>
+      this.req<{ id: string; name: string; amount_minor: number; active: boolean; trial_days: number; included_units: number; subscribers_kept_on_old_price: number }>("PATCH", `/v1/plans/${encodeURIComponent(id)}`, { name: p.name, amount_minor: p.amountMinor, active: p.active, trial_days: p.trialDays, included_units: p.includedUnits, keep_existing: p.keepExisting }),
     subscribe: (p: { customerId: string; planId: string; quantity?: number; startDate?: string }) =>
       this.req<{ id: string; next_bill_date: string; trial_ends_on: string | null }>("POST", "/v1/subscriptions", { customer_id: p.customerId, plan_id: p.planId, quantity: p.quantity, start_date: p.startDate }),
     subscriptions: () => this.req<GetSubscriptionsResponse>("GET", "/v1/subscriptions"),

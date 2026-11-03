@@ -1572,6 +1572,7 @@ paths:
                     type: integer
                   active: {}
                   trial_days: {}
+                  included_units: {}
                   subscribers_kept_on_old_price: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -1627,6 +1628,9 @@ paths:
                         trial_days:
                           type: integer
                           format: int32
+                        included_units:
+                          type: integer
+                          format: int64
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -8014,6 +8018,9 @@ components:
         trial_days:
           type: integer
           format: int32
+        included_units:
+          type: integer
+          format: int64
         keep_existing:
           type: boolean
     NewUsage:
@@ -8071,6 +8078,9 @@ components:
         trial_days:
           type: integer
           format: int32
+        included_units:
+          type: integer
+          format: int64
       required:
       - name
       - amount_minor

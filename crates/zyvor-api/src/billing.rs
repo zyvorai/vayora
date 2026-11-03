@@ -37,6 +37,8 @@ pub struct NewPlan {
     due_days: Option<i32>,
     /// Days before a new subscriber is first billed (0 to 365).
     trial_days: Option<i32>,
+    /// Units used in each billing period that are free; the price applies only beyond them.
+    included_units: Option<i64>,
 }
 
 pub async fn create_plan(
@@ -72,11 +74,17 @@ pub async fn create_plan(
             "trial_days must be between 0 and 365",
         ));
     }
+    if !(0..=1_000_000_000).contains(&b.included_units.unwrap_or(0)) {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "included_units must be between 0 and 1,000,000,000",
+        ));
+    }
     let id = new_id("plan");
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, trial_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, trial_days, included_units) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
         .bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(ccy.code()).bind(b.amount_minor).bind(&b.interval_unit)
-        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7)).bind(b.trial_days.unwrap_or(0))
+        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7)).bind(b.trial_days.unwrap_or(0)).bind(b.included_units.unwrap_or(0))
         .execute(&mut *tx).await?;
     tenant::audit(
         &mut tx,
@@ -103,6 +111,8 @@ pub struct PlanPatch {
     active: Option<bool>,
     /// Trial length for subscriptions made from now on; those already running are not changed.
     trial_days: Option<i32>,
+    /// Free units per billing period, from each subscriber's next invoice.
+    included_units: Option<i64>,
     /// With a new price: keep the plan's current subscribers on the price they pay now.
     keep_existing: Option<bool>,
 }
@@ -117,11 +127,23 @@ pub async fn update_plan(
     Json(b): Json<PlanPatch>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
-    if b.name.is_none() && b.amount_minor.is_none() && b.active.is_none() && b.trial_days.is_none()
+    if b.name.is_none()
+        && b.amount_minor.is_none()
+        && b.active.is_none()
+        && b.trial_days.is_none()
+        && b.included_units.is_none()
     {
         return Err(ApiError::invalid(
             "invalid_plan",
-            "send at least one of name, amount_minor, active or trial_days",
+            "send at least one of name, amount_minor, active, trial_days or included_units",
+        ));
+    }
+    if let Some(u) = b.included_units
+        && !(0..=1_000_000_000).contains(&u)
+    {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "included_units must be between 0 and 1,000,000,000",
         ));
     }
     if let Some(t) = b.trial_days
@@ -149,14 +171,16 @@ pub async fn update_plan(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let row: Option<(String, i64, bool, i32)> = sqlx::query_as(
-        "SELECT name, amount_minor, active, trial_days FROM plans WHERE id = $1 FOR UPDATE",
+    let row: Option<(String, i64, bool, i32, i64)> = sqlx::query_as(
+        "SELECT name, amount_minor, active, trial_days, included_units FROM plans WHERE id = $1 FOR UPDATE",
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (name0, amount0, active0, trial0) = row.ok_or_else(|| ApiError::not_found("plan"))?;
+    let (name0, amount0, active0, trial0, included0) =
+        row.ok_or_else(|| ApiError::not_found("plan"))?;
     let trial = b.trial_days.unwrap_or(trial0);
+    let included = b.included_units.unwrap_or(included0);
     let name = b
         .name
         .as_deref()
@@ -166,13 +190,14 @@ pub async fn update_plan(
     let amount = b.amount_minor.unwrap_or(amount0);
     let active = b.active.unwrap_or(active0);
     sqlx::query(
-        "UPDATE plans SET name = $2, amount_minor = $3, active = $4, trial_days = $5 WHERE id = $1",
+        "UPDATE plans SET name = $2, amount_minor = $3, active = $4, trial_days = $5, included_units = $6 WHERE id = $1",
     )
     .bind(&id)
     .bind(&name)
     .bind(amount)
     .bind(active)
     .bind(trial)
+    .bind(included)
     .execute(&mut *tx)
     .await?;
     // lock today's subscribers at the old price (those already locked keep theirs)
@@ -192,21 +217,21 @@ pub async fn update_plan(
         &auth.actor,
         "plan.updated",
         Some(&id),
-        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "trial_days": [trial0, trial], "subscribers_kept_on_old_price": kept }),
+        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "trial_days": [trial0, trial], "included_units": [included0, included], "subscribers_kept_on_old_price": kept }),
     )
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "trial_days": trial, "subscribers_kept_on_old_price": kept }),
+        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "trial_days": trial, "included_units": included, "subscribers_kept_on_old_price": kept }),
     ))
 }
 
 pub async fn list_plans(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, String, i64, String, i32, i64, bool, i32)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active, trial_days FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
+    let rows: Vec<(String, String, String, i64, String, i32, i64, bool, i32, i64)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active, trial_days, included_units FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active, trial)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active, "trial_days": trial })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active, trial, inc)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active, "trial_days": trial, "included_units": inc })).collect::<Vec<_>>() }),
     ))
 }
 
@@ -298,7 +323,7 @@ pub async fn list_subscriptions(
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     // `unbilled_usage`: units recorded that no invoice has picked up yet (they go on the next one);
     // `unit_amount_minor`: the price this subscription is kept on, or null when it follows its plan's price
-    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64, Option<i64>, Option<NaiveDate>)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0), s.unit_amount_minor, s.trial_ends_on FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
+    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64, Option<i64>, Option<NaiveDate>)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL AND u.waived_on IS NULL), 0), s.unit_amount_minor, s.trial_ends_on FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
     Ok(Json(
         json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un, u, tr)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un, "unit_amount_minor": u, "trial_ends_on": tr })).collect::<Vec<_>>() }),
     ))
@@ -481,7 +506,7 @@ pub async fn run_billing(
     let due: Vec<(String, String, i32, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date, unit_amount_minor FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
         .bind(today).fetch_all(&mut *conn).await?;
     for (sub_id, plan_id, qty, mut date, locked) in due {
-        let (name, ccy, amount, unit, count, usage_price, due_days): (String, String, i64, String, i32, i64, i32) = sqlx::query_as("SELECT name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days FROM plans WHERE id = $1").bind(&plan_id).fetch_one(&mut *conn).await?;
+        let (name, ccy, amount, unit, count, usage_price, due_days, included): (String, String, i64, String, i32, i64, i32, i64) = sqlx::query_as("SELECT name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, included_units FROM plans WHERE id = $1").bind(&plan_id).fetch_one(&mut *conn).await?;
         // a subscription kept on an earlier price pays that, not the plan's current one
         let amount = locked.unwrap_or(amount);
         let customer: String =
@@ -494,8 +519,9 @@ pub async fn run_billing(
             if date > today {
                 break;
             }
-            let usage: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(quantity), 0)::BIGINT FROM usage_records WHERE subscription_id = $1 AND billed_invoice_id IS NULL").bind(&sub_id).fetch_one(&mut *conn).await?;
-            let total = amount * i64::from(qty) + usage * usage_price;
+            let usage: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(quantity), 0)::BIGINT FROM usage_records WHERE subscription_id = $1 AND billed_invoice_id IS NULL AND waived_on IS NULL").bind(&sub_id).fetch_one(&mut *conn).await?;
+            // the first `included` units of each period are free; only the rest is charged
+            let total = amount * i64::from(qty) + (usage - included).max(0) * usage_price;
             if total > 0 {
                 let inv = new_id("inv");
                 let n = sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, subscription_id, period_start, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING")
@@ -503,7 +529,7 @@ pub async fn run_billing(
                     .bind(&ccy).bind(total).bind(date.checked_add_days(Days::new(due_days as u64))).bind(&sub_id).bind(date).bind(format!("plan:{name}"))
                     .execute(&mut *conn).await?.rows_affected();
                 if n == 1 {
-                    sqlx::query("UPDATE usage_records SET billed_invoice_id = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL").bind(&sub_id).bind(&inv).execute(&mut *conn).await?;
+                    sqlx::query("UPDATE usage_records SET billed_invoice_id = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL AND waived_on IS NULL").bind(&sub_id).bind(&inv).execute(&mut *conn).await?;
                     tenant::emit(&mut *conn, tenant_id, "invoice.created", json!({ "id": inv, "subscription_id": sub_id, "amount_minor": total, "period_start": date })).await?;
                     created += 1;
                     // a subscription with an active mandate collects its own invoices
@@ -518,6 +544,14 @@ pub async fn run_billing(
                     )
                     .await;
                 }
+            } else if usage > 0 {
+                // everything used fits inside the free allowance and there is no base price: nothing to invoice, and
+                // these units must not count again towards the next period's allowance
+                sqlx::query("UPDATE usage_records SET waived_on = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL AND waived_on IS NULL")
+                    .bind(&sub_id)
+                    .bind(date)
+                    .execute(&mut *conn)
+                    .await?;
             }
             date = advance(date, &unit, count as u32);
         }

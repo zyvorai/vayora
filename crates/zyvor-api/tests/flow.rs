@@ -16931,3 +16931,144 @@ async fn a_trial_about_to_end_sends_one_event_per_end_date(pool: PgPool) {
     .await;
     assert_eq!(sent().await, 2);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_metered_plan_can_include_free_units_each_period(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Meter Co" }),
+        )
+        .await;
+    // out of range is refused
+    let (st, _) = t
+        .call(a, "POST", "/v1/plans", None, json!({ "name": "Bad", "amount_minor": 1, "interval_unit": "month", "included_units": -1 }))
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Metered", "amount_minor": 100_000, "interval_unit": "day", "interval_count": 30, "usage_unit_minor": 250, "included_units": 100 }))
+        .await;
+    let plans = t.ok(a, "GET", "/v1/plans", None, Value::Null).await;
+    assert_eq!(plans["data"][0]["included_units"], 100);
+    let sub = t
+        .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "start_date": today.to_string() }))
+        .await;
+    let usage = format!("/v1/subscriptions/{}/usage", sub["id"].as_str().unwrap());
+    let amounts = || async {
+        let inv = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+        let mut v: Vec<i64> = inv["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["amount_minor"].as_i64().unwrap())
+            .collect();
+        v.sort();
+        v
+    };
+    // 40 units, all inside the 100 free: the period costs the base price only
+    t.ok(
+        a,
+        "POST",
+        &usage,
+        None,
+        json!({ "quantity": 40, "reference": "a" }),
+    )
+    .await;
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    assert!(amounts().await.contains(&100_000));
+    // the next period: 130 units, 30 beyond the allowance at 250 each
+    t.ok(
+        a,
+        "POST",
+        &usage,
+        None,
+        json!({ "quantity": 130, "reference": "b" }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": (today + chrono::Duration::days(30)).to_string() }),
+    )
+    .await;
+    assert!(
+        amounts().await.contains(&(100_000 + 30 * 250)),
+        "{:?}",
+        amounts().await
+    );
+
+    // a plan with no base price: usage inside the allowance makes no invoice, and is not counted again next period
+    let pure = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pay as you go", "amount_minor": 0, "interval_unit": "day", "interval_count": 30, "usage_unit_minor": 250, "included_units": 100 }))
+        .await;
+    let sub2 = t
+        .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": pure["id"], "start_date": today.to_string() }))
+        .await;
+    let usage2 = format!("/v1/subscriptions/{}/usage", sub2["id"].as_str().unwrap());
+    t.ok(
+        a,
+        "POST",
+        &usage2,
+        None,
+        json!({ "quantity": 60, "reference": "c" }),
+    )
+    .await;
+    let before = amounts().await.len();
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": (today + chrono::Duration::days(30)).to_string() }),
+    )
+    .await;
+    assert_eq!(amounts().await.len(), before, "60 free units: no invoice");
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let row = subs["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == sub2["id"])
+        .unwrap();
+    assert_eq!(row["unbilled_usage"], 0);
+    t.ok(
+        a,
+        "POST",
+        &usage2,
+        None,
+        json!({ "quantity": 70, "reference": "d" }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": (today + chrono::Duration::days(60)).to_string() }),
+    )
+    .await;
+    assert_eq!(
+        amounts().await.len(),
+        before + 1,
+        "only the first sub's third period: 70 free units still make no invoice for the pay-as-you-go one"
+    );
+    // the allowance can be changed on the plan
+    let patched = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{}", pure["id"].as_str().unwrap()),
+            None,
+            json!({ "included_units": 0 }),
+        )
+        .await;
+    assert_eq!(patched["included_units"], 0);
+}
