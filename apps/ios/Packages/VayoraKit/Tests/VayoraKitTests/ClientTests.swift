@@ -260,7 +260,9 @@ final class CashflowTests: XCTestCase {
         let list = try await c.settlements()
         XCTAssertEqual(list.first?.deductionsMinor, 36800)
         let f = try await c.cashflow()
-        XCTAssertEqual(f.totalOwedMinor, 355000)
+        XCTAssertEqual(f.totalOwedMinor, 205000)
+        let owed = try await c.ageing()
+        XCTAssertEqual(f.totalOwedMinor, owed.inrTotalMinor)   // the two demo screens agree
     }
 }
 
