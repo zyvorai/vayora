@@ -73,6 +73,10 @@ type DeleteSavedViewsByIdResponse struct {
 	Ok bool `json:"ok"`
 }
 
+type DeleteSettingsLogoResponse struct {
+	EmailLogoURL any `json:"email_logo_url"`
+}
+
 type DeleteTestClockResponse struct {
 	Date     any     `json:"date"`
 	Frozen   bool    `json:"frozen"`
@@ -1756,6 +1760,10 @@ type PostSavedViewsResponse struct {
 	Shared any    `json:"shared"`
 	Mine   bool   `json:"mine"`
 	Owner  any    `json:"owner"`
+}
+
+type PostSettingsLogoResponse struct {
+	EmailLogoURL string `json:"email_logo_url"`
 }
 
 type PostSettingsResponse struct {

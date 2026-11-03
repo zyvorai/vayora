@@ -2924,6 +2924,45 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Body'
+  /v1/settings/logo:
+    post:
+      summary: Upload the logo for payer emails; the body is the image (PNG, JPEG, GIF or WebP, up to 200 KB; admin)
+      tags:
+      - settings
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email_logo_url:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Remove the uploaded email logo and its address (admin)
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email_logo_url: {}
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/test_clock:
     get:
       summary: The date this test environment sees, and whether its test clock is set

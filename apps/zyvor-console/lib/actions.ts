@@ -470,6 +470,16 @@ export const resetTestData = async (_: FormState, f: FormData) => {
   if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
   return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
 };
+/** Upload an image as the logo in payer emails (kept by Zyvor and served from its public address). */
+export const uploadEmailLogo = async (_: FormState, f: FormData): Promise<FormState> => {
+  const file = f.get("logo_file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a PNG, JPEG, GIF or WebP image." };
+  if (file.size > 200 * 1024) return { error: "The logo must be 200 KB or smaller." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const r = await run(["/settings"], (z) => z.emailLogo.upload(bytes), "admin");
+  return r?.error ? r : { ok: "Logo uploaded. New emails use it." };
+};
+export const removeEmailLogo = async (_: FormState, _f: FormData) => run(["/settings"], (z) => z.emailLogo.remove(), "admin");
 /** Move this test environment's clock forward (billing, reminders and dates follow it). */
 export const moveTestClock = async (_: FormState, f: FormData): Promise<FormState> => {
   const date = String(f.get("date") ?? "").trim();

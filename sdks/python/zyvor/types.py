@@ -57,6 +57,10 @@ DeleteSavedViewsByIdResponse = TypedDict("DeleteSavedViewsByIdResponse", {
     "ok": "bool",
 })
 
+DeleteSettingsLogoResponse = TypedDict("DeleteSettingsLogoResponse", {
+    "email_logo_url": "Any",
+})
+
 DeleteTestClockResponse = TypedDict("DeleteTestClockResponse", {
     "date": "Any",
     "frozen": "bool",
@@ -1740,6 +1744,10 @@ PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
     "shared": "Any",
     "mine": "bool",
     "owner": "Any",
+})
+
+PostSettingsLogoResponse = TypedDict("PostSettingsLogoResponse", {
+    "email_logo_url": "str",
 })
 
 PostSettingsResponse = TypedDict("PostSettingsResponse", {

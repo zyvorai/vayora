@@ -1426,7 +1426,10 @@ fn openapi_documents_every_route() {
     let mut missing = Vec::new();
     for line in lib.lines().filter(|l| l.contains(".route(\"/")) {
         let path = line.split('"').nth(1).unwrap();
-        if matches!(path, "/healthz" | "/readyz" | "/metrics") {
+        if matches!(
+            path,
+            "/healthz" | "/readyz" | "/metrics" | "/logo/{tenant}/{version}"
+        ) {
             continue;
         }
         if !spec.contains(&format!("/v1{path}:")) {
@@ -18095,4 +18098,137 @@ async fn free_units_can_be_per_seat(pool: PgPool) {
         )
         .await;
     assert_eq!(off["included_per_seat"], false);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_email_logo_can_be_uploaded_and_is_served_to_mail_programs(pool: PgPool) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let mut st = t.state.clone();
+    st.public_api_url = Some("https://api.example.com".into());
+    let send = |st: zyvor_api::AppState,
+                method: &'static str,
+                uri: String,
+                key: Option<String>,
+                body: Vec<u8>| async move {
+        let mut r = axum::http::Request::builder().method(method).uri(uri);
+        if let Some(k) = key {
+            r = r.header("authorization", format!("Bearer {k}"));
+        }
+        let res = zyvor_api::app(st)
+            .oneshot(r.body(axum::body::Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let code = res.status().as_u16();
+        let ctype = res
+            .headers()
+            .get("content-type")
+            .map(|v| v.to_str().unwrap().to_string());
+        let cache = res
+            .headers()
+            .get("cache-control")
+            .map(|v| v.to_str().unwrap().to_string());
+        let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (code, ctype, cache, bytes.to_vec())
+    };
+    let png: Vec<u8> = [b"\x89PNG\r\n\x1a\n".as_slice(), &[1, 2, 3, 4]].concat();
+    // without a public address on the server there is nowhere to serve it from
+    let (code, ..) = send(
+        t.state.clone(),
+        "POST",
+        "/v1/settings/logo".into(),
+        Some(a.key.clone()),
+        png.clone(),
+    )
+    .await;
+    assert_eq!(code, 409);
+    // an image goes up and the settings point at its address
+    let (code, _, _, body) = send(
+        st.clone(),
+        "POST",
+        "/v1/settings/logo".into(),
+        Some(a.key.clone()),
+        png.clone(),
+    )
+    .await;
+    assert_eq!(code, 200, "{}", String::from_utf8_lossy(&body));
+    let want = format!("https://api.example.com/logo/{}/1", a.id);
+    assert!(String::from_utf8_lossy(&body).contains(&want));
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["email_logo_url"],
+        want
+    );
+    // anyone can fetch it, cached for good, typed from its bytes
+    let (code, ctype, cache, got) =
+        send(st.clone(), "GET", format!("/logo/{}/1", a.id), None, vec![]).await;
+    assert_eq!(
+        (code, ctype.as_deref(), got),
+        (200, Some("image/png"), png.clone())
+    );
+    assert!(cache.unwrap().contains("immutable"));
+    // not an image, SVG, and too large are refused
+    for bad in [
+        b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec(),
+        b"hello".to_vec(),
+        vec![],
+    ] {
+        let (code, ..) = send(
+            st.clone(),
+            "POST",
+            "/v1/settings/logo".into(),
+            Some(a.key.clone()),
+            bad,
+        )
+        .await;
+        assert_eq!(code, 422);
+    }
+    let big = [png.clone(), vec![0; 300 * 1024]].concat();
+    let (code, ..) = send(
+        st.clone(),
+        "POST",
+        "/v1/settings/logo".into(),
+        Some(a.key.clone()),
+        big,
+    )
+    .await;
+    assert_eq!(code, 413);
+    // replacing it makes version 2; the old address stops working
+    let jpg = vec![0xFF, 0xD8, 0xFF, 0xE0, 9];
+    send(
+        st.clone(),
+        "POST",
+        "/v1/settings/logo".into(),
+        Some(a.key.clone()),
+        jpg,
+    )
+    .await;
+    let (c1, ..) = send(st.clone(), "GET", format!("/logo/{}/1", a.id), None, vec![]).await;
+    let (c2, ct2, ..) = send(st.clone(), "GET", format!("/logo/{}/2", a.id), None, vec![]).await;
+    assert_eq!((c1, c2, ct2.as_deref()), (404, 200, Some("image/jpeg")));
+    // another business's address does not reach this one's logo
+    let (c, ..) = send(
+        st.clone(),
+        "GET",
+        format!("/logo/{}/2", t.b.id),
+        None,
+        vec![],
+    )
+    .await;
+    assert_eq!(c, 404);
+    // removing it clears the address and the image
+    let (code, ..) = send(
+        st.clone(),
+        "DELETE",
+        "/v1/settings/logo".into(),
+        Some(a.key.clone()),
+        vec![],
+    )
+    .await;
+    assert_eq!(code, 200);
+    assert!(t.ok(a, "GET", "/v1/settings", None, Value::Null).await["email_logo_url"].is_null());
+    let (c, ..) = send(st.clone(), "GET", format!("/logo/{}/2", a.id), None, vec![]).await;
+    assert_eq!(c, 404);
 }
