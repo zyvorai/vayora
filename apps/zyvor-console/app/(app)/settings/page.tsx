@@ -2,7 +2,7 @@ import { Act } from "@/components/Act";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
 import { slug } from "@/lib/labels";
-import { clearTestClock, moveTestClock, removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
+import { clearTestClock, moveTestClock, removeEmailLogo, removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks, uploadEmailLogo } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -43,6 +43,10 @@ export default async function Settings() {
         <label className="field" style={{ alignSelf: "start" }}>Email colour<input name="accent" maxLength={7} placeholder="#0071e3" spellCheck={false} defaultValue={s.email_accent ?? ""} /><small className="muted">For the Pay now button and the top edge of your emails. Empty is the default blue.</small></label>
         <label className="field" style={{ alignSelf: "start" }}>Logo address<input name="logo" type="url" maxLength={300} placeholder="https://yourbusiness.example/logo.png" defaultValue={s.email_logo_url ?? ""} /><small className="muted">Shown beside your name at the top. It is loaded from your site when the email is opened.</small></label>
       </SettingsForm>
+      <SettingsForm title="Email logo" hint={`Upload an image to show beside your name in emails instead of giving an address (PNG, JPEG, GIF or WebP, up to 200 KB; not SVG). Zyvor keeps it and serves it from its own address, so mail programs fetch it from Zyvor. It needs the server's public address set, otherwise this is refused. ${s.email_logo_url ? "A logo is set (see Logo address above)." : "No logo is set."}`} action={uploadEmailLogo} button="Upload logo" busy="Uploading…" done="Logo uploaded.">
+        <label className="field" style={{ alignSelf: "start" }}>Image<input name="logo_file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" /></label>
+      </SettingsForm>
+      {s.email_logo_url && <div style={{ margin: "-8px 0 20px" }}><Act action={removeEmailLogo} id="logo" label="Remove logo" showOk /></div>}
       {stopped.data.length > 0 && (
         <section id="stopped-emails" className="card" style={{ marginBottom: 16, maxWidth: 720, scrollMarginTop: 72 }}>
           <h2 style={{ margin: 0 }}>Stopped emails</h2>

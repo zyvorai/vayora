@@ -31,6 +31,7 @@ pub mod insights;
 pub mod installments;
 pub mod kyc;
 pub mod kyc_cashfree;
+pub mod logo;
 pub mod mail;
 pub mod mandates;
 pub mod onboarding;
@@ -101,6 +102,8 @@ pub struct AppState {
     pub mailer: mail::Mailer,
     /// The unsubscribe link in automatic mail (`ZYVOR_PUBLIC_API_URL` and `ZYVOR_UNSUBSCRIBE_SECRET`); `None`: no link.
     pub unsubscribe: Option<unsubscribe::Config>,
+    /// Where payers reach this API (`ZYVOR_PUBLIC_API_URL`), without a trailing slash; needed for an uploaded email logo.
+    pub public_api_url: Option<String>,
     /// Where the console is reached, for links in emails (`ZYVOR_CONSOLE_PUBLIC_URL`).
     pub console_url: String,
     /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
@@ -154,6 +157,7 @@ impl AppState {
             kyc: None,
             mailer: mail::Mailer::Log,
             unsubscribe: None,
+            public_api_url: None,
             console_url: "http://localhost:3000".to_string(),
             sim_payer: false,
             doc_reader: docread::DocReader::Off,
@@ -176,6 +180,10 @@ impl AppState {
         self.checkout_public_url = std::env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
             .ok()
             .filter(|u| u.starts_with("http"));
+        self.public_api_url = std::env::var("ZYVOR_PUBLIC_API_URL")
+            .ok()
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .filter(|u| u.starts_with("https://"));
         self.unsubscribe = match (
             std::env::var("ZYVOR_PUBLIC_API_URL"),
             std::env::var("ZYVOR_UNSUBSCRIBE_SECRET"),
@@ -497,6 +505,12 @@ pub fn app(state: AppState) -> Router {
         .route("/settings", get(get_settings).post(put_settings))
         .route("/test_data/reset", post(testdata::reset))
         .route(
+            "/settings/logo",
+            post(logo::upload)
+                .delete(logo::remove)
+                .layer(axum::extract::DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
             "/test_clock",
             get(clock::get).post(clock::set).delete(clock::clear),
         )
@@ -745,6 +759,7 @@ pub fn app(state: AppState) -> Router {
             "/unsubscribe/{token}",
             get(unsubscribe::confirm_page).post(unsubscribe::unsubscribe),
         )
+        .route("/logo/{tenant}/{version}", get(logo::serve))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .nest("/v1", v1)

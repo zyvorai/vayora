@@ -193,6 +193,15 @@ export class Zyvor {
     return json as T;
   }
 
+  /** A request whose body is raw bytes (an image), not JSON. */
+  private async rawReq<T>(method: string, path: string, body?: Uint8Array): Promise<T> {
+    const h = { ...this.headers(false), ...(body ? { "content-type": "application/octet-stream" } : {}) };
+    const res = await this.f(`${this.base}${path}`, { method, headers: h, body: body as BodyInit | undefined });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new ZyvorError(res.status, json?.error?.code ?? "unknown", json?.error?.message ?? res.statusText);
+    return json as T;
+  }
+
   private qs(p: Record<string, string | number | undefined>) {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(p)) if (v !== undefined) q.set(k, String(v));
@@ -386,6 +395,13 @@ export class Zyvor {
   readonly testData = {
     /** Test environments only: clears payments, invoices, customers and the ledger; keeps settings, keys, providers, branches, vendors, plans, coupons. */
     reset: () => this.req<{ ok: boolean; removed: Record<string, number> }>("POST", "/v1/test_data/reset", { confirm: "reset test data" }),
+  };
+
+  readonly emailLogo = {
+    /** Upload a PNG, JPEG, GIF or WebP image (up to 200 KB) as the logo in payer emails. Needs ZYVOR_PUBLIC_API_URL on the server. */
+    upload: (image: Uint8Array) => this.rawReq<{ email_logo_url: string }>("POST", "/v1/settings/logo", image),
+    /** Remove the uploaded logo and its address. */
+    remove: () => this.rawReq<{ email_logo_url: null }>("DELETE", "/v1/settings/logo"),
   };
 
   readonly settings = {
