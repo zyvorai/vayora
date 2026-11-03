@@ -50,7 +50,11 @@ func newKey() string {
 
 func (c *Client) do(method, path string, body any, idem string, out any) error {
 	var rdr io.Reader
-	if body != nil {
+	rawBody := false // bytes go as they are (an image), anything else as JSON
+	if bs, ok := body.([]byte); ok {
+		rawBody = true
+		rdr = bytes.NewReader(bs)
+	} else if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return err
@@ -62,7 +66,9 @@ func (c *Client) do(method, path string, body any, idem string, out any) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	if body != nil {
+	if rawBody {
+		req.Header.Set("Content-Type", "application/octet-stream")
+	} else if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if idem != "" {
@@ -1630,6 +1636,19 @@ func (c *Client) SetTestClock(body map[string]any) (map[string]any, error) {
 // ClearTestClock puts a test environment back on real time.
 func (c *Client) ClearTestClock() (map[string]any, error) {
 	return c.call("DELETE", "/v1/test_clock", nil)
+}
+
+// UploadEmailLogo uses a PNG, JPEG, GIF or WebP image (up to 200 KB) as the logo in payer emails. The server needs
+// ZYVOR_PUBLIC_API_URL set.
+func (c *Client) UploadEmailLogo(image []byte) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/settings/logo", image, "", &out)
+	return out, err
+}
+
+// RemoveEmailLogo removes the uploaded email logo and its address.
+func (c *Client) RemoveEmailLogo() (map[string]any, error) {
+	return c.call("DELETE", "/v1/settings/logo", nil)
 }
 
 // ResetTestData clears a test environment's payments, invoices, customers and ledger, keeping its setup. Refused in live.

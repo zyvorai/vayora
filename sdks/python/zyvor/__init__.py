@@ -39,7 +39,9 @@ class Zyvor:
     def _req(self, method: str, path: str, body: Any = None, idem: Optional[str] = None) -> Any:
         headers = {"authorization": f"Bearer {self.api_key}"}
         data = None
-        if body is not None:
+        if isinstance(body, (bytes, bytearray)):  # raw bytes, such as an image
+            data, headers["content-type"] = bytes(body), "application/octet-stream"
+        elif body is not None:
             data, headers["content-type"] = json.dumps(body).encode(), "application/json"
         if idem:
             headers["idempotency-key"] = idem
@@ -680,6 +682,14 @@ class Zyvor:
     def clear_test_clock(self) -> types.DeleteTestClockResponse:
         """Test environments only: back to real time."""
         return self._req("DELETE", "/v1/test_clock")
+
+    def upload_email_logo(self, image: bytes) -> types.PostSettingsLogoResponse:
+        """Use a PNG, JPEG, GIF or WebP image (up to 200 KB) as the logo in payer emails. Needs ZYVOR_PUBLIC_API_URL on the server."""
+        return self._req("POST", "/v1/settings/logo", bytes(image))
+
+    def remove_email_logo(self) -> types.DeleteSettingsLogoResponse:
+        """Remove the uploaded email logo and its address."""
+        return self._req("DELETE", "/v1/settings/logo")
 
     def reset_test_data(self) -> types.PostTestDataResetResponse:
         """Test environments only: clear payments, invoices, customers and the ledger; keep settings, keys, providers and other setup."""
