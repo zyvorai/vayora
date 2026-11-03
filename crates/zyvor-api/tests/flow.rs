@@ -16835,3 +16835,99 @@ async fn a_subscribers_trial_can_be_ended_early_or_moved(pool: PgPool) {
         .await;
     assert_eq!(st.as_u16(), 404);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_trial_about_to_end_sends_one_event_per_end_date(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Trial Co" }),
+        )
+        .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 90_000, "interval_unit": "month", "trial_days": 10 }))
+        .await;
+    let sub = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    let ends = today + chrono::Duration::days(10);
+    let sent =
+        || t.count("SELECT count(*) FROM outbox_events WHERE type = 'subscription.trial_will_end'");
+    // ten days out: too early to say anything
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    assert_eq!(sent().await, 0);
+    // three days before the end: one event, and running again does not repeat it
+    let three = (ends - chrono::Duration::days(3)).to_string();
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": three }),
+    )
+    .await;
+    assert_eq!(sent().await, 1);
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": three }),
+    )
+    .await;
+    let two = (ends - chrono::Duration::days(2)).to_string();
+    t.ok(a, "POST", "/v1/billing/run", None, json!({ "as_of": two }))
+        .await;
+    assert_eq!(sent().await, 1);
+    let payload: Value = sqlx::query_scalar(
+        "SELECT payload FROM outbox_events WHERE type = 'subscription.trial_will_end'",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(payload["data"]["id"], sub["id"]);
+    assert_eq!(payload["data"]["trial_ends_on"], ends.to_string());
+    assert_eq!(payload["data"]["days_left"], 3);
+    // moving the end to a later day earns a fresh notice when that day comes close
+    let path = format!("/v1/subscriptions/{}/trial", sub["id"].as_str().unwrap());
+    let later = today + chrono::Duration::days(20);
+    t.ok(
+        a,
+        "POST",
+        &path,
+        None,
+        json!({ "ends_on": later.to_string() }),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": (later - chrono::Duration::days(1)).to_string() }),
+    )
+    .await;
+    assert_eq!(sent().await, 2);
+    // a trial ended on the day it falls due (the first bill) sends nothing more
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": later.to_string() }),
+    )
+    .await;
+    assert_eq!(sent().await, 2);
+}

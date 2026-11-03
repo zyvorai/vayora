@@ -527,7 +527,43 @@ pub async fn run_billing(
             .execute(&mut *conn)
             .await?;
     }
+    announce_trials_ending(conn, tenant_id, today).await?;
     Ok(created)
+}
+
+/// Days before a free trial ends that the business is told (a `subscription.trial_will_end` event).
+const TRIAL_NOTICE_DAYS: u64 = 3;
+
+/// One `subscription.trial_will_end` event per active subscription whose trial ends within the next
+/// `TRIAL_NOTICE_DAYS` days, once for each trial end date.
+async fn announce_trials_ending(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    today: NaiveDate,
+) -> Result<(), sqlx::Error> {
+    let horizon = today
+        .checked_add_days(Days::new(TRIAL_NOTICE_DAYS))
+        .unwrap_or(today);
+    let rows: Vec<(String, String, String, NaiveDate)> = sqlx::query_as("SELECT id, customer_id, plan_id, trial_ends_on FROM subscriptions WHERE status = 'active' AND trial_ends_on > $1 AND trial_ends_on <= $2 AND trial_notified_for IS DISTINCT FROM trial_ends_on ORDER BY trial_ends_on FOR UPDATE SKIP LOCKED LIMIT 500")
+        .bind(today)
+        .bind(horizon)
+        .fetch_all(&mut *conn)
+        .await?;
+    for (id, customer, plan, ends) in rows {
+        tenant::emit(
+            &mut *conn,
+            tenant_id,
+            "subscription.trial_will_end",
+            json!({ "id": id, "customer_id": customer, "plan_id": plan, "trial_ends_on": ends, "days_left": (ends - today).num_days() }),
+        )
+        .await?;
+        sqlx::query("UPDATE subscriptions SET trial_notified_for = $2 WHERE id = $1")
+            .bind(&id)
+            .bind(ends)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
 }
 
 #[derive(Deserialize, Default)]
