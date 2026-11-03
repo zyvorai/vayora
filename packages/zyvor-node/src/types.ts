@@ -744,6 +744,7 @@ export interface GetSubscriptionsResponseDataItem {
   quantity: number;
   status: string;
   next_bill_date: string;
+  unbilled_usage: number;
 }
 
 export interface GetVendorsByIdBalanceResponse {

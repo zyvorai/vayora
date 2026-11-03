@@ -249,9 +249,10 @@ pub async fn list_subscriptions(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, String, i32, String, NaiveDate)> = sqlx::query_as("SELECT id, customer_id, plan_id, quantity, status, next_bill_date FROM subscriptions ORDER BY created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
+    // `unbilled_usage`: units recorded that no invoice has picked up yet (they go on the next one)
+    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0) FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un })).collect::<Vec<_>>() }),
     ))
 }
 

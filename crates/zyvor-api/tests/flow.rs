@@ -1638,8 +1638,13 @@ async fn subscriptions_bill_once_per_period_with_usage_credits_void_and_statemen
         json!({ "quantity": 30, "reference": "u1" }),
     )
     .await; // retry
+    // the retried units count once, and show as waiting for an invoice until billing picks them up
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    assert_eq!(subs["data"][0]["unbilled_usage"], 30);
     let run = t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
     assert_eq!(run["invoices_created"], 3);
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    assert_eq!(subs["data"][0]["unbilled_usage"], 0);
     assert_eq!(
         t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
         0
