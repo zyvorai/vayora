@@ -109,6 +109,10 @@ class Zyvor:
         body = {k: v for k, v in {"plan_id": plan_id, "quantity": quantity, "follow_plan_price": follow_plan_price}.items() if v is not None}
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/change_plan", body)
 
+    def change_trial(self, subscription_id: str, ends_on: str) -> types.PostSubscriptionsByIdTrialResponse:
+        """End a running free trial early (ends_on = today) or move its end, for one subscriber. `ends_on` is a date, YYYY-MM-DD."""
+        return self._req("POST", f"/v1/subscriptions/{subscription_id}/trial", {"ends_on": ends_on})
+
     def record_usage(self, subscription_id: str, quantity: int, reference: Optional[str] = None) -> types.PostSubscriptionsByIdUsageResponse:
         """Retry-safe when `reference` is set: the same reference is recorded once."""
         return self._req("POST", f"/v1/subscriptions/{subscription_id}/usage", {k: v for k, v in {"quantity": quantity, "reference": reference}.items() if v is not None})

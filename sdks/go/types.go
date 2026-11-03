@@ -1818,6 +1818,12 @@ type PostSubscriptionsByIdResumeResponse struct {
 	Status string `json:"status"`
 }
 
+type PostSubscriptionsByIdTrialResponse struct {
+	ID           string `json:"id"`
+	TrialEndsOn  string `json:"trial_ends_on"`
+	NextBillDate string `json:"next_bill_date"`
+}
+
 type PostSubscriptionsByIdUsageResponse struct {
 	Recorded int64 `json:"recorded"`
 	Quantity int64 `json:"quantity"`

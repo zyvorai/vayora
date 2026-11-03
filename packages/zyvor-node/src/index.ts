@@ -265,6 +265,8 @@ export class Zyvor {
     /** `followPlanPrice: true` (same plan) ends a kept price: the plan's current price applies from the next invoice. */
     changePlan: (id: string, p: { planId: string; quantity?: number; followPlanPrice?: boolean }) => this.req("POST", `/v1/subscriptions/${encodeURIComponent(id)}/change_plan`, { plan_id: p.planId, quantity: p.quantity, follow_plan_price: p.followPlanPrice }),
     /** Retry-safe when `reference` is set: the same reference is recorded once. */
+    /** End a running free trial early (`endsOn` today) or move its end, for one subscriber. Only a subscription still in its trial can change. */
+    changeTrial: (id: string, p: { endsOn: string }) => this.req<{ id: string; trial_ends_on: string; next_bill_date: string }>("POST", `/v1/subscriptions/${encodeURIComponent(id)}/trial`, { ends_on: p.endsOn }),
     recordUsage: (id: string, p: { quantity: number; reference?: string; note?: string }) => this.req<{ recorded: boolean }>("POST", `/v1/subscriptions/${encodeURIComponent(id)}/usage`, p),
     /** `asOf` (YYYY-MM-DD) runs as if it were that day; test mode only. */
     run: (p: { asOf?: string } = {}) => this.req<{ invoices_created: number }>("POST", "/v1/billing/run", { as_of: p.asOf }),

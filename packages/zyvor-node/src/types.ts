@@ -1798,6 +1798,12 @@ export interface PostSubscriptionsByIdResumeResponse {
   status: string;
 }
 
+export interface PostSubscriptionsByIdTrialResponse {
+  id: string;
+  trial_ends_on: string;
+  next_bill_date: string;
+}
+
 export interface PostSubscriptionsByIdUsageResponse {
   recorded: number;
   quantity: number;
