@@ -73,6 +73,12 @@ type DeleteSavedViewsByIdResponse struct {
 	Ok bool `json:"ok"`
 }
 
+type DeleteTestClockResponse struct {
+	Date     any     `json:"date"`
+	Frozen   bool    `json:"frozen"`
+	RealDate *string `json:"real_date"`
+}
+
 type GetAnalyticsCostResponse struct {
 	ByProviderMethod []any `json:"by_provider_method"`
 	Suggestions      any   `json:"suggestions"`
@@ -789,6 +795,12 @@ type GetSubscriptionsResponseDataItem struct {
 	UnitAmountMinor *int64  `json:"unit_amount_minor"`
 	TrialEndsOn     *string `json:"trial_ends_on"`
 	Billed          bool    `json:"billed"`
+}
+
+type GetTestClockResponse struct {
+	Date     any     `json:"date"`
+	Frozen   any     `json:"frozen"`
+	RealDate *string `json:"real_date"`
 }
 
 type GetVendorsByIdBalanceResponse struct {
@@ -1861,6 +1873,12 @@ type PostSubscriptionsResponse struct {
 	Status       string  `json:"status"`
 	NextBillDate *string `json:"next_bill_date"`
 	TrialEndsOn  *string `json:"trial_ends_on"`
+}
+
+type PostTestClockResponse struct {
+	Date     any     `json:"date"`
+	Frozen   bool    `json:"frozen"`
+	RealDate *string `json:"real_date"`
 }
 
 type PostTestDataResetResponse struct {

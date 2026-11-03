@@ -448,12 +448,12 @@ pub async fn run_dunning(
             "channel must be email, sms, whatsapp, call or other",
         ));
     }
-    let today = crate::run_date(&auth, b.as_of)?;
     let (min, rep) = (
         b.min_days_overdue.unwrap_or(1).max(0),
         b.repeat_after_days.unwrap_or(7).clamp(0, 365),
     );
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let today = crate::run_date_in(&mut tx, &auth, b.as_of).await?;
     let approval: bool = sqlx::query_scalar(
         "SELECT dunning_requires_approval FROM tenant_settings WHERE tenant_id = $1",
     )

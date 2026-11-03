@@ -17868,3 +17868,109 @@ async fn real_smtp_through_the_worker_delivers_a_queued_invoice_email(pool: PgPo
         1
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_test_clock_moves_billing_and_dates_for_the_whole_organisation(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Clock Co" }),
+        )
+        .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 50_000, "interval_unit": "month", "trial_days": 7 }))
+        .await;
+    // real time to begin with
+    let c = t.ok(a, "GET", "/v1/test_clock", None, Value::Null).await;
+    assert_eq!(c["frozen"], false);
+    assert_eq!(c["date"], today.to_string());
+    // a subscription with a 7-day trial is first billed a week out; nothing is due today
+    let sub = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        0
+    );
+    // exactly one of date or advance_days; never backwards
+    for body in [
+        json!({}),
+        json!({ "date": today.to_string(), "advance_days": 1 }),
+    ] {
+        let (st, _) = t.call(a, "POST", "/v1/test_clock", None, body).await;
+        assert_eq!(st.as_u16(), 422);
+    }
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/test_clock",
+            None,
+            json!({ "date": (today - chrono::Days::new(1)).to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    // ten days on: the same run with no date now bills the subscription, and the invoice is dated by the clock
+    let moved = t
+        .ok(
+            a,
+            "POST",
+            "/v1/test_clock",
+            None,
+            json!({ "advance_days": 10 }),
+        )
+        .await;
+    let later = today + chrono::Days::new(10);
+    assert_eq!(moved["date"], later.to_string());
+    assert_eq!(moved["frozen"], true);
+    assert_eq!(
+        t.ok(a, "GET", "/v1/test_clock", None, Value::Null).await["date"],
+        later.to_string()
+    );
+    let ran = t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    assert_eq!(ran["invoices_created"], 1);
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let row = subs["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == sub["id"])
+        .unwrap();
+    assert!(row["next_bill_date"].as_str().unwrap() > later.to_string().as_str());
+    // dates the API stamps follow the clock too: a new subscription's trial runs from the clock's day
+    let sub2 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    assert_eq!(
+        sub2["next_bill_date"],
+        (later + chrono::Days::new(7)).to_string()
+    );
+    // back to real time
+    let cleared = t.ok(a, "DELETE", "/v1/test_clock", None, Value::Null).await;
+    assert_eq!(cleared["frozen"], false);
+    assert_eq!(cleared["date"], today.to_string());
+    // the clock moves and clears are in the audit trail
+    assert_eq!(
+        t.count("SELECT count(*) FROM audit_events WHERE action IN ('test_clock.set','test_clock.cleared')")
+            .await,
+        2
+    );
+}

@@ -1617,6 +1617,21 @@ func (c *Client) RemoveMailSuppression(email string) (map[string]any, error) {
 	return c.call("DELETE", "/v1/mail_suppressions/"+url.PathEscape(email), nil)
 }
 
+// TestClock returns the date a test environment sees and whether its test clock is set.
+func (c *Client) TestClock() (map[string]any, error) {
+	return c.call("GET", "/v1/test_clock", nil)
+}
+
+// SetTestClock moves a test environment's clock forward; body is {"date": "YYYY-MM-DD"} or {"advance_days": n}.
+func (c *Client) SetTestClock(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/test_clock", body)
+}
+
+// ClearTestClock puts a test environment back on real time.
+func (c *Client) ClearTestClock() (map[string]any, error) {
+	return c.call("DELETE", "/v1/test_clock", nil)
+}
+
 // ResetTestData clears a test environment's payments, invoices, customers and ledger, keeping its setup. Refused in live.
 func (c *Client) ResetTestData() (map[string]any, error) {
 	return c.call("POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"})

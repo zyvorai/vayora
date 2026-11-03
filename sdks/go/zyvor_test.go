@@ -267,6 +267,9 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"ListPaymentsInRange", func() (map[string]any, error) { return c.ListPaymentsInRange("", "", 0, "2026-11-01", "2026-11-30") }, "GET", "/v1/payment_intents?created_from=2026-11-01&created_to=2026-11-30", nil},
 		{"MailSuppressions", func() (map[string]any, error) { return c.MailSuppressions() }, "GET", "/v1/mail_suppressions", map[string]any{}},
 		{"RemoveMailSuppression", func() (map[string]any, error) { return c.RemoveMailSuppression("a@b.c") }, "DELETE", "/v1/mail_suppressions/a@b.c", map[string]any{}},
+		{"TestClock", func() (map[string]any, error) { return c.TestClock() }, "GET", "/v1/test_clock", map[string]any{}},
+		{"SetTestClock", func() (map[string]any, error) { return c.SetTestClock(map[string]any{"advance_days": 10}) }, "POST", "/v1/test_clock", map[string]any{"advance_days": 10}},
+		{"ClearTestClock", func() (map[string]any, error) { return c.ClearTestClock() }, "DELETE", "/v1/test_clock", map[string]any{}},
 		{"ResetTestData", func() (map[string]any, error) { return c.ResetTestData() }, "POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"}},
 		{"AssignCase", func() (map[string]any, error) { return c.AssignCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/assign", map[string]any{"assignee": "x1"}},
 		{"ResolveCase", func() (map[string]any, error) { return c.ResolveCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/resolve", map[string]any{"resolution": "x1"}},
@@ -392,7 +395,7 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 101 {
+	if len(rows) != 104 {
 		t.Fatalf("expected 101 rows, got %d", len(rows))
 	}
 }

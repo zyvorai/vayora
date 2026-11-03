@@ -280,10 +280,10 @@ pub async fn create_subscription(
         ));
     }
     // an explicit first billing date wins; otherwise the free trial (if the plan has one) comes first
+    let now = crate::clock::today(&mut tx).await?;
     let start = b.start_date.unwrap_or_else(|| {
-        crate::ist_today()
-            .checked_add_days(Days::new(trial_days as u64))
-            .unwrap_or_else(crate::ist_today)
+        now.checked_add_days(Days::new(trial_days as u64))
+            .unwrap_or(now)
     });
     let id = new_id("sub");
     let trial_ends: Option<NaiveDate> = (b.start_date.is_none() && trial_days > 0).then_some(start);
@@ -488,10 +488,11 @@ pub async fn queue_invoice_email(
         due,
         pay_url.as_deref(),
     );
+    let day = crate::clock::today(conn).await?;
     let fresh = crate::mail::enqueue_once_as(
         conn,
         tenant_id,
-        &format!("invoice_send:{id}:{}", crate::ist_today()),
+        &format!("invoice_send:{id}:{day}"),
         &email,
         &subject,
         &body,
@@ -576,7 +577,8 @@ pub async fn change_trial(
     Json(b): Json<TrialChange>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
-    let today = crate::ist_today();
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let today = crate::clock::today(&mut tx).await?;
     let latest = today.checked_add_days(Days::new(365)).unwrap_or(today);
     if b.ends_on < today || b.ends_on > latest {
         return Err(ApiError::invalid(
@@ -584,7 +586,6 @@ pub async fn change_trial(
             "ends_on must be today or a day within the next year",
         ));
     }
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let row: Option<(String, Option<NaiveDate>)> =
         sqlx::query_as("SELECT status, trial_ends_on FROM subscriptions WHERE id = $1 FOR UPDATE")
             .bind(&id)
@@ -853,8 +854,8 @@ pub async fn billing_run(
     body: Option<Json<RunBody>>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
-    let today = crate::run_date(&auth, body.and_then(|b| b.0.as_of))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let today = crate::run_date_in(&mut tx, &auth, body.and_then(|b| b.0.as_of)).await?;
     let n = run_billing(
         &mut tx,
         &auth.tenant_id,
@@ -1096,7 +1097,7 @@ pub async fn change_plan(
         ));
     }
     // the period being paid for runs from (next - interval) to next
-    let today = crate::ist_today();
+    let today = crate::clock::today(&mut tx).await?;
     let period_start = match old.2.as_str() {
         "day" => next.checked_sub_days(Days::new(old.3 as u64)),
         "week" => next.checked_sub_days(Days::new(7 * old.3 as u64)),
@@ -1266,7 +1267,7 @@ pub async fn complete_milestone(
         _ => {}
     }
     let inv = new_id("inv");
-    let today = crate::ist_today();
+    let today = crate::clock::today(&mut tx).await?;
     let details = json!([{ "description": name, "quantity": 1, "unit_price_minor": amount, "amount_minor": amount }]);
     sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, external_ref, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(&inv).bind(&auth.tenant_id).bind(&customer).bind(format!("MS-{}", &id[id.len().saturating_sub(10)..])).bind(&ccy).bind(amount)

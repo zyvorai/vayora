@@ -12,6 +12,7 @@ pub mod billing;
 pub mod cases;
 pub mod checkout;
 pub mod clientenv;
+pub mod clock;
 pub mod closing;
 pub mod collections;
 pub mod console_users;
@@ -263,6 +264,18 @@ pub fn run_date(
     }
 }
 
+/// Like `run_date`, but with no date named a test organisation's own clock is used.
+pub async fn run_date_in(
+    conn: &mut sqlx::PgConnection,
+    auth: &auth::Auth,
+    as_of: Option<chrono::NaiveDate>,
+) -> Result<chrono::NaiveDate, ApiError> {
+    match as_of {
+        None => Ok(clock::today(conn).await?),
+        some => run_date(auth, some),
+    }
+}
+
 pub fn app(state: AppState) -> Router {
     use admin::*;
     let v1 = Router::new()
@@ -482,6 +495,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/settings", get(get_settings).post(put_settings))
         .route("/test_data/reset", post(testdata::reset))
+        .route(
+            "/test_clock",
+            get(clock::get).post(clock::set).delete(clock::clear),
+        )
         .route(
             "/saved_views",
             get(saved_views::list).post(saved_views::create),
