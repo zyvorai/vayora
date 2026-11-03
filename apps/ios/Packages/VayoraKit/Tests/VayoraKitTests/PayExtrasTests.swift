@@ -490,6 +490,21 @@ final class PrivacyTests: XCTestCase {
         // a clock that moved backwards, or a negative timeout, never locks by itself
         XCTAssertFalse(LockPolicy.shouldLock(enabled: true, backgroundedAt: now.addingTimeInterval(60), now: now, timeoutMinutes: -3))
     }
+
+    /// The Face ID sheet makes the app inactive and active again without a background trip. That must not lock it again,
+    /// or a successful unlock is followed by another prompt, for ever.
+    func testComingBackFromTheFaceIDSheetDoesNotLockAgain() {
+        let now = Date()
+        for timeout in [0, 1, 5] {
+            XCTAssertFalse(LockPolicy.shouldLockOnReturn(enabled: true, backgroundedAt: nil, now: now, timeoutMinutes: timeout), "never left: no lock (timeout \(timeout))")
+        }
+        XCTAssertTrue(LockPolicy.shouldLockOnReturn(enabled: true, backgroundedAt: now, now: now, timeoutMinutes: 0), "left and came straight back, lock every time")
+        XCTAssertFalse(LockPolicy.shouldLockOnReturn(enabled: true, backgroundedAt: now.addingTimeInterval(-299), now: now, timeoutMinutes: 5))
+        XCTAssertTrue(LockPolicy.shouldLockOnReturn(enabled: true, backgroundedAt: now.addingTimeInterval(-300), now: now, timeoutMinutes: 5))
+        XCTAssertFalse(LockPolicy.shouldLockOnReturn(enabled: false, backgroundedAt: now.addingTimeInterval(-9999), now: now, timeoutMinutes: 0), "lock is off")
+        // the launch lock is unchanged: a fresh launch with the lock on asks
+        XCTAssertTrue(LockPolicy.shouldLock(enabled: true, backgroundedAt: nil, now: now, timeoutMinutes: 5))
+    }
     func testScamHints() {
         XCTAssertNotNil(ScamHints.check(name: "Paytm Cashback", note: ""))
         XCTAssertNotNil(ScamHints.check(name: "Shop", note: "Claim your REFUND"))
