@@ -21,6 +21,25 @@ extension LockPolicy {
     }
 }
 
+/// A loop breaker for the unlock prompt. If the app asks automatically (not because the person tapped Unlock) too many times in a
+/// short while, something is making it ask again and again: stop asking and wait for a tap, rather than prompt for ever.
+public struct AutoPromptGuard: Equatable, Sendable {
+    public var recent: [Date] = []
+    public let limit: Int
+    public let window: TimeInterval
+    public init(limit: Int = 3, window: TimeInterval = 10) { self.limit = limit; self.window = window }
+
+    /// Records an automatic prompt at `now` and says whether it may go ahead.
+    public mutating func allowAutomatic(now: Date) -> Bool {
+        recent = recent.filter { now.timeIntervalSince($0) < window }
+        guard recent.count < limit else { return false }
+        recent.append(now)
+        return true
+    }
+    /// The person tapped Unlock: start fresh.
+    public mutating func reset() { recent = [] }
+}
+
 /// A plain warning for the oldest trick in UPI: someone says scanning or paying will bring you money.
 public enum ScamHints {
     static let words = ["refund", "cashback", "reward", "prize", "lottery", "kyc", "claim", "receive money", "get money", "winning", "gift card", "verify"]

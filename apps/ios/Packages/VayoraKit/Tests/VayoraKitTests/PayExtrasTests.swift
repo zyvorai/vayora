@@ -505,6 +505,20 @@ final class PrivacyTests: XCTestCase {
         // the launch lock is unchanged: a fresh launch with the lock on asks
         XCTAssertTrue(LockPolicy.shouldLock(enabled: true, backgroundedAt: nil, now: now, timeoutMinutes: 5))
     }
+
+    func testTheLoopBreakerStopsAutomaticPromptsAfterThreeInTenSeconds() {
+        var g = AutoPromptGuard()
+        let t0 = Date()
+        XCTAssertTrue(g.allowAutomatic(now: t0)); XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(1))); XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(2)))
+        XCTAssertFalse(g.allowAutomatic(now: t0.addingTimeInterval(3)), "a fourth in a few seconds is a loop")
+        XCTAssertFalse(g.allowAutomatic(now: t0.addingTimeInterval(9)))
+        XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(13)), "after the window has passed, asking is fine again")
+        g.reset()
+        XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(14))); XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(14.1))); XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(14.2)))
+        XCTAssertFalse(g.allowAutomatic(now: t0.addingTimeInterval(14.3)))
+        g.reset()
+        XCTAssertTrue(g.allowAutomatic(now: t0.addingTimeInterval(15)), "a tap on Unlock starts fresh")
+    }
     func testScamHints() {
         XCTAssertNotNil(ScamHints.check(name: "Paytm Cashback", note: ""))
         XCTAssertNotNil(ScamHints.check(name: "Shop", note: "Claim your REFUND"))
