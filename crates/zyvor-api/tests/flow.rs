@@ -16378,3 +16378,124 @@ async fn a_subscriptions_quantity_can_change_on_the_same_plan(pool: PgPool) {
     let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
     assert_eq!(subs["data"][0]["quantity"], 1);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn existing_subscribers_can_be_kept_on_the_old_price(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let c1 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Early Payer" }),
+        )
+        .await;
+    let c2 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Late Payer" }),
+        )
+        .await;
+    let plan = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Std", "amount_minor": 10_000, "interval_unit": "month" }),
+        )
+        .await;
+    let other = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Other", "amount_minor": 20_000, "interval_unit": "month" }),
+        )
+        .await;
+    let pid = plan["id"].as_str().unwrap();
+    let early = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": c1["id"], "plan_id": pid }),
+        )
+        .await;
+    // the price rises; the one subscriber so far stays on the old price
+    let up = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{pid}"),
+            None,
+            json!({ "amount_minor": 12_500, "keep_existing": true }),
+        )
+        .await;
+    assert_eq!(up["subscribers_kept_on_old_price"], 1);
+    t.ok(
+        a,
+        "POST",
+        "/v1/subscriptions",
+        None,
+        json!({ "customer_id": c2["id"], "plan_id": pid }),
+    )
+    .await;
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let locked: Vec<Option<i64>> = subs["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["unit_amount_minor"].as_i64())
+        .collect();
+    assert_eq!(locked, vec![None, Some(10_000)]); // newest first: the late payer follows the plan
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        2
+    );
+    let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let mut amounts: Vec<i64> = invoices["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["amount_minor"].as_i64().unwrap())
+        .collect();
+    amounts.sort();
+    assert_eq!(amounts, vec![10_000, 12_500]);
+    // a later price change without the flag touches nobody who is already locked, and locks nobody
+    let up = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{pid}"),
+            None,
+            json!({ "amount_minor": 15_000 }),
+        )
+        .await;
+    assert_eq!(up["subscribers_kept_on_old_price"], 0);
+    // moving to another plan ends the lock
+    let sid = early["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{sid}/change_plan"),
+        None,
+        json!({ "plan_id": other["id"] }),
+    )
+    .await;
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let e = subs["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == early["id"])
+        .unwrap();
+    assert!(e["unit_amount_minor"].is_null());
+}

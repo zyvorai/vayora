@@ -539,7 +539,7 @@ export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
   const name = String(f.get("name") ?? "").trim();
   if (!name) return { error: "Give the plan a name." };
-  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price }));
+  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, keepExisting: f.get("keep") === "on" }));
   return r?.error ? r : { ok: "Saved." };
 };
 export const setPlanActive = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.updatePlan(id(f), { active: f.get("active") === "true" }));

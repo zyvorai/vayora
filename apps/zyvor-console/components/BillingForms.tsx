@@ -1,4 +1,5 @@
 "use client";
+import { inr } from "@/lib/format";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
 import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, recordUsage, updatePlan, type FormState } from "@/lib/actions";
 
@@ -149,7 +150,11 @@ export function EditPlan({ id, name, priceMinor }: { id: string; name: string; p
         <label className="field" style={{ flex: "2 1 160px" }}>Name<input name="name" required maxLength={80} defaultValue={name} /></label>
         <label className="field" style={{ flex: "1 1 110px" }}>Price (₹)<input name="price" inputMode="decimal" required defaultValue={(priceMinor / 100).toFixed(2)} /></label>
         <button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button>
-        <span className="muted" style={{ flexBasis: "100%" }}>A new price applies to everyone on this plan from their next invoice. Invoices already raised keep their amount.</span>
+        <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <input type="checkbox" name="keep" style={{ marginTop: 3 }} />
+          <span>Keep current subscribers on the old price ({inr(priceMinor)}). Only new subscribers pay the new price. Leave this off and everyone pays the new price from their next invoice.</span>
+        </label>
+        <span className="muted" style={{ flexBasis: "100%" }}>Invoices already raised keep their amount either way.</span>
         {state?.error && <span className="note bad" role="alert">{state.error}</span>}
         {state?.ok && <span className="note" role="status">{state.ok}</span>}
       </form>

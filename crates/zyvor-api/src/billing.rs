@@ -93,6 +93,8 @@ pub struct PlanPatch {
     name: Option<String>,
     amount_minor: Option<i64>,
     active: Option<bool>,
+    /// With a new price: keep the plan's current subscribers on the price they pay now.
+    keep_existing: Option<bool>,
 }
 
 /// Rename a plan, change its price, or archive it. The price applies to every subscription on the plan from its
@@ -149,18 +151,29 @@ pub async fn update_plan(
         .bind(active)
         .execute(&mut *tx)
         .await?;
+    // lock today's subscribers at the old price (those already locked keep theirs)
+    let kept = if b.keep_existing == Some(true) && amount != amount0 {
+        sqlx::query("UPDATE subscriptions SET unit_amount_minor = $2 WHERE plan_id = $1 AND status IN ('active','paused') AND unit_amount_minor IS NULL")
+            .bind(&id)
+            .bind(amount0)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+    } else {
+        0
+    };
     tenant::audit(
         &mut tx,
         &auth.tenant_id,
         &auth.actor,
         "plan.updated",
         Some(&id),
-        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active] }),
+        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "subscribers_kept_on_old_price": kept }),
     )
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "amount_minor": amount, "active": active }),
+        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "subscribers_kept_on_old_price": kept }),
     ))
 }
 
@@ -249,10 +262,11 @@ pub async fn list_subscriptions(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    // `unbilled_usage`: units recorded that no invoice has picked up yet (they go on the next one)
-    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0) FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
+    // `unbilled_usage`: units recorded that no invoice has picked up yet (they go on the next one);
+    // `unit_amount_minor`: the price this subscription is kept on, or null when it follows its plan's price
+    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64, Option<i64>)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0), s.unit_amount_minor FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un, u)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un, "unit_amount_minor": u })).collect::<Vec<_>>() }),
     ))
 }
 
@@ -374,10 +388,12 @@ pub async fn run_billing(
     mandate_notice_hours: i64,
 ) -> Result<usize, sqlx::Error> {
     let mut created = 0;
-    let due: Vec<(String, String, i32, NaiveDate)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
+    let due: Vec<(String, String, i32, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date, unit_amount_minor FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
         .bind(today).fetch_all(&mut *conn).await?;
-    for (sub_id, plan_id, qty, mut date) in due {
+    for (sub_id, plan_id, qty, mut date, locked) in due {
         let (name, ccy, amount, unit, count, usage_price, due_days): (String, String, i64, String, i32, i64, i32) = sqlx::query_as("SELECT name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days FROM plans WHERE id = $1").bind(&plan_id).fetch_one(&mut *conn).await?;
+        // a subscription kept on an earlier price pays that, not the plan's current one
+        let amount = locked.unwrap_or(amount);
         let customer: String =
             sqlx::query_scalar("SELECT customer_id FROM subscriptions WHERE id = $1")
                 .bind(&sub_id)
@@ -632,8 +648,8 @@ pub async fn change_plan(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let sub: Option<(String, String, i32, String, NaiveDate)> = sqlx::query_as("SELECT customer_id, plan_id, quantity, status, next_bill_date FROM subscriptions WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
-    let (customer, old_plan, old_qty, status, next) =
+    let sub: Option<(String, String, i32, String, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT customer_id, plan_id, quantity, status, next_bill_date, unit_amount_minor FROM subscriptions WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
+    let (customer, old_plan, old_qty, status, next, locked) =
         sub.ok_or_else(|| ApiError::not_found("subscription"))?;
     if status != "active" {
         return Err(ApiError::conflict(
@@ -679,7 +695,11 @@ pub async fn change_plan(
     .unwrap_or(next);
     let total_days = (next - period_start).num_days().max(1);
     let remaining = (next - today).num_days().clamp(0, total_days);
-    let diff = new.1 * i64::from(new_qty) - old.1 * i64::from(old_qty);
+    // a locked price carries over a quantity change on the same plan, and ends when the plan changes
+    let same_plan = b.plan_id == old_plan;
+    let old_price = locked.unwrap_or(old.1);
+    let new_price = if same_plan { old_price } else { new.1 };
+    let diff = new_price * i64::from(new_qty) - old_price * i64::from(old_qty);
     let charge = if diff > 0 {
         diff * remaining / total_days
     } else {
@@ -702,10 +722,11 @@ pub async fn change_plan(
         .await?;
         invoice_id = Some(inv);
     }
-    sqlx::query("UPDATE subscriptions SET plan_id = $2, quantity = $3 WHERE id = $1")
+    sqlx::query("UPDATE subscriptions SET plan_id = $2, quantity = $3, unit_amount_minor = CASE WHEN $4 THEN unit_amount_minor END WHERE id = $1")
         .bind(&id)
         .bind(&b.plan_id)
         .bind(new_qty)
+        .bind(same_plan)
         .execute(&mut *tx)
         .await?;
     tenant::audit(

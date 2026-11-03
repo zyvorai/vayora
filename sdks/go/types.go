@@ -758,13 +758,14 @@ type GetSubscriptionsResponse struct {
 }
 
 type GetSubscriptionsResponseDataItem struct {
-	ID            string `json:"id"`
-	CustomerID    string `json:"customer_id"`
-	PlanID        string `json:"plan_id"`
-	Quantity      int64  `json:"quantity"`
-	Status        string `json:"status"`
-	NextBillDate  string `json:"next_bill_date"`
-	UnbilledUsage int64  `json:"unbilled_usage"`
+	ID              string `json:"id"`
+	CustomerID      string `json:"customer_id"`
+	PlanID          string `json:"plan_id"`
+	Quantity        int64  `json:"quantity"`
+	Status          string `json:"status"`
+	NextBillDate    string `json:"next_bill_date"`
+	UnbilledUsage   int64  `json:"unbilled_usage"`
+	UnitAmountMinor *int64 `json:"unit_amount_minor"`
 }
 
 type GetVendorsByIdBalanceResponse struct {
@@ -831,10 +832,11 @@ type PatchCustomersByIdResponse struct {
 }
 
 type PatchPlansByIdResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AmountMinor int64  `json:"amount_minor"`
-	Active      any    `json:"active"`
+	ID                        string `json:"id"`
+	Name                      string `json:"name"`
+	AmountMinor               int64  `json:"amount_minor"`
+	Active                    any    `json:"active"`
+	SubscribersKeptOnOldPrice any    `json:"subscribers_kept_on_old_price"`
 }
 
 type PostApiKeysByIdRevokeResponse struct {

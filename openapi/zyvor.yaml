@@ -1571,6 +1571,7 @@ paths:
                   amount_minor:
                     type: integer
                   active: {}
+                  subscribers_kept_on_old_price: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -1687,6 +1688,11 @@ paths:
                           format: date
                         unbilled_usage:
                           type: integer
+                          format: int64
+                        unit_amount_minor:
+                          type:
+                          - integer
+                          - 'null'
                           format: int64
         4XX:
           $ref: '#/components/responses/Error'
@@ -7946,6 +7952,8 @@ components:
           type: integer
           format: int64
         active:
+          type: boolean
+        keep_existing:
           type: boolean
     NewUsage:
       type: object
