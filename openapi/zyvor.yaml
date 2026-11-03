@@ -2379,6 +2379,8 @@ paths:
                     - 'null'
                   reminder_emails:
                     type: boolean
+                  invoice_emails:
+                    type: boolean
                   risk: {}
                   webhook_events: {}
         4XX:
@@ -8231,6 +8233,8 @@ components:
         reply_to_email:
           type: string
         reminder_emails:
+          type: boolean
+        invoice_emails:
           type: boolean
     GstProfile:
       type: object

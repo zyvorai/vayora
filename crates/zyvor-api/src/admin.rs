@@ -982,6 +982,8 @@ pub struct Settings {
     reply_to_email: Option<String>,
     /// Email payment reminders whose channel is `email` to the customer (off by default).
     reminder_emails: Option<bool>,
+    /// Email each subscription invoice to its customer when billing raises it (off by default).
+    invoice_emails: Option<bool>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -1107,6 +1109,13 @@ pub async fn put_settings(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(on) = b.invoice_emails {
+        sqlx::query("UPDATE tenant_settings SET invoice_emails = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(on)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(r) = &b.reply_to_email {
         let value = if r.trim().is_empty() {
             None
@@ -1172,6 +1181,11 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
             .bind(&auth.tenant_id)
             .fetch_one(&mut *tx)
             .await?;
+    let invoice_emails: bool =
+        sqlx::query_scalar("SELECT invoice_emails FROM tenant_settings WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let reply_to: Option<String> =
         sqlx::query_scalar("SELECT reply_to_email FROM tenant_settings WHERE tenant_id = $1")
             .bind(&auth.tenant_id)
@@ -1185,7 +1199,7 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "invoice_emails": invoice_emails, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 
