@@ -39,6 +39,8 @@ final class WalkthroughTests: XCTestCase {
         see("Disputes to answer")
         see("Reminders to approve")
         see("1 to 30 days late")
+        let waiting = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Waiting for you:' AND label CONTAINS 'payout to pay' AND label CONTAINS 'case to check'")).firstMatch
+        XCTAssertTrue(waiting.waitForExistence(timeout: 8), "the summary line counts payouts to pay and cases to check")
         shot("owed")
         app.buttons["Approve refund of ₹250.00"].tap()
         see("Refund approved.")
