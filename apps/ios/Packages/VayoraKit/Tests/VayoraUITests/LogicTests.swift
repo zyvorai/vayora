@@ -71,4 +71,11 @@ final class PayeeTotalsTests: XCTestCase {
         XCTAssertEqual(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture, limit: 0), [])
         XCTAssertTrue(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture).map(\.payee).contains("Someone"))
     }
+
+    func testTheNameIsShownAndTheUPIIdGroups() {
+        let rows = [row(1, "demo-shop@vayora", 100, name: "Demo Shop"), row(2, " DEMO-SHOP@vayora", 50, name: "Demo shop (again)"), row(3, "x@y", 10)]
+        let t = PayeeTotals.top(rows, from: .distantPast, to: .distantFuture)
+        XCTAssertEqual(t.map(\.payee), ["Demo Shop", "x@y"])      // the name, not the id; the id only when there is no name
+        XCTAssertEqual(t.first?.count, 2); XCTAssertEqual(t.first?.minor, 150)
+    }
 }

@@ -57,3 +57,12 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.merchant.uitests
         GENERATE_INFOPLIST_FILE: YES
+  VayoraPayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [VayoraPayUITests]
+    dependencies: [{ target: VayoraPay }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.pay.uitests
+        GENERATE_INFOPLIST_FILE: YES
