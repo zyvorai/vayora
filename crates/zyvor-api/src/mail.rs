@@ -359,6 +359,49 @@ pub fn payment_link(
     (subject, lines.join("\n"))
 }
 
+/// The words of an invoice sent to its customer: what it is made of (when it says), what is still owed and by when.
+/// There is no pay link in it, so it only says how to pay in words the business can answer.
+#[allow(clippy::too_many_arguments)]
+pub fn invoice_notice(
+    merchant: &str,
+    payer_name: &str,
+    number: &str,
+    lines: &[String],
+    total: &str,
+    settled: Option<&str>,
+    outstanding: &str,
+    due: Option<chrono::NaiveDate>,
+) -> (String, String) {
+    let subject = match due {
+        Some(d) => format!("Invoice {number} from {merchant}: {outstanding} due {d}"),
+        None => format!("Invoice {number} from {merchant}: {outstanding}"),
+    };
+    let mut out = vec![
+        format!("Hello {payer_name},"),
+        String::new(),
+        format!("{merchant} has sent you invoice {number}."),
+        String::new(),
+    ];
+    out.extend(lines.iter().map(|l| format!("- {l}")));
+    if !lines.is_empty() {
+        out.push(String::new());
+    }
+    out.push(format!("Total: {total}"));
+    if let Some(s) = settled {
+        out.push(format!("Already paid or credited: {s}"));
+    }
+    out.push(format!("Amount due: {outstanding}"));
+    if let Some(d) = due {
+        out.push(format!("Due by: {d}"));
+    }
+    out.push(String::new());
+    out.push(format!(
+        "To pay, use the payment details {merchant} has given you, or reply to this email."
+    ));
+    out.push("Only pay to details you already know belong to this business. Zyvor never asks for a card number, PIN or password by email.".into());
+    (subject, out.join("\n"))
+}
+
 /// The words of the one reminder a payment link sends before it expires.
 pub fn payment_link_expiring(
     merchant: &str,

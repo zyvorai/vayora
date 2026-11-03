@@ -389,6 +389,112 @@ pub async fn cancel_subscription(
     set_status(&s, &auth, &id, &["active", "paused"], "canceled").await
 }
 
+/// `POST /v1/invoices/{id}/send`: email an invoice to its customer: what it is made of, what is still owed and by
+/// when. A person's action, not a setting: the invoice must still be owed (not paid or void) and its customer must
+/// have an email address. Once per invoice per day (a second try that day is a 409).
+pub async fn send_invoice(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("payments:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    crate::payments::refresh_invoice_status(&mut tx, &id).await?;
+    #[allow(clippy::type_complexity)]
+    let row: Option<(String, String, i64, String, Option<NaiveDate>, Option<String>, Option<Value>, i64)> = sqlx::query_as(
+        "SELECT number, currency, amount_minor, status, due_date, customer_id, details, invoice_settled(id) FROM invoices WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (number, currency, amount, status, due, customer, details, settled) =
+        row.ok_or_else(|| ApiError::not_found("invoice"))?;
+    if matches!(status.as_str(), "paid" | "void") {
+        return Err(ApiError::conflict(
+            "invoice_not_owed",
+            "this invoice is paid or void, so there is nothing to ask for",
+        ));
+    }
+    let who: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT name, email FROM customers WHERE id = $1")
+            .bind(customer.as_deref())
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (name, email) = match who {
+        Some((n, Some(e))) if e.contains('@') => (n, e),
+        _ => {
+            return Err(ApiError::conflict(
+                "no_customer_email",
+                "this invoice has no customer with an email address",
+            ));
+        }
+    };
+    let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(&auth.tenant_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_else(|| "the business".into());
+    let money = |m: i64| crate::ai::money(m, &currency);
+    let lines: Vec<String> = details
+        .as_ref()
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|l| {
+                    let d = l["description"].as_str()?;
+                    let q = l["quantity"].as_i64()?;
+                    let u = l["unit_price_minor"].as_i64()?;
+                    let t = l["amount_minor"].as_i64()?;
+                    Some(if u == 0 {
+                        format!("{d}: {q} (free)")
+                    } else {
+                        format!("{d}: {q} × {} = {}", money(u), money(t))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (subject, body) = crate::mail::invoice_notice(
+        &merchant,
+        &name,
+        &number,
+        &lines,
+        &money(amount),
+        (settled > 0).then(|| money(settled)).as_deref(),
+        &money((amount - settled).max(0)),
+        due,
+    );
+    let fresh = crate::mail::enqueue_once(
+        &mut tx,
+        &auth.tenant_id,
+        &format!("invoice_send:{id}:{}", crate::ist_today()),
+        &email,
+        &subject,
+        &body,
+    )
+    .await?;
+    if !fresh {
+        return Err(ApiError::conflict(
+            "already_sent_today",
+            "this invoice was already emailed today",
+        ));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "invoice.sent",
+        Some(&id),
+        json!({ "customer_id": customer }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "id": id, "queued": true })),
+    ))
+}
+
 #[derive(Deserialize)]
 pub struct TrialChange {
     /// The day the trial ends and the first bill is due: today to a year from today.

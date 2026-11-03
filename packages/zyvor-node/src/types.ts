@@ -1107,6 +1107,11 @@ export interface PostInvoicesByIdRemindersResponse {
   channel: string;
 }
 
+export interface PostInvoicesByIdSendResponse {
+  id: string;
+  queued: boolean;
+}
+
 export interface PostInvoicesByIdVoidResponse {
   id: string;
   status: string;

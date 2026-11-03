@@ -396,6 +396,7 @@ pub fn app(state: AppState) -> Router {
             post(billing::create_credit_note),
         )
         .route("/invoices/{id}/void", post(billing::void_invoice))
+        .route("/invoices/{id}/send", post(billing::send_invoice))
         // payouts to vendors
         .route(
             "/vendors",

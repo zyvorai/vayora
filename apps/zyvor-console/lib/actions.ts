@@ -601,6 +601,11 @@ export const createMilestone = async (_: FormState, f: FormData): Promise<FormSt
   const due = String(f.get("due_days") ?? "").trim();
   return run(["/billing"], (z) => z.milestones.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), amountMinor: amount, dueDays: due ? Number(due) : undefined }));
 };
+/** Email an invoice to its customer: what it is made of, what is owed and by when. */
+export const emailInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/billing"], (z) => z.invoices.send(id(f)));
+  return r?.error ? r : { ok: "Emailed." };
+};
 export const voidInvoice = async (_: FormState, f: FormData) => run(["/billing", "/collections"], (z) => z.invoices.void(id(f)));
 export const createInstalments = async (_: FormState, f: FormData): Promise<FormState> => {
   const total = money(f, "total");

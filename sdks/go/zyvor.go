@@ -578,6 +578,14 @@ func (c *Client) CancelPaymentLink(id string) (map[string]any, error) {
 	return out, err
 }
 
+// SendInvoice emails an invoice to its customer: what it is made of, what is owed and by when (once per invoice per
+// day; it must still be owed, and the customer needs an email address).
+func (c *Client) SendInvoice(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+id+"/send", map[string]any{}, "", &out)
+	return out, err
+}
+
 // SendPaymentLink emails an active link to the customer it was made for (once per link per day).
 func (c *Client) SendPaymentLink(id string) (map[string]any, error) {
 	var out map[string]any
