@@ -10,7 +10,7 @@ use std::time::Duration;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
     message::{
-        MultiPart,
+        Attachment, MultiPart, SinglePart,
         header::{ContentType, Header, HeaderName, HeaderValue},
     },
 };
@@ -105,7 +105,7 @@ impl Mailer {
         reply_to: Option<&str>,
         html: Option<&str>,
     ) -> Result<(), String> {
-        self.send_as(None, to, subject, body, reply_to, html, None)
+        self.send_as(None, to, subject, body, reply_to, html, None, None)
             .await
     }
 
@@ -120,6 +120,7 @@ impl Mailer {
         reply_to: Option<&str>,
         html: Option<&str>,
         unsubscribe: Option<&str>,
+        attachment: Option<(&str, &[u8])>,
     ) -> Result<(), String> {
         match self {
             Mailer::Log => {
@@ -132,7 +133,16 @@ impl Mailer {
                     Some(n) => with_display_name(&s.from, n)?,
                     None => s.from.clone(),
                 };
-                let msg = build_message(&from, to, subject, body, reply_to, html, unsubscribe)?;
+                let msg = build_message(
+                    &from,
+                    to,
+                    subject,
+                    body,
+                    reply_to,
+                    html,
+                    unsubscribe,
+                    attachment,
+                )?;
                 s.transport
                     .send(msg)
                     .await
@@ -145,6 +155,7 @@ impl Mailer {
 
 /// The message as the SMTP mailer sends it. A reply-to that does not parse is an error, so a bad address is never
 /// silently dropped.
+#[allow(clippy::too_many_arguments)]
 fn build_message(
     from: &str,
     to: &str,
@@ -153,6 +164,7 @@ fn build_message(
     reply_to: Option<&str>,
     html: Option<&str>,
     unsubscribe: Option<&str>,
+    attachment: Option<(&str, &[u8])>,
 ) -> Result<Message, String> {
     let mut b = Message::builder()
         .from(from.parse().map_err(|e| format!("from: {e}"))?)
@@ -166,12 +178,27 @@ fn build_message(
     if let Some(r) = reply_to {
         b = b.reply_to(r.parse().map_err(|e| format!("reply-to: {e}"))?);
     }
-    match html {
-        Some(h) => b.multipart(MultiPart::alternative_plain_html(
-            body.to_string(),
-            h.to_string(),
-        )),
-        None => b.header(ContentType::TEXT_PLAIN).body(body.to_string()),
+    let text = |h: Option<&str>| match h {
+        Some(h) => MultiPart::alternative_plain_html(body.to_string(), h.to_string()),
+        None => MultiPart::mixed().singlepart(
+            SinglePart::builder()
+                .header(ContentType::TEXT_PLAIN)
+                .body(body.to_string()),
+        ),
+    };
+    match attachment {
+        Some((name, bytes)) => {
+            let pdf: ContentType = "application/pdf".parse().map_err(|_| "pdf type")?;
+            b.multipart(
+                MultiPart::mixed()
+                    .multipart(text(html))
+                    .singlepart(Attachment::new(name.to_string()).body(bytes.to_vec(), pdf)),
+            )
+        }
+        None => match html {
+            Some(_) => b.multipart(text(html)),
+            None => b.header(ContentType::TEXT_PLAIN).body(body.to_string()),
+        },
     }
     .map_err(|e| e.to_string())
 }
@@ -628,8 +655,8 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
         #[allow(clippy::type_complexity)]
-        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>, Option<String>, Option<String>, bool)> = sqlx::query_as(
-            "SELECT id, to_email, subject, body, attempts, reply_to, html, from_name, tenant_id, automatic FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
+        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>, Option<String>, Option<String>, bool, Option<Vec<u8>>, Option<String>)> = sqlx::query_as(
+            "SELECT id, to_email, subject, body, attempts, reply_to, html, from_name, tenant_id, automatic, attachment, attachment_name FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
@@ -645,6 +672,8 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
             from_name,
             tenant_id,
             automatic,
+            attachment,
+            attachment_name,
         )) = row
         else {
             break;
@@ -657,7 +686,7 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
                 .execute(&mut *tx)
                 .await?;
             if crate::unsubscribe::is_suppressed(&mut tx, tid, &to).await? {
-                sqlx::query("UPDATE mail_queue SET status = 'suppressed', body = '', html = NULL WHERE id = $1")
+                sqlx::query("UPDATE mail_queue SET status = 'suppressed', body = '', html = NULL, attachment = NULL WHERE id = $1")
                     .bind(&id)
                     .execute(&mut *tx)
                     .await?;
@@ -681,11 +710,14 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
                 reply_to.as_deref(),
                 html.as_deref(),
                 unsubscribe.as_deref(),
+                attachment
+                    .as_deref()
+                    .map(|b| (attachment_name.as_deref().unwrap_or("attachment.pdf"), b)),
             )
             .await
         {
             Ok(()) => {
-                sqlx::query("UPDATE mail_queue SET status = 'sent', sent_at = now(), body = '', html = NULL, last_error = NULL WHERE id = $1")
+                sqlx::query("UPDATE mail_queue SET status = 'sent', sent_at = now(), body = '', html = NULL, attachment = NULL, last_error = NULL WHERE id = $1")
                     .bind(&id).execute(&mut *tx).await?;
                 sent += 1;
             }

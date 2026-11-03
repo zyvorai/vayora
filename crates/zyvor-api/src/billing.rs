@@ -506,6 +506,36 @@ pub async fn queue_invoice_email(
         automatic,
     )
     .await?;
+    if fresh {
+        // a copy of the invoice as a PDF rides along
+        let mut doc = vec![
+            format!("From: {merchant}"),
+            format!("To: {name}"),
+            format!("Invoice number: {number}"),
+            String::new(),
+        ];
+        doc.extend(lines.iter().cloned());
+        if !lines.is_empty() {
+            doc.push(String::new());
+        }
+        doc.push(format!("Total: {}", money(amount)));
+        if settled > 0 {
+            doc.push(format!("Already paid or credited: {}", money(settled)));
+        }
+        doc.push(format!("Amount due: {}", money((amount - settled).max(0))));
+        if let Some(d) = due {
+            doc.push(format!("Due by: {d}"));
+        }
+        let pdf = crate::pdf::text_pdf(&format!("Invoice {number}"), &doc);
+        sqlx::query(
+            "UPDATE mail_queue SET attachment = $2, attachment_name = $3 WHERE dedupe_key = $1",
+        )
+        .bind(format!("invoice_send:{id}:{day}"))
+        .bind(pdf)
+        .bind(format!("{number}.pdf"))
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(if fresh {
         InvoiceMail::Queued
     } else {

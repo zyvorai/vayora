@@ -17233,6 +17233,18 @@ async fn an_invoice_can_be_emailed_to_its_customer(pool: PgPool) {
             && body.contains("Zyvor never asks for a card number"),
         "{body}"
     );
+    // the queued message carries the invoice as a PDF named after its number
+    let (att, name): (Vec<u8>, String) = sqlx::query_as(
+        "SELECT attachment, attachment_name FROM mail_queue WHERE to_email = 'asha@example.com' AND attachment IS NOT NULL",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert!(
+        att.starts_with(b"%PDF-1.4") && name.ends_with(".pdf"),
+        "{name}"
+    );
+    assert!(String::from_utf8_lossy(&att).contains("Total: Rs.1075.00"));
     // a second try the same day is refused
     let (st, _) = t.call(a, "POST", &path, None, json!({})).await;
     assert_eq!(st.as_u16(), 409);
@@ -17608,6 +17620,14 @@ async fn a_customer_can_stop_automatic_emails_but_not_ones_a_person_sends(pool: 
     );
     assert!(
         raw.contains("To stop these emails:") && raw.contains("Stop these emails"),
+        "{raw}"
+    );
+    // the invoice rides along as a PDF (sent as quoted-printable, which keeps its text readable), with the text and HTML
+    assert!(
+        raw.contains("Content-Type: application/pdf")
+            && raw.contains(".pdf")
+            && raw.contains("%PDF-1.4")
+            && raw.contains("Content-Type: text/html"),
         "{raw}"
     );
 
