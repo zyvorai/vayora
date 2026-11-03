@@ -1571,6 +1571,7 @@ paths:
                   amount_minor:
                     type: integer
                   active: {}
+                  trial_days: {}
                   subscribers_kept_on_old_price: {}
         4XX:
           $ref: '#/components/responses/Error'
@@ -1623,6 +1624,9 @@ paths:
                           format: int64
                         active:
                           type: boolean
+                        trial_days:
+                          type: integer
+                          format: int32
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -1694,6 +1698,11 @@ paths:
                           - integer
                           - 'null'
                           format: int64
+                        trial_ends_on:
+                          type:
+                          - string
+                          - 'null'
+                          format: date
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -1716,6 +1725,11 @@ paths:
                     type:
                     - string
                     - 'null'
+                  trial_ends_on:
+                    type:
+                    - string
+                    - 'null'
+                    format: date
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -7953,6 +7967,9 @@ components:
           format: int64
         active:
           type: boolean
+        trial_days:
+          type: integer
+          format: int32
         keep_existing:
           type: boolean
     NewUsage:
@@ -8005,6 +8022,9 @@ components:
           type: integer
           format: int64
         due_days:
+          type: integer
+          format: int32
+        trial_days:
           type: integer
           format: int32
       required:

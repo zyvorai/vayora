@@ -579,6 +579,7 @@ export interface GetPlansResponseDataItem {
   interval_count: number;
   usage_unit_minor: number;
   active: boolean;
+  trial_days: number;
 }
 
 export interface GetPlatformChangesResponse {
@@ -746,6 +747,7 @@ export interface GetSubscriptionsResponseDataItem {
   next_bill_date: string;
   unbilled_usage: number;
   unit_amount_minor: number | null;
+  trial_ends_on: string | null;
 }
 
 export interface GetVendorsByIdBalanceResponse {
@@ -816,6 +818,7 @@ export interface PatchPlansByIdResponse {
   name: string;
   amount_minor: number;
   active: unknown;
+  trial_days: unknown;
   subscribers_kept_on_old_price: unknown;
 }
 
@@ -1804,6 +1807,7 @@ export interface PostSubscriptionsResponse {
   id: string;
   status: string;
   next_bill_date: string | null;
+  trial_ends_on: string | null;
 }
 
 export interface PostTestDataResetResponse {

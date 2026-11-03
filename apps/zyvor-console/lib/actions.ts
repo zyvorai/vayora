@@ -516,6 +516,13 @@ export const createInvoice = async (_: FormState, f: FormData): Promise<FormStat
       : z.invoices.create({ ...base, amountMinor: amount }),
   );
 };
+/** The free-trial box: empty is 0 days; null when it is not a whole number from 0 to 365. */
+const trialDays = (f: FormData): number | null => {
+  const t = String(f.get("trial") ?? "").trim();
+  if (!t) return 0;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 0 && n <= 365 ? n : null;
+};
 export const createPlan = async (_: FormState, f: FormData): Promise<FormState> => {
   const price = money(f, "price");
   if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
@@ -526,7 +533,9 @@ export const createPlan = async (_: FormState, f: FormData): Promise<FormState> 
   const perUnitText = String(f.get("per_unit") ?? "").trim();
   const perUnit = perUnitText ? money(f, "per_unit") : 0;
   if (!Number.isFinite(perUnit) || perUnit < 0) return { error: "Enter the usage price as an amount, or leave it empty." };
-  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined }));
+  const trial = trialDays(f);
+  if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
+  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined, trialDays: trial || undefined }));
 };
 export const recordUsage = async (_: FormState, f: FormData): Promise<FormState> => {
   const quantity = Number(f.get("quantity") ?? 0);
@@ -539,7 +548,9 @@ export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
   const name = String(f.get("name") ?? "").trim();
   if (!name) return { error: "Give the plan a name." };
-  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, keepExisting: f.get("keep") === "on" }));
+  const trial = trialDays(f);
+  if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
+  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, trialDays: trial, keepExisting: f.get("keep") === "on" }));
   return r?.error ? r : { ok: "Saved." };
 };
 export const setPlanActive = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.updatePlan(id(f), { active: f.get("active") === "true" }));

@@ -35,6 +35,8 @@ pub struct NewPlan {
     interval_count: Option<i32>,
     usage_unit_minor: Option<i64>,
     due_days: Option<i32>,
+    /// Days before a new subscriber is first billed (0 to 365).
+    trial_days: Option<i32>,
 }
 
 pub async fn create_plan(
@@ -64,11 +66,17 @@ pub async fn create_plan(
             "amounts must be non-negative and interval_count at least 1",
         ));
     }
+    if !(0..=365).contains(&b.trial_days.unwrap_or(0)) {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "trial_days must be between 0 and 365",
+        ));
+    }
     let id = new_id("plan");
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, trial_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(ccy.code()).bind(b.amount_minor).bind(&b.interval_unit)
-        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7))
+        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7)).bind(b.trial_days.unwrap_or(0))
         .execute(&mut *tx).await?;
     tenant::audit(
         &mut tx,
@@ -93,6 +101,8 @@ pub struct PlanPatch {
     name: Option<String>,
     amount_minor: Option<i64>,
     active: Option<bool>,
+    /// Trial length for subscriptions made from now on; those already running are not changed.
+    trial_days: Option<i32>,
     /// With a new price: keep the plan's current subscribers on the price they pay now.
     keep_existing: Option<bool>,
 }
@@ -107,10 +117,19 @@ pub async fn update_plan(
     Json(b): Json<PlanPatch>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
-    if b.name.is_none() && b.amount_minor.is_none() && b.active.is_none() {
+    if b.name.is_none() && b.amount_minor.is_none() && b.active.is_none() && b.trial_days.is_none()
+    {
         return Err(ApiError::invalid(
             "invalid_plan",
-            "send at least one of name, amount_minor or active",
+            "send at least one of name, amount_minor, active or trial_days",
+        ));
+    }
+    if let Some(t) = b.trial_days
+        && !(0..=365).contains(&t)
+    {
+        return Err(ApiError::invalid(
+            "invalid_plan",
+            "trial_days must be between 0 and 365",
         ));
     }
     if let Some(n) = &b.name
@@ -130,12 +149,14 @@ pub async fn update_plan(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let row: Option<(String, i64, bool)> =
-        sqlx::query_as("SELECT name, amount_minor, active FROM plans WHERE id = $1 FOR UPDATE")
-            .bind(&id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    let (name0, amount0, active0) = row.ok_or_else(|| ApiError::not_found("plan"))?;
+    let row: Option<(String, i64, bool, i32)> = sqlx::query_as(
+        "SELECT name, amount_minor, active, trial_days FROM plans WHERE id = $1 FOR UPDATE",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (name0, amount0, active0, trial0) = row.ok_or_else(|| ApiError::not_found("plan"))?;
+    let trial = b.trial_days.unwrap_or(trial0);
     let name = b
         .name
         .as_deref()
@@ -144,13 +165,16 @@ pub async fn update_plan(
         .to_string();
     let amount = b.amount_minor.unwrap_or(amount0);
     let active = b.active.unwrap_or(active0);
-    sqlx::query("UPDATE plans SET name = $2, amount_minor = $3, active = $4 WHERE id = $1")
-        .bind(&id)
-        .bind(&name)
-        .bind(amount)
-        .bind(active)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE plans SET name = $2, amount_minor = $3, active = $4, trial_days = $5 WHERE id = $1",
+    )
+    .bind(&id)
+    .bind(&name)
+    .bind(amount)
+    .bind(active)
+    .bind(trial)
+    .execute(&mut *tx)
+    .await?;
     // lock today's subscribers at the old price (those already locked keep theirs)
     let kept = if b.keep_existing == Some(true) && amount != amount0 {
         sqlx::query("UPDATE subscriptions SET unit_amount_minor = $2 WHERE plan_id = $1 AND status IN ('active','paused') AND unit_amount_minor IS NULL")
@@ -168,21 +192,21 @@ pub async fn update_plan(
         &auth.actor,
         "plan.updated",
         Some(&id),
-        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "subscribers_kept_on_old_price": kept }),
+        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "trial_days": [trial0, trial], "subscribers_kept_on_old_price": kept }),
     )
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "subscribers_kept_on_old_price": kept }),
+        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "trial_days": trial, "subscribers_kept_on_old_price": kept }),
     ))
 }
 
 pub async fn list_plans(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, String, i64, String, i32, i64, bool)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
+    let rows: Vec<(String, String, String, i64, String, i32, i64, bool, i32)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active, trial_days FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active, trial)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active, "trial_days": trial })).collect::<Vec<_>>() }),
     ))
 }
 
@@ -193,7 +217,7 @@ pub struct NewSubscription {
     customer_id: String,
     plan_id: String,
     quantity: Option<i32>,
-    /// First billing date; defaults to today.
+    /// First billing date; defaults to today plus the plan's free trial.
     start_date: Option<NaiveDate>,
 }
 
@@ -218,20 +242,28 @@ pub async fn create_subscription(
     {
         return Err(ApiError::not_found("customer"));
     }
-    let active: Option<bool> = sqlx::query_scalar("SELECT active FROM plans WHERE id = $1")
-        .bind(&b.plan_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if !active.ok_or_else(|| ApiError::not_found("plan"))? {
+    let plan: Option<(bool, i32)> =
+        sqlx::query_as("SELECT active, trial_days FROM plans WHERE id = $1")
+            .bind(&b.plan_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (active, trial_days) = plan.ok_or_else(|| ApiError::not_found("plan"))?;
+    if !active {
         return Err(ApiError::conflict(
             "plan_inactive",
             "plan is no longer offered",
         ));
     }
-    let start = b.start_date.unwrap_or_else(crate::ist_today);
+    // an explicit first billing date wins; otherwise the free trial (if the plan has one) comes first
+    let start = b.start_date.unwrap_or_else(|| {
+        crate::ist_today()
+            .checked_add_days(Days::new(trial_days as u64))
+            .unwrap_or_else(crate::ist_today)
+    });
     let id = new_id("sub");
-    sqlx::query("INSERT INTO subscriptions (id, tenant_id, customer_id, plan_id, quantity, next_bill_date) VALUES ($1,$2,$3,$4,$5,$6)")
-        .bind(&id).bind(&auth.tenant_id).bind(&b.customer_id).bind(&b.plan_id).bind(q).bind(start)
+    let trial_ends: Option<NaiveDate> = (b.start_date.is_none() && trial_days > 0).then_some(start);
+    sqlx::query("INSERT INTO subscriptions (id, tenant_id, customer_id, plan_id, quantity, next_bill_date, trial_ends_on) VALUES ($1,$2,$3,$4,$5,$6,$7)")
+        .bind(&id).bind(&auth.tenant_id).bind(&b.customer_id).bind(&b.plan_id).bind(q).bind(start).bind(trial_ends)
         .execute(&mut *tx).await?;
     tenant::audit(
         &mut tx,
@@ -239,7 +271,7 @@ pub async fn create_subscription(
         &auth.actor,
         "subscription.created",
         Some(&id),
-        json!({ "plan": b.plan_id }),
+        json!({ "plan": b.plan_id, "trial_days": if b.start_date.is_none() { trial_days } else { 0 } }),
     )
     .await?;
     tenant::emit(
@@ -252,7 +284,9 @@ pub async fn create_subscription(
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "id": id, "status": "active", "next_bill_date": start })),
+        Json(
+            json!({ "id": id, "status": "active", "next_bill_date": start, "trial_ends_on": trial_ends }),
+        ),
     ))
 }
 
@@ -264,9 +298,9 @@ pub async fn list_subscriptions(
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     // `unbilled_usage`: units recorded that no invoice has picked up yet (they go on the next one);
     // `unit_amount_minor`: the price this subscription is kept on, or null when it follows its plan's price
-    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64, Option<i64>)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0), s.unit_amount_minor FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
+    let rows: Vec<(String, String, String, i32, String, NaiveDate, i64, Option<i64>, Option<NaiveDate>)> = sqlx::query_as("SELECT s.id, s.customer_id, s.plan_id, s.quantity, s.status, s.next_bill_date, COALESCE((SELECT SUM(u.quantity)::BIGINT FROM usage_records u WHERE u.subscription_id = s.id AND u.billed_invoice_id IS NULL), 0), s.unit_amount_minor, s.trial_ends_on FROM subscriptions s ORDER BY s.created_at DESC LIMIT 200").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un, u)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un, "unit_amount_minor": u })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, c, p, q, st, d, un, u, tr)| json!({ "id": id, "customer_id": c, "plan_id": p, "quantity": q, "status": st, "next_bill_date": d, "unbilled_usage": un, "unit_amount_minor": u, "trial_ends_on": tr })).collect::<Vec<_>>() }),
     ))
 }
 
@@ -651,8 +685,8 @@ pub async fn change_plan(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("billing:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let sub: Option<(String, String, i32, String, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT customer_id, plan_id, quantity, status, next_bill_date, unit_amount_minor FROM subscriptions WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
-    let (customer, old_plan, old_qty, status, next, locked) =
+    let sub: Option<(String, String, i32, String, NaiveDate, Option<i64>, Option<NaiveDate>)> = sqlx::query_as("SELECT customer_id, plan_id, quantity, status, next_bill_date, unit_amount_minor, trial_ends_on FROM subscriptions WHERE id = $1 FOR UPDATE").bind(&id).fetch_optional(&mut *tx).await?;
+    let (customer, old_plan, old_qty, status, next, locked, trial_ends) =
         sub.ok_or_else(|| ApiError::not_found("subscription"))?;
     if status != "active" {
         return Err(ApiError::conflict(
@@ -710,7 +744,9 @@ pub async fn change_plan(
     let old_price = locked.unwrap_or(old.1);
     let new_price = if same_plan { old_price } else { new.1 };
     let diff = new_price * i64::from(new_qty) - old_price * i64::from(old_qty);
-    let charge = if diff > 0 {
+    // in a free trial nothing has been paid, so there is nothing to prorate: the first invoice is at the new plan
+    let in_trial = trial_ends.is_some_and(|d| d > today);
+    let charge = if diff > 0 && !in_trial {
         diff * remaining / total_days
     } else {
         0

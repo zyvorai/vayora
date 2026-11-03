@@ -89,6 +89,7 @@ export function NewPlan() {
         <select name="unit" defaultValue="month"><option value="day">day(s)</option><option value="week">week(s)</option><option value="month">month(s)</option><option value="year">year(s)</option></select>
       </label>
       <label className="field" style={{ flex: "1 1 150px" }}>Per unit used (₹, optional)<input name="per_unit" inputMode="decimal" placeholder="2.50" /></label>
+      <label className="field" style={{ flex: "0 1 130px" }}>Free trial (days)<input name="trial" type="number" min={0} max={365} placeholder="0" /></label>
     </Inline>
   );
 }
@@ -140,7 +141,7 @@ export function RecordUsage({ id, unit, waiting }: { id: string; unit: string; w
   );
 }
 
-export function EditPlan({ id, name, priceMinor }: { id: string; name: string; priceMinor: number }) {
+export function EditPlan({ id, name, priceMinor, trialDays = 0 }: { id: string; name: string; priceMinor: number; trialDays?: number }) {
   const [state, run, pending] = useActionState(updatePlan, undefined);
   return (
     <details>
@@ -149,12 +150,13 @@ export function EditPlan({ id, name, priceMinor }: { id: string; name: string; p
         <input type="hidden" name="id" value={id} />
         <label className="field" style={{ flex: "2 1 160px" }}>Name<input name="name" required maxLength={80} defaultValue={name} /></label>
         <label className="field" style={{ flex: "1 1 110px" }}>Price (₹)<input name="price" inputMode="decimal" required defaultValue={(priceMinor / 100).toFixed(2)} /></label>
+        <label className="field" style={{ flex: "0 1 120px" }}>Free trial (days)<input name="trial" type="number" min={0} max={365} defaultValue={trialDays} /></label>
         <button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button>
         <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "flex-start" }}>
           <input type="checkbox" name="keep" style={{ marginTop: 3 }} />
           <span>Keep current subscribers on the old price ({inr(priceMinor)}). Only new subscribers pay the new price. Leave this off and everyone pays the new price from their next invoice.</span>
         </label>
-        <span className="muted" style={{ flexBasis: "100%" }}>Invoices already raised keep their amount either way.</span>
+        <span className="muted" style={{ flexBasis: "100%" }}>Invoices already raised keep their amount either way. A new trial length applies to subscriptions made from now on.</span>
         {state?.error && <span className="note bad" role="alert">{state.error}</span>}
         {state?.ok && <span className="note" role="status">{state.ok}</span>}
       </form>

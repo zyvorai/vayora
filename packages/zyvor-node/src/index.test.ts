@@ -48,6 +48,16 @@ describe("client", () => {
     expect(JSON.parse(init.body as string)).toEqual({ amount_minor: 12500, active: false, keep_existing: true });
   });
 
+  it("sets a plan's free trial when creating and editing it", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    const c = client(f);
+    await c.billing.createPlan({ name: "Pro", amountMinor: 90000, intervalUnit: "month", trialDays: 14 });
+    await c.billing.updatePlan("plan_1", { trialDays: 0 });
+    const calls = f.mock.calls as unknown as [string, RequestInit][];
+    expect(JSON.parse(calls[0][1].body as string).trial_days).toBe(14);
+    expect(JSON.parse(calls[1][1].body as string)).toEqual({ trial_days: 0 });
+  });
+
   it("changes a subscription's plan and cancels it", async () => {
     const f = vi.fn(async () => json(200, {}));
     const c = client(f);

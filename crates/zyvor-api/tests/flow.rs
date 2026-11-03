@@ -16585,3 +16585,119 @@ async fn a_kept_price_can_be_ended_without_changing_plan(pool: PgPool) {
     let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
     assert_eq!(invoices["data"][0]["amount_minor"], 12_500);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_plan_can_start_new_subscribers_with_a_free_trial(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Trial Co" }),
+        )
+        .await;
+    // out of range is refused
+    let (st, _) = t
+        .call(a, "POST", "/v1/plans", None, json!({ "name": "Bad", "amount_minor": 1, "interval_unit": "month", "trial_days": 400 }))
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 90_000, "interval_unit": "day", "interval_count": 30, "trial_days": 14 }))
+        .await;
+    let plans = t.ok(a, "GET", "/v1/plans", None, Value::Null).await;
+    assert_eq!(plans["data"][0]["trial_days"], 14);
+
+    // the first bill waits out the trial
+    let sub = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    let first = today + chrono::Duration::days(14);
+    assert_eq!(sub["next_bill_date"], first.to_string());
+    assert_eq!(sub["trial_ends_on"], first.to_string());
+    let day_before = (first - chrono::Duration::days(1)).to_string();
+    assert_eq!(
+        t.ok(
+            a,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": day_before })
+        )
+        .await["invoices_created"],
+        0
+    );
+
+    // moving to a dearer plan during the trial charges nothing now
+    let dear = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Max", "amount_minor": 300_000, "interval_unit": "day", "interval_count": 30 }))
+        .await;
+    let path = format!(
+        "/v1/subscriptions/{}/change_plan",
+        sub["id"].as_str().unwrap()
+    );
+    let moved = t
+        .ok(a, "POST", &path, None, json!({ "plan_id": dear["id"] }))
+        .await;
+    assert_eq!(moved["proration_minor"], 0);
+
+    // on the day the trial ends the first invoice is at the new plan
+    assert_eq!(
+        t.ok(
+            a,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": first.to_string() })
+        )
+        .await["invoices_created"],
+        1
+    );
+    let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    assert_eq!(invoices["data"][0]["amount_minor"], 300_000);
+
+    // an explicit first billing date is respected (no trial added), and a plan's trial can be changed or removed
+    let sub2 = t
+        .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "start_date": today.to_string() }))
+        .await;
+    assert_eq!(sub2["next_bill_date"], today.to_string());
+    assert_eq!(sub2["trial_ends_on"], Value::Null);
+    let patched = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{}", plan["id"].as_str().unwrap()),
+            None,
+            json!({ "trial_days": 0 }),
+        )
+        .await;
+    assert_eq!(patched["trial_days"], 0);
+    let sub3 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    assert_eq!(sub3["next_bill_date"], today.to_string());
+    // the one already running kept its trial date
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let first_sub = subs["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == sub["id"])
+        .unwrap();
+    assert_eq!(first_sub["trial_ends_on"], first.to_string());
+}
