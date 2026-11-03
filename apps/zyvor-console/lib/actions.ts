@@ -598,10 +598,14 @@ export const followPlanPrice = async (_: FormState, f: FormData): Promise<FormSt
 };
 /** End a subscriber's free trial now ("Start billing now"), or move its end to the chosen day. */
 export const changeTrial = async (_: FormState, f: FormData): Promise<FormState> => {
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const endsOn = f.get("now") ? today : String(f.get("ends_on") ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(endsOn)) return { error: "Choose the day the trial ends." };
-  const r = await run(["/billing"], (z) => z.billing.changeTrial(id(f), { endsOn }));
+  const given = String(f.get("ends_on") ?? "").trim();
+  if (!f.get("now") && !/^\d{4}-\d{2}-\d{2}$/.test(given)) return { error: "Choose the day the trial ends." };
+  let endsOn = given;
+  const r = await run(["/billing"], async (z) => {
+    // "now" means the organisation's today, which a test clock may have moved
+    if (f.get("now")) endsOn = String((await z.testClock.get()).date);
+    return z.billing.changeTrial(id(f), { endsOn });
+  });
   if (r?.error) return r;
   return { ok: f.get("now") ? "Trial ended. The first invoice is made at the next billing run." : `Trial now ends on ${endsOn}.` };
 };

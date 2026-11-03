@@ -18,8 +18,9 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const [plans, subs, milestones, invoices, customers] = await Promise.all([z.billing.plans(), z.billing.subscriptions(), z.milestones.list(), z.invoices.list(), z.customers.list()]);
   const who = new Map(customers.data.map((c) => [c.id, c.name]));
   const hasEmail = new Set(customers.data.filter((c) => c.email?.includes("@")).map((c) => c.id));
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const inTwoWeeks = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  // the organisation's own today: a test environment's clock may have moved it off the calendar
+  const today = String((await z.testClock.get()).date);
+  const inTwoWeeks = new Date(Date.parse(today + "T00:00:00Z") + 14 * 86_400_000).toISOString().slice(0, 10);
   const unpaid = invoices.data.filter((i) => i.status === "open" && i.outstanding_minor > 0);
   const overdue = unpaid.filter((i) => i.due_date && i.due_date < today);
   const sum = (xs: { outstanding_minor: number }[]) => xs.reduce((a, i) => a + i.outstanding_minor, 0);
