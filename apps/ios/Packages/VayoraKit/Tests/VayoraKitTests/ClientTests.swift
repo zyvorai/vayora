@@ -263,3 +263,42 @@ final class CashflowTests: XCTestCase {
         XCTAssertEqual(f.totalOwedMinor, 355000)
     }
 }
+
+final class SubscriptionTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testPlansAndSubscriptionsDecodeAndStatesDecideTheActions() async throws {
+        StubProtocol.handler = { r in
+            if r.url!.path.hasSuffix("plans") { return (200, #"{"data":[{"id":"pl","name":"Gold","currency":"INR","amount_minor":49900,"interval_unit":"month","interval_count":1,"usage_unit_minor":null,"active":true,"trial_days":0}]}"#) }
+            return (200, #"{"data":[{"id":"s1","customer_id":"c","plan_id":"pl","quantity":2,"status":"active","next_bill_date":"2026-12-01","unbilled_usage":0,"unit_amount_minor":null,"trial_ends_on":null,"billed":true},{"id":"s2","customer_id":"c","plan_id":"pl","quantity":1,"status":"paused","next_bill_date":"2026-12-01","trial_ends_on":null},{"id":"s3","customer_id":"c","plan_id":"pl","quantity":1,"status":"canceled","next_bill_date":"2026-12-01"}]}"#)
+        }
+        let p = try await client().plans()
+        XCTAssertEqual(p[0].priceLine, "\(Money(minor: 49900).display) every month")
+        XCTAssertEqual(PlanInfo(id: "x", name: "Q", amountMinor: 100, intervalCount: 3).priceLine, "\(Money(minor: 100).display) every 3 months")
+        let s = try await client().subscriptions()
+        XCTAssertEqual([s[0].canPause, s[0].canResume, s[0].canCancel], [true, false, true])
+        XCTAssertEqual([s[1].canPause, s[1].canResume, s[1].canCancel], [false, true, true])
+        XCTAssertEqual([s[2].canPause, s[2].canResume, s[2].canCancel], [false, false, false])
+    }
+
+    func testActionsAndClockRequests() async throws {
+        nonisolated(unsafe) var seen: [URLRequest] = []
+        StubProtocol.handler = { r in seen.append(r); return (200, #"{"date":"2026-11-10","frozen":true,"real_date":"2026-11-03"}"#) }
+        try await client().pauseSubscription(id: "s1"); try await client().resumeSubscription(id: "s1"); try await client().cancelSubscription(id: "s1")
+        let c = try await client().advanceTestClock(days: 7)
+        _ = try await client().resetTestClock()
+        XCTAssertEqual(seen.map { "\($0.httpMethod ?? "") \($0.url!.path)" }, ["POST /v1/subscriptions/s1/pause", "POST /v1/subscriptions/s1/resume", "POST /v1/subscriptions/s1/cancel", "POST /v1/test_clock", "DELETE /v1/test_clock"])
+        XCTAssertEqual(c.date, "2026-11-10"); XCTAssertTrue(c.frozen)
+        let b = try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[3])) as? [String: Any]
+        XCTAssertEqual((b?["advance_days"] as? NSNumber)?.intValue, 7)
+    }
+
+    func testTheClockIsNotInTheBuiltInDemo() async {
+        do { _ = try await VayoraClient.demo(bank: DemoBank()).testClock(); XCTFail("demo has no clock") }
+        catch let e as APIError { XCTAssertEqual(e.code, "not_in_demo") } catch { XCTFail("\(error)") }
+    }
+}
