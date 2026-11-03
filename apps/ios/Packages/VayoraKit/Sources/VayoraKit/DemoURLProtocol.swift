@@ -18,7 +18,7 @@ public final class DemoURLProtocol: URLProtocol {
             while stream.hasBytesAvailable { let n = stream.read(&buf, maxLength: buf.count); if n <= 0 { break }; d.append(buf, count: n) }
             body = d
         }
-        let r = Self.bank.handle(method: request.httpMethod ?? "GET", path: url.path, body: body)
+        let r = Self.bank.handle(method: request.httpMethod ?? "GET", path: url.path, body: body, query: url.query)
         let resp = HTTPURLResponse(url: url, statusCode: r.status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: r.data)

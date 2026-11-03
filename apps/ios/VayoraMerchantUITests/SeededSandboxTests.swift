@@ -58,4 +58,15 @@ final class SeededSandboxTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+ notes? added")).firstMatch.waitForExistence(timeout: 10))
         shot("seeded-evidence")
     }
+
+    /// Needs an approved payout (the approver test makes one); skipped when there is none.
+    func testAnApprovedPayoutIsRecordedPaidOnTheRealServer() throws {
+        let b = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Record the transfer of'")).firstMatch
+        try XCTSkipUnless(b.waitForExistence(timeout: 12), "no approved payout in this sandbox")
+        b.tap()
+        let ref = app.textFields.element(boundBy: 0); ref.tap(); ref.typeText("UTR\(Int(Date().timeIntervalSince1970))")
+        app.buttons["Record transfer"].tap()
+        see("Payout marked paid.")
+        shot("seeded-paid")
+    }
 }

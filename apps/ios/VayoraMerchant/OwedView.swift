@@ -9,6 +9,9 @@ struct OwedView: View {
     @State private var drafts: [ReminderDraft] = []
     @State private var approvals: [PendingApproval] = []
     @State private var disputes: [DisputeInfo] = []
+    @State private var toPay: [ApprovedPayout] = []
+    @State private var failed: [FailedRefund] = []
+    @State private var paying: ApprovedPayout?
     @State private var noting: DisputeInfo?
     @State private var deciding: DisputeInfo?
     @State private var message: String?
@@ -35,6 +38,8 @@ struct OwedView: View {
                         if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
                         if let line = store.attention.summary { Text("Waiting: \(line)").vfont(13, .semibold).foregroundStyle(VUI.amber).accessibilityLabel("Waiting for you: \(line)") }
                         if !approvals.isEmpty { approvalsCard }
+                        if !toPay.isEmpty { payCard }
+                        if !failed.isEmpty { failedCard }
                         if !disputes.isEmpty { disputesCard }
                         if !drafts.isEmpty { draftsCard }
                         if let a = ageing {
@@ -55,6 +60,7 @@ struct OwedView: View {
             Button("We lost: book the loss", role: .destructive) { resolve(d, won: false) }
             Button("Cancel", role: .cancel) {}
         } message: { d in Text("\(Money(minor: d.amountMinor).display). A loss is booked on your ledger and cannot be undone here.") }
+        .sheet(item: $paying) { p in MarkPaidSheet(payout: p) { notice = "Payout marked paid."; Task { await load() } }.environmentObject(store) }
         .sheet(item: $promising) { inv in PromiseSheet(invoice: inv) { notice = "Promise saved for \(inv.number)."; Task { await load() } }.environmentObject(store) }
     }
 
@@ -122,6 +128,50 @@ struct OwedView: View {
         }
     }
 
+    /// Approved payouts: the transfer is made outside the app, then recorded here with the bank's reference.
+    var payCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Approved, ready to pay", systemImage: "banknote").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                ForEach(toPay) { p in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Money(minor: p.amountMinor).display).vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                        if let why = p.purpose, !why.isEmpty { Text(why).vfont(13).foregroundStyle(VUI.textSecondary) }
+                        Button("I made this transfer…") { paying = p }.vfont(14, .semibold).foregroundStyle(VUI.mint)
+                            .accessibilityLabel("Record the transfer of \(Money(minor: p.amountMinor).display)")
+                    }
+                    if p.id != toPay.last?.id { Divider().overlay(.white.opacity(0.1)) }
+                }
+                Text("Vayora does not move this money. Make the transfer at your bank, then record it here.").vfont(12).foregroundStyle(VUI.textTertiary)
+            }
+        }
+    }
+
+    var failedCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Refunds that failed", systemImage: "arrow.uturn.backward.circle").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                ForEach(failed) { r in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Money(minor: r.amountMinor).display).vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                        if let why = r.failureReason, !why.isEmpty { Text(why).vfont(13).foregroundStyle(VUI.textSecondary) }
+                        Button("Try again") { retry(r) }.vfont(14, .semibold).foregroundStyle(VUI.mint)
+                            .accessibilityLabel("Retry the failed refund of \(Money(minor: r.amountMinor).display)")
+                    }
+                    if r.id != failed.last?.id { Divider().overlay(.white.opacity(0.1)) }
+                }
+            }
+        }
+    }
+
+    func retry(_ r: FailedRefund) {
+        guard let c = store.client else { return }
+        Task {
+            do { try await c.retryRefund(id: r.id); notice = "Refund sent again."; message = nil; Haptics.success(); await load() }
+            catch { message = (error as? APIError)?.message ?? "Couldn't retry that."; notice = nil; Haptics.error() }
+        }
+    }
+
     var draftsCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -177,6 +227,8 @@ struct OwedView: View {
             // a key without approval rights may not read refunds or payouts: that must not hide the rest of the screen
             approvals = (try? await c.pendingApprovals()) ?? []
             disputes = (try? await c.openDisputes()) ?? []
+            toPay = (try? await c.approvedPayouts()) ?? []
+            failed = (try? await c.failedRefunds()) ?? []
             await store.refreshAttention()
         } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
     }
@@ -283,6 +335,47 @@ struct EvidenceSheet: View {
         Task {
             do { try await c.addDisputeEvidence(id: dispute.id, note: note.trimmingCharacters(in: .whitespaces), url: l.isEmpty ? nil : l); Haptics.success(); onSaved(); dismiss() }
             catch { message = (error as? APIError)?.message ?? "Couldn't save the evidence."; Haptics.error() }
+        }
+    }
+}
+
+/// Records that a payout's transfer was made, with the bank's reference (UTR). This posts to the books once and cannot be undone here.
+struct MarkPaidSheet: View {
+    @EnvironmentObject var store: MerchantStore
+    @Environment(\.dismiss) var dismiss
+    let payout: ApprovedPayout
+    var onSaved: () -> Void
+    @State private var ref = ""
+    @State private var message: String?
+    @State private var busy = false
+
+    var body: some View {
+        ZStack {
+            AmbientBackground(brand: .merchant, phase: 0.95)
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Record the transfer").vfont(24, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                Text("\(Money(minor: payout.amountMinor).display)\(payout.purpose.map { " · \($0)" } ?? "")").vfont(14).foregroundStyle(VUI.textSecondary)
+                TextField("Bank reference (UTR), 6 to 40 characters", text: $ref).textInputAutocapitalization(.characters).autocorrectionDisabled().foregroundStyle(VUI.textPrimary)
+                    .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text("Only do this after the money has left your bank. It is written to your books once and cannot be undone from here.").vfont(12).foregroundStyle(VUI.amber)
+                if let message { Text(message).vfont(13).foregroundStyle(VUI.coral) }
+                Button(action: save) { Text(busy ? "Recording…" : "Record transfer").vfont(16, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity).padding(.vertical, 14).background(VUI.mint, in: Capsule()) }
+                    .buttonStyle(PressScale()).disabled(!BankRef.isValid(ref) || busy).opacity(BankRef.isValid(ref) && !busy ? 1 : 0.5)
+                Button("Cancel") { dismiss() }.vfont(16).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity)
+                Spacer()
+            }.padding(24)
+        }
+        .environment(\.colorScheme, .dark)
+        .presentationDetents([.medium])
+    }
+
+    func save() {
+        guard let c = store.client, BankRef.isValid(ref), !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do { try await c.markPayoutPaid(id: payout.id, bankRef: ref); Haptics.success(); onSaved(); dismiss() }
+            catch { message = (error as? APIError)?.message ?? "Couldn't record the transfer."; Haptics.error() }
         }
     }
 }

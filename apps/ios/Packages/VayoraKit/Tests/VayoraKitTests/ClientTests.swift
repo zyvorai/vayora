@@ -333,3 +333,51 @@ final class AttentionTests: XCTestCase {
         XCTAssertEqual(a, Attention(approvals: 0, reminderDrafts: 1, disputesDueSoon: 0))
     }
 }
+
+final class PayoutActionTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testBankRefRuleMatchesTheServer() {
+        XCTAssertFalse(BankRef.isValid("12345")); XCTAssertTrue(BankRef.isValid("123456")); XCTAssertTrue(BankRef.isValid("  UTR0001234  "))
+        XCTAssertFalse(BankRef.isValid(String(repeating: "9", count: 41))); XCTAssertFalse(BankRef.isValid("   abc   "))
+    }
+
+    func testMarkPaidSendsTheTrimmedReferenceAndListsAskForTheirStatus() async throws {
+        nonisolated(unsafe) var seen: [URLRequest] = []
+        StubProtocol.handler = { r in
+            seen.append(r)
+            if r.httpMethod == "GET" && r.url!.path.hasSuffix("payouts") { return (200, #"{"data":[{"id":"po_1","amount_minor":9900,"currency":"INR","status":"approved","purpose":"Rent"},{"id":"po_2","amount_minor":1,"currency":"INR","status":"paid"}]}"#) }
+            if r.httpMethod == "GET" { return (200, #"{"data":[{"id":"re_1","amount_minor":500,"currency":"INR","status":"failed","failure_reason":"bank said no"}],"has_more":false}"#) }
+            return (200, #"{"id":"x","status":"ok"}"#)
+        }
+        let p = try await client().approvedPayouts()
+        XCTAssertEqual(p.map(\.id), ["po_1"])
+        let f = try await client().failedRefunds()
+        XCTAssertEqual(f.first?.failureReason, "bank said no")
+        try await client().markPayoutPaid(id: "po_1", bankRef: "  UTR0001234 ")
+        try await client().retryRefund(id: "re_1")
+        XCTAssertTrue(seen[0].url!.absoluteString.hasSuffix("/v1/payouts?status=approved"))
+        XCTAssertTrue(seen[1].url!.absoluteString.hasSuffix("/v1/refunds?status=failed"))
+        XCTAssertEqual(seen[2].url?.path, "/v1/payouts/po_1/mark_paid")
+        let b = try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[2])) as? [String: Any]
+        XCTAssertEqual(b?["bank_ref"] as? String, "UTR0001234")
+        XCTAssertEqual(seen[3].url?.path, "/v1/refunds/re_1/retry")
+    }
+
+    func testDemoBankPaysOnceAndRetriesAFailedRefund() async throws {
+        let c = VayoraClient.demo(bank: DemoBank())
+        let p = try await c.approvedPayouts(); XCTAssertEqual(p.count, 1)
+        do { try await c.markPayoutPaid(id: p[0].id, bankRef: "abc"); XCTFail("short reference") } catch let e as APIError { XCTAssertEqual(e.code, "invalid_bank_ref") }
+        try await c.markPayoutPaid(id: p[0].id, bankRef: "UTR123456789")
+        let none = try await c.approvedPayouts(); XCTAssertTrue(none.isEmpty)
+        let f = try await c.failedRefunds(); XCTAssertEqual(f.count, 1)
+        try await c.retryRefund(id: f[0].id)
+        let left = try await c.failedRefunds(); XCTAssertTrue(left.isEmpty)
+        // the pending-approval lists are untouched by the new filters
+        let pending = try await c.pendingApprovals(); XCTAssertEqual(pending.count, 2)
+    }
+}
