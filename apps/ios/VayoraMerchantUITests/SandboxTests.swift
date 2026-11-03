@@ -3,7 +3,7 @@ import XCTest
 /// The same screens against a real local test server instead of the built-in demo.
 /// Skipped unless VAYORA_SANDBOX_URL and VAYORA_SANDBOX_KEY are set. Pass them to the runner as
 /// TEST_RUNNER_VAYORA_SANDBOX_URL and TEST_RUNNER_VAYORA_SANDBOX_KEY (the sandbox script in scripts/ makes both).
-/// The server should be fresh (the checks expect INV-1001 overdue and no subscriptions). The key is never printed.
+/// The checks expect INV-1001 overdue; they pass on a seeded sandbox too. The key is never printed.
 final class SandboxTests: XCTestCase {
     var app: XCUIApplication!
 
@@ -13,24 +13,11 @@ final class SandboxTests: XCTestCase {
         let key = try XCTUnwrap(env["VAYORA_SANDBOX_KEY"].flatMap { $0.isEmpty ? nil : $0 }, "no sandbox")
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-demoMode", "NO", "-cashierLocked", "NO"]
+        // a debug build reads these two (a test key only) instead of anyone typing into Settings
+        app.launchArguments = ["-demoMode", "NO", "-cashierLocked", "NO", "-uitestServer", url, "-uitestKey", key]
         app.launch()
-        app.tabBars.buttons["Settings"].tap()
-        let server = app.textFields["https://api.example.com"]
-        XCTAssertTrue(server.waitForExistence(timeout: 8))
-        replace(server, with: url)
-        replace(app.secureTextFields["zk_test_…"], with: key)
     }
 
-    /// The server address and key survive between launches (the key lives in the Keychain), so clear a field before typing into it.
-    func replace(_ field: XCUIElement, with text: String) {
-        field.tap()
-        let current = (field.value as? String) ?? ""
-        if !current.isEmpty, current != field.placeholderValue {
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 5))
-        }
-        field.typeText(text)
-    }
 
     func shot(_ name: String) { let a = XCTAttachment(screenshot: app.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
     func see(_ text: String, timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
@@ -42,7 +29,6 @@ final class SandboxTests: XCTestCase {
         see("Owed to you")
         see("INV-1001")
         see("1 to 30 days late")
-        XCTAssertFalse(app.staticTexts["Waiting for your approval"].exists, "a fresh sandbox has nothing to approve")
         shot("sandbox-owed")
     }
 

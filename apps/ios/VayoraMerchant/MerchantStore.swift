@@ -70,6 +70,10 @@ final class MerchantStore: ObservableObject {
         // an address saved by an older build lives only in UserDefaults: copy it to the Keychain so a reinstall keeps it
         if URL(string: saved)?.host != "127.0.0.1", Keychain.get("serverURL") == nil { Keychain.set(saved, for: "serverURL") }
         apiKey = Keychain.get("apiKey") ?? ""
+        #if DEBUG
+        // UI tests only (a debug build): point the app at a test server without typing into Settings. Never compiled into a release build.
+        if let u = d.string(forKey: "uitestServer"), let k = d.string(forKey: "uitestKey"), k.hasPrefix("zk_test") { serverURL = u; apiKey = k }
+        #endif
     }
 
     /// Built-in demo bank: no server, no key. Stored per phone.

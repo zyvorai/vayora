@@ -72,8 +72,8 @@ struct OwedView: View {
                         }
                         if !a.detail.isEmpty { Text(a.detail).vfont(13).foregroundStyle(VUI.textSecondary) }
                         HStack(spacing: 16) {
-                            Button("Approve") { decide(a, approve: true) }.foregroundStyle(VUI.mint)
-                            Button("Reject", role: .destructive) { decide(a, approve: false) }
+                            Button("Approve") { decide(a, approve: true) }.foregroundStyle(VUI.mint).accessibilityLabel("Approve \(a.title.lowercased()) of \(Money(minor: a.amountMinor).display)")
+                            Button("Reject", role: .destructive) { decide(a, approve: false) }.accessibilityLabel("Reject \(a.title.lowercased()) of \(Money(minor: a.amountMinor).display)")
                         }.vfont(14, .semibold)
                         .accessibilityHint(a.kind == .payout ? "Approving lets the payout go ahead" : "Approving sends the refund to the customer")
                     }
@@ -103,8 +103,8 @@ struct OwedView: View {
                         Text(d.reason).vfont(13).foregroundStyle(VUI.textSecondary)
                         Text("\(d.evidenceCount) note\(d.evidenceCount == 1 ? "" : "s") added").vfont(12).foregroundStyle(VUI.textTertiary)
                         HStack(spacing: 16) {
-                            Button("Add evidence") { noting = d }.foregroundStyle(VUI.mint)
-                            Button("Record outcome") { deciding = d }.foregroundStyle(VUI.textSecondary)
+                            Button("Add evidence") { noting = d }.foregroundStyle(VUI.mint).accessibilityLabel("Add evidence to the \(Money(minor: d.amountMinor).display) dispute")
+                            Button("Record outcome") { deciding = d }.foregroundStyle(VUI.textSecondary).accessibilityLabel("Record the outcome of the \(Money(minor: d.amountMinor).display) dispute")
                         }.vfont(14, .semibold)
                     }
                     if d.id != disputes.last?.id { Divider().overlay(.white.opacity(0.1)) }
@@ -131,8 +131,8 @@ struct OwedView: View {
                         Text([d.invoiceNumber, d.channel].compactMap { $0 }.joined(separator: " · ")).vfont(12, .semibold).foregroundStyle(VUI.textTertiary)
                         Text(d.message).vfont(14).foregroundStyle(VUI.textPrimary)
                         HStack(spacing: 16) {
-                            Button("Approve") { decide(d, approve: true) }.foregroundStyle(VUI.mint)
-                            Button("Reject", role: .destructive) { decide(d, approve: false) }
+                            Button("Approve") { decide(d, approve: true) }.foregroundStyle(VUI.mint).accessibilityLabel("Approve reminder for \(d.invoiceNumber ?? "invoice")")
+                            Button("Reject", role: .destructive) { decide(d, approve: false) }.accessibilityLabel("Reject reminder for \(d.invoiceNumber ?? "invoice")")
                         }.vfont(14, .semibold)
                         .accessibilityHint("Approving sends the reminder as written")
                     }
