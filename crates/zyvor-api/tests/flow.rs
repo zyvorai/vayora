@@ -9642,6 +9642,12 @@ async fn a_business_can_have_replies_to_its_emails_go_to_its_own_address(pool: P
         raw.contains("Reply-To: accounts@school.example") && raw.contains("no-reply@example.com"),
         "{raw}"
     );
+    // the From line says which business it is for, on Zyvor's own address
+    let from_line = raw.lines().find(|l| l.starts_with("From:")).unwrap_or("");
+    assert!(
+        from_line.contains(" via Zyvor") && from_line.contains("<no-reply@example.com>"),
+        "{from_line}"
+    );
     // a payer-facing email goes as plain text plus an HTML alternative
     assert!(
         raw.contains("multipart/alternative")

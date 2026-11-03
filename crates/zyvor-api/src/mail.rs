@@ -70,6 +70,19 @@ impl Mailer {
         reply_to: Option<&str>,
         html: Option<&str>,
     ) -> Result<(), String> {
+        self.send_as(None, to, subject, body, reply_to, html).await
+    }
+
+    /// Like `send`, with the display name the payer sees on the From line (the address stays the configured one).
+    pub async fn send_as(
+        &self,
+        from_name: Option<&str>,
+        to: &str,
+        subject: &str,
+        body: &str,
+        reply_to: Option<&str>,
+        html: Option<&str>,
+    ) -> Result<(), String> {
         match self {
             Mailer::Log => {
                 tracing::warn!(%to, %subject, ?reply_to, "email NOT sent (log-only mailer, set ZYVOR_SMTP_URL):\n{body}");
@@ -77,7 +90,11 @@ impl Mailer {
             }
             Mailer::Null => Ok(()),
             Mailer::Smtp(s) => {
-                let msg = build_message(&s.from, to, subject, body, reply_to, html)?;
+                let from = match from_name {
+                    Some(n) => with_display_name(&s.from, n)?,
+                    None => s.from.clone(),
+                };
+                let msg = build_message(&from, to, subject, body, reply_to, html)?;
                 s.transport
                     .send(msg)
                     .await
@@ -176,6 +193,26 @@ pub fn html_from_text(body: &str) -> String {
     out
 }
 
+/// The From name for mail sent for a business: "Acme Stores via Zyvor". The business's own name alone is never
+/// used, so a business cannot present itself as someone else (a bank, say) from Zyvor's address. Characters that
+/// could break a header or confuse an address are dropped, and a long name is cut.
+pub fn sender_name(business: &str) -> Option<String> {
+    let clean: String = business
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '<' | '>' | '"' | '@' | ',' | ';' | ':' | '\\'))
+        .collect();
+    let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean: String = clean.chars().take(60).collect();
+    let clean = clean.trim();
+    (!clean.is_empty()).then(|| format!("{clean} via Zyvor"))
+}
+
+/// `from` (as configured, with or without a name) with its display name replaced by `name`.
+fn with_display_name(from: &str, name: &str) -> Result<String, String> {
+    let m: lettre::message::Mailbox = from.parse().map_err(|e| format!("from: {e}"))?;
+    Ok(lettre::message::Mailbox::new(Some(name.to_string()), m.email).to_string())
+}
+
 /// A business's reply-to address as typed: trimmed, and it must be one plain address (no display name).
 pub fn clean_reply_to(raw: &str) -> Option<String> {
     let r = raw.trim();
@@ -215,7 +252,12 @@ pub async fn enqueue_once(
             .fetch_optional(&mut *conn)
             .await?
             .flatten();
-    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to, html) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING")
+    let from_name: Option<String> = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .and_then(|n: String| sender_name(&n));
+    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to, html, from_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (dedupe_key) DO NOTHING")
         .bind(new_id("mail"))
         .bind(to)
         .bind(subject)
@@ -223,6 +265,7 @@ pub async fn enqueue_once(
         .bind(dedupe_key)
         .bind(reply_to)
         .bind(html_from_text(body))
+        .bind(from_name)
         .execute(conn)
         .await?
         .rows_affected();
@@ -388,18 +431,25 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
-        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT id, to_email, subject, body, attempts, reply_to, html FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
+        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT id, to_email, subject, body, attempts, reply_to, html, from_name FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some((id, to, subject, body, attempts, reply_to, html)) = row else {
+        let Some((id, to, subject, body, attempts, reply_to, html, from_name)) = row else {
             break;
         };
         match s
             .mailer
-            .send(&to, &subject, &body, reply_to.as_deref(), html.as_deref())
+            .send_as(
+                from_name.as_deref(),
+                &to,
+                &subject,
+                &body,
+                reply_to.as_deref(),
+                html.as_deref(),
+            )
             .await
         {
             Ok(()) => {
@@ -423,6 +473,27 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_from_name_says_who_it_is_for_and_cannot_pose_as_someone_else() {
+        assert_eq!(
+            sender_name("Acme Stores").as_deref(),
+            Some("Acme Stores via Zyvor")
+        );
+        // characters that could break a header or look like an address are dropped; space is tidied
+        assert_eq!(
+            sender_name("  Acme\r\nBcc: x@evil.example <boss@bank.example>  ").as_deref(),
+            Some("AcmeBcc xevil.example bossbank.example via Zyvor")
+        );
+        assert_eq!(sender_name(" <>@ ").as_deref(), None);
+        assert_eq!(sender_name("").as_deref(), None);
+        assert!(sender_name(&"x".repeat(500)).unwrap().len() <= 70);
+        let from =
+            with_display_name("Zyvor <no-reply@example.com>", "Acme Stores via Zyvor").unwrap();
+        assert_eq!(from, "Acme Stores via Zyvor <no-reply@example.com>");
+        let bare = with_display_name("no-reply@example.com", "Acme via Zyvor").unwrap();
+        assert!(bare.ends_with("<no-reply@example.com>"), "{bare}");
+    }
 
     #[test]
     fn the_html_version_escapes_everything_and_only_buttons_a_web_address() {
