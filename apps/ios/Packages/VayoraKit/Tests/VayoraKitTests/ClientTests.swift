@@ -104,3 +104,55 @@ final class PaymentLinkTests: XCTestCase {
         XCTAssertFalse(l[0].isActive)
     }
 }
+
+final class CollectionsTests: XCTestCase {
+    func client() -> VayoraClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+    }
+
+    func testAgeingDecodesAndOrdersMostOverdueFirstInRupeesOnly() async throws {
+        StubProtocol.handler = { _ in (200, #"{"as_of":"2026-11-03","total_outstanding_inr_minor":null,"data":[{"currency":"INR","bucket":"current","outstanding_minor":500,"count":1,"outstanding_inr_minor":500,"invoices":[{"id":"i1","number":"A","customer_id":null,"due_date":"2026-11-09","outstanding_minor":500,"days_past_due":0}]},{"currency":"USD","bucket":"over_90","outstanding_minor":900,"count":1,"invoices":[]},{"currency":"INR","bucket":"over_90","outstanding_minor":7000,"count":1,"invoices":[{"id":"i2","number":"B","due_date":"2026-06-01","outstanding_minor":7000,"days_past_due":155}]}]}"#) }
+        let a = try await client().ageing()
+        XCTAssertEqual(a.inrBuckets.map(\.bucket), ["over_90", "current"])
+        XCTAssertEqual(a.inrTotalMinor, 7500)
+        XCTAssertEqual(a.inrBuckets.first?.title, "Over 90 days late")
+        XCTAssertEqual(a.inrBuckets.first?.invoices.first?.daysPastDue, 155)
+    }
+
+    func testDraftApprovalSendsEditedWordingOnlyWhenGiven() async throws {
+        nonisolated(unsafe) var bodies: [Data] = []; nonisolated(unsafe) var paths: [String] = []
+        StubProtocol.handler = { r in paths.append(r.url!.path); bodies.append(PaymentLinkTests.bodyData(r)); return (200, #"{"id":"rd","status":"approved"}"#) }
+        try await client().approveReminderDraft(id: "rd")
+        try await client().approveReminderDraft(id: "rd", message: "Please pay")
+        try await client().rejectReminderDraft(id: "rd")
+        XCTAssertEqual(paths, ["/v1/collections/drafts/rd/approve", "/v1/collections/drafts/rd/approve", "/v1/collections/drafts/rd/reject"])
+        XCTAssertTrue(bodies[0].isEmpty)
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: bodies[1]) as? [String: Any])?["message"] as? String, "Please pay")
+    }
+
+    func testPromiseAndInvoiceEmail() async throws {
+        nonisolated(unsafe) var seen: [URLRequest] = []
+        StubProtocol.handler = { r in seen.append(r); return (201, #"{"id":"pr_1"}"#) }
+        try await client().promiseToPay(invoiceID: "in_1", amount: Money(minor: 5000), date: "2026-11-10", idempotencyKey: "k-9")
+        try await client().emailInvoice(id: "in_1")
+        XCTAssertEqual(seen[0].url?.path, "/v1/invoices/in_1/promises")
+        XCTAssertEqual(seen[0].value(forHTTPHeaderField: "Idempotency-Key"), "k-9")
+        let b = try JSONSerialization.jsonObject(with: PaymentLinkTests.bodyData(seen[0])) as? [String: Any]
+        XCTAssertEqual((b?["promised_minor"] as? NSNumber)?.int64Value, 5000); XCTAssertEqual(b?["promised_date"] as? String, "2026-11-10")
+        XCTAssertEqual(seen[1].url?.path, "/v1/invoices/in_1/send")
+    }
+
+    func testDemoBankDraftsLeaveTheInboxOnceDecided() async throws {
+        let c = VayoraClient.demo(bank: DemoBank())
+        let first = try await c.reminderDrafts()
+        XCTAssertEqual(first.count, 2)
+        try await c.approveReminderDraft(id: first[0].id)
+        try await c.rejectReminderDraft(id: first[1].id)
+        let left = try await c.reminderDrafts()
+        XCTAssertTrue(left.isEmpty)
+        let a = try await c.ageing()
+        XCTAssertEqual(a.inrTotalMinor, 205000)
+    }
+}

@@ -11,6 +11,7 @@ struct VayoraMerchantApp: App {
                 CollectView().tabItem { Label("Collect", systemImage: "qrcode") }
                 PaymentsView().tabItem { Label("Payments", systemImage: "list.bullet.rectangle") }
                 if !store.cashierLocked {
+                    OwedView().tabItem { Label("Owed", systemImage: "indianrupeesign.circle") }
                     AutoPayView().tabItem { Label("AutoPay", systemImage: "arrow.triangle.2.circlepath") }
                     MerchantSettings().tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 }

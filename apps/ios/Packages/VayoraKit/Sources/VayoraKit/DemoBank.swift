@@ -23,6 +23,9 @@ public final class DemoBank: @unchecked Sendable {
     private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
     private var links: [String: Link] = [:]
     private var linkOrder: [String] = []
+    private var drafts: [(id: String, number: String, message: String, status: String)] = [
+        ("rd_demo1", "INV-1001", "Hello, this is a reminder that invoice INV-1001 for Rs 1,250.00 is 12 days past due.", "pending"),
+        ("rd_demo2", "INV-1002", "A gentle reminder that invoice INV-1002 is due this week.", "pending")]
     private var counter = 0
 
     public init(now: @escaping () -> Date = Date.init, customerPaysAfter: TimeInterval = 4) {
@@ -125,6 +128,21 @@ public final class DemoBank: @unchecked Sendable {
             guard var a = attempts[s[1]] else { return Self.err(404, "not_found", "No such attempt") }
             if a.status == "pending", now().timeIntervalSince(a.created) >= customerPaysAfter { a.status = "captured"; attempts[a.id] = a }
             return Self.ok(json(a))
+        case ("GET", 2, "collections") where s[1] == "ageing":
+            func inv(_ id: String, _ n: String, _ due: String, _ amt: Int64, _ days: Int) -> [String: Any] { ["id": id, "number": n, "due_date": due, "outstanding_minor": amt, "days_past_due": days] }
+            return Self.ok(["as_of": "2026-11-03", "data": [
+                ["currency": "INR", "bucket": "1_30", "outstanding_minor": 125000, "count": 1, "invoices": [inv("in_demo1", "INV-1001", "2026-10-22", 125000, 12)]],
+                ["currency": "INR", "bucket": "current", "outstanding_minor": 80000, "count": 1, "invoices": [inv("in_demo2", "INV-1002", "2026-11-08", 80000, 0)]]]])
+        case ("GET", 2, "collections") where s[1] == "drafts":
+            return Self.ok(["data": drafts.filter { $0.status == "pending" }.map { ["id": $0.id, "invoice_number": $0.number, "channel": "email", "message": $0.message] }])
+        case ("POST", 4, "collections") where s[1] == "drafts" && (s[3] == "approve" || s[3] == "reject"):
+            guard let i = drafts.firstIndex(where: { $0.id == s[2] && $0.status == "pending" }) else { return Self.err(404, "not_found", "No such draft.") }
+            drafts[i].status = s[3] == "approve" ? "approved" : "rejected"
+            return Self.ok(["id": s[2], "status": drafts[i].status])
+        case ("POST", 3, "invoices") where s[2] == "send":
+            return Self.err(409, "no_customer_email", "The built-in demo has no mail. Connect a test server to email an invoice.")
+        case ("POST", 3, "invoices") where s[2] == "promises":
+            return (201, (try? JSONSerialization.data(withJSONObject: ["id": nextID("pr")])) ?? Data())
         case ("POST", 1, "payment_links"):
             guard let amt = (obj["amount_minor"] as? NSNumber)?.int64Value, amt > 0 else { return Self.err(422, "invalid_link", "Enter an amount above zero.") }
             let id = nextID("pl")
