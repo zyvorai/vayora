@@ -53,6 +53,10 @@ export interface DeleteSavedViewsByIdResponse {
   ok: boolean;
 }
 
+export interface DeleteSettingsLogoResponse {
+  email_logo_url: unknown;
+}
+
 export interface DeleteTestClockResponse {
   date: unknown;
   frozen: boolean;
@@ -1736,6 +1740,10 @@ export interface PostSavedViewsResponse {
   shared: unknown;
   mine: boolean;
   owner: unknown;
+}
+
+export interface PostSettingsLogoResponse {
+  email_logo_url: string;
 }
 
 export interface PostSettingsResponse {
