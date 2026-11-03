@@ -57,7 +57,7 @@ public struct PayeeRowView: View {
             Button(action: { Haptics.tap(); onStar() }) {
                 Image(systemName: payee.favourite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold)).foregroundStyle(payee.favourite ? VUI.amber : VUI.textTertiary)
                     .frame(width: 44, height: 44)
-            }.buttonStyle(.plain).accessibilityLabel(payee.favourite ? "Remove from favourites" : "Add to favourites")
+            }.buttonStyle(.plain).accessibilityLabel(payee.favourite ? "Remove \(payee.name) from favourites" : "Add \(payee.name) to favourites")
         }
         .padding(.leading, 14).padding(.vertical, 8).padding(.trailing, 4)
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
