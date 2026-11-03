@@ -583,6 +583,7 @@ GetPlansResponseDataItem = TypedDict("GetPlansResponseDataItem", {
     "interval_count": "int",
     "usage_unit_minor": "int",
     "active": "bool",
+    "trial_days": "int",
 })
 
 GetPlatformChangesResponse = TypedDict("GetPlatformChangesResponse", {
@@ -750,6 +751,7 @@ GetSubscriptionsResponseDataItem = TypedDict("GetSubscriptionsResponseDataItem",
     "next_bill_date": "str",
     "unbilled_usage": "int",
     "unit_amount_minor": "Optional[int]",
+    "trial_ends_on": "Optional[str]",
 })
 
 GetVendorsByIdBalanceResponse = TypedDict("GetVendorsByIdBalanceResponse", {
@@ -820,6 +822,7 @@ PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
     "name": "str",
     "amount_minor": "int",
     "active": "Any",
+    "trial_days": "Any",
     "subscribers_kept_on_old_price": "Any",
 })
 
@@ -1808,6 +1811,7 @@ PostSubscriptionsResponse = TypedDict("PostSubscriptionsResponse", {
     "id": "str",
     "status": "str",
     "next_bill_date": "Optional[str]",
+    "trial_ends_on": "Optional[str]",
 })
 
 PostTestDataResetResponse = TypedDict("PostTestDataResetResponse", {
