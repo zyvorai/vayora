@@ -772,6 +772,7 @@ GetSubscriptionsResponseDataItem = TypedDict("GetSubscriptionsResponseDataItem",
     "unbilled_usage": "int",
     "unit_amount_minor": "Optional[int]",
     "trial_ends_on": "Optional[str]",
+    "billed": "bool",
 })
 
 GetVendorsByIdBalanceResponse = TypedDict("GetVendorsByIdBalanceResponse", {

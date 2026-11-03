@@ -166,17 +166,17 @@ export function EditPlan({ id, name, priceMinor, trialDays = 0, includedUnits = 
   );
 }
 
-export function ChangeTrial({ id, endsOn }: { id: string; endsOn: string }) {
+export function ChangeTrial({ id, endsOn, start = false }: { id: string; endsOn: string; start?: boolean }) {
   const [state, run, pending] = useActionState(changeTrial, undefined);
   return (
     <details>
-      <summary style={{ cursor: "pointer" }}>Change trial</summary>
+      <summary style={{ cursor: "pointer" }}>{start ? "Start a free trial" : "Change trial"}</summary>
       <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
         <input type="hidden" name="id" value={id} />
         <input name="ends_on" type="date" defaultValue={endsOn} aria-label="Trial ends on" />
-        <button className="btn small" disabled={pending}>{pending ? "…" : "Move end"}</button>
-        <button className="btn small" name="now" value="1" formNoValidate disabled={pending}>Start billing now</button>
-        <span className="muted" style={{ flexBasis: "100%" }}>The first bill falls on the day the trial ends. Starting now makes it due at the next billing run.</span>
+        <button className="btn small" disabled={pending}>{pending ? "…" : start ? "Start trial" : "Move end"}</button>
+        {!start && <button className="btn small" name="now" value="1" formNoValidate disabled={pending}>Start billing now</button>}
+        <span className="muted" style={{ flexBasis: "100%" }}>{start ? "Nothing has been billed for this subscription yet. Its first bill moves to the day the trial ends." : "The first bill falls on the day the trial ends. Starting now makes it due at the next billing run."}</span>
         {state?.error && <span className="note bad" role="alert">{state.error}</span>}
         {state?.ok && <span className="note" role="status">{state.ok}</span>}
       </form>

@@ -1708,6 +1708,8 @@ paths:
                           - string
                           - 'null'
                           format: date
+                        billed:
+                          type: boolean
         4XX:
           $ref: '#/components/responses/Error'
     post:

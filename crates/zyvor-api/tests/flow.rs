@@ -16854,6 +16854,18 @@ async fn a_subscribers_trial_can_be_ended_early_or_moved(pool: PgPool) {
         )
         .await;
     assert_eq!(granted["next_bill_date"], later.to_string());
+    // the list says which subscriptions have been billed (a trial can only start before that)
+    let listed = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    let billed_of = |id: &Value| {
+        listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == *id)
+            .map(|s| s["billed"].clone())
+    };
+    assert_eq!(billed_of(&sub["id"]), Some(json!(true)));
+    assert_eq!(billed_of(&sub2["id"]), Some(json!(false)));
     assert_eq!(
         t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
         0
