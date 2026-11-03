@@ -15,6 +15,8 @@ struct PaymentLinksView: View {
     @State private var oneUse = false
     @State private var busy = false
     @State private var shown: PaymentLinkInfo?
+    @State private var customers: [CustomerInfo] = []
+    @State private var customerID = ""
 
     var body: some View {
         ZStack {
@@ -48,6 +50,13 @@ struct PaymentLinksView: View {
                     .foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .accessibilityLabel("Amount in rupees")
                 TextField("What it is for (optional)", text: $note).foregroundStyle(VUI.textPrimary).padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                if !customers.isEmpty {
+                    Picker("For", selection: $customerID) {
+                        Text("No one in particular").tag("")
+                        ForEach(customers) { Text($0.name).tag($0.id) }
+                    }.pickerStyle(.menu).tint(VUI.mint).foregroundStyle(VUI.textPrimary)
+                        .accessibilityHint("Choose a customer to be able to email them the link")
+                }
                 Toggle("Stop after one payment", isOn: $oneUse).tint(VUI.mint).foregroundStyle(VUI.textPrimary)
                 Button(action: create) {
                     Text(busy ? "Creating…" : "Create link").vfont(16, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity).padding(.vertical, 14).background(VUI.mint, in: Capsule())
@@ -90,6 +99,7 @@ struct PaymentLinksView: View {
 
     func load() async {
         guard let c = store.client else { message = "Add your API key in Settings first."; loaded = true; return }
+        customers = (try? await c.customers()) ?? customers
         do { links = try await c.paymentLinks(); message = nil } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
         loaded = true
     }
@@ -99,8 +109,8 @@ struct PaymentLinksView: View {
         Task {
             defer { busy = false }
             do {
-                _ = try await c.createPaymentLink(amount: amount, description: note.trimmingCharacters(in: .whitespaces), maxUses: oneUse ? 1 : nil)
-                entry = AmountEntry(); note = ""; oneUse = false; notice = "Link created."; message = nil; Haptics.success()
+                _ = try await c.createPaymentLink(amount: amount, description: note.trimmingCharacters(in: .whitespaces), maxUses: oneUse ? 1 : nil, customerID: customerID.isEmpty ? nil : customerID)
+                entry = AmountEntry(); note = ""; oneUse = false; customerID = ""; notice = "Link created."; message = nil; Haptics.success()
                 await load()
             } catch { message = (error as? APIError)?.message ?? "Couldn't create the link."; Haptics.error() }
         }
@@ -116,7 +126,12 @@ struct PaymentLinksView: View {
         guard let c = store.client else { return }
         Task {
             do { try await c.emailPaymentLink(id: l.id); message = nil; notice = "Link emailed."; Haptics.success() }
-            catch { message = (error as? APIError)?.message ?? "Couldn't email the link."; Haptics.error() }
+            catch {
+                let e = error as? APIError
+                // the server's own text tells an operator to set an environment variable: say what it means to a merchant
+                message = e?.code == "checkout_url_not_configured" ? "Emailing links is not switched on for this account yet. Ask whoever runs your Zyvor server to set the public checkout address." : (e?.message ?? "Couldn't email the link.")
+                Haptics.error()
+            }
         }
     }
 }

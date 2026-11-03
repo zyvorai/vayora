@@ -73,6 +73,10 @@ final class PaymentLinkTests: XCTestCase {
         let body = try JSONSerialization.jsonObject(with: Self.bodyData(seen)) as? [String: Any]
         XCTAssertEqual((body?["amount_minor"] as? NSNumber)?.int64Value, 25000)
         XCTAssertEqual((body?["max_uses"] as? NSNumber)?.intValue, 1)
+        XCTAssertNil(body?["customer_id"], "no customer unless one is chosen")
+        _ = try await client().createPaymentLink(amount: Money(minor: 100), description: nil, customerID: "cus_1", idempotencyKey: "k-2")
+        let withCustomer = try JSONSerialization.jsonObject(with: Self.bodyData(seen)) as? [String: Any]
+        XCTAssertEqual(withCustomer?["customer_id"] as? String, "cus_1")
     }
 
     func testCancelAndEmailHitTheirPaths() async throws {
