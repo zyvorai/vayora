@@ -102,4 +102,15 @@ final class SandboxTests: XCTestCase {
         shot("sandbox-link-email-result")
         app.buttons["Cancel link"].firstMatch.tap()
     }
+
+    /// A payment's detail shows its timeline from the real server: created, and for a paid one, the payer paying.
+    func testAPaymentShowsWhatHappenedToIt() {
+        app.tabBars.buttons["Payments"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS '₹'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 12), "the sandbox has payments")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["What happened"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Payment of' AND label ENDSWITH 'created'")).firstMatch.waitForExistence(timeout: 5), "the first event, from the server")
+        shot("sandbox-timeline")
+    }
 }

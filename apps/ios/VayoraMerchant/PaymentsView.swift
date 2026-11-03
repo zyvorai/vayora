@@ -109,6 +109,7 @@ struct PaymentDetail: View {
     @State private var confirm = false
     @State private var reason: RefundReason = .customerRequest
     @State private var refundNote = ""
+    @State private var timeline: PaymentTimeline?
 
     /// A name for this payment, kept on the phone, with a running total in Settings, Regulars.
     @ViewBuilder var regularTag: some View {
@@ -145,6 +146,7 @@ struct PaymentDetail: View {
                 VStack(spacing: 18) {
                     AmountText(intent.money, size: 60).padding(.top, 24)
                     StatusPill(pill.0, pill.1)
+                    if let timeline { timelineCard(timeline) }
                     GlassCard {
                         VStack(alignment: .leading, spacing: 12) {
                             row("Payment", intent.id)
@@ -191,6 +193,25 @@ struct PaymentDetail: View {
         .task { await reload() }
     }
 
+    /// What happened to this payment, oldest first, with the server's one-line summary of where it stands.
+    func timelineCard(_ t: PaymentTimeline) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("What happened", systemImage: "clock.arrow.circlepath").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                Text(t.standing).vfont(13).foregroundStyle(VUI.textSecondary)
+                ForEach(t.ordered) { e in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle().fill(VUI.mint).frame(width: 8, height: 8).padding(.top, 6).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(e.title).vfont(14).foregroundStyle(VUI.textPrimary)
+                            Text(e.when).vfont(12).foregroundStyle(VUI.textTertiary)
+                        }
+                    }.accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
     func row(_ k: String, _ v: String) -> some View {
         HStack { Text(k).foregroundStyle(VUI.textSecondary); Spacer(); Text(v).foregroundStyle(VUI.textPrimary).lineLimit(1).truncationMode(.middle) }
             .vfont(15)
@@ -199,6 +220,7 @@ struct PaymentDetail: View {
     func reload() async {
         guard let c = store.client else { return }
         state = try? await c.refundState(id: intent.id)
+        timeline = try? await c.timeline(intentId: intent.id)
     }
 
     func refund(_ remaining: Int64) {
