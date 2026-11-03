@@ -114,6 +114,10 @@ final class WalkthroughTests: XCTestCase {
     func testAReconciliationCaseCanBeAssignedThenResolved() {
         app.tabBars.buttons["Owed"].tap()
         see("Money to check")
+        app.buttons["See the settlement behind the Settlement Arithmetic case"].tap()
+        see("This settlement")
+        see("₹300.00 less than expected.")
+        app.buttons["Close"].firstMatch.tap()
         app.buttons["Assign the Settlement Arithmetic case to someone"].tap()
         XCTAssertFalse(app.buttons["Give it"].isEnabled, "a name is needed")
         let name = app.textFields.element(boundBy: 0); name.tap(); name.typeText("Asha")

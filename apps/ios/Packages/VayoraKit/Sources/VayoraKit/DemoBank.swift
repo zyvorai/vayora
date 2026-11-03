@@ -183,7 +183,7 @@ public final class DemoBank: @unchecked Sendable {
                             "difference_breakdown": [["reason": "provider fees and taxes (no fee schedule configured)", "amount_minor": -11800], ["reason": "settlement adjustments", "amount_minor": -18200]],
                             "narrative": "Demo paid ₹4,632.00 on 2026-11-02: 2 payments worth ₹5,000.00, less ₹250.00 of refunds. It deducted ₹118.00 in fees and taxes (2.36% of payment value)."])
         case ("GET", 2, "recon") where s[1] == "cases":
-            return Self.ok(["data": reconCases.map { ["id": $0.key, "kind": "settlement_arithmetic", "status": $0.value.status, "diff_minor": -30000, "assignee": $0.value.assignee as Any? ?? NSNull(),
+            return Self.ok(["data": reconCases.map { ["id": $0.key, "kind": "settlement_arithmetic", "status": $0.value.status, "diff_minor": -30000, "subject_type": "settlement", "subject_id": "st_demo1", "assignee": $0.value.assignee as Any? ?? NSNull(),
                                                        "explanation": "The provider's own figures do not add up: payments less refunds less fees is not what it paid."] as [String: Any] }])
         case ("POST", 4, "recon") where s[1] == "cases" && (s[3] == "assign" || s[3] == "resolve"):
             guard var c = reconCases[s[2]], c.status != "resolved" else { return Self.err(404, "not_found", "No open case.") }
