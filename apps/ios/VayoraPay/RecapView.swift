@@ -37,6 +37,26 @@ struct RecapView: View {
                             ForEach(Array(r.lines.enumerated()), id: \.offset) { _, l in Text(l).vfont(16).foregroundStyle(VUI.textPrimary).fixedSize(horizontal: false, vertical: true) }
                         }
                     }
+                    if !r.isEmpty {
+                        let payees = PayeeTotals.top(store.historyRows, from: r.weekStart, to: r.weekEndExclusive)
+                        if !payees.isEmpty {
+                            GlassCard {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Label("Who you paid most", systemImage: "person.2").vfont(16, .semibold).foregroundStyle(VUI.textPrimary)
+                                    ForEach(Array(payees.enumerated()), id: \.offset) { _, p in
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(p.payee).vfont(15).foregroundStyle(VUI.textPrimary)
+                                                Text("\(p.count) payment\(p.count == 1 ? "" : "s")").vfont(12).foregroundStyle(VUI.textSecondary)
+                                            }
+                                            Spacer()
+                                            Text(Money(minor: p.minor).display).vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                                        }.accessibilityElement(children: .combine)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     ShareLink(item: ("Vayora Pay (TEST) · " + title(r) + "\n" + r.lines.joined(separator: "\n"))) {
                         Label("Share this week", systemImage: "square.and.arrow.up").vfont(16, .semibold).foregroundStyle(VUI.violet)
                     }
