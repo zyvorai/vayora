@@ -660,6 +660,14 @@ class Zyvor:
         """Delete a view you own (an admin can delete any)."""
         return self._req("DELETE", f"/v1/saved_views/{view_id}")
 
+    def mail_suppressions(self) -> types.GetMailSuppressionsResponse:
+        """Addresses that asked (through the unsubscribe link) to stop automatic emails."""
+        return self._req("GET", "/v1/mail_suppressions")
+
+    def remove_mail_suppression(self, email: str) -> types.DeleteMailSuppressionsByEmailResponse:
+        """Send automatic emails to the address again."""
+        return self._req("DELETE", f"/v1/mail_suppressions/{urllib.parse.quote(email, safe='')}")
+
     def reset_test_data(self) -> types.PostTestDataResetResponse:
         """Test environments only: clear payments, invoices, customers and the ledger; keep settings, keys, providers and other setup."""
         return self._req("POST", "/v1/test_data/reset", {"confirm": "reset test data"})

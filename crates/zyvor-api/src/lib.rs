@@ -54,6 +54,7 @@ pub mod telemetry;
 pub mod tenant;
 pub mod testdata;
 pub mod timeline;
+pub mod unsubscribe;
 pub mod uploads;
 pub mod webhooks_in;
 pub mod worker;
@@ -96,6 +97,8 @@ pub struct AppState {
     pub kyc: Option<kyc::Kyc>,
     /// Outgoing email (`ZYVOR_SMTP_URL`); the log-only mailer when unset.
     pub mailer: mail::Mailer,
+    /// The unsubscribe link in automatic mail (`ZYVOR_PUBLIC_API_URL` and `ZYVOR_UNSUBSCRIBE_SECRET`); `None`: no link.
+    pub unsubscribe: Option<unsubscribe::Config>,
     /// Where the console is reached, for links in emails (`ZYVOR_CONSOLE_PUBLIC_URL`).
     pub console_url: String,
     /// Test environments only: let a payer app approve simulated QR payments (`ZYVOR_SIM_PAYER=1`).
@@ -148,6 +151,7 @@ impl AppState {
             actor_secret: None,
             kyc: None,
             mailer: mail::Mailer::Log,
+            unsubscribe: None,
             console_url: "http://localhost:3000".to_string(),
             sim_payer: false,
             doc_reader: docread::DocReader::Off,
@@ -161,6 +165,27 @@ impl AppState {
             review_timezone: None,
             review_auto_assign: false,
         }
+    }
+
+    /// The addresses and secret the links in payer emails are built from: the checkout app
+    /// (`ZYVOR_CHECKOUT_PUBLIC_URL`) and the unsubscribe link (`ZYVOR_PUBLIC_API_URL` with `ZYVOR_UNSUBSCRIBE_SECRET`).
+    /// Both the API and the worker call this, since the worker is what sends the mail and raises the invoices.
+    pub fn mail_links_from_env(&mut self) {
+        self.checkout_public_url = std::env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
+            .ok()
+            .filter(|u| u.starts_with("http"));
+        self.unsubscribe = match (
+            std::env::var("ZYVOR_PUBLIC_API_URL"),
+            std::env::var("ZYVOR_UNSUBSCRIBE_SECRET"),
+        ) {
+            (Ok(base), Ok(secret)) if !base.trim().is_empty() && secret.len() >= 16 => {
+                Some(unsubscribe::Config {
+                    base: base.trim().trim_end_matches('/').to_string(),
+                    secret: secret.into_bytes(),
+                })
+            }
+            _ => None,
+        };
     }
 
     /// Read the review settings from the environment (the API and the worker both need them). Anything unusable
@@ -397,6 +422,11 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/invoices/{id}/void", post(billing::void_invoice))
         .route("/invoices/{id}/send", post(billing::send_invoice))
+        .route("/mail_suppressions", get(unsubscribe::list))
+        .route(
+            "/mail_suppressions/{email}",
+            axum::routing::delete(unsubscribe::remove),
+        )
         // payouts to vendors
         .route(
             "/vendors",
@@ -693,6 +723,10 @@ pub fn app(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(telemetry::request_span));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
+        .route(
+            "/unsubscribe/{token}",
+            get(unsubscribe::confirm_page).post(unsubscribe::unsubscribe),
+        )
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .nest("/v1", v1)

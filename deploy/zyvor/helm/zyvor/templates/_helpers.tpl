@@ -16,6 +16,16 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
   valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: smtp-url } }
 - name: ZYVOR_MAIL_FROM
   valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: from } }
+{{- if .Values.mail.checkoutUrl }}
+- name: ZYVOR_CHECKOUT_PUBLIC_URL
+  value: {{ .Values.mail.checkoutUrl | quote }}
+{{- end }}
+{{- if .Values.mail.publicApiUrl }}
+- name: ZYVOR_PUBLIC_API_URL
+  value: {{ .Values.mail.publicApiUrl | quote }}
+- name: ZYVOR_UNSUBSCRIBE_SECRET
+  valueFrom: { secretKeyRef: { name: {{ .Values.mail.existingSecret }}, key: unsubscribe-secret } }
+{{- end }}
 {{- end }}
 {{- end -}}
 {{- define "zyvor.kycEnv" -}}

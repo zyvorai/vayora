@@ -470,10 +470,19 @@ export const resetTestData = async (_: FormState, f: FormData) => {
   if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
   return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
 };
+/** Send automatic emails to an address that had unsubscribed again. */
+export const removeSuppression = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/settings"], (z) => z.mailSuppressions.remove(String(f.get("email") ?? "")), "admin");
+  return r?.error ? r : { ok: "Done." };
+};
 export const saveReceipts = async (_: FormState, f: FormData) => {
   const replyTo = String(f.get("reply_to") ?? "").trim();
   if (replyTo && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(replyTo)) return { error: "Enter one email address for replies, such as accounts@school.example, or leave it empty." };
-  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reminder_emails: on(f, "reminders"), invoice_emails: on(f, "invoices"), reply_to_email: replyTo }), "admin");
+  const accent = String(f.get("accent") ?? "").trim();
+  if (accent && !/^#[0-9a-fA-F]{6}$/.test(accent)) return { error: "Enter the colour as six hex digits after a #, such as #0b7285, or leave it empty." };
+  const logo = String(f.get("logo") ?? "").trim();
+  if (logo && (!/^https:\/\/[^\s<>"]+$/.test(logo) || logo.length > 300)) return { error: "The logo address must start with https:// and be under 300 characters, or be left empty." };
+  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reminder_emails: on(f, "reminders"), invoice_emails: on(f, "invoices"), reply_to_email: replyTo, email_accent: accent, email_logo_url: logo }), "admin");
 };
 export const saveApprovals = async (_: FormState, f: FormData) => {
   const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];

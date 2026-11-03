@@ -1818,6 +1818,57 @@ paths:
         required: true
         schema:
           type: string
+  /v1/mail_suppressions:
+    get:
+      summary: Addresses that asked to stop automatic emails
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                        source:
+                          type: string
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/mail_suppressions/{email}:
+    delete:
+      summary: Send automatic emails to an address again
+      tags:
+      - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                  removed:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: email
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/invoices/{id}/send:
     post:
       summary: Email an invoice to its customer
@@ -2381,6 +2432,14 @@ paths:
                     type: boolean
                   invoice_emails:
                     type: boolean
+                  email_accent:
+                    type:
+                    - string
+                    - 'null'
+                  email_logo_url:
+                    type:
+                    - string
+                    - 'null'
                   risk: {}
                   webhook_events: {}
         4XX:
@@ -8236,6 +8295,10 @@ components:
           type: boolean
         invoice_emails:
           type: boolean
+        email_accent:
+          type: string
+        email_logo_url:
+          type: string
     GstProfile:
       type: object
       x-generated: true

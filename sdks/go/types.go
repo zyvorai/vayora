@@ -54,6 +54,11 @@ type DebitRow struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+type DeleteMailSuppressionsByEmailResponse struct {
+	Email   string `json:"email"`
+	Removed bool   `json:"removed"`
+}
+
 type DeleteOnboardingUploadsByIdResponse struct {
 	ID      string `json:"id"`
 	Deleted bool   `json:"deleted"`
@@ -438,6 +443,16 @@ type GetInvoicesResponseDataItem struct {
 	CustomerName     *string `json:"customer_name"`
 }
 
+type GetMailSuppressionsResponse struct {
+	Data []GetMailSuppressionsResponseDataItem `json:"data"`
+}
+
+type GetMailSuppressionsResponseDataItem struct {
+	Email     string `json:"email"`
+	Source    string `json:"source"`
+	CreatedAt any    `json:"created_at"`
+}
+
 type GetMandatesByIdDebitsResponse struct {
 	Data []DebitRow `json:"data"`
 }
@@ -733,6 +748,8 @@ type GetSettingsResponse struct {
 	ReplyToEmail                 *string `json:"reply_to_email"`
 	ReminderEmails               bool    `json:"reminder_emails"`
 	InvoiceEmails                bool    `json:"invoice_emails"`
+	EmailAccent                  *string `json:"email_accent"`
+	EmailLogoURL                 *string `json:"email_logo_url"`
 	Risk                         any     `json:"risk"`
 	WebhookEvents                any     `json:"webhook_events"`
 }

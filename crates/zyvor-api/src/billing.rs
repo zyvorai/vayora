@@ -407,6 +407,8 @@ pub async fn queue_invoice_email(
     conn: &mut PgConnection,
     tenant_id: &str,
     id: &str,
+    checkout_base: Option<&str>,
+    automatic: bool,
 ) -> Result<InvoiceMail, sqlx::Error> {
     refresh_invoice_status(conn, id).await?;
     #[allow(clippy::type_complexity)]
@@ -456,6 +458,24 @@ pub async fn queue_invoice_email(
                 .collect()
         })
         .unwrap_or_default();
+    // with a public checkout address the email carries a pay link for what is still owed
+    let pay_url = match checkout_base {
+        Some(base) => {
+            let token = crate::payment_links::ensure_invoice_link(
+                conn,
+                tenant_id,
+                id,
+                customer.as_deref(),
+                &currency,
+            )
+            .await?;
+            Some(format!(
+                "{}/pay/link/{tenant_id}/{token}",
+                base.trim_end_matches('/')
+            ))
+        }
+        None => None,
+    };
     let (subject, body) = crate::mail::invoice_notice(
         &merchant,
         &name,
@@ -465,14 +485,16 @@ pub async fn queue_invoice_email(
         (settled > 0).then(|| money(settled)).as_deref(),
         &money((amount - settled).max(0)),
         due,
+        pay_url.as_deref(),
     );
-    let fresh = crate::mail::enqueue_once(
+    let fresh = crate::mail::enqueue_once_as(
         conn,
         tenant_id,
         &format!("invoice_send:{id}:{}", crate::ist_today()),
         &email,
         &subject,
         &body,
+        automatic,
     )
     .await?;
     Ok(if fresh {
@@ -492,7 +514,15 @@ pub async fn send_invoice(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("payments:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    match queue_invoice_email(&mut tx, &auth.tenant_id, &id).await? {
+    match queue_invoice_email(
+        &mut tx,
+        &auth.tenant_id,
+        &id,
+        s.checkout_public_url.as_deref(),
+        false,
+    )
+    .await?
+    {
         InvoiceMail::Queued => {}
         InvoiceMail::Missing => return Err(ApiError::not_found("invoice")),
         InvoiceMail::NotOwed => {
@@ -642,6 +672,7 @@ pub async fn run_billing(
     tenant_id: &str,
     today: NaiveDate,
     mandate_notice_hours: i64,
+    checkout_base: Option<&str>,
 ) -> Result<usize, sqlx::Error> {
     let mut created = 0;
     // the business's choice to have each invoice emailed to its customer as billing raises it (never for a business
@@ -684,7 +715,8 @@ pub async fn run_billing(
                     tenant::emit(&mut *conn, tenant_id, "invoice.created", json!({ "id": inv, "subscription_id": sub_id, "amount_minor": total, "period_start": date })).await?;
                     created += 1;
                     if email_invoices {
-                        queue_invoice_email(&mut *conn, tenant_id, &inv).await?;
+                        queue_invoice_email(&mut *conn, tenant_id, &inv, checkout_base, true)
+                            .await?;
                     }
                     // a subscription with an active mandate collects its own invoices
                     crate::mandates::auto_collect(
@@ -800,7 +832,14 @@ pub async fn billing_run(
     auth.require("billing:write")?;
     let today = crate::run_date(&auth, body.and_then(|b| b.0.as_of))?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let n = run_billing(&mut tx, &auth.tenant_id, today, s.mandate_notice_hours).await?;
+    let n = run_billing(
+        &mut tx,
+        &auth.tenant_id,
+        today,
+        s.mandate_notice_hours,
+        s.checkout_public_url.as_deref(),
+    )
+    .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,

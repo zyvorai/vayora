@@ -38,6 +38,11 @@ DebitRow = TypedDict("DebitRow", {
     "created_at": "str",
 })
 
+DeleteMailSuppressionsByEmailResponse = TypedDict("DeleteMailSuppressionsByEmailResponse", {
+    "email": "str",
+    "removed": "bool",
+})
+
 DeleteOnboardingUploadsByIdResponse = TypedDict("DeleteOnboardingUploadsByIdResponse", {
     "id": "str",
     "deleted": "bool",
@@ -422,6 +427,16 @@ GetInvoicesResponseDataItem = TypedDict("GetInvoicesResponseDataItem", {
     "customer_name": "Optional[str]",
 })
 
+GetMailSuppressionsResponse = TypedDict("GetMailSuppressionsResponse", {
+    "data": "List[GetMailSuppressionsResponseDataItem]",
+})
+
+GetMailSuppressionsResponseDataItem = TypedDict("GetMailSuppressionsResponseDataItem", {
+    "email": "str",
+    "source": "str",
+    "created_at": "Any",
+})
+
 GetMandatesByIdDebitsResponse = TypedDict("GetMandatesByIdDebitsResponse", {
     "data": "List[DebitRow]",
 })
@@ -717,6 +732,8 @@ GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "reply_to_email": "Optional[str]",
     "reminder_emails": "bool",
     "invoice_emails": "bool",
+    "email_accent": "Optional[str]",
+    "email_logo_url": "Optional[str]",
     "risk": "Any",
     "webhook_events": "Any",
 })

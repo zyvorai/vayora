@@ -34,6 +34,11 @@ export interface DebitRow {
   created_at: string;
 }
 
+export interface DeleteMailSuppressionsByEmailResponse {
+  email: string;
+  removed: boolean;
+}
+
 export interface DeleteOnboardingUploadsByIdResponse {
   id: string;
   deleted: boolean;
@@ -418,6 +423,16 @@ export interface GetInvoicesResponseDataItem {
   customer_name: string | null;
 }
 
+export interface GetMailSuppressionsResponse {
+  data: GetMailSuppressionsResponseDataItem[];
+}
+
+export interface GetMailSuppressionsResponseDataItem {
+  email: string;
+  source: string;
+  created_at: unknown;
+}
+
 export interface GetMandatesByIdDebitsResponse {
   data: DebitRow[];
 }
@@ -713,6 +728,8 @@ export interface GetSettingsResponse {
   reply_to_email: string | null;
   reminder_emails: boolean;
   invoice_emails: boolean;
+  email_accent: string | null;
+  email_logo_url: string | null;
   risk: unknown;
   webhook_events: unknown;
 }
