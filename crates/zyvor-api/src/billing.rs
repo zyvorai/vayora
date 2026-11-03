@@ -590,12 +590,34 @@ pub async fn change_trial(
             .fetch_optional(&mut *tx)
             .await?;
     let (status, trial_ends) = row.ok_or_else(|| ApiError::not_found("subscription"))?;
-    let Some(was) = trial_ends.filter(|d| *d > today && status == "active") else {
+    let in_trial = trial_ends.filter(|d| *d > today && status == "active");
+    if status != "active" {
         return Err(ApiError::conflict(
             "not_in_trial",
-            "only an active subscription still in its free trial can have its trial changed",
+            "only an active subscription can have a free trial",
         ));
-    };
+    }
+    if in_trial.is_none() {
+        // a trial can be started only before anything has been billed: a subscriber who has paid already is not a new one
+        if b.ends_on <= today {
+            return Err(ApiError::invalid(
+                "invalid_trial",
+                "a trial must end on a day after today",
+            ));
+        }
+        let billed: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM invoices WHERE subscription_id = $1)")
+                .bind(&id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if billed {
+            return Err(ApiError::conflict(
+                "not_in_trial",
+                "a free trial can only be started on a subscription that has not been billed yet",
+            ));
+        }
+    }
+    let was = in_trial;
     sqlx::query("UPDATE subscriptions SET next_bill_date = $2, trial_ends_on = $2 WHERE id = $1")
         .bind(&id)
         .bind(b.ends_on)
