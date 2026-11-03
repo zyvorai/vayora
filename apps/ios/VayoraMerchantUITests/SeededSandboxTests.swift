@@ -94,4 +94,17 @@ final class SeededSandboxTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'do not add up'")).firstMatch.waitForExistence(timeout: 10), "the explanation warns that the figures do not balance")
         shot("seeded-case-settlement")
     }
+
+    /// Closing a case with a note, on the real server. It uses the case up, so a re-seed is needed before it can run again.
+    func testARealCaseCanBeResolvedWithANote() throws {
+        let resolve = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Resolve the' AND label ENDSWITH 'case'")).firstMatch
+        try XCTSkipUnless(resolve.waitForExistence(timeout: 12), "no open reconciliation case in this sandbox")
+        resolve.tap()
+        XCTAssertFalse(app.buttons["Mark resolved"].firstMatch.isEnabled, "a note is needed")
+        let note = app.textFields.element(boundBy: 0).exists ? app.textFields.element(boundBy: 0) : app.textViews.element(boundBy: 0)
+        note.tap(); note.typeText("Checked with the bank, fee confirmed")
+        app.buttons["Mark resolved"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Case resolved."].waitForExistence(timeout: 10))
+        shot("seeded-case-resolved")
+    }
 }
