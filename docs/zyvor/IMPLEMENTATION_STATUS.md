@@ -80,7 +80,18 @@ Run on 31 October 2026 against Cashfree's real **sandbox**, with the whole local
 
 **Person-to-person features (Pay only, phone-local).** Payees, send, split a bill (`vayora://request` QR), small payments without a PIN (up to ₹200 a payment and ₹1,000 a day, off by default) and bill reminders are recorded on the phone. The simulator knows only merchant payments, so none of this reaches Zyvor's ledger. The screens say so.
 
-**Not verified.** No simulator run (CoreSimulator was out of date on the build Macs), no XCUITest, no TestFlight, no CI job for iOS. Dynamic Type, VoiceOver, the iOS 26 glass cards, haptics, the no-PIN path and reminder notifications have not been checked on a device. Row-level security was not exercised in the phone runs (a superuser database role was used).
+**Merchant app, later work (2026-11-03).** The Merchant app now also covers: payment links; unpaid invoices by lateness with invoice emails and promises to pay; approvals for refunds and payouts, recording an approved payout as paid, retrying a failed refund; disputes (evidence note, outcome); reconciliation cases (assign, resolve, open the settlement behind one); a payment timeline; cashflow by week, settlements and why each paid what it did, a month of GST totals; subscriptions and the test clock; and a badge for what waits on the owner. The payer app gained a weekly "who you paid most" card.
+
+| What was checked | Evidence |
+|---|---|
+| Every new screen opens, takes input and shows the right result | UI tests on a Simulator in demo mode (`apps/ios/VayoraMerchantUITests`, `VayoraPayUITests`; 15 cases), with screenshots looked at |
+| The same screens against a real local test server | UI tests with a test key (15 cases in `SandboxTests`, `SeededSandboxTests`, `ApproverSandboxTests`; several skip when their rows are used up) over a sandbox seeded by `scripts/seed-sandbox-ios.sh`: invoices, a payment link made and cancelled, an invoice queued for email and a refusal shown, the test clock moved and reset, a settlement explained, a case assigned and closed, a payout approved by a second key and refused for the requester, a payout recorded paid |
+| Money logic | `VayoraKit` package tests (client requests and bodies, ordering, Indian-time months, loop and lock rules) |
+| Build and tests in CI | the `ios` job (package tests, both apps for the Simulator SDK) |
+
+Running the screens against a real server found and fixed: an approval call that the server answered with a 400 (an empty body with a JSON content type), a `?query` encoded into the path, messages hidden off-screen at the top of a scrolling list, an operator instruction shown to a merchant, duplicate VoiceOver labels, and a Face ID lock that locked again right after a successful unlock.
+
+**Not verified.** No TestFlight. The UI tests are run by hand, not in CI. Dynamic Type, VoiceOver, the iOS 26 glass cards, haptics, the camera, the no-PIN path, reminder notifications and a real face unlock have not been checked by a person on a device. The payer app has not been run against a server. A successful email to a real inbox, a payment link email (the sandbox has no public checkout address), GST figures for a month with real tax, and retrying a failed refund on a real server have not been tried. No push notifications, widgets or background refresh. Row-level security was not exercised in the phone runs (a superuser database role was used).
 
 ## UPI AutoPay mandates (level 1: implemented with the simulator)
 A mandate is the payer's one-time approval ("this merchant may debit up to ₹X, this often, until this date"); after it, the merchant schedules debits and each is announced in advance. Zyvor holds the agreement and the schedule; the provider (here the simulator) holds the mandate; a debit is an ordinary payment attempt.
