@@ -4,7 +4,7 @@ import { ChangePlan, EditPlan, RecordUsage, NewCustomer, NewInstalments, NewInvo
 import { ConfirmAct } from "@/components/ConfirmAct";
 import { Tabs } from "@/components/Tabs";
 import { TestClock } from "@/components/TestClock";
-import { cancelSubscription, completeMilestone, pauseSubscription, resumeSubscription, runBilling, setPlanActive, voidInvoice } from "@/lib/actions";
+import { cancelSubscription, completeMilestone, followPlanPrice, pauseSubscription, resumeSubscription, runBilling, setPlanActive, voidInvoice } from "@/lib/actions";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 
@@ -61,7 +61,8 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
             <thead><tr><th>Customer</th><th>Plan</th><th className="num">Qty</th><th>Next bill</th><th>Status</th><th /></tr></thead>
             <tbody>
               {subs.data.length === 0 && <tr><td colSpan={6} className="empty">No subscriptions yet. Create a plan on the Plans tab, then subscribe a customer to it above.</td></tr>}
-              {subs.data.map((s) => { const r = s; const p = plans.data.find((x) => x.id === r.plan_id); return <tr key={String(r.id)}><td>{who.get(String(r.customer_id)) ?? <span className="muted">—</span>}</td><td>{p ? String(p.name) : String(r.plan_id)}{r.unit_amount_minor != null && <div className="muted">Kept at {inr(Number(r.unit_amount_minor))}{p && Number(p.amount_minor) !== Number(r.unit_amount_minor) ? ` (plan is now ${inr(Number(p.amount_minor))})` : ""}</div>}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td><td style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+              {subs.data.map((s) => { const r = s; const p = plans.data.find((x) => x.id === r.plan_id); return <tr key={String(r.id)}><td>{who.get(String(r.customer_id)) ?? <span className="muted">—</span>}</td><td>{p ? String(p.name) : String(r.plan_id)}{r.unit_amount_minor != null && <div className="muted">Kept at {inr(Number(r.unit_amount_minor))}{p && Number(p.amount_minor) !== Number(r.unit_amount_minor) ? ` (plan is now ${inr(Number(p.amount_minor))})` : ""}</div>}
+                  {r.unit_amount_minor != null && p && ["active"].includes(String(r.status)) && <div style={{ marginTop: 6 }}><Act action={followPlanPrice} id={String(r.id)} extra={{ plan: String(r.plan_id) }} label={`Use ${inr(Number(p.amount_minor))} from the next invoice`} showOk /></div>}</td><td className="num">{r.quantity}</td><td>{String(r.next_bill_date)}</td><td><Chip status={String(r.status)} /></td><td style={{ display: "grid", gap: 8, justifyItems: "end" }}>
                 {r.status === "active" && <Act action={pauseSubscription} id={String(r.id)} label="Pause" />}
                 {r.status === "paused" && <Act action={resumeSubscription} id={String(r.id)} label="Resume" />}
                 {(r.status === "active" || r.status === "paused") && <>

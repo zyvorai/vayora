@@ -8063,6 +8063,8 @@ components:
         quantity:
           type: integer
           format: int32
+        follow_plan_price:
+          type: boolean
       required:
       - plan_id
     CsvBody:

@@ -192,10 +192,18 @@ func (c *Client) Subscribe(customerID, planID string, quantity int, startDate st
 	return out, err
 }
 
-// ChangePlan upgrades are prorated for the rest of the period; downgrades apply from the next invoice.
-func (c *Client) ChangePlan(subscriptionID, planID string) (map[string]any, error) {
+// ChangePlan upgrades are prorated for the rest of the period; downgrades apply from the next invoice. Optional
+// keys in opts: quantity, and follow_plan_price (true, same plan: end a kept price, the plan's current price
+// applies from the next invoice).
+func (c *Client) ChangePlan(subscriptionID, planID string, opts ...map[string]any) (map[string]any, error) {
+	body := map[string]any{"plan_id": planID}
+	for _, o := range opts {
+		for k, v := range o {
+			body[k] = v
+		}
+	}
 	var out map[string]any
-	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/change_plan", map[string]any{"plan_id": planID}, "", &out)
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/change_plan", body, "", &out)
 	return out, err
 }
 

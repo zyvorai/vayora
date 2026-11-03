@@ -16499,3 +16499,83 @@ async fn existing_subscribers_can_be_kept_on_the_old_price(pool: PgPool) {
         .unwrap();
     assert!(e["unit_amount_minor"].is_null());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_kept_price_can_be_ended_without_changing_plan(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let c = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Loyal Payer" }),
+        )
+        .await;
+    let plan = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Std", "amount_minor": 10_000, "interval_unit": "month" }),
+        )
+        .await;
+    let other = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Other", "amount_minor": 20_000, "interval_unit": "month" }),
+        )
+        .await;
+    let pid = plan["id"].as_str().unwrap();
+    let sub = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": c["id"], "plan_id": pid }),
+        )
+        .await;
+    let sid = sub["id"].as_str().unwrap();
+    t.ok(
+        a,
+        "PATCH",
+        &format!("/v1/plans/{pid}"),
+        None,
+        json!({ "amount_minor": 12_500, "keep_existing": true }),
+    )
+    .await;
+    let path = format!("/v1/subscriptions/{sid}/change_plan");
+    // it only makes sense on the same plan
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "plan_id": other["id"], "follow_plan_price": true }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    // ending the lock charges nothing now and the plan's price applies from the next invoice
+    let r = t
+        .ok(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "plan_id": pid, "follow_plan_price": true }),
+        )
+        .await;
+    assert_eq!(r["proration_minor"], 0);
+    let subs = t.ok(a, "GET", "/v1/subscriptions", None, Value::Null).await;
+    assert!(subs["data"][0]["unit_amount_minor"].is_null());
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    let invoices = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    assert_eq!(invoices["data"][0]["amount_minor"], 12_500);
+}
