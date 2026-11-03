@@ -113,4 +113,17 @@ final class SandboxTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Payment of' AND label ENDSWITH 'created'")).firstMatch.waitForExistence(timeout: 5), "the first event, from the server")
         shot("sandbox-timeline")
     }
+
+    /// Needs a settlement (the seed script imports one); skipped without it. The explanation is the real server's.
+    func testASettlementIsExplainedByTheRealServer() throws {
+        app.tabBars.buttons["Payments"].tap()
+        app.buttons["Cashflow"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Gross'")).firstMatch
+        try XCTSkipUnless(row.waitForExistence(timeout: 10), "no settlement in this sandbox")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["This settlement"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'in fees and taxes'")).firstMatch.waitForExistence(timeout: 10), "the server's own sentence")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'than expected' OR label CONTAINS 'Matches what was expected'")).firstMatch.exists)
+        shot("sandbox-settlement-explained")
+    }
 }

@@ -443,3 +443,24 @@ final class TimelineTests: XCTestCase {
         XCTAssertEqual(t.standing, "Paid.")
     }
 }
+
+final class SettlementExplainTests: XCTestCase {
+    func testExplanationDecodesAndSaysThingsPlainly() async throws {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        let c = VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+        nonisolated(unsafe) var path = ""
+        StubProtocol.handler = { r in path = r.url!.path; return (200, #"{"settlement":{"id":"stl_1"},"payments":[{"matched":true},{"matched":false}],"refunds":[],"adjustments":[],"fees":{"observed_minor":3000},"arithmetic":{"balances":false,"gross_minor":1},"expected_minor":100000,"received_minor":97000,"difference_minor":-3000,"difference_breakdown":[{"reason":"provider fees and taxes (no fee schedule configured)","amount_minor":-3000}],"bank_match":{"posted_on":"2026-11-03"},"cases":[{"id":"c1","kind":"short_settlement","status":"open","explanation":"x","assignee":null}],"narrative":"Cashfree paid ₹970.00."}"#) }
+        let e = try await c.explainSettlement(id: "stl_1")
+        XCTAssertEqual(path, "/v1/settlements/stl_1/explain")
+        XCTAssertEqual(e.verdict, "\(Money(minor: 3000).display) less than expected.")
+        XCTAssertEqual([e.paymentsMatched, e.paymentsUnmatched], [1, 1]); XCTAssertFalse(e.balances); XCTAssertTrue(e.matchedBank)
+        XCTAssertEqual(e.breakdown.first?.amountMinor, -3000); XCTAssertEqual(e.cases.first?.kind, "short_settlement")
+        StubProtocol.handler = { _ in (200, #"{"payments":[],"cases":[],"bank_match":null,"arithmetic":{"balances":true},"expected_minor":5,"received_minor":5,"difference_minor":0,"difference_breakdown":[],"narrative":"ok"}"#) }
+        let same = try await c.explainSettlement(id: "x")
+        XCTAssertEqual(same.verdict, "Matches what was expected."); XCTAssertFalse(same.matchedBank)
+        XCTAssertEqual(SettlementExplanation(narrative: "n", expectedMinor: 100, receivedMinor: 150).verdict, "\(Money(minor: 50).display) more than expected.")
+        let demo = try await VayoraClient.demo(bank: DemoBank()).explainSettlement(id: "st_demo1")
+        XCTAssertEqual(demo.differenceMinor, -30000); XCTAssertEqual(demo.breakdown.count, 2)
+    }
+}

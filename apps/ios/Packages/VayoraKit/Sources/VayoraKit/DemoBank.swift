@@ -175,6 +175,12 @@ public final class DemoBank: @unchecked Sendable {
             return Self.ok(["note": "GSTR-1 style summary to prepare a return from; Zyvor does not file it", "period": Self.query("x://x?" + (query ?? ""))["period"] ?? "", "gstin": "29ABCDE1234F1Z5",
                             "b2b": [["buyer_gstin": "27ABCDE1234F1Z5", "invoices": [["number": "INV-1001"], ["number": "INV-1002"]]]], "b2cs": [], "cdnr": [["note_id": "cn_1"]], "cdnur": [], "hsn": [],
                             "totals": ["taxable_minor": 1_000_000, "cgst_minor": 90_000, "sgst_minor": 90_000, "igst_minor": 0]])
+        case ("GET", 3, "settlements") where s[2] == "explain":
+            guard s[1] == "st_demo1" else { return Self.err(404, "not_found", "No such settlement") }
+            return Self.ok(["settlement": ["id": "st_demo1"], "payments": [["matched": true], ["matched": true]], "cases": [], "bank_match": NSNull(),
+                            "arithmetic": ["balances": true], "expected_minor": 493200, "received_minor": 463200, "difference_minor": -30000,
+                            "difference_breakdown": [["reason": "provider fees and taxes (no fee schedule configured)", "amount_minor": -11800], ["reason": "settlement adjustments", "amount_minor": -18200]],
+                            "narrative": "Demo paid ₹4,632.00 on 2026-11-02: 2 payments worth ₹5,000.00, less ₹250.00 of refunds. It deducted ₹118.00 in fees and taxes (2.36% of payment value)."])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):
