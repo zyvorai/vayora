@@ -1865,13 +1865,16 @@ pub async fn pending_changes(pool: &PgPool) -> i64 {
 
 /// Is this tenant a live one whose organisation has had live mode taken away? Such a tenant can read and
 /// refund, but cannot take new payments, move money out, or change anything else (see `Auth`).
-pub async fn live_frozen(pool: &PgPool, tenant_id: &str) -> Result<bool, sqlx::Error> {
+pub async fn live_frozen<'e>(
+    exec: impl sqlx::PgExecutor<'e>,
+    tenant_id: &str,
+) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM tenants t JOIN live_access l ON l.organisation_id = t.organisation_id
          WHERE t.id = $1 AND t.env = 'live' AND l.status = 'revoked')",
     )
     .bind(tenant_id)
-    .fetch_one(pool)
+    .fetch_one(exec)
     .await
 }
 

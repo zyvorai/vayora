@@ -17264,3 +17264,148 @@ async fn an_invoice_can_be_emailed_to_its_customer(pool: PgPool) {
         .await;
     assert_eq!(st.as_u16(), 404);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn invoices_are_emailed_as_billing_raises_them_only_when_asked(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let mail = || t.count("SELECT count(*) FROM mail_queue WHERE subject LIKE 'Invoice %'");
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["invoice_emails"],
+        false
+    );
+    let with_email = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let without = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "No Mail" }),
+        )
+        .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 50_000, "interval_unit": "day", "interval_count": 30 }))
+        .await;
+    let body = |c: &Value, start: chrono::NaiveDate| json!({ "customer_id": c["id"], "plan_id": plan["id"], "start_date": start.to_string() });
+    // off by default: billing raises the invoice and nobody is emailed
+    t.ok(
+        a,
+        "POST",
+        "/v1/subscriptions",
+        None,
+        body(&with_email, today),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        1
+    );
+    assert_eq!(mail().await, 0);
+    // switched on: the next invoices go out, to the customer who has an address only
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "invoice_emails": true }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "GET", "/v1/settings", None, Value::Null).await["invoice_emails"],
+        true
+    );
+    let day2 = today + chrono::Duration::days(1);
+    t.ok(
+        a,
+        "POST",
+        "/v1/subscriptions",
+        None,
+        body(&with_email, day2),
+    )
+    .await;
+    t.ok(a, "POST", "/v1/subscriptions", None, body(&without, day2))
+        .await;
+    assert_eq!(
+        t.ok(
+            a,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": day2.to_string() })
+        )
+        .await["invoices_created"],
+        2
+    );
+    assert_eq!(mail().await, 1);
+    let (to, subject): (String, String) =
+        sqlx::query_as("SELECT to_email, subject FROM mail_queue WHERE subject LIKE 'Invoice %'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert_eq!(to, "asha@example.com");
+    assert!(subject.contains("₹500.00"), "{subject}");
+    // the person's Email button that same day finds it already sent
+    let inv = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let id = inv["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| {
+            i["customer_name"] == "Asha Rao"
+                && i["number"].as_str().unwrap().ends_with(&day2.to_string())
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (st, v) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/invoices/{id}/send"),
+            None,
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        (st.as_u16(), v["error"]["code"].as_str()),
+        (409, Some("already_sent_today"))
+    );
+    // switched off again: the next one is silent
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "invoice_emails": false }),
+    )
+    .await;
+    let day3 = today + chrono::Duration::days(2);
+    t.ok(
+        a,
+        "POST",
+        "/v1/subscriptions",
+        None,
+        body(&with_email, day3),
+    )
+    .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": day3.to_string() }),
+    )
+    .await;
+    assert_eq!(mail().await, 1);
+}

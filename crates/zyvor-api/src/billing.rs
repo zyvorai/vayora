@@ -389,49 +389,51 @@ pub async fn cancel_subscription(
     set_status(&s, &auth, &id, &["active", "paused"], "canceled").await
 }
 
-/// `POST /v1/invoices/{id}/send`: email an invoice to its customer: what it is made of, what is still owed and by
-/// when. A person's action, not a setting: the invoice must still be owed (not paid or void) and its customer must
-/// have an email address. Once per invoice per day (a second try that day is a 409).
-pub async fn send_invoice(
-    State(s): State<AppState>,
-    auth: Auth,
-    Path(id): Path<String>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth.require("payments:write")?;
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    crate::payments::refresh_invoice_status(&mut tx, &id).await?;
+/// What queueing an invoice email came to.
+pub enum InvoiceMail {
+    Queued,
+    /// Already emailed today.
+    AlreadySent,
+    /// Paid or void: nothing is owed.
+    NotOwed,
+    /// The invoice has no customer with an email address.
+    NoEmail,
+    Missing,
+}
+
+/// Queue an invoice to its customer: what it is made of, what is still owed and by when. Once per invoice per day.
+/// Used by the person's Email button and by billing when the business turned invoice emails on.
+pub async fn queue_invoice_email(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    id: &str,
+) -> Result<InvoiceMail, sqlx::Error> {
+    refresh_invoice_status(conn, id).await?;
     #[allow(clippy::type_complexity)]
     let row: Option<(String, String, i64, String, Option<NaiveDate>, Option<String>, Option<Value>, i64)> = sqlx::query_as(
         "SELECT number, currency, amount_minor, status, due_date, customer_id, details, invoice_settled(id) FROM invoices WHERE id = $1",
     )
-    .bind(&id)
-    .fetch_optional(&mut *tx)
+    .bind(id)
+    .fetch_optional(&mut *conn)
     .await?;
-    let (number, currency, amount, status, due, customer, details, settled) =
-        row.ok_or_else(|| ApiError::not_found("invoice"))?;
+    let Some((number, currency, amount, status, due, customer, details, settled)) = row else {
+        return Ok(InvoiceMail::Missing);
+    };
     if matches!(status.as_str(), "paid" | "void") {
-        return Err(ApiError::conflict(
-            "invoice_not_owed",
-            "this invoice is paid or void, so there is nothing to ask for",
-        ));
+        return Ok(InvoiceMail::NotOwed);
     }
     let who: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT name, email FROM customers WHERE id = $1")
             .bind(customer.as_deref())
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut *conn)
             .await?;
     let (name, email) = match who {
         Some((n, Some(e))) if e.contains('@') => (n, e),
-        _ => {
-            return Err(ApiError::conflict(
-                "no_customer_email",
-                "this invoice has no customer with an email address",
-            ));
-        }
+        _ => return Ok(InvoiceMail::NoEmail),
     };
     let merchant: String = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
-        .bind(&auth.tenant_id)
-        .fetch_optional(&mut *tx)
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
         .await?
         .unwrap_or_else(|| "the business".into());
     let money = |m: i64| crate::ai::money(m, &currency);
@@ -465,19 +467,52 @@ pub async fn send_invoice(
         due,
     );
     let fresh = crate::mail::enqueue_once(
-        &mut tx,
-        &auth.tenant_id,
+        conn,
+        tenant_id,
         &format!("invoice_send:{id}:{}", crate::ist_today()),
         &email,
         &subject,
         &body,
     )
     .await?;
-    if !fresh {
-        return Err(ApiError::conflict(
-            "already_sent_today",
-            "this invoice was already emailed today",
-        ));
+    Ok(if fresh {
+        InvoiceMail::Queued
+    } else {
+        InvoiceMail::AlreadySent
+    })
+}
+
+/// `POST /v1/invoices/{id}/send`: email an invoice to its customer: what it is made of, what is still owed and by
+/// when. A person's action, not a setting: the invoice must still be owed (not paid or void) and its customer must
+/// have an email address. Once per invoice per day (a second try that day is a 409).
+pub async fn send_invoice(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth.require("payments:write")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    match queue_invoice_email(&mut tx, &auth.tenant_id, &id).await? {
+        InvoiceMail::Queued => {}
+        InvoiceMail::Missing => return Err(ApiError::not_found("invoice")),
+        InvoiceMail::NotOwed => {
+            return Err(ApiError::conflict(
+                "invoice_not_owed",
+                "this invoice is paid or void, so there is nothing to ask for",
+            ));
+        }
+        InvoiceMail::NoEmail => {
+            return Err(ApiError::conflict(
+                "no_customer_email",
+                "this invoice has no customer with an email address",
+            ));
+        }
+        InvoiceMail::AlreadySent => {
+            return Err(ApiError::conflict(
+                "already_sent_today",
+                "this invoice was already emailed today",
+            ));
+        }
     }
     tenant::audit(
         &mut tx,
@@ -485,7 +520,7 @@ pub async fn send_invoice(
         &auth.actor,
         "invoice.sent",
         Some(&id),
-        json!({ "customer_id": customer }),
+        json!({}),
     )
     .await?;
     tx.commit().await?;
@@ -609,6 +644,15 @@ pub async fn run_billing(
     mandate_notice_hours: i64,
 ) -> Result<usize, sqlx::Error> {
     let mut created = 0;
+    // the business's choice to have each invoice emailed to its customer as billing raises it (never for a business
+    // whose live mode was taken away)
+    let email_invoices: bool =
+        sqlx::query_scalar("SELECT invoice_emails FROM tenant_settings WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .unwrap_or(false)
+            && !crate::platform::live_frozen(&mut *conn, tenant_id).await?;
     let due: Vec<(String, String, i32, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date, unit_amount_minor FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
         .bind(today).fetch_all(&mut *conn).await?;
     for (sub_id, plan_id, qty, mut date, locked) in due {
@@ -639,6 +683,9 @@ pub async fn run_billing(
                     sqlx::query("UPDATE usage_records SET billed_invoice_id = $2 WHERE subscription_id = $1 AND billed_invoice_id IS NULL AND waived_on IS NULL").bind(&sub_id).bind(&inv).execute(&mut *conn).await?;
                     tenant::emit(&mut *conn, tenant_id, "invoice.created", json!({ "id": inv, "subscription_id": sub_id, "amount_minor": total, "period_start": date })).await?;
                     created += 1;
+                    if email_invoices {
+                        queue_invoice_email(&mut *conn, tenant_id, &inv).await?;
+                    }
                     // a subscription with an active mandate collects its own invoices
                     crate::mandates::auto_collect(
                         &mut *conn,

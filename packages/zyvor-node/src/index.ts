@@ -79,6 +79,8 @@ export interface Settings {
   reply_to_email: string | null;
   /** Email payment reminders whose channel is email to the customer; off by default. */
   reminder_emails: boolean;
+  /** Email each subscription invoice to its customer when billing raises it; off by default. */
+  invoice_emails: boolean;
   outbound_webhook_url: string | null;
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
@@ -98,6 +100,7 @@ export interface SettingsPatch {
   /** One plain email address; an empty string clears it. */
   reply_to_email?: string;
   reminder_emails?: boolean;
+  invoice_emails?: boolean;
   outbound_webhook_url?: string;
   outbound_webhook_secret?: string;
   webhook_events?: string[];

@@ -19,7 +19,7 @@ export default async function Settings() {
       <div className="head"><div><h1>Settings</h1><p className="lede">How reminders, approvals, tax and webhooks behave for this {s.env} environment.</p></div></div>
       <nav aria-label="On this page" style={{ marginBottom: 20 }}>
         <div className="seg">
-          {[["Collections", "Collections"], ["Receipts, reminders and replies", "Emails"], ["Approvals", "Approvals"], ["Risk limits", "Risk"], ["GST", "GST"], ["Exchange rate", "Exchange rate"], ["Webhooks", "Webhooks"], ...(s.env === "test" ? [["Test data", "Test data"]] : [])].map(([title, label]) => <a key={title} href={`#${slug(title)}`}>{label}</a>)}
+          {[["Collections", "Collections"], ["Receipts, invoices, reminders and replies", "Emails"], ["Approvals", "Approvals"], ["Risk limits", "Risk"], ["GST", "GST"], ["Exchange rate", "Exchange rate"], ["Webhooks", "Webhooks"], ...(s.env === "test" ? [["Test data", "Test data"]] : [])].map(([title, label]) => <a key={title} href={`#${slug(title)}`}>{label}</a>)}
         </div>
       </nav>
 
@@ -33,9 +33,10 @@ export default async function Settings() {
         <label className="field">Days between reminders<input name="repeat_days" type="number" min={0} max={365} defaultValue={s.dunning.repeat_after_days} /></label>
       </SettingsForm>
 
-      <SettingsForm title="Receipts, reminders and replies" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up. When a payer replies to a receipt or a payment-link email, the reply goes to the address below instead of to Zyvor." action={saveReceipts}>
+      <SettingsForm title="Receipts, invoices, reminders and replies" hint="Email the payer a receipt when their payment is captured, and another when a refund goes through. It goes to the email address on the customer, so a payment with no customer, or a customer with no email, sends nothing. Needs outgoing mail to be set up. When a payer replies to a receipt or a payment-link email, the reply goes to the address below instead of to Zyvor." action={saveReceipts}>
         <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment and refund receipts</label>
         <label className="field checkbox"><input type="checkbox" name="reminders" defaultChecked={s.reminder_emails} /> <span>Email payment reminders<small className="muted" style={{ display: "block" }}>Only reminders on the email channel. Leave off if your own system already sends them.</small></span></label>
+        <label className="field checkbox"><input type="checkbox" name="invoices" defaultChecked={s.invoice_emails} /> <span>Email invoices when billing raises them<small className="muted" style={{ display: "block" }}>Each subscription invoice goes to its customer, with what it is made of and the amount due. A customer with no email gets nothing. You can also email any invoice by hand from Billing.</small></span></label>
         <label className="field">Replies go to<input name="reply_to" type="email" maxLength={200} placeholder="accounts@yourbusiness.example" defaultValue={s.reply_to_email ?? ""} /></label>
       </SettingsForm>
 

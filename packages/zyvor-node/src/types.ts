@@ -712,6 +712,7 @@ export interface GetSettingsResponse {
   payment_receipts: boolean;
   reply_to_email: string | null;
   reminder_emails: boolean;
+  invoice_emails: boolean;
   risk: unknown;
   webhook_events: unknown;
 }
