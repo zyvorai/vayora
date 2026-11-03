@@ -222,6 +222,44 @@ pub async fn cancel_link(
     Ok(Json(json!({ "id": id, "status": "canceled" })))
 }
 
+/// The token of an active payment link for an invoice (what is still owed on it), made on the spot when there is none:
+/// what an emailed invoice's "Pay now" button points at. An existing link that is still usable is reused, so
+/// every email for the invoice carries the same address.
+pub async fn ensure_invoice_link(
+    conn: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    invoice_id: &str,
+    customer_id: Option<&str>,
+    currency: &str,
+) -> Result<String, sqlx::Error> {
+    let existing: Option<String> = sqlx::query_scalar(
+        "SELECT token FROM payment_links WHERE invoice_id = $1 AND canceled_at IS NULL
+           AND (expires_at IS NULL OR expires_at > now()) AND (max_uses IS NULL OR uses < max_uses)
+         ORDER BY created_at LIMIT 1",
+    )
+    .bind(invoice_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if let Some(t) = existing {
+        return Ok(t);
+    }
+    let token = format!(
+        "plink_{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    sqlx::query("INSERT INTO payment_links (id, tenant_id, token, currency, invoice_id, customer_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, 'system:invoice_email')")
+        .bind(new_id("plk"))
+        .bind(tenant_id)
+        .bind(&token)
+        .bind(currency)
+        .bind(invoice_id)
+        .bind(customer_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(token)
+}
+
 /// `POST /v1/payment_links/{id}/send`: email the link to the customer it was made for. A person's action, not a
 /// setting: it needs an active link, a customer with an email address and `ZYVOR_CHECKOUT_PUBLIC_URL`, and goes
 /// once per link per day (a second try that day is a 409).
@@ -365,13 +403,14 @@ pub async fn remind_expiring(
             ),
             exp.with_timezone(&ist).date_naive(),
         );
-        if crate::mail::enqueue_once(
+        if crate::mail::enqueue_once_as(
             conn,
             tenant_id,
             &format!("link_expiry:{id}"),
             &email,
             &subject,
             &body,
+            true,
         )
         .await?
         {

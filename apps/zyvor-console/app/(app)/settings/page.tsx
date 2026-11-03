@@ -1,7 +1,8 @@
+import { Act } from "@/components/Act";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
 import { slug } from "@/lib/labels";
-import { resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
+import { removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -11,7 +12,7 @@ export default async function Settings() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
   const z = await api();
-  const [s, cat, fx] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates()]);
+  const [s, cat, fx, stopped] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates(), z.mailSuppressions.list()]);
   const all = s.webhook_events.includes("*");
   const chosen = (t: string) => s.webhook_events.some((p) => p === t || (p.endsWith(".*") && t.startsWith(p.slice(0, -1))));
   return (
@@ -37,8 +38,19 @@ export default async function Settings() {
         <label className="field checkbox"><input type="checkbox" name="receipts" defaultChecked={s.payment_receipts} /> Email payment and refund receipts</label>
         <label className="field checkbox"><input type="checkbox" name="reminders" defaultChecked={s.reminder_emails} /> <span>Email payment reminders<small className="muted" style={{ display: "block" }}>Only reminders on the email channel. Leave off if your own system already sends them.</small></span></label>
         <label className="field checkbox"><input type="checkbox" name="invoices" defaultChecked={s.invoice_emails} /> <span>Email invoices when billing raises them<small className="muted" style={{ display: "block" }}>Each subscription invoice goes to its customer, with what it is made of and the amount due. A customer with no email gets nothing. You can also email any invoice by hand from Billing.</small></span></label>
-        <label className="field">Replies go to<input name="reply_to" type="email" maxLength={200} placeholder="accounts@yourbusiness.example" defaultValue={s.reply_to_email ?? ""} /></label>
+        <label className="field" style={{ alignSelf: "start" }}>Replies go to<input name="reply_to" type="email" maxLength={200} placeholder="accounts@yourbusiness.example" defaultValue={s.reply_to_email ?? ""} /></label>
+        <label className="field" style={{ alignSelf: "start" }}>Email colour<input name="accent" maxLength={7} placeholder="#0071e3" spellCheck={false} defaultValue={s.email_accent ?? ""} /><small className="muted">For the Pay now button and the top edge of your emails. Empty is the default blue.</small></label>
+        <label className="field" style={{ alignSelf: "start" }}>Logo address<input name="logo" type="url" maxLength={300} placeholder="https://yourbusiness.example/logo.png" defaultValue={s.email_logo_url ?? ""} /><small className="muted">Shown beside your name at the top. It is loaded from your site when the email is opened.</small></label>
       </SettingsForm>
+      {stopped.data.length > 0 && (
+        <section id="stopped-emails" className="card" style={{ marginBottom: 16, maxWidth: 720, scrollMarginTop: 72 }}>
+          <h2 style={{ margin: 0 }}>Stopped emails</h2>
+          <p className="muted" style={{ margin: "4px 0 12px" }}>These customers used the unsubscribe link, so invoices raised by billing and payment reminders are no longer emailed to them. Receipts still go, and you can still email an invoice by hand.</p>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+            {stopped.data.map((x) => <li key={x.email} style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}><span>{x.email} <span className="muted">· {new Date(String(x.created_at)).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span></span><Act action={removeSuppression} label="Send again" extra={{ email: x.email }} /></li>)}
+          </ul>
+        </section>
+      )}
 
       <SettingsForm title="Approvals" hint="Amounts above these need a second person. Set payouts to 0 to require one for every payout." action={saveApprovals}>
         <label className="field">Refunds above (₹)<input name="refund" inputMode="decimal" defaultValue={major(s.refund_approval_threshold_minor)} /></label>

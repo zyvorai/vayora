@@ -110,6 +110,10 @@ spec:
             - { name: ZYVOR_SMTP_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: smtp-url, optional: true } } }
             - { name: ZYVOR_MAIL_FROM, valueFrom: { secretKeyRef: { name: zyvor-mail, key: from, optional: true } } }
             - { name: ZYVOR_CONSOLE_PUBLIC_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: console-url, optional: true } } }
+            # Unsubscribe link in automatic mail (invoices raised by billing, reminders): needs both of these keys in
+            # `zyvor-mail`: public-api-url (where payers reach this API) and unsubscribe-secret (16+ characters).
+            - { name: ZYVOR_PUBLIC_API_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: public-api-url, optional: true } } }
+            - { name: ZYVOR_UNSUBSCRIBE_SECRET, valueFrom: { secretKeyRef: { name: zyvor-mail, key: unsubscribe-secret, optional: true } } }
             # Identity and bank checks (docs/zyvor/KYC_CASHFREE.md): all optional; with no secret `zyvor-kyc` nothing is checked
             # and a person reviews every submission. Secret keys: provider (`cashfree`), env (`sandbox` or `production`),
             # client-id, client-secret.
@@ -152,9 +156,13 @@ spec:
             - { name: ZYVOR_MASTER_KEY, valueFrom: { secretKeyRef: { name: zyvor-secrets, key: master-key } } }
             # SANDBOX: the simulated providers and webhook sinks live on private cluster addresses
             - { name: ZYVOR_ALLOW_PRIVATE_TARGETS, value: "1" }
-            # Email: the worker is what actually sends it. Same optional secret as the API.
+            # Email: the worker is what actually sends it. Same optional secret as the API. It also needs the checkout
+            # address (the pay link in invoice emails and payment-link expiry reminders) and the unsubscribe settings.
             - { name: ZYVOR_SMTP_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: smtp-url, optional: true } } }
             - { name: ZYVOR_MAIL_FROM, valueFrom: { secretKeyRef: { name: zyvor-mail, key: from, optional: true } } }
+            - { name: ZYVOR_CHECKOUT_PUBLIC_URL, value: "https://pay.80-79-5-173.sslip.io" }
+            - { name: ZYVOR_PUBLIC_API_URL, valueFrom: { secretKeyRef: { name: zyvor-mail, key: public-api-url, optional: true } } }
+            - { name: ZYVOR_UNSUBSCRIBE_SECRET, valueFrom: { secretKeyRef: { name: zyvor-mail, key: unsubscribe-secret, optional: true } } }
           resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 ---

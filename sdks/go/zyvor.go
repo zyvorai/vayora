@@ -1607,6 +1607,16 @@ func (c *Client) RefundAnomalies() (map[string]any, error) {
 	return c.call("GET", path, nil)
 }
 
+// MailSuppressions lists the addresses that asked (through the unsubscribe link) to stop automatic emails.
+func (c *Client) MailSuppressions() (map[string]any, error) {
+	return c.call("GET", "/v1/mail_suppressions", nil)
+}
+
+// RemoveMailSuppression sends automatic emails to the address again.
+func (c *Client) RemoveMailSuppression(email string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/mail_suppressions/"+url.PathEscape(email), nil)
+}
+
 // ResetTestData clears a test environment's payments, invoices, customers and ledger, keeping its setup. Refused in live.
 func (c *Client) ResetTestData() (map[string]any, error) {
 	return c.call("POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"})

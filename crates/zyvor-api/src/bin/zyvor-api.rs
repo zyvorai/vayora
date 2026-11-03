@@ -188,9 +188,7 @@ async fn main() {
         state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));
     }
     state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
-    state.checkout_public_url = env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
-        .ok()
-        .filter(|u| u.starts_with("http"));
+    state.mail_links_from_env();
     state.sim_payer = env::var("ZYVOR_SIM_PAYER").as_deref() == Ok("1");
     state.doc_reader = zyvor_api::docread::DocReader::from_env();
     if state.doc_reader.available() {

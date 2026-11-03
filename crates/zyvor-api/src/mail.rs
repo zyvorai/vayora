@@ -9,12 +9,47 @@ use std::time::Duration;
 
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{MultiPart, header::ContentType},
+    message::{
+        MultiPart,
+        header::{ContentType, Header, HeaderName, HeaderValue},
+    },
 };
 use sqlx::PgPool;
 use zyvor_core::new_id;
 
 use crate::AppState;
+
+/// `List-Unsubscribe: <url>`: the button mail programs show next to automatic mail.
+#[derive(Clone)]
+struct ListUnsubscribe(String);
+
+impl Header for ListUnsubscribe {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("List-Unsubscribe")
+    }
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self(s.to_string()))
+    }
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
+/// `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058): lets the program unsubscribe with one request.
+#[derive(Clone)]
+struct ListUnsubscribePost;
+
+impl Header for ListUnsubscribePost {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("List-Unsubscribe-Post")
+    }
+    fn parse(_: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self)
+    }
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), "List-Unsubscribe=One-Click".to_string())
+    }
+}
 
 #[derive(Clone)]
 pub enum Mailer {
@@ -70,10 +105,12 @@ impl Mailer {
         reply_to: Option<&str>,
         html: Option<&str>,
     ) -> Result<(), String> {
-        self.send_as(None, to, subject, body, reply_to, html).await
+        self.send_as(None, to, subject, body, reply_to, html, None)
+            .await
     }
 
     /// Like `send`, with the display name the payer sees on the From line (the address stays the configured one).
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_as(
         &self,
         from_name: Option<&str>,
@@ -82,6 +119,7 @@ impl Mailer {
         body: &str,
         reply_to: Option<&str>,
         html: Option<&str>,
+        unsubscribe: Option<&str>,
     ) -> Result<(), String> {
         match self {
             Mailer::Log => {
@@ -94,7 +132,7 @@ impl Mailer {
                     Some(n) => with_display_name(&s.from, n)?,
                     None => s.from.clone(),
                 };
-                let msg = build_message(&from, to, subject, body, reply_to, html)?;
+                let msg = build_message(&from, to, subject, body, reply_to, html, unsubscribe)?;
                 s.transport
                     .send(msg)
                     .await
@@ -114,11 +152,17 @@ fn build_message(
     body: &str,
     reply_to: Option<&str>,
     html: Option<&str>,
+    unsubscribe: Option<&str>,
 ) -> Result<Message, String> {
     let mut b = Message::builder()
         .from(from.parse().map_err(|e| format!("from: {e}"))?)
         .to(to.parse().map_err(|e| format!("to: {e}"))?)
         .subject(subject);
+    if let Some(u) = unsubscribe {
+        b = b
+            .header(ListUnsubscribe(format!("<{u}>")))
+            .header(ListUnsubscribePost);
+    }
     if let Some(r) = reply_to {
         b = b.reply_to(r.parse().map_err(|e| format!("reply-to: {e}"))?);
     }
@@ -152,13 +196,82 @@ fn esc(s: &str) -> String {
 /// address stays text); the last paragraph is the small print. Everything is escaped, and there is no image,
 /// script or tracking pixel.
 pub fn html_from_text(body: &str) -> String {
+    html_from_text_branded(body, None)
+}
+
+/// How a business's emails look: its name in the card's header, an accent colour for the button and the card's top
+/// edge, and a logo beside the name.
+pub struct Brand {
+    pub name: String,
+    /// `#rrggbb`.
+    pub accent: Option<String>,
+    /// An `https://` address.
+    pub logo_url: Option<String>,
+}
+
+/// A `#rrggbb` colour as typed: trimmed, six hex digits, lower-cased.
+pub fn clean_accent(raw: &str) -> Option<String> {
+    let r = raw.trim();
+    (r.len() == 7 && r.starts_with('#') && r[1..].chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| r.to_ascii_lowercase())
+}
+
+/// A logo address as typed: trimmed, `https://`, plain and short.
+pub fn clean_logo_url(raw: &str) -> Option<String> {
+    let r = raw.trim();
+    (r.len() <= 300
+        && r.starts_with("https://")
+        && r.len() > 8
+        && !r.contains(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"')))
+    .then(|| r.to_string())
+}
+
+/// White or near-black, whichever reads better on `#rrggbb`.
+fn text_on(accent: &str) -> &'static str {
+    let c = |i: usize| f64::from(u8::from_str_radix(&accent[i..i + 2], 16).unwrap_or(0)) / 255.0;
+    let lin = |v: f64| {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(c(1)) + 0.7152 * lin(c(3)) + 0.0722 * lin(c(5));
+    if l > 0.4 { "#1d1d1f" } else { "#ffffff" }
+}
+
+/// `html_from_text` with a business's look. With no brand it is the plain version.
+pub fn html_from_text_branded(body: &str, brand: Option<&Brand>) -> String {
+    let accent = brand
+        .and_then(|b| b.accent.as_deref())
+        .filter(|a| clean_accent(a).is_some())
+        .unwrap_or("#0071e3");
+    let on_accent = text_on(accent);
     let blocks: Vec<&str> = body
         .split("\n\n")
         .filter(|b| !b.trim().is_empty())
         .collect();
     let mut out = String::from(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"margin:0;padding:24px;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f\"><div style=\"max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;font-size:16px;line-height:1.5\">",
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"margin:0;padding:24px;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f\"><div style=\"max-width:560px;margin:0 auto;background:#fff;border-radius:16px;border-top:4px solid {accent};padding:28px;font-size:16px;line-height:1.5\">",
     );
+    out = out.replace("{accent}", accent);
+    if let Some(b) = brand {
+        let logo = b
+            .logo_url
+            .as_deref()
+            .and_then(clean_logo_url)
+            .map(|u| {
+                format!(
+                    "<img src=\"{}\" alt=\"\" height=\"32\" style=\"border:0;vertical-align:middle;margin-right:10px\">",
+                    esc(&u)
+                )
+            })
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "<div style=\"margin:0 0 20px\">{logo}<strong style=\"font-size:15px;vertical-align:middle\">{}</strong></div>",
+            esc(&b.name)
+        ));
+    }
     for (i, block) in blocks.iter().enumerate() {
         let small = i + 1 == blocks.len() && blocks.len() > 1;
         let style = if small {
@@ -185,7 +298,7 @@ pub fn html_from_text(body: &str) -> String {
         if let Some(u) = button {
             let u = esc(&u);
             out.push_str(&format!(
-                "<p style=\"margin:0 0 16px\"><a href=\"{u}\" style=\"display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:12px 22px;border-radius:980px;font-weight:600\">Pay now</a></p><p style=\"margin:0 0 16px;font-size:13px;color:#6e6e73;word-break:break-all\">{u}</p>"
+                "<p style=\"margin:0 0 16px\"><a href=\"{u}\" style=\"display:inline-block;background:{accent};color:{on_accent};text-decoration:none;padding:12px 22px;border-radius:980px;font-weight:600\">Pay now</a></p><p style=\"margin:0 0 16px;font-size:13px;color:#6e6e73;word-break:break-all\">{u}</p>"
             ));
         }
     }
@@ -246,26 +359,49 @@ pub async fn enqueue_once(
     subject: &str,
     body: &str,
 ) -> Result<bool, sqlx::Error> {
-    let reply_to: Option<String> =
-        sqlx::query_scalar("SELECT reply_to_email FROM tenant_settings WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&mut *conn)
-            .await?
-            .flatten();
-    let from_name: Option<String> = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+    enqueue_once_as(conn, tenant_id, dedupe_key, to, subject, body, false).await
+}
+
+/// Like `enqueue_once`. `automatic` mail (raised by the system, not sent by a person or in answer to a payment) is
+/// skipped for an address that unsubscribed and carries an unsubscribe link when one is configured.
+pub async fn enqueue_once_as(
+    conn: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    dedupe_key: &str,
+    to: &str,
+    subject: &str,
+    body: &str,
+    automatic: bool,
+) -> Result<bool, sqlx::Error> {
+    let (reply_to, accent, logo_url): (Option<String>, Option<String>, Option<String>) =
+        sqlx::query_as(
+            "SELECT reply_to_email, email_accent, email_logo_url FROM tenant_settings WHERE tenant_id = $1",
+        )
         .bind(tenant_id)
         .fetch_optional(&mut *conn)
         .await?
-        .and_then(|n: String| sender_name(&n));
-    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to, html, from_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (dedupe_key) DO NOTHING")
+        .unwrap_or((None, None, None));
+    let business: Option<String> = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+    let from_name = business.as_deref().and_then(sender_name);
+    let brand = business.map(|name| Brand {
+        name,
+        accent,
+        logo_url,
+    });
+    let n = sqlx::query("INSERT INTO mail_queue (id, to_email, subject, body, dedupe_key, reply_to, html, from_name, tenant_id, automatic) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (dedupe_key) DO NOTHING")
         .bind(new_id("mail"))
         .bind(to)
         .bind(subject)
         .bind(body)
         .bind(dedupe_key)
         .bind(reply_to)
-        .bind(html_from_text(body))
+        .bind(html_from_text_branded(body, brand.as_ref()))
         .bind(from_name)
+        .bind(tenant_id)
+        .bind(automatic)
         .execute(conn)
         .await?
         .rows_affected();
@@ -360,7 +496,7 @@ pub fn payment_link(
 }
 
 /// The words of an invoice sent to its customer: what it is made of (when it says), what is still owed and by when.
-/// There is no pay link in it, so it only says how to pay in words the business can answer.
+/// With a checkout address it carries a pay link; without one it says how to pay in words the business can answer.
 #[allow(clippy::too_many_arguments)]
 pub fn invoice_notice(
     merchant: &str,
@@ -371,6 +507,7 @@ pub fn invoice_notice(
     settled: Option<&str>,
     outstanding: &str,
     due: Option<chrono::NaiveDate>,
+    pay_url: Option<&str>,
 ) -> (String, String) {
     let subject = match due {
         Some(d) => format!("Invoice {number} from {merchant}: {outstanding} due {d}"),
@@ -395,9 +532,13 @@ pub fn invoice_notice(
         out.push(format!("Due by: {d}"));
     }
     out.push(String::new());
-    out.push(format!(
-        "To pay, use the payment details {merchant} has given you, or reply to this email."
-    ));
+    match pay_url {
+        Some(u) => out.push(format!("Pay here: {u}")),
+        None => out.push(format!(
+            "To pay, use the payment details {merchant} has given you, or reply to this email."
+        )),
+    }
+    out.push(String::new());
     out.push("Only pay to details you already know belong to this business. Zyvor never asks for a card number, PIN or password by email.".into());
     (subject, out.join("\n"))
 }
@@ -470,19 +611,66 @@ pub async fn counts(pool: &PgPool) -> (i64, i64) {
         .unwrap_or((-1, -1))
 }
 
+/// The HTML email with a "stop these emails" line before the end of its card.
+fn with_unsubscribe_footer(html: &str, url: &str) -> String {
+    let line = format!(
+        "<p style=\"margin:16px 0 0;font-size:12px;color:#6e6e73\"><a href=\"{}\" style=\"color:#6e6e73\">Stop these emails</a></p>",
+        esc(url)
+    );
+    match html.rfind("</div></body></html>") {
+        Some(i) => format!("{}{line}{}", &html[..i], &html[i..]),
+        None => html.to_string(),
+    }
+}
+
 pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..10 {
         let mut tx = s.pool.begin().await?;
-        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT id, to_email, subject, body, attempts, reply_to, html, from_name FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
+        #[allow(clippy::type_complexity)]
+        let row: Option<(String, String, String, String, i32, Option<String>, Option<String>, Option<String>, Option<String>, bool)> = sqlx::query_as(
+            "SELECT id, to_email, subject, body, attempts, reply_to, html, from_name, tenant_id, automatic FROM mail_queue WHERE status = 'pending' AND next_attempt_at <= now()
              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         )
         .fetch_optional(&mut *tx)
         .await?;
-        let Some((id, to, subject, body, attempts, reply_to, html, from_name)) = row else {
+        let Some((
+            id,
+            to,
+            subject,
+            mut body,
+            attempts,
+            reply_to,
+            mut html,
+            from_name,
+            tenant_id,
+            automatic,
+        )) = row
+        else {
             break;
         };
+        // automatic mail: skipped for an address that unsubscribed, and given the unsubscribe link and headers
+        let mut unsubscribe = None;
+        if automatic && let Some(tid) = &tenant_id {
+            sqlx::query("SELECT set_config('zyvor.tenant_id', $1, true)")
+                .bind(tid)
+                .execute(&mut *tx)
+                .await?;
+            if crate::unsubscribe::is_suppressed(&mut tx, tid, &to).await? {
+                sqlx::query("UPDATE mail_queue SET status = 'suppressed', body = '', html = NULL WHERE id = $1")
+                    .bind(&id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+                continue;
+            }
+            if let Some(cfg) = &s.unsubscribe {
+                let url = cfg.url(tid, &to.to_lowercase());
+                body.push_str(&format!("\n\nTo stop these emails: {url}"));
+                html = html.map(|h| with_unsubscribe_footer(&h, &url));
+                unsubscribe = Some(url);
+            }
+        }
         match s
             .mailer
             .send_as(
@@ -492,6 +680,7 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
                 &body,
                 reply_to.as_deref(),
                 html.as_deref(),
+                unsubscribe.as_deref(),
             )
             .await
         {
@@ -516,6 +705,75 @@ pub async fn drain(s: &AppState) -> Result<usize, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_business_look_is_checked_and_the_button_stays_readable() {
+        assert_eq!(clean_accent(" #0B7285 ").as_deref(), Some("#0b7285"));
+        for bad in [
+            "0b7285",
+            "#0b728",
+            "#0b72855",
+            "#gggggg",
+            "red",
+            "#0b7285;x",
+            "",
+        ] {
+            assert_eq!(clean_accent(bad), None, "{bad}");
+        }
+        assert_eq!(
+            clean_logo_url(" https://acme.example/logo.png ").as_deref(),
+            Some("https://acme.example/logo.png")
+        );
+        for bad in [
+            "http://acme.example/l.png",
+            "https://",
+            "https://a b",
+            "https://a\"onload=x",
+            "javascript:alert(1)",
+            "",
+        ] {
+            assert_eq!(clean_logo_url(bad), None, "{bad}");
+        }
+        assert_eq!(text_on("#ffffff"), "#1d1d1f");
+        assert_eq!(text_on("#0b7285"), "#ffffff");
+        assert_eq!(text_on("#ffe066"), "#1d1d1f");
+        let brand = Brand {
+            name: "Acme <Stores> & Co".into(),
+            accent: Some("#0b7285".into()),
+            logo_url: Some("https://acme.example/logo.png".into()),
+        };
+        let h = html_from_text_branded(
+            "Hi,\n\nPay here: https://pay.example.com/x\n\nSmall print.",
+            Some(&brand),
+        );
+        assert!(h.contains("border-top:4px solid #0b7285"), "{h}");
+        assert!(h.contains("background:#0b7285;color:#ffffff"), "{h}");
+        assert!(
+            h.contains("<img src=\"https://acme.example/logo.png\""),
+            "{h}"
+        );
+        assert!(h.contains("Acme &lt;Stores&gt; &amp; Co"), "{h}");
+        assert!(!h.contains("Acme <Stores>"), "{h}");
+        // a bad colour or logo in a stored brand is ignored, never written into the page
+        let odd = Brand {
+            name: "Acme".into(),
+            accent: Some("red;}</style>".into()),
+            logo_url: Some("javascript:alert(1)".into()),
+        };
+        let h = html_from_text_branded("Hi,\n\nBye.", Some(&odd));
+        assert!(
+            h.contains("border-top:4px solid #0071e3")
+                && !h.contains("<img")
+                && !h.contains("javascript"),
+            "{h}"
+        );
+        // no brand: the plain look, no header
+        let plain = html_from_text("Hi,\n\nBye.");
+        assert!(
+            !plain.contains("<strong") && plain.contains("#0071e3"),
+            "{plain}"
+        );
+    }
 
     #[test]
     fn the_from_name_says_who_it_is_for_and_cannot_pose_as_someone_else() {

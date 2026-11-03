@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse } from "./types.js";
+import type { GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -81,6 +81,10 @@ export interface Settings {
   reminder_emails: boolean;
   /** Email each subscription invoice to its customer when billing raises it; off by default. */
   invoice_emails: boolean;
+  /** `#rrggbb` for the button and top edge of payer emails; null: the default blue. */
+  email_accent: string | null;
+  /** An https address of a logo shown beside the business name in payer emails. */
+  email_logo_url: string | null;
   outbound_webhook_url: string | null;
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
@@ -101,6 +105,8 @@ export interface SettingsPatch {
   reply_to_email?: string;
   reminder_emails?: boolean;
   invoice_emails?: boolean;
+  email_accent?: string;
+  email_logo_url?: string;
   outbound_webhook_url?: string;
   outbound_webhook_secret?: string;
   webhook_events?: string[];
@@ -362,6 +368,12 @@ export class Zyvor {
     delete: (id: string) => this.req<{ ok: boolean }>("DELETE", `/v1/saved_views/${encodeURIComponent(id)}`),
   };
 
+  /** Addresses that asked (through the unsubscribe link) to stop a business's automatic emails. */
+  readonly mailSuppressions = {
+    list: () => this.req<GetMailSuppressionsResponse>("GET", "/v1/mail_suppressions"),
+    /** Send automatic emails to the address again. */
+    remove: (email: string) => this.req<{ email: string; removed: boolean }>("DELETE", `/v1/mail_suppressions/${encodeURIComponent(email)}`),
+  };
   readonly testData = {
     /** Test environments only: clears payments, invoices, customers and the ledger; keeps settings, keys, providers, branches, vendors, plans, coupons. */
     reset: () => this.req<{ ok: boolean; removed: Record<string, number> }>("POST", "/v1/test_data/reset", { confirm: "reset test data" }),

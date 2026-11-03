@@ -984,6 +984,10 @@ pub struct Settings {
     reminder_emails: Option<bool>,
     /// Email each subscription invoice to its customer when billing raises it (off by default).
     invoice_emails: Option<bool>,
+    /// `#rrggbb` for the button and top edge of payer emails; empty clears.
+    email_accent: Option<String>,
+    /// An `https://` logo address shown beside the business name in payer emails; empty clears.
+    email_logo_url: Option<String>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -1116,6 +1120,40 @@ pub async fn put_settings(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(a) = &b.email_accent {
+        let value = if a.trim().is_empty() {
+            None
+        } else {
+            Some(crate::mail::clean_accent(a).ok_or_else(|| {
+                ApiError::invalid(
+                    "invalid_email_accent",
+                    "email_accent must be a colour like #0b7285",
+                )
+            })?)
+        };
+        sqlx::query("UPDATE tenant_settings SET email_accent = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(l) = &b.email_logo_url {
+        let value = if l.trim().is_empty() {
+            None
+        } else {
+            Some(crate::mail::clean_logo_url(l).ok_or_else(|| {
+                ApiError::invalid(
+                    "invalid_email_logo_url",
+                    "email_logo_url must be an https:// address of up to 300 characters",
+                )
+            })?)
+        };
+        sqlx::query("UPDATE tenant_settings SET email_logo_url = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(r) = &b.reply_to_email {
         let value = if r.trim().is_empty() {
             None
@@ -1181,6 +1219,12 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
             .bind(&auth.tenant_id)
             .fetch_one(&mut *tx)
             .await?;
+    let (email_accent, email_logo_url): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT email_accent, email_logo_url FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_one(&mut *tx)
+    .await?;
     let invoice_emails: bool =
         sqlx::query_scalar("SELECT invoice_emails FROM tenant_settings WHERE tenant_id = $1")
             .bind(&auth.tenant_id)
@@ -1199,7 +1243,7 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "invoice_emails": invoice_emails, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "invoice_emails": invoice_emails, "email_accent": email_accent, "email_logo_url": email_logo_url, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
     ))
 }
 

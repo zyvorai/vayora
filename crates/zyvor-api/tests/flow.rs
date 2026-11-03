@@ -17409,3 +17409,415 @@ async fn invoices_are_emailed_as_billing_raises_them_only_when_asked(pool: PgPoo
     .await;
     assert_eq!(mail().await, 1);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn an_emailed_invoice_carries_a_pay_link_that_is_reused(pool: PgPool) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "PAY-1", "amount_minor": 90_000, "customer_id": cust["id"] }),
+        )
+        .await;
+    let inv_id = inv["id"].as_str().unwrap().to_string();
+    // with a public checkout address the email carries a pay link for the invoice
+    let mut st = t.state.clone();
+    st.checkout_public_url = Some("https://pay.example.com/".into());
+    let res = zyvor_api::app(st)
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!("/v1/invoices/{inv_id}/send"))
+                .header("authorization", format!("Bearer {}", t.a.key))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 202);
+    let body: String =
+        sqlx::query_scalar("SELECT body FROM mail_queue WHERE subject LIKE 'Invoice PAY-1%'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    let (tenant, token): (String, String) =
+        sqlx::query_as("SELECT tenant_id, token FROM payment_links WHERE invoice_id = $1")
+            .bind(&inv_id)
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert!(
+        body.contains(&format!(
+            "Pay here: https://pay.example.com/pay/link/{tenant}/{token}"
+        )),
+        "{body}"
+    );
+    assert!(!body.contains("To pay, use the payment details"), "{body}");
+    // the HTML version turns it into a button
+    let html: String =
+        sqlx::query_scalar("SELECT html FROM mail_queue WHERE subject LIKE 'Invoice PAY-1%'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert!(html.contains(">Pay now</a>"), "{html}");
+    // asking again finds the same link, never a second one
+    let mut conn = t.root.acquire().await.unwrap();
+    let again =
+        zyvor_api::payment_links::ensure_invoice_link(&mut conn, &tenant, &inv_id, None, "INR")
+            .await
+            .unwrap();
+    assert_eq!(again, token);
+    assert_eq!(t.count("SELECT count(*) FROM payment_links").await, 1);
+    // a cancelled link is not reused: a fresh one is made
+    sqlx::query("UPDATE payment_links SET canceled_at = now() WHERE token = $1")
+        .bind(&token)
+        .execute(&t.root)
+        .await
+        .unwrap();
+    let fresh =
+        zyvor_api::payment_links::ensure_invoice_link(&mut conn, &tenant, &inv_id, None, "INR")
+            .await
+            .unwrap();
+    assert_ne!(fresh, token);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_customer_can_stop_automatic_emails_but_not_ones_a_person_sends(pool: PgPool) {
+    use tower::ServiceExt;
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cfg = zyvor_api::unsubscribe::Config {
+        base: "https://api.example.com".into(),
+        secret: b"a-long-enough-test-secret".to_vec(),
+    };
+    let call = |st: zyvor_api::AppState, method: &'static str, uri: String| async move {
+        let res = zyvor_api::app(st)
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let code = res.status().as_u16();
+        let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (code, String::from_utf8_lossy(&bytes).to_string())
+    };
+    let asha = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "Asha@Example.com" }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "invoice_emails": true }),
+    )
+    .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 50_000, "interval_unit": "day", "interval_count": 30 }))
+        .await;
+    let start = |d: chrono::NaiveDate| json!({ "customer_id": asha["id"], "plan_id": plan["id"], "start_date": d.to_string() });
+    t.ok(a, "POST", "/v1/subscriptions", None, start(today))
+        .await;
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+
+    // the automatic invoice email goes out with the unsubscribe headers and a link in its text
+    let (url, got) = smtp_sink().await;
+    let mut st = t.state.clone();
+    st.mailer = zyvor_api::mail::Mailer::smtp(&url, "Zyvor <no-reply@example.com>").unwrap();
+    st.unsubscribe = Some(cfg.clone());
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 1);
+    let raw = got.await.unwrap();
+    assert!(
+        raw.contains("List-Unsubscribe: <https://api.example.com/unsubscribe/")
+            && raw.contains("List-Unsubscribe-Post: List-Unsubscribe=One-Click"),
+        "{raw}"
+    );
+    assert!(
+        raw.contains("To stop these emails:") && raw.contains("Stop these emails"),
+        "{raw}"
+    );
+
+    // opening the link only asks; the button unsubscribes (case of the address does not matter)
+    let link = cfg.url(&t.a.id, "asha@example.com");
+    let path = link
+        .strip_prefix("https://api.example.com")
+        .unwrap()
+        .to_string();
+    let (code, page) = call(st.clone(), "GET", path.clone()).await;
+    assert_eq!(code, 200);
+    assert!(
+        page.contains("Stop emails from") && page.contains("<form method=\"post\">"),
+        "{page}"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM mail_suppressions").await, 0);
+    let (code, page) = call(st.clone(), "POST", path.clone()).await;
+    assert_eq!(code, 200);
+    assert!(page.contains("You are unsubscribed"), "{page}");
+    let (code, _) = call(st.clone(), "POST", path.clone()).await; // idempotent
+    assert_eq!(code, 200);
+    assert_eq!(t.count("SELECT count(*) FROM mail_suppressions").await, 1);
+    // a forged or garbled link does nothing, and without the feature configured there is no page
+    let (code, _) = call(st.clone(), "POST", format!("{path}0")).await;
+    assert_eq!(code, 404);
+    let (code, _) = call(t.state.clone(), "GET", path.clone()).await;
+    assert_eq!(code, 404);
+    assert_eq!(t.count("SELECT count(*) FROM mail_suppressions").await, 1);
+    let listed = t
+        .ok(a, "GET", "/v1/mail_suppressions", None, Value::Null)
+        .await;
+    assert_eq!(listed["data"][0]["email"], "asha@example.com");
+
+    // the next automatic email to that address is skipped, never sent
+    let day2 = today + chrono::Duration::days(1);
+    t.ok(a, "POST", "/v1/subscriptions", None, start(day2))
+        .await;
+    t.ok(
+        a,
+        "POST",
+        "/v1/billing/run",
+        None,
+        json!({ "as_of": day2.to_string() }),
+    )
+    .await;
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 0);
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'suppressed'")
+            .await,
+        1
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'pending'")
+            .await,
+        0
+    );
+
+    // but an invoice a person emails by hand still goes
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "HAND-1", "amount_minor": 5_000, "customer_id": asha["id"] }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/send", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    let (url2, got2) = smtp_sink().await;
+    st.mailer = zyvor_api::mail::Mailer::smtp(&url2, "Zyvor <no-reply@example.com>").unwrap();
+    assert_eq!(zyvor_api::mail::drain(&st).await.unwrap(), 1);
+    let raw2 = got2.await.unwrap();
+    assert!(
+        !raw2.contains("List-Unsubscribe:"),
+        "a hand-sent invoice carries no unsubscribe header"
+    );
+
+    // removing the address starts automatic mail again; a second removal is a 404
+    let gone = t
+        .call(
+            a,
+            "DELETE",
+            "/v1/mail_suppressions/Asha%40Example.com",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(gone.0.as_u16(), 200);
+    assert_eq!(t.count("SELECT count(*) FROM mail_suppressions").await, 0);
+    let again = t
+        .call(
+            a,
+            "DELETE",
+            "/v1/mail_suppressions/asha%40example.com",
+            None,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(again.0.as_u16(), 404);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_business_can_give_its_emails_a_colour_and_a_logo(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let s0 = t.ok(a, "GET", "/v1/settings", None, Value::Null).await;
+    assert_eq!(
+        (&s0["email_accent"], &s0["email_logo_url"]),
+        (&Value::Null, &Value::Null)
+    );
+    // bad values are refused and change nothing
+    for body in [
+        json!({ "email_accent": "teal" }),
+        json!({ "email_accent": "#12345" }),
+        json!({ "email_logo_url": "http://acme.example/l.png" }),
+        json!({ "email_logo_url": "https://acme.example/a b.png" }),
+    ] {
+        let (st, _) = t.call(a, "POST", "/v1/settings", None, body.clone()).await;
+        assert_eq!(st.as_u16(), 422, "{body}");
+    }
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "email_accent": " #0B7285 ", "email_logo_url": "https://acme.example/logo.png" }),
+    )
+    .await;
+    let s1 = t.ok(a, "GET", "/v1/settings", None, Value::Null).await;
+    assert_eq!(s1["email_accent"], "#0b7285");
+    assert_eq!(s1["email_logo_url"], "https://acme.example/logo.png");
+    // the look reaches the HTML of a queued email, with the business's name on it
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Asha Rao", "email": "asha@example.com" }),
+        )
+        .await;
+    let inv = t
+        .ok(
+            a,
+            "POST",
+            "/v1/invoices",
+            None,
+            json!({ "number": "LOOK-1", "amount_minor": 12_000, "customer_id": cust["id"] }),
+        )
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/invoices/{}/send", inv["id"].as_str().unwrap()),
+        None,
+        json!({}),
+    )
+    .await;
+    let html: String =
+        sqlx::query_scalar("SELECT html FROM mail_queue WHERE subject LIKE 'Invoice LOOK-1%'")
+            .fetch_one(&t.root)
+            .await
+            .unwrap();
+    assert!(
+        html.contains("border-top:4px solid #0b7285")
+            && html.contains("<img src=\"https://acme.example/logo.png\"")
+            && html.contains("<strong"),
+        "{html}"
+    );
+    // clearing puts back the plain look
+    t.ok(
+        a,
+        "POST",
+        "/v1/settings",
+        None,
+        json!({ "email_accent": "", "email_logo_url": "" }),
+    )
+    .await;
+    let s2 = t.ok(a, "GET", "/v1/settings", None, Value::Null).await;
+    assert_eq!(
+        (&s2["email_accent"], &s2["email_logo_url"]),
+        (&Value::Null, &Value::Null)
+    );
+}
+
+/// Sends ONE real email through the whole path: an invoice emailed from the API is queued, and the worker's drain
+/// hands it to a real SMTP server. Ignored by default. Needs `ZYVOR_TEST_SMTP_URL`, `ZYVOR_TEST_SMTP_FROM` and
+/// `ZYVOR_TEST_SMTP_TO` (the address that receives it), as in `tests/smtp_real.rs`:
+/// `cargo test -p zyvor-api --test flow real_smtp -- --ignored`.
+#[sqlx::test(migrations = "./migrations")]
+#[ignore = "sends a real email"]
+async fn real_smtp_through_the_worker_delivers_a_queued_invoice_email(pool: PgPool) {
+    use tower::ServiceExt;
+    let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k} is not set"));
+    let to = var("ZYVOR_TEST_SMTP_TO");
+    let t = setup(pool).await;
+    let a = &t.a;
+    t.ok(a, "POST", "/v1/settings", None, json!({ "email_accent": "#0b7285", "email_logo_url": "https://zyvor.dev/favicon.png", "reply_to_email": to })).await;
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Test Payer", "email": to }),
+        )
+        .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Metered API", "amount_minor": 100_000, "interval_unit": "month", "usage_unit_minor": 250, "included_units": 100 }))
+        .await;
+    let sub = t
+        .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "start_date": zyvor_api::ist_today().to_string() }))
+        .await;
+    t.ok(
+        a,
+        "POST",
+        &format!("/v1/subscriptions/{}/usage", sub["id"].as_str().unwrap()),
+        None,
+        json!({ "quantity": 130 }),
+    )
+    .await;
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    let list = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let inv = list["data"][0]["id"].as_str().unwrap().to_string();
+    // a pay link at an address that is plainly a test one, so nobody mistakes it for a real payment page
+    let mut st = t.state.clone();
+    st.checkout_public_url = Some("https://pay.example.com".into());
+    st.mailer =
+        zyvor_api::mail::Mailer::smtp(&var("ZYVOR_TEST_SMTP_URL"), &var("ZYVOR_TEST_SMTP_FROM"))
+            .unwrap();
+    let res = zyvor_api::app(st.clone())
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!("/v1/invoices/{inv}/send"))
+                .header("authorization", format!("Bearer {}", t.a.key))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 202);
+    assert_eq!(
+        zyvor_api::mail::drain(&st).await.unwrap(),
+        1,
+        "the server accepted the queued message"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM mail_queue WHERE status = 'sent'")
+            .await,
+        1
+    );
+}

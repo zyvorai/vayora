@@ -253,13 +253,14 @@ pub async fn queue_reminder_email(
         &f.number,
         &crate::ai::money(f.outstanding, &f.currency),
     );
-    if crate::mail::enqueue_once(
+    if crate::mail::enqueue_once_as(
         conn,
         tenant_id,
         &format!("reminder:{reminder_id}"),
         &email,
         &subject,
         &body,
+        true,
     )
     .await?
     {

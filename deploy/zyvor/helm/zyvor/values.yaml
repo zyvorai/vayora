@@ -21,10 +21,15 @@ worker:
 # Email (verification links, invitations, password reset). Off: the API only logs mail and does not require a
 # verified address at sign-in. On: `existingSecret` needs `smtp-url` (smtp://user:pass@host:587?tls=required or
 # smtps://...) and `from` ("Zyvor <no-reply@your-domain>"). `consoleUrl` is where people reach the console.
+# `checkoutUrl` (where payers reach the checkout app) puts a pay link in invoice emails and turns on payment-link expiry
+# reminders. `publicApiUrl` (where payers reach this API) adds an unsubscribe link to automatic mail; the secret also needs
+# `unsubscribe-secret` (16+ characters).
 mail:
   enabled: false
   existingSecret: zyvor-mail
   consoleUrl: ""
+  checkoutUrl: ""
+  publicApiUrl: ""
 
 # Identity and bank checks (docs/zyvor/KYC_CASHFREE.md). Off: nothing is checked and a person reviews every submission.
 # On: `existingSecret` needs `provider` (cashfree) and, for Cashfree, `env` (sandbox or production), `client-id`

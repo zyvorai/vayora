@@ -60,6 +60,7 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 &tid,
                 crate::ist_today(),
                 s.mandate_notice_hours,
+                s.checkout_public_url.as_deref(),
             )
             .await
             .is_ok()
