@@ -1,7 +1,7 @@
 "use client";
 import { inr } from "@/lib/format";
 import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
-import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, createMilestone, createPlan, createSubscription, recordUsage, updatePlan, type FormState } from "@/lib/actions";
+import { createCustomer, createInstalments, createInvoice, changeSubscriptionPlan, changeTrial, createMilestone, createPlan, createSubscription, recordUsage, updatePlan, type FormState } from "@/lib/actions";
 
 type Customer = { id: string; name: string };
 
@@ -157,6 +157,24 @@ export function EditPlan({ id, name, priceMinor, trialDays = 0 }: { id: string; 
           <span>Keep current subscribers on the old price ({inr(priceMinor)}). Only new subscribers pay the new price. Leave this off and everyone pays the new price from their next invoice.</span>
         </label>
         <span className="muted" style={{ flexBasis: "100%" }}>Invoices already raised keep their amount either way. A new trial length applies to subscriptions made from now on.</span>
+        {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+        {state?.ok && <span className="note" role="status">{state.ok}</span>}
+      </form>
+    </details>
+  );
+}
+
+export function ChangeTrial({ id, endsOn }: { id: string; endsOn: string }) {
+  const [state, run, pending] = useActionState(changeTrial, undefined);
+  return (
+    <details>
+      <summary style={{ cursor: "pointer" }}>Change trial</summary>
+      <form action={run} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+        <input type="hidden" name="id" value={id} />
+        <input name="ends_on" type="date" defaultValue={endsOn} aria-label="Trial ends on" />
+        <button className="btn small" disabled={pending}>{pending ? "…" : "Move end"}</button>
+        <button className="btn small" name="now" value="1" formNoValidate disabled={pending}>Start billing now</button>
+        <span className="muted" style={{ flexBasis: "100%" }}>The first bill falls on the day the trial ends. Starting now makes it due at the next billing run.</span>
         {state?.error && <span className="note bad" role="alert">{state.error}</span>}
         {state?.ok && <span className="note" role="status">{state.ok}</span>}
       </form>

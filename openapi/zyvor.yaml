@@ -1813,6 +1813,41 @@ paths:
         required: true
         schema:
           type: string
+  /v1/subscriptions/{id}/trial:
+    post:
+      summary: End a free trial early, or move its end, for one subscriber
+      tags:
+      - billing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  trial_ends_on:
+                    type: string
+                    format: date
+                  next_bill_date:
+                    type: string
+                    format: date
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialChange'
   /v1/subscriptions/{id}/usage:
     post:
       summary: Record metered usage (idempotent by reference)
@@ -7949,6 +7984,15 @@ components:
       required:
       - secret
       - method
+    TrialChange:
+      type: object
+      x-generated: true
+      properties:
+        ends_on:
+          type: string
+          format: date
+      required:
+      - ends_on
     RunBody:
       type: object
       x-generated: true

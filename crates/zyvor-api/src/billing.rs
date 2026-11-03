@@ -365,6 +365,62 @@ pub async fn cancel_subscription(
 }
 
 #[derive(Deserialize)]
+pub struct TrialChange {
+    /// The day the trial ends and the first bill is due: today to a year from today.
+    ends_on: NaiveDate,
+}
+
+/// End a running free trial early (today) or move its end (up to a year out) for one subscriber. Only a
+/// subscription still in its trial can change; billing then follows the new date.
+pub async fn change_trial(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<TrialChange>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("billing:write")?;
+    let today = crate::ist_today();
+    let latest = today.checked_add_days(Days::new(365)).unwrap_or(today);
+    if b.ends_on < today || b.ends_on > latest {
+        return Err(ApiError::invalid(
+            "invalid_trial",
+            "ends_on must be today or a day within the next year",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(String, Option<NaiveDate>)> =
+        sqlx::query_as("SELECT status, trial_ends_on FROM subscriptions WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (status, trial_ends) = row.ok_or_else(|| ApiError::not_found("subscription"))?;
+    let Some(was) = trial_ends.filter(|d| *d > today && status == "active") else {
+        return Err(ApiError::conflict(
+            "not_in_trial",
+            "only an active subscription still in its free trial can have its trial changed",
+        ));
+    };
+    sqlx::query("UPDATE subscriptions SET next_bill_date = $2, trial_ends_on = $2 WHERE id = $1")
+        .bind(&id)
+        .bind(b.ends_on)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "subscription.trial_changed",
+        Some(&id),
+        json!({ "from": was, "to": b.ends_on }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "id": id, "trial_ends_on": b.ends_on, "next_bill_date": b.ends_on }),
+    ))
+}
+
+#[derive(Deserialize)]
 pub struct NewUsage {
     quantity: i64,
     note: Option<String>,

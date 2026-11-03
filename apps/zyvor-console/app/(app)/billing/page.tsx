@@ -1,6 +1,6 @@
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { ChangePlan, EditPlan, RecordUsage, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
+import { ChangePlan, ChangeTrial, EditPlan, RecordUsage, NewCustomer, NewInstalments, NewInvoice, NewMilestone, NewPlan, NewSubscription } from "@/components/BillingForms";
 import { ConfirmAct } from "@/components/ConfirmAct";
 import { Tabs } from "@/components/Tabs";
 import { TestClock } from "@/components/TestClock";
@@ -66,6 +66,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
                 {r.status === "active" && <Act action={pauseSubscription} id={String(r.id)} label="Pause" />}
                 {r.status === "paused" && <Act action={resumeSubscription} id={String(r.id)} label="Resume" />}
                 {(r.status === "active" || r.status === "paused") && <>
+                  {r.trial_ends_on && String(r.trial_ends_on) > today && String(r.status) === "active" && <ChangeTrial id={String(r.id)} endsOn={String(r.trial_ends_on)} />}
                   {p && Number(p.usage_unit_minor) > 0 && <RecordUsage id={String(r.id)} unit={inr(Number(p.usage_unit_minor))} waiting={Number(r.unbilled_usage ?? 0)} />}
                   <ChangePlan id={String(r.id)} plans={plans.data.filter((x) => x.active !== false || x.id === r.plan_id).map((x) => ({ id: String(x.id), name: String(x.name) }))} planId={String(r.plan_id)} quantity={Number(r.quantity)} />
                   <ConfirmAct action={cancelSubscription} id={String(r.id)} label="Cancel subscription" question="Stop billing this customer?" yes="Yes, cancel" />

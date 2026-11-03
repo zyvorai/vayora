@@ -16701,3 +16701,137 @@ async fn a_plan_can_start_new_subscribers_with_a_free_trial(pool: PgPool) {
         .unwrap();
     assert_eq!(first_sub["trial_ends_on"], first.to_string());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_subscribers_trial_can_be_ended_early_or_moved(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Trial Co" }),
+        )
+        .await;
+    let plan = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Pro", "amount_minor": 90_000, "interval_unit": "month", "trial_days": 30 }))
+        .await;
+    let sub = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plan["id"] }),
+        )
+        .await;
+    let path = format!("/v1/subscriptions/{}/trial", sub["id"].as_str().unwrap());
+
+    // a date in the past or more than a year out is refused
+    for bad in [
+        today - chrono::Duration::days(1),
+        today + chrono::Duration::days(400),
+    ] {
+        let (st, _) = t
+            .call(
+                a,
+                "POST",
+                &path,
+                None,
+                json!({ "ends_on": bad.to_string() }),
+            )
+            .await;
+        assert_eq!(st.as_u16(), 422, "{bad}");
+    }
+    // move the end later
+    let later = today + chrono::Duration::days(45);
+    let moved = t
+        .ok(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "ends_on": later.to_string() }),
+        )
+        .await;
+    assert_eq!(moved["next_bill_date"], later.to_string());
+    let day_before = (later - chrono::Duration::days(1)).to_string();
+    assert_eq!(
+        t.ok(
+            a,
+            "POST",
+            "/v1/billing/run",
+            None,
+            json!({ "as_of": day_before })
+        )
+        .await["invoices_created"],
+        0
+    );
+    // end it now: the next billing run invoices the first period
+    t.ok(
+        a,
+        "POST",
+        &path,
+        None,
+        json!({ "ends_on": today.to_string() }),
+    )
+    .await;
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        1
+    );
+    // once the trial is over there is nothing to change
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &path,
+            None,
+            json!({ "ends_on": later.to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    // a subscription that never had a trial cannot be given one this way
+    let plain = t
+        .ok(
+            a,
+            "POST",
+            "/v1/plans",
+            None,
+            json!({ "name": "Plain", "amount_minor": 10_000, "interval_unit": "month" }),
+        )
+        .await;
+    let sub2 = t
+        .ok(
+            a,
+            "POST",
+            "/v1/subscriptions",
+            None,
+            json!({ "customer_id": cust["id"], "plan_id": plain["id"] }),
+        )
+        .await;
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            &format!("/v1/subscriptions/{}/trial", sub2["id"].as_str().unwrap()),
+            None,
+            json!({ "ends_on": later.to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 409);
+    // an unknown subscription is a 404
+    let (st, _) = t
+        .call(
+            a,
+            "POST",
+            "/v1/subscriptions/sub_nope/trial",
+            None,
+            json!({ "ends_on": later.to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 404);
+}

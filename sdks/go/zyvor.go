@@ -207,6 +207,14 @@ func (c *Client) ChangePlan(subscriptionID, planID string, opts ...map[string]an
 	return out, err
 }
 
+// ChangeTrial ends a running free trial early (endsOn today) or moves its end, for one subscriber. endsOn is
+// YYYY-MM-DD. Only a subscription still in its trial can change.
+func (c *Client) ChangeTrial(subscriptionID, endsOn string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/trial", map[string]any{"ends_on": endsOn}, "", &out)
+	return out, err
+}
+
 // RecordUsage is retry-safe when reference is set: the same reference is recorded once.
 func (c *Client) RecordUsage(subscriptionID string, quantity int64, reference string) (map[string]any, error) {
 	body := map[string]any{"quantity": quantity}

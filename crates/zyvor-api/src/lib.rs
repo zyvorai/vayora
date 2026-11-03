@@ -358,6 +358,7 @@ pub fn app(state: AppState) -> Router {
             post(billing::cancel_subscription),
         )
         .route("/subscriptions/{id}/usage", post(billing::record_usage))
+        .route("/subscriptions/{id}/trial", post(billing::change_trial))
         .route(
             "/subscriptions/{id}/change_plan",
             post(billing::change_plan),

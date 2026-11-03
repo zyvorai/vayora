@@ -48,6 +48,15 @@ describe("client", () => {
     expect(JSON.parse(init.body as string)).toEqual({ amount_minor: 12500, active: false, keep_existing: true });
   });
 
+  it("ends a free trial early or moves its end for one subscription", async () => {
+    const f = vi.fn(async () => json(200, {}));
+    await client(f).billing.changeTrial("sub_1", { endsOn: "2026-11-20" });
+    const [url, init] = (f.mock.calls as unknown as [string, RequestInit][])[0];
+    expect(url).toBe("http://localhost:8080/v1/subscriptions/sub_1/trial");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ ends_on: "2026-11-20" });
+  });
+
   it("sets a plan's free trial when creating and editing it", async () => {
     const f = vi.fn(async () => json(200, {}));
     const c = client(f);

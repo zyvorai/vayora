@@ -1802,6 +1802,12 @@ PostSubscriptionsByIdResumeResponse = TypedDict("PostSubscriptionsByIdResumeResp
     "status": "str",
 })
 
+PostSubscriptionsByIdTrialResponse = TypedDict("PostSubscriptionsByIdTrialResponse", {
+    "id": "str",
+    "trial_ends_on": "str",
+    "next_bill_date": "str",
+})
+
 PostSubscriptionsByIdUsageResponse = TypedDict("PostSubscriptionsByIdUsageResponse", {
     "recorded": "int",
     "quantity": "int",
