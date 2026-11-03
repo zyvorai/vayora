@@ -302,3 +302,32 @@ final class SubscriptionTests: XCTestCase {
         catch let e as APIError { XCTAssertEqual(e.code, "not_in_demo") } catch { XCTFail("\(error)") }
     }
 }
+
+final class AttentionTests: XCTestCase {
+    func testCountsApprovalsDraftsAndOnlyDisputesDueSoon() {
+        let a = Attention(
+            approvals: [PendingApproval(kind: .refund, rawID: "r", amountMinor: 1), PendingApproval(kind: .payout, rawID: "p", amountMinor: 1)],
+            drafts: [ReminderDraft(id: "d", message: "m")],
+            disputes: [DisputeInfo(id: "1", amountMinor: 1, reason: "x", respondBy: "2026-11-05"),     // 2 days: counts
+                       DisputeInfo(id: "2", amountMinor: 1, reason: "x", respondBy: "2026-11-20"),     // far off: no
+                       DisputeInfo(id: "3", amountMinor: 1, reason: "x", respondBy: "2026-11-01"),     // passed: counts
+                       DisputeInfo(id: "4", amountMinor: 1, reason: "x", status: "won", respondBy: "2026-11-04"),   // closed: no
+                       DisputeInfo(id: "5", amountMinor: 1, reason: "x")],                             // no deadline: no
+            today: "2026-11-03")
+        XCTAssertEqual(a.total, 5)
+        XCTAssertEqual(a.summary, "2 to approve, 1 reminder, 2 disputes due soon")
+        XCTAssertNil(Attention().summary)
+    }
+
+    func testTheCountWorksWhenAListIsRefused() async {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        let c = VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+        StubProtocol.handler = { r in
+            if r.url!.path.contains("drafts") { return (200, #"{"data":[{"id":"d","invoice_number":"A","channel":"email","message":"m"}]}"#) }
+            return (403, #"{"error":{"code":"forbidden","message":"no"}}"#)
+        }
+        let a = await c.attention(today: "2026-11-03")
+        XCTAssertEqual(a, Attention(approvals: 0, reminderDrafts: 1, disputesDueSoon: 0))
+    }
+}
