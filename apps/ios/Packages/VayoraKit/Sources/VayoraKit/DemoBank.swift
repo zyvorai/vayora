@@ -23,6 +23,7 @@ public final class DemoBank: @unchecked Sendable {
     private struct Link { var id: String; var amount: Int64; var note: String?; var maxUses: Int?; var expires: String?; var canceled: Bool; var created: Date }
     private var links: [String: Link] = [:]
     private var linkOrder: [String] = []
+    private var disputes: [String: (status: String, evidence: Int)] = ["dp_demo1": ("open", 0)]
     private var approvals: [String: String] = ["re_demo1": "pending_approval", "po_demo1": "pending_approval"]
     private var drafts: [(id: String, number: String, message: String, status: String)] = [
         ("rd_demo1", "INV-1001", "Hello, this is a reminder that invoice INV-1001 for Rs 1,250.00 is 12 days past due.", "pending"),
@@ -129,6 +130,18 @@ public final class DemoBank: @unchecked Sendable {
             guard var a = attempts[s[1]] else { return Self.err(404, "not_found", "No such attempt") }
             if a.status == "pending", now().timeIntervalSince(a.created) >= customerPaysAfter { a.status = "captured"; attempts[a.id] = a }
             return Self.ok(json(a))
+        case ("GET", 1, "disputes"):
+            return Self.ok(["data": disputes.map { ["id": $0.key, "amount_minor": 45000, "reason": "Customer says they were charged twice", "status": $0.value.status, "respond_by": "2026-11-10", "evidence_count": $0.value.evidence] as [String: Any] }])
+        case ("POST", 3, "disputes") where s[2] == "evidence":
+            guard let d = disputes[s[1]], d.status == "open" || d.status == "under_review" else { return Self.err(409, "not_open", "That dispute is closed.") }
+            guard let n = obj["note"] as? String, !n.trimmingCharacters(in: .whitespaces).isEmpty else { return Self.err(422, "note_required", "Describe what this evidence shows.") }
+            disputes[s[1]] = ("under_review", d.evidence + 1)
+            return Self.ok(["id": s[1], "status": "under_review"])
+        case ("POST", 3, "disputes") where s[2] == "resolve":
+            guard let d = disputes[s[1]], d.status == "open" || d.status == "under_review" else { return Self.err(409, "not_open", "That dispute is closed.") }
+            guard let o = obj["outcome"] as? String, o == "won" || o == "lost" else { return Self.err(422, "invalid_outcome", "outcome must be won or lost") }
+            disputes[s[1]] = (o, d.evidence)
+            return Self.ok(["id": s[1], "status": o])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):

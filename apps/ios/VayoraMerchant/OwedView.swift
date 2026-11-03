@@ -8,6 +8,9 @@ struct OwedView: View {
     @State private var ageing: Ageing?
     @State private var drafts: [ReminderDraft] = []
     @State private var approvals: [PendingApproval] = []
+    @State private var disputes: [DisputeInfo] = []
+    @State private var noting: DisputeInfo?
+    @State private var deciding: DisputeInfo?
     @State private var message: String?
     @State private var notice: String?
     @State private var promising: OwedInvoice?
@@ -31,6 +34,7 @@ struct OwedView: View {
                         if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
                         if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
                         if !approvals.isEmpty { approvalsCard }
+                        if !disputes.isEmpty { disputesCard }
                         if !drafts.isEmpty { draftsCard }
                         if let a = ageing {
                             if a.inrBuckets.isEmpty { GlassCard { Text("Nothing is owed right now.").vfont(14).foregroundStyle(VUI.textSecondary) } }
@@ -44,6 +48,12 @@ struct OwedView: View {
             .environment(\.colorScheme, .dark)
         }
         .task { await load() }
+        .sheet(item: $noting) { d in EvidenceSheet(dispute: d) { notice = "Evidence added."; Task { await load() } }.environmentObject(store) }
+        .confirmationDialog("Record the issuer's decision", isPresented: Binding(get: { deciding != nil }, set: { if !$0 { deciding = nil } }), titleVisibility: .visible, presenting: deciding) { d in
+            Button("We won: the hold is released") { resolve(d, won: true) }
+            Button("We lost: book the loss", role: .destructive) { resolve(d, won: false) }
+            Button("Cancel", role: .cancel) {}
+        } message: { d in Text("\(Money(minor: d.amountMinor).display). A loss is booked on your ledger and cannot be undone here.") }
         .sheet(item: $promising) { inv in PromiseSheet(invoice: inv) { notice = "Promise saved for \(inv.number)."; Task { await load() } }.environmentObject(store) }
     }
 
@@ -69,6 +79,45 @@ struct OwedView: View {
                     if a.id != approvals.last?.id { Divider().overlay(.white.opacity(0.1)) }
                 }
             }
+        }
+    }
+
+    static func todayIST() -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Kolkata")
+        return f.string(from: Date())
+    }
+
+    var disputesCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Disputes to answer", systemImage: "exclamationmark.bubble").vfont(17, .semibold).foregroundStyle(VUI.textPrimary)
+                ForEach(disputes) { d in
+                    let left = d.daysLeft(today: Self.todayIST())
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(Money(minor: d.amountMinor).display).vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
+                            Spacer()
+                            if let left { Text(left < 0 ? "Deadline passed" : left == 0 ? "Due today" : "\(left) day\(left == 1 ? "" : "s") left").vfont(12, .semibold).foregroundStyle(left <= 2 ? VUI.coral : VUI.textSecondary) }
+                        }
+                        Text(d.reason).vfont(13).foregroundStyle(VUI.textSecondary)
+                        Text("\(d.evidenceCount) note\(d.evidenceCount == 1 ? "" : "s") added").vfont(12).foregroundStyle(VUI.textTertiary)
+                        HStack(spacing: 16) {
+                            Button("Add evidence") { noting = d }.foregroundStyle(VUI.mint)
+                            Button("Record outcome") { deciding = d }.foregroundStyle(VUI.textSecondary)
+                        }.vfont(14, .semibold)
+                    }
+                    if d.id != disputes.last?.id { Divider().overlay(.white.opacity(0.1)) }
+                }
+                Text("Evidence is a written note and, if you have one, a link to the document on your own storage. Photos cannot be uploaded from here.").vfont(12).foregroundStyle(VUI.textTertiary)
+            }
+        }
+    }
+
+    func resolve(_ d: DisputeInfo, won: Bool) {
+        guard let c = store.client else { return }
+        Task {
+            do { try await c.resolveDispute(id: d.id, won: won); notice = won ? "Marked as won." : "Marked as lost."; message = nil; Haptics.success(); await load() }
+            catch { message = (error as? APIError)?.message ?? "Couldn't save that."; notice = nil; Haptics.error() }
         }
     }
 
@@ -126,6 +175,7 @@ struct OwedView: View {
             (ageing, drafts) = try await (a, d); message = nil
             // a key without approval rights may not read refunds or payouts: that must not hide the rest of the screen
             approvals = (try? await c.pendingApprovals()) ?? []
+            disputes = (try? await c.openDisputes()) ?? []
         } catch { message = (error as? APIError)?.message ?? "Couldn't reach the server." }
     }
     func decide(_ a: PendingApproval, approve: Bool) {
@@ -189,6 +239,48 @@ struct PromiseSheet: View {
                 try await c.promiseToPay(invoiceID: invoice.id, amount: Money(minor: invoice.outstandingMinor), date: f.string(from: date), note: note.trimmingCharacters(in: .whitespaces))
                 Haptics.success(); onSaved(); dismiss()
             } catch { message = (error as? APIError)?.message ?? "Couldn't save the promise."; Haptics.error() }
+        }
+    }
+}
+
+/// A written note about a dispute, with an optional link to a document you keep elsewhere.
+struct EvidenceSheet: View {
+    @EnvironmentObject var store: MerchantStore
+    @Environment(\.dismiss) var dismiss
+    let dispute: DisputeInfo
+    var onSaved: () -> Void
+    @State private var note = ""
+    @State private var link = ""
+    @State private var message: String?
+
+    var body: some View {
+        ZStack {
+            AmbientBackground(brand: .merchant, phase: 0.9)
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Add evidence").vfont(24, .bold).foregroundStyle(VUI.textPrimary).accessibilityAddTraits(.isHeader)
+                Text("\(Money(minor: dispute.amountMinor).display) · \(dispute.reason)").vfont(14).foregroundStyle(VUI.textSecondary)
+                TextField("What this shows (delivered, signed, used…)", text: $note, axis: .vertical).lineLimit(3...6).foregroundStyle(VUI.textPrimary)
+                    .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                TextField("Link to a document (optional, https)", text: $link).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().foregroundStyle(VUI.textPrimary)
+                    .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                if let message { Text(message).vfont(13).foregroundStyle(VUI.coral) }
+                Button(action: save) { Text("Save").vfont(16, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity).padding(.vertical, 14).background(VUI.mint, in: Capsule()) }
+                    .buttonStyle(PressScale()).disabled(note.trimmingCharacters(in: .whitespaces).isEmpty).opacity(note.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                Button("Cancel") { dismiss() }.vfont(16).foregroundStyle(VUI.textSecondary).frame(maxWidth: .infinity)
+                Spacer()
+            }.padding(24)
+        }
+        .environment(\.colorScheme, .dark)
+        .presentationDetents([.large])
+    }
+
+    func save() {
+        guard let c = store.client else { return }
+        let l = link.trimmingCharacters(in: .whitespaces)
+        if !l.isEmpty, URL(string: l)?.scheme != "https" { message = "The link must start with https://"; Haptics.error(); return }
+        Task {
+            do { try await c.addDisputeEvidence(id: dispute.id, note: note.trimmingCharacters(in: .whitespaces), url: l.isEmpty ? nil : l); Haptics.success(); onSaved(); dismiss() }
+            catch { message = (error as? APIError)?.message ?? "Couldn't save the evidence."; Haptics.error() }
         }
     }
 }
