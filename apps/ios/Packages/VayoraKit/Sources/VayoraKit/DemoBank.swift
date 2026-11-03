@@ -163,6 +163,10 @@ public final class DemoBank: @unchecked Sendable {
             guard refundsFailed[s[1]] == "failed" else { return Self.err(409, "not_failed", "Only a failed refund can be retried.") }
             refundsFailed[s[1]] = "processing"
             return Self.ok(["id": s[1], "status": "processing"])
+        case ("GET", 2, "gst") where s[1] == "gstr1":
+            return Self.ok(["note": "GSTR-1 style summary to prepare a return from; Zyvor does not file it", "period": Self.query("x://x?" + (query ?? ""))["period"] ?? "", "gstin": "29ABCDE1234F1Z5",
+                            "b2b": [["buyer_gstin": "27ABCDE1234F1Z5", "invoices": [["number": "INV-1001"], ["number": "INV-1002"]]]], "b2cs": [], "cdnr": [["note_id": "cn_1"]], "cdnur": [], "hsn": [],
+                            "totals": ["taxable_minor": 1_000_000, "cgst_minor": 90_000, "sgst_minor": 90_000, "igst_minor": 0]])
         case ("GET", 1, "refunds"):
             return Self.ok(["data": approvals["re_demo1"] == "pending_approval" ? [["id": "re_demo1", "amount_minor": 25000, "currency": "INR", "status": "pending_approval", "reason": "Customer returned the item", "requested_by": "cashier"] as [String: Any]] : []])
         case ("GET", 1, "payouts"):
