@@ -37,20 +37,23 @@ final class SeededSandboxTests: XCTestCase {
     }
 
     func testPayoutApprovalByTheRequesterIsRefusedAndTheMessageIsShown() {
-        app.buttons["Approve payout of ₹1,200.00"].tap()
+        app.buttons["Approve payout of ₹1,200.00"].firstMatch.tap()
         seeContaining("cannot approve")
         shot("seeded-refusal")
         XCTAssertTrue(app.staticTexts["Payout · ₹1,200.00"].exists, "a refused approval must leave the payout in the inbox")
     }
 
-    func testReminderDraftApprovalWorks() {
-        app.buttons["Approve reminder for INV-1001"].tap()
+    /// One draft per overdue invoice per 7 days: a sandbox whose draft was already approved cannot make another, so this skips then.
+    func testReminderDraftApprovalWorks() throws {
+        let approve = app.buttons["Approve reminder for INV-1001"].firstMatch
+        try XCTSkipUnless(approve.waitForExistence(timeout: 12), "no reminder draft waiting (the dunning policy waits 7 days between reminders)")
+        approve.tap()
         see("Reminder approved.")
         XCTAssertFalse(app.buttons["Approve reminder for INV-1001"].waitForExistence(timeout: 3), "an approved draft leaves the inbox")
     }
 
     func testEvidenceNoteIsSavedOnTheRealDispute() {
-        app.buttons["Add evidence to the ₹450.00 dispute"].tap()
+        app.buttons["Add evidence to the ₹450.00 dispute"].firstMatch.tap()
         let note = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.element(boundBy: 0)
         note.tap(); note.typeText("Delivered with a signed receipt")
         app.buttons["Save"].tap()

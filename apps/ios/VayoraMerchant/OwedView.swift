@@ -34,8 +34,6 @@ struct OwedView: View {
                                 }
                             }
                         }
-                        if let message { Text(message).vfont(13).foregroundStyle(VUI.coral).accessibilityLabel("Error: \(message)") }
-                        if let notice { Text(notice).vfont(13).foregroundStyle(VUI.mint) }
                         if let line = store.attention.summary { Text("Waiting: \(line)").vfont(13, .semibold).foregroundStyle(VUI.amber).accessibilityLabel("Waiting for you: \(line)") }
                         if !approvals.isEmpty { approvalsCard }
                         if !toPay.isEmpty { payCard }
@@ -51,6 +49,7 @@ struct OwedView: View {
                 }
                 .refreshable { await load() }
             }
+            .safeAreaInset(edge: .top, spacing: 0) { banner }
             .environment(\.colorScheme, .dark)
         }
         .task { await load() }
@@ -74,7 +73,7 @@ struct OwedView: View {
                         HStack {
                             Text("\(a.title) · \(Money(minor: a.amountMinor).display)").vfont(15, .semibold).foregroundStyle(VUI.textPrimary)
                             Spacer()
-                            if !a.requestedBy.isEmpty { Text("by \(a.requestedBy)").vfont(12).foregroundStyle(VUI.textTertiary) }
+                            if !a.requestedBy.isEmpty { Text("by \(a.requestedBy)").vfont(12).foregroundStyle(VUI.textTertiary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 140, alignment: .trailing) }
                         }
                         if !a.detail.isEmpty { Text(a.detail).vfont(13).foregroundStyle(VUI.textSecondary) }
                         HStack(spacing: 16) {
@@ -169,6 +168,19 @@ struct OwedView: View {
         Task {
             do { try await c.retryRefund(id: r.id); notice = "Refund sent again."; message = nil; Haptics.success(); await load() }
             catch { message = (error as? APIError)?.message ?? "Couldn't retry that."; notice = nil; Haptics.error() }
+        }
+    }
+
+    /// What just happened (or went wrong), pinned to the top so it is seen however far the list is scrolled.
+    @ViewBuilder var banner: some View {
+        if let message {
+            Text(message).vfont(14, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .background(VUI.coral, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).padding(.horizontal, 16).padding(.top, 4)
+                .accessibilityLabel("Error: \(message)").onTapGesture { self.message = nil }
+        } else if let notice {
+            Text(notice).vfont(14, .semibold).foregroundStyle(VUI.ink).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .background(VUI.mint, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).padding(.horizontal, 16).padding(.top, 4)
+                .accessibilityLabel(notice).onTapGesture { self.notice = nil }
         }
     }
 
