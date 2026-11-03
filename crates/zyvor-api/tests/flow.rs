@@ -16814,7 +16814,7 @@ async fn a_subscribers_trial_can_be_ended_early_or_moved(pool: PgPool) {
         )
         .await;
     assert_eq!(st.as_u16(), 409);
-    // a subscription that never had a trial cannot be given one this way
+    // a subscription that never had a trial and was never billed can be given one
     let plain = t
         .ok(
             a,
@@ -16833,16 +16833,31 @@ async fn a_subscribers_trial_can_be_ended_early_or_moved(pool: PgPool) {
             json!({ "customer_id": cust["id"], "plan_id": plain["id"] }),
         )
         .await;
+    let p2 = format!("/v1/subscriptions/{}/trial", sub2["id"].as_str().unwrap());
     let (st, _) = t
         .call(
             a,
             "POST",
-            &format!("/v1/subscriptions/{}/trial", sub2["id"].as_str().unwrap()),
+            &p2,
+            None,
+            json!({ "ends_on": zyvor_api::ist_today().to_string() }),
+        )
+        .await;
+    assert_eq!(st.as_u16(), 422);
+    let granted = t
+        .ok(
+            a,
+            "POST",
+            &p2,
             None,
             json!({ "ends_on": later.to_string() }),
         )
         .await;
-    assert_eq!(st.as_u16(), 409);
+    assert_eq!(granted["next_bill_date"], later.to_string());
+    assert_eq!(
+        t.ok(a, "POST", "/v1/billing/run", None, json!({})).await["invoices_created"],
+        0
+    );
     // an unknown subscription is a 404
     let (st, _) = t
         .call(
