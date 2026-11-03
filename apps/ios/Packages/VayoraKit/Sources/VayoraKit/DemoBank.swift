@@ -113,6 +113,14 @@ public final class DemoBank: @unchecked Sendable {
         case ("GET", 2, "payment_intents"):
             guard let i = intents[s[1]] else { return Self.err(404, "not_found", "No such payment") }
             return Self.ok(["intent": json(i), "attempts": i.attempts.compactMap { attempts[$0] }.map(json)])
+        case ("GET", 3, "payment_intents") where s[2] == "timeline":
+            guard let i = intents[s[1]] else { return Self.err(404, "not_found", "No such payment") }
+            var events: [[String: Any]] = [["at": Self.iso(i.created), "kind": "intent", "title": "Payment of \(Money(minor: i.amount).decimalString) INR created"]]
+            for aid in i.attempts { if let a = attempts[aid] {
+                events.append(["at": Self.iso(a.created), "kind": "attempt", "title": "A payer was shown a UPI QR"])
+                if a.status == "captured" { events.append(["at": Self.iso(a.created.addingTimeInterval(1)), "kind": "captured", "title": "The payer paid it"]) }
+                if a.refunded > 0 { events.append(["at": Self.iso(a.created.addingTimeInterval(2)), "kind": "refund", "title": "\(Money(minor: a.refunded).decimalString) INR refunded"]) } } }
+            return Self.ok(["payment_id": i.id, "status": status(of: i), "standing": status(of: i) == "succeeded" ? "Paid." : "Created, but nobody has paid yet.", "events": events])
         case ("POST", 3, "payment_intents") where s[2] == "attempts":
             guard var i = intents[s[1]] else { return Self.err(404, "not_found", "No such payment") }
             let id = nextID("pa")

@@ -415,3 +415,31 @@ final class GSTTests: XCTestCase {
         XCTAssertEqual(demo.taxMinor, 180000); XCTAssertEqual(demo.b2bInvoices, 2); XCTAssertEqual(demo.creditNotes, 1)
     }
 }
+
+final class TimelineTests: XCTestCase {
+    func testEventsAreShownOldestFirstInIndianTimeAndDecodeWithoutTheFreeFormDetail() async throws {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        let c = VayoraClient(baseURL: URL(string: "https://api.test")!, apiKey: "k", session: URLSession(configuration: cfg))
+        nonisolated(unsafe) var path = ""
+        StubProtocol.handler = { r in path = r.url!.path; return (200, #"{"payment_id":"pi_1","status":"succeeded","standing":"Paid.","events":[{"at":"2026-11-03T12:50:00.500000Z","kind":"captured","title":"Paid","detail":{"x":1}},{"at":"2026-11-03T12:49:26.411235Z","kind":"intent","title":"Created","detail":{"external_ref":null}}]}"#) }
+        let t = try await c.timeline(intentId: "pi_1")
+        XCTAssertEqual(path, "/v1/payment_intents/pi_1/timeline")
+        XCTAssertEqual(t.ordered.map(\.kind), ["intent", "captured"])
+        XCTAssertEqual(t.ordered.first?.when, "3 Nov, 6:19 PM")          // 12:49 UTC is 18:19 in India
+        XCTAssertEqual(TimelineEvent(at: "garbage", kind: "k", title: "t").when, "garbage")
+        XCTAssertEqual(t.standing, "Paid.")
+    }
+
+    func testDemoTimelineGrowsAsThePaymentDoes() async throws {
+        let c = VayoraClient.demo(bank: DemoBank(customerPaysAfter: 0))
+        let i = try await c.createIntent(amount: Money(minor: 5000), note: nil)
+        var t = try await c.timeline(intentId: i.id)
+        XCTAssertEqual(t.events.count, 1)
+        let a = try await c.createUPIAttempt(intentId: i.id)
+        _ = try await c.refreshAttempt(id: a.id)
+        t = try await c.timeline(intentId: i.id)
+        XCTAssertEqual(t.ordered.map(\.kind), ["intent", "attempt", "captured"])
+        XCTAssertEqual(t.standing, "Paid.")
+    }
+}

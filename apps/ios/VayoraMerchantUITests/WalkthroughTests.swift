@@ -81,4 +81,19 @@ final class WalkthroughTests: XCTestCase {
         app.buttons["Retry the failed refund of ₹120.00"].tap()
         see("Refund sent again.")
     }
+
+    /// Make a payment in the demo, then open it: the detail has a timeline.
+    func testAPaymentDetailHasATimeline() {
+        app.tabBars.buttons["Collect"].tap()
+        for d in ["1", "5", "0"] { app.buttons[d].tap() }
+        app.buttons["Show QR"].tap()
+        see("Received", timeout: 20)                 // the demo's pretend customer pays after a few seconds
+        app.buttons["New payment"].tap()
+        app.tabBars.buttons["Payments"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS '₹150'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        see("What happened")
+        shot("payment-timeline")
+    }
 }
