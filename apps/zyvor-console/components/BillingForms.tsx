@@ -90,6 +90,7 @@ export function NewPlan() {
       </label>
       <label className="field" style={{ flex: "1 1 150px" }}>Per unit used (₹, optional)<input name="per_unit" inputMode="decimal" placeholder="2.50" /></label>
       <label className="field" style={{ flex: "0 1 130px" }}>Free units per period<input name="included" inputMode="numeric" placeholder="0" /></label>
+      <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "flex-start" }}><input type="checkbox" name="per_seat" style={{ marginTop: 3 }} /><span>Free units are per seat: the allowance is multiplied by the subscription's quantity.</span></label>
       <label className="field" style={{ flex: "0 1 130px" }}>Free trial (days)<input name="trial" type="number" min={0} max={365} placeholder="0" /></label>
     </Inline>
   );
@@ -142,7 +143,7 @@ export function RecordUsage({ id, unit, waiting }: { id: string; unit: string; w
   );
 }
 
-export function EditPlan({ id, name, priceMinor, trialDays = 0, includedUnits = 0, metered = false }: { id: string; name: string; priceMinor: number; trialDays?: number; includedUnits?: number; metered?: boolean }) {
+export function EditPlan({ id, name, priceMinor, trialDays = 0, includedUnits = 0, perSeat = false, metered = false }: { id: string; name: string; priceMinor: number; trialDays?: number; includedUnits?: number; perSeat?: boolean; metered?: boolean }) {
   const [state, run, pending] = useActionState(updatePlan, undefined);
   return (
     <details>
@@ -153,6 +154,7 @@ export function EditPlan({ id, name, priceMinor, trialDays = 0, includedUnits = 
         <label className="field" style={{ flex: "1 1 110px" }}>Price (₹)<input name="price" inputMode="decimal" required defaultValue={(priceMinor / 100).toFixed(2)} /></label>
         <label className="field" style={{ flex: "0 1 120px" }}>Free trial (days)<input name="trial" type="number" min={0} max={365} defaultValue={trialDays} /></label>
         {metered ? <label className="field" style={{ flex: "0 1 140px" }}>Free units per period<input name="included" inputMode="numeric" defaultValue={includedUnits} /></label> : <input type="hidden" name="included" value="0" />}
+        {metered && <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "flex-start" }}><input type="checkbox" name="per_seat" defaultChecked={perSeat} style={{ marginTop: 3 }} /><span>Free units are per seat (multiplied by each subscription's quantity).</span></label>}
         <button className="btn small primary" disabled={pending}>{pending ? "…" : "Save"}</button>
         <label style={{ flexBasis: "100%", display: "flex", gap: 8, alignItems: "flex-start" }}>
           <input type="checkbox" name="keep" style={{ marginTop: 3 }} />

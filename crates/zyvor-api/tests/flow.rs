@@ -17233,6 +17233,18 @@ async fn an_invoice_can_be_emailed_to_its_customer(pool: PgPool) {
             && body.contains("Zyvor never asks for a card number"),
         "{body}"
     );
+    // the queued message carries the invoice as a PDF named after its number
+    let (att, name): (Vec<u8>, String) = sqlx::query_as(
+        "SELECT attachment, attachment_name FROM mail_queue WHERE to_email = 'asha@example.com' AND attachment IS NOT NULL",
+    )
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert!(
+        att.starts_with(b"%PDF-1.4") && name.ends_with(".pdf"),
+        "{name}"
+    );
+    assert!(String::from_utf8_lossy(&att).contains("Total: Rs.1075.00"));
     // a second try the same day is refused
     let (st, _) = t.call(a, "POST", &path, None, json!({})).await;
     assert_eq!(st.as_u16(), 409);
@@ -17608,6 +17620,14 @@ async fn a_customer_can_stop_automatic_emails_but_not_ones_a_person_sends(pool: 
     );
     assert!(
         raw.contains("To stop these emails:") && raw.contains("Stop these emails"),
+        "{raw}"
+    );
+    // the invoice rides along as a PDF (sent as quoted-printable, which keeps its text readable), with the text and HTML
+    assert!(
+        raw.contains("Content-Type: application/pdf")
+            && raw.contains(".pdf")
+            && raw.contains("%PDF-1.4")
+            && raw.contains("Content-Type: text/html"),
         "{raw}"
     );
 
@@ -18004,4 +18024,75 @@ async fn a_test_clock_moves_billing_and_dates_for_the_whole_organisation(pool: P
             .await,
         2
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn free_units_can_be_per_seat(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    let today = zyvor_api::ist_today().to_string();
+    let cust = t
+        .ok(
+            a,
+            "POST",
+            "/v1/customers",
+            None,
+            json!({ "name": "Seats Co" }),
+        )
+        .await;
+    let seats = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Per seat", "amount_minor": 100_000, "interval_unit": "month", "usage_unit_minor": 250, "included_units": 100, "included_per_seat": true }))
+        .await;
+    let flat = t
+        .ok(a, "POST", "/v1/plans", None, json!({ "name": "Flat", "amount_minor": 100_000, "interval_unit": "month", "usage_unit_minor": 250, "included_units": 100 }))
+        .await;
+    let listed = t.ok(a, "GET", "/v1/plans", None, Value::Null).await;
+    let flag = |id: &Value| {
+        listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == *id)
+            .unwrap()["included_per_seat"]
+            .clone()
+    };
+    assert_eq!(
+        (flag(&seats["id"]), flag(&flat["id"])),
+        (json!(true), json!(false))
+    );
+    for (plan, key) in [(&seats, "s"), (&flat, "f")] {
+        let sub = t
+            .ok(a, "POST", "/v1/subscriptions", None, json!({ "customer_id": cust["id"], "plan_id": plan["id"], "quantity": 3, "start_date": today }))
+            .await;
+        t.ok(
+            a,
+            "POST",
+            &format!("/v1/subscriptions/{}/usage", sub["id"].as_str().unwrap()),
+            None,
+            json!({ "quantity": 250, "reference": key }),
+        )
+        .await;
+    }
+    t.ok(a, "POST", "/v1/billing/run", None, json!({})).await;
+    let inv = t.ok(a, "GET", "/v1/invoices", None, Value::Null).await;
+    let mut amounts: Vec<i64> = inv["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["amount_minor"].as_i64().unwrap())
+        .collect();
+    amounts.sort();
+    // 3 seats: 300 free units cover the 250 used; the flat plan's single 100 leaves 150 charged at 250 each
+    assert_eq!(amounts, vec![300_000, 300_000 + 150 * 250]);
+    // it can be switched off again
+    let off = t
+        .ok(
+            a,
+            "PATCH",
+            &format!("/v1/plans/{}", seats["id"].as_str().unwrap()),
+            None,
+            json!({ "included_per_seat": false }),
+        )
+        .await;
+    assert_eq!(off["included_per_seat"], false);
 }

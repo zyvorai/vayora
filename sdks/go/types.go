@@ -613,16 +613,17 @@ type GetPlansResponse struct {
 }
 
 type GetPlansResponseDataItem struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Currency       string `json:"currency"`
-	AmountMinor    int64  `json:"amount_minor"`
-	IntervalUnit   string `json:"interval_unit"`
-	IntervalCount  int64  `json:"interval_count"`
-	UsageUnitMinor int64  `json:"usage_unit_minor"`
-	Active         bool   `json:"active"`
-	TrialDays      int64  `json:"trial_days"`
-	IncludedUnits  int64  `json:"included_units"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Currency        string `json:"currency"`
+	AmountMinor     int64  `json:"amount_minor"`
+	IntervalUnit    string `json:"interval_unit"`
+	IntervalCount   int64  `json:"interval_count"`
+	UsageUnitMinor  int64  `json:"usage_unit_minor"`
+	Active          bool   `json:"active"`
+	TrialDays       int64  `json:"trial_days"`
+	IncludedUnits   int64  `json:"included_units"`
+	IncludedPerSeat bool   `json:"included_per_seat"`
 }
 
 type GetPlatformChangesResponse struct {
@@ -873,6 +874,7 @@ type PatchPlansByIdResponse struct {
 	Active                    any    `json:"active"`
 	TrialDays                 any    `json:"trial_days"`
 	IncludedUnits             any    `json:"included_units"`
+	IncludedPerSeat           any    `json:"included_per_seat"`
 	SubscribersKeptOnOldPrice any    `json:"subscribers_kept_on_old_price"`
 }
 

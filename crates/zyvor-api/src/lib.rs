@@ -38,6 +38,7 @@ pub mod outbox;
 pub mod payment_links;
 pub mod payments;
 pub mod payouts;
+pub mod pdf;
 pub mod platform;
 pub mod recon;
 pub mod refunds;

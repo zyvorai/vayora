@@ -39,6 +39,8 @@ pub struct NewPlan {
     trial_days: Option<i32>,
     /// Units used in each billing period that are free; the price applies only beyond them.
     included_units: Option<i64>,
+    /// Make the free units apply to each seat: the allowance on an invoice is `included_units` times the quantity.
+    included_per_seat: Option<bool>,
 }
 
 pub async fn create_plan(
@@ -82,9 +84,9 @@ pub async fn create_plan(
     }
     let id = new_id("plan");
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, trial_days, included_units) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
+    sqlx::query("INSERT INTO plans (id, tenant_id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, trial_days, included_units, included_per_seat) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
         .bind(&id).bind(&auth.tenant_id).bind(&b.name).bind(ccy.code()).bind(b.amount_minor).bind(&b.interval_unit)
-        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7)).bind(b.trial_days.unwrap_or(0)).bind(b.included_units.unwrap_or(0))
+        .bind(b.interval_count.unwrap_or(1)).bind(b.usage_unit_minor.unwrap_or(0)).bind(b.due_days.unwrap_or(7)).bind(b.trial_days.unwrap_or(0)).bind(b.included_units.unwrap_or(0)).bind(b.included_per_seat.unwrap_or(false))
         .execute(&mut *tx).await?;
     tenant::audit(
         &mut tx,
@@ -113,6 +115,8 @@ pub struct PlanPatch {
     trial_days: Option<i32>,
     /// Free units per billing period, from each subscriber's next invoice.
     included_units: Option<i64>,
+    /// Whether the free units are per seat (from each subscriber's next invoice).
+    included_per_seat: Option<bool>,
     /// With a new price: keep the plan's current subscribers on the price they pay now.
     keep_existing: Option<bool>,
 }
@@ -132,10 +136,11 @@ pub async fn update_plan(
         && b.active.is_none()
         && b.trial_days.is_none()
         && b.included_units.is_none()
+        && b.included_per_seat.is_none()
     {
         return Err(ApiError::invalid(
             "invalid_plan",
-            "send at least one of name, amount_minor, active, trial_days or included_units",
+            "send at least one of name, amount_minor, active, trial_days, included_units or included_per_seat",
         ));
     }
     if let Some(u) = b.included_units
@@ -171,16 +176,17 @@ pub async fn update_plan(
         ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let row: Option<(String, i64, bool, i32, i64)> = sqlx::query_as(
-        "SELECT name, amount_minor, active, trial_days, included_units FROM plans WHERE id = $1 FOR UPDATE",
+    let row: Option<(String, i64, bool, i32, i64, bool)> = sqlx::query_as(
+        "SELECT name, amount_minor, active, trial_days, included_units, included_per_seat FROM plans WHERE id = $1 FOR UPDATE",
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
     .await?;
-    let (name0, amount0, active0, trial0, included0) =
+    let (name0, amount0, active0, trial0, included0, seat0) =
         row.ok_or_else(|| ApiError::not_found("plan"))?;
     let trial = b.trial_days.unwrap_or(trial0);
     let included = b.included_units.unwrap_or(included0);
+    let per_seat = b.included_per_seat.unwrap_or(seat0);
     let name = b
         .name
         .as_deref()
@@ -190,7 +196,7 @@ pub async fn update_plan(
     let amount = b.amount_minor.unwrap_or(amount0);
     let active = b.active.unwrap_or(active0);
     sqlx::query(
-        "UPDATE plans SET name = $2, amount_minor = $3, active = $4, trial_days = $5, included_units = $6 WHERE id = $1",
+        "UPDATE plans SET name = $2, amount_minor = $3, active = $4, trial_days = $5, included_units = $6, included_per_seat = $7 WHERE id = $1",
     )
     .bind(&id)
     .bind(&name)
@@ -198,6 +204,7 @@ pub async fn update_plan(
     .bind(active)
     .bind(trial)
     .bind(included)
+    .bind(per_seat)
     .execute(&mut *tx)
     .await?;
     // lock today's subscribers at the old price (those already locked keep theirs)
@@ -217,21 +224,21 @@ pub async fn update_plan(
         &auth.actor,
         "plan.updated",
         Some(&id),
-        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "trial_days": [trial0, trial], "included_units": [included0, included], "subscribers_kept_on_old_price": kept }),
+        json!({ "name": [name0, name], "amount_minor": [amount0, amount], "active": [active0, active], "trial_days": [trial0, trial], "included_units": [included0, included], "included_per_seat": [seat0, per_seat], "subscribers_kept_on_old_price": kept }),
     )
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "trial_days": trial, "included_units": included, "subscribers_kept_on_old_price": kept }),
+        json!({ "id": id, "name": name, "amount_minor": amount, "active": active, "trial_days": trial, "included_units": included, "included_per_seat": per_seat, "subscribers_kept_on_old_price": kept }),
     ))
 }
 
 pub async fn list_plans(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, String, i64, String, i32, i64, bool, i32, i64)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active, trial_days, included_units FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
+    let rows: Vec<(String, String, String, i64, String, i32, i64, bool, i32, i64, bool)> = sqlx::query_as("SELECT id, name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, active, trial_days, included_units, included_per_seat FROM plans ORDER BY created_at DESC").fetch_all(&mut *tx).await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active, trial, inc)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active, "trial_days": trial, "included_units": inc })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, name, ccy, amt, unit, cnt, usage, active, trial, inc, seat)| json!({ "id": id, "name": name, "currency": ccy, "amount_minor": amt, "interval_unit": unit, "interval_count": cnt, "usage_unit_minor": usage, "active": active, "trial_days": trial, "included_units": inc, "included_per_seat": seat })).collect::<Vec<_>>() }),
     ))
 }
 
@@ -499,6 +506,36 @@ pub async fn queue_invoice_email(
         automatic,
     )
     .await?;
+    if fresh {
+        // a copy of the invoice as a PDF rides along
+        let mut doc = vec![
+            format!("From: {merchant}"),
+            format!("To: {name}"),
+            format!("Invoice number: {number}"),
+            String::new(),
+        ];
+        doc.extend(lines.iter().cloned());
+        if !lines.is_empty() {
+            doc.push(String::new());
+        }
+        doc.push(format!("Total: {}", money(amount)));
+        if settled > 0 {
+            doc.push(format!("Already paid or credited: {}", money(settled)));
+        }
+        doc.push(format!("Amount due: {}", money((amount - settled).max(0))));
+        if let Some(d) = due {
+            doc.push(format!("Due by: {d}"));
+        }
+        let pdf = crate::pdf::text_pdf(&format!("Invoice {number}"), &doc);
+        sqlx::query(
+            "UPDATE mail_queue SET attachment = $2, attachment_name = $3 WHERE dedupe_key = $1",
+        )
+        .bind(format!("invoice_send:{id}:{day}"))
+        .bind(pdf)
+        .bind(format!("{number}.pdf"))
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(if fresh {
         InvoiceMail::Queued
     } else {
@@ -711,7 +748,13 @@ pub async fn run_billing(
     let due: Vec<(String, String, i32, NaiveDate, Option<i64>)> = sqlx::query_as("SELECT id, plan_id, quantity, next_bill_date, unit_amount_minor FROM subscriptions WHERE status = 'active' AND next_bill_date <= $1 ORDER BY next_bill_date FOR UPDATE SKIP LOCKED LIMIT 500")
         .bind(today).fetch_all(&mut *conn).await?;
     for (sub_id, plan_id, qty, mut date, locked) in due {
-        let (name, ccy, amount, unit, count, usage_price, due_days, included): (String, String, i64, String, i32, i64, i32, i64) = sqlx::query_as("SELECT name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, included_units FROM plans WHERE id = $1").bind(&plan_id).fetch_one(&mut *conn).await?;
+        let (name, ccy, amount, unit, count, usage_price, due_days, included, per_seat): (String, String, i64, String, i32, i64, i32, i64, bool) = sqlx::query_as("SELECT name, currency, amount_minor, interval_unit, interval_count, usage_unit_minor, due_days, included_units, included_per_seat FROM plans WHERE id = $1").bind(&plan_id).fetch_one(&mut *conn).await?;
+        // free units per seat scale with the quantity
+        let included = if per_seat {
+            included * i64::from(qty)
+        } else {
+            included
+        };
         // a subscription kept on an earlier price pays that, not the plan's current one
         let amount = locked.unwrap_or(amount);
         let customer: String =

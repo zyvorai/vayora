@@ -607,6 +607,7 @@ GetPlansResponseDataItem = TypedDict("GetPlansResponseDataItem", {
     "active": "bool",
     "trial_days": "int",
     "included_units": "int",
+    "included_per_seat": "bool",
 })
 
 GetPlatformChangesResponse = TypedDict("GetPlatformChangesResponse", {
@@ -857,6 +858,7 @@ PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
     "active": "Any",
     "trial_days": "Any",
     "included_units": "Any",
+    "included_per_seat": "Any",
     "subscribers_kept_on_old_price": "Any",
 })
 

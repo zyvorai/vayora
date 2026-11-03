@@ -565,7 +565,7 @@ export const createPlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
   const included = includedUnits(f);
   if (included === null) return { error: "Free units: enter a whole number, or leave it empty." };
-  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined, trialDays: trial || undefined, includedUnits: included || undefined }));
+  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined, trialDays: trial || undefined, includedUnits: included || undefined, includedPerSeat: f.get("per_seat") === "on" || undefined }));
 };
 export const recordUsage = async (_: FormState, f: FormData): Promise<FormState> => {
   const quantity = Number(f.get("quantity") ?? 0);
@@ -582,7 +582,7 @@ export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> 
   if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
   const included = includedUnits(f);
   if (included === null) return { error: "Free units: enter a whole number, or leave it empty." };
-  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, trialDays: trial, includedUnits: included, keepExisting: f.get("keep") === "on" }));
+  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, trialDays: trial, includedUnits: included, includedPerSeat: f.get("per_seat") === "on", keepExisting: f.get("keep") === "on" }));
   return r?.error ? r : { ok: "Saved." };
 };
 export const setPlanActive = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.updatePlan(id(f), { active: f.get("active") === "true" }));
