@@ -48,3 +48,12 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connects to your Vayora test server on this network. No real money moves.
+  VayoraMerchantUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [VayoraMerchantUITests]
+    dependencies: [{ target: VayoraMerchant }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zyvor.vayora.merchant.uitests
+        GENERATE_INFOPLIST_FILE: YES
