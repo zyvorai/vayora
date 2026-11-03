@@ -101,7 +101,7 @@ reconciliation against real data.
 ## 3. Email
 
 Built: a database mail queue drained by the worker (`crates/zyvor-api/src/mail.rs`), verification, invitations, password
-reset. Verified only against a plain local SMTP server.
+reset. Verified against a plain local SMTP server and, on 2026-11-03, one real message through Zoho India (`smtp.zoho.in:587`, STARTTLS, the settings zyvor-web already uses) to a team address: the server accepted it (`cargo test -p zyvor-api --test smtp_real -- --ignored`, which needs `ZYVOR_TEST_SMTP_URL`, `ZYVOR_TEST_SMTP_FROM` and `ZYVOR_TEST_SMTP_TO` and sends exactly one email). Not checked: that it landed in the inbox rather than spam, how the HTML part renders in a mail client, and the full path from a queued row through the worker.
 
 - **Turn it on.** **Provision:** the k3s manifest and the Helm chart now carry optional mail settings.
   - k3s: `kubectl -n zyvor create secret generic zyvor-mail --from-literal=smtp-url='smtp://USER:PASS@HOST:587?tls=required' --from-literal=from='Zyvor <no-reply@your-domain>' --from-literal=console-url='https://console.your-domain'` then restart the `zyvor-api` and `zyvor-worker` deployments. Without the secret nothing changes.
