@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sqlx::PgConnection;
 use zyvor_core::{Currency, new_id};
 use zyvor_ledger::MoneyMode;
 use zyvor_settle::{
@@ -16,6 +17,159 @@ use zyvor_settle::{
 };
 
 use crate::{ApiError, AppState, auth::Auth, money_mode, tenant};
+
+/// Enrol a capture / refund / hold into the open acquire batch for this currency.
+/// No-op in orchestrate mode. Idempotent on `(tenant_id, reference, kind)`.
+pub async fn enrol_batch_item(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    kind: &str,
+    reference: &str,
+    amount_minor: i64,
+    currency: Currency,
+) -> Result<Option<String>, ApiError> {
+    if amount_minor <= 0 {
+        return Ok(None);
+    }
+    if !matches!(kind, "capture" | "refund" | "fee" | "hold") {
+        return Err(ApiError::invalid("invalid_kind", "kind must be capture, refund, fee or hold"));
+    }
+    let mode = money_mode::load_for_tenant(conn, tenant_id).await?;
+    if mode != MoneyMode::Acquire {
+        return Ok(None);
+    }
+    let ccy = currency.code();
+    let mut batch_id: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM settlement_batches WHERE status = 'open' AND currency = $1
+         ORDER BY created_at ASC LIMIT 1 FOR UPDATE",
+    )
+    .bind(ccy)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if batch_id.is_none() {
+        let id = new_id("sbat");
+        sqlx::query(
+            "INSERT INTO settlement_batches (id, tenant_id, currency, status) VALUES ($1, $2, $3, 'open')",
+        )
+        .bind(&id)
+        .bind(tenant_id)
+        .bind(ccy)
+        .execute(&mut *conn)
+        .await?;
+        tenant::audit(
+            conn,
+            tenant_id,
+            "system",
+            "settlement_batch.open",
+            Some(&id),
+            json!({ "currency": ccy, "auto": true }),
+        )
+        .await?;
+        batch_id = Some(id);
+    }
+    let batch_id = batch_id.expect("batch just ensured");
+    let item_id = new_id("sbi");
+    let inserted = sqlx::query(
+        "INSERT INTO settlement_batch_items (id, tenant_id, batch_id, kind, reference, amount_minor, currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (tenant_id, reference, kind) DO NOTHING",
+    )
+    .bind(&item_id)
+    .bind(tenant_id)
+    .bind(&batch_id)
+    .bind(kind)
+    .bind(reference.trim())
+    .bind(amount_minor)
+    .bind(ccy)
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+    if inserted == 0 {
+        return Ok(None);
+    }
+    match kind {
+        "capture" => {
+            sqlx::query(
+                "UPDATE settlement_batches SET captures_minor = captures_minor + $2 WHERE id = $1",
+            )
+            .bind(&batch_id)
+            .bind(amount_minor)
+            .execute(&mut *conn)
+            .await?;
+        }
+        "refund" => {
+            sqlx::query(
+                "UPDATE settlement_batches SET refunds_minor = refunds_minor + $2 WHERE id = $1",
+            )
+            .bind(&batch_id)
+            .bind(amount_minor)
+            .execute(&mut *conn)
+            .await?;
+        }
+        "fee" => {
+            sqlx::query(
+                "UPDATE settlement_batches SET fees_minor = fees_minor + $2 WHERE id = $1",
+            )
+            .bind(&batch_id)
+            .bind(amount_minor)
+            .execute(&mut *conn)
+            .await?;
+        }
+        "hold" => {
+            sqlx::query(
+                "UPDATE settlement_batches SET holds_minor = holds_minor + $2 WHERE id = $1",
+            )
+            .bind(&batch_id)
+            .bind(amount_minor)
+            .execute(&mut *conn)
+            .await?;
+        }
+        _ => unreachable!(),
+    }
+    sqlx::query(
+        "UPDATE settlement_batches SET net_minor = captures_minor - refunds_minor - fees_minor - holds_minor WHERE id = $1",
+    )
+    .bind(&batch_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(Some(item_id))
+}
+
+/// Release open acquire batches whose settlement delay has elapsed (worker).
+pub async fn auto_release_due(s: &AppState, tenant_id: &str) -> Result<usize, ApiError> {
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    let mode = money_mode::load_for_tenant(&mut tx, tenant_id).await?;
+    if mode != MoneyMode::Acquire {
+        return Ok(0);
+    }
+    let delay: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(settlement_delay_days, 1) FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(1);
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM settlement_batches
+         WHERE status = 'open' AND net_minor > 0
+           AND created_at + make_interval(days => $1) <= now()
+         ORDER BY created_at ASC LIMIT 20",
+    )
+    .bind(delay)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut n = 0;
+    for id in ids {
+        match release_batch_inner(s, tenant_id, "system", &id).await {
+            Ok(_) => n += 1,
+            Err(e) => {
+                tracing::warn!(tenant = %tenant_id, batch = %id, error = ?e.message, "auto-release failed")
+            }
+        }
+    }
+    Ok(n)
+}
 
 /// Prefer `ZYVOR_PAYOUT_RAIL_URL` + `ZYVOR_PAYOUT_RAIL_KEY` (sponsor HTTP rail); otherwise the sim rail.
 async fn rail_send(insn: &PayoutInstruction) -> Result<PayoutResult, RailError> {
@@ -307,12 +461,22 @@ pub async fn release_batch(
     Path(batch_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let out = release_batch_inner(&s, &auth.tenant_id, &auth.actor, &batch_id).await?;
+    Ok(Json(out))
+}
+
+async fn release_batch_inner(
+    s: &AppState,
+    tenant_id: &str,
+    actor: &str,
+    batch_id: &str,
+) -> Result<Value, ApiError> {
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     let row: Option<(String, String, i64, i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT status, currency, captures_minor, refunds_minor, fees_minor, holds_minor, net_minor
          FROM settlement_batches WHERE id = $1 FOR UPDATE",
     )
-    .bind(&batch_id)
+    .bind(batch_id)
     .fetch_optional(&mut *tx)
     .await?;
     let (status, ccy, cap, refn, fees, holds, net) =
@@ -323,7 +487,7 @@ pub async fn release_batch(
     let delay: i32 = sqlx::query_scalar(
         "SELECT COALESCE(settlement_delay_days, 1) FROM tenant_settings WHERE tenant_id = $1",
     )
-    .bind(&auth.tenant_id)
+    .bind(tenant_id)
     .fetch_optional(&mut *tx)
     .await?
     .unwrap_or(1);
@@ -331,7 +495,7 @@ pub async fn release_batch(
         let ready: bool = sqlx::query_scalar(
             "SELECT created_at + make_interval(days => $2) <= now() FROM settlement_batches WHERE id = $1",
         )
-        .bind(&batch_id)
+        .bind(batch_id)
         .bind(delay)
         .fetch_one(&mut *tx)
         .await?;
@@ -343,7 +507,7 @@ pub async fn release_batch(
         }
     }
     let currency: Currency = ccy.parse().map_err(|_| ApiError::internal())?;
-    let org = money_mode::organisation_id(&mut tx, &auth.tenant_id).await?;
+    let org = money_mode::organisation_id(&mut tx, tenant_id).await?;
     let totals = BatchTotals {
         captures_minor: cap,
         refunds_minor: refn,
@@ -356,25 +520,33 @@ pub async fn release_batch(
     if net <= 0 {
         return Err(ApiError::invalid("nothing_to_release", "batch net must be positive"));
     }
-    // Move captures from in_flight → available (simplified: whole captures amount).
     if cap > 0 {
         post_escrow_available(cap, currency)
             .map_err(zyvor_ledger::StoreError::from)?
-            .post(&mut tx, &auth.tenant_id, &format!("escrow_avail:{batch_id}"), None)
+            .post(&mut tx, tenant_id, &format!("escrow_avail:{batch_id}"), None)
             .await?;
     }
     sqlx::query("UPDATE settlement_batches SET status = 'releasing' WHERE id = $1")
-        .bind(&batch_id)
+        .bind(batch_id)
         .execute(&mut *tx)
         .await?;
     post_settlement_release(MoneyMode::Acquire, &org, net, fees, currency)
         .map_err(zyvor_ledger::StoreError::from)?
-        .post(&mut tx, &auth.tenant_id, &format!("settle_release:{batch_id}"), None)
+        .post(&mut tx, tenant_id, &format!("settle_release:{batch_id}"), None)
         .await?;
+    tenant::audit(
+        &mut tx,
+        tenant_id,
+        actor,
+        "settlement_batch.release",
+        Some(batch_id),
+        json!({ "net_minor": net }),
+    )
+    .await?;
     tx.commit().await?;
 
     let insn = PayoutInstruction {
-        payout_id: batch_id.clone(),
+        payout_id: batch_id.to_string(),
         amount_minor: net,
         currency,
         rail: RailKind::Imps,
@@ -387,24 +559,24 @@ pub async fn release_batch(
         .await
         .map_err(|e| ApiError::conflict("rail_failed", e.to_string()))?;
 
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
     match result.status {
         PayoutRailStatus::Settled | PayoutRailStatus::Accepted => {
             post_settlement_banked(net, currency)
                 .map_err(zyvor_ledger::StoreError::from)?
-                .post(&mut tx, &auth.tenant_id, &format!("settle_bank:{batch_id}"), None)
+                .post(&mut tx, tenant_id, &format!("settle_bank:{batch_id}"), None)
                 .await?;
             sqlx::query(
                 "UPDATE settlement_batches SET status = 'released', rail = $2, rail_ref = $3, released_at = now() WHERE id = $1",
             )
-            .bind(&batch_id)
+            .bind(batch_id)
             .bind(RailKind::Imps.as_str())
             .bind(&result.rail_ref)
             .execute(&mut *tx)
             .await?;
             tenant::emit(
                 &mut tx,
-                &auth.tenant_id,
+                tenant_id,
                 "settlement_batch.released",
                 json!({ "batch_id": batch_id, "net_minor": net, "rail_ref": result.rail_ref }),
             )
@@ -414,7 +586,7 @@ pub async fn release_batch(
             sqlx::query(
                 "UPDATE settlement_batches SET status = 'failed', failure_reason = $2 WHERE id = $1",
             )
-            .bind(&batch_id)
+            .bind(batch_id)
             .bind(result.failure_reason.as_deref().unwrap_or("rail_failed"))
             .execute(&mut *tx)
             .await?;
@@ -423,7 +595,7 @@ pub async fn release_batch(
             sqlx::query(
                 "UPDATE settlement_batches SET status = 'failed', failure_reason = $2 WHERE id = $1",
             )
-            .bind(&batch_id)
+            .bind(batch_id)
             .bind("rail_unknown")
             .execute(&mut *tx)
             .await?;
@@ -432,11 +604,11 @@ pub async fn release_batch(
     let out: Value = sqlx::query_scalar(
         "SELECT json_build_object('id', id, 'status', status, 'net_minor', net_minor, 'rail_ref', rail_ref) FROM settlement_batches WHERE id = $1",
     )
-    .bind(&batch_id)
+    .bind(batch_id)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(Json(out))
+    Ok(out)
 }
 
 pub async fn escrow_proof(

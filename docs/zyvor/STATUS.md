@@ -15,7 +15,8 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Cashfree adapter | 🟡 | Orders, server-initiated UPI collect, refunds, lookup by `order_id`, settlement recon, webhook verification. Built from public docs. |
 | PhonePe adapter | 🟡 | PG pay/status/refund + webhook verify; built from public docs; simulator/mock only until sandbox credentials. |
 | Sponsor UPI / acquire | 🟡 | `sponsor_upi` provider + `zyvor-settle` batches/rails + money_mode; needs sponsor LOI before live. |
-| Network card tokens | 🟡 | `zyvor-cards` + `/v1/card_tokens`; rejects PAN/CVV; no live vault yet. |
+| Network card tokens | 🟡 | `zyvor-cards` + `/v1/card_tokens`; charge via `card_token_id` on attempts (sim stub); rejects PAN/CVV; no live PCI vault. |
+| Acquire batch auto-enrol | 🟡 | Captures/refunds enrol into open settlement batches; worker auto-releases after `settlement_delay_days`. |
 | Capability matrix | ✅ | Router cannot select a provider for an unsupported method or currency (tested). |
 | Mobile-first checkout | ✅ | `apps/zyvor-checkout`. Resumable from the URL, clear pending/"confirming" states, accessible errors. Exercised in a browser against the mock. |
 | Provider-hosted card fields | ◐ | Script wiring for Razorpay Checkout / Cashfree JS exists but is untested against live providers. No card data ever reaches Zyvor; no CVV is stored. |
@@ -80,7 +81,7 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 - **Coupons and convenience fees** on fixed-amount payment links: percent or flat coupons (capped uses, expiry, deactivation, spent atomically with the payer's payment) and a fee the payer covers; the payer sees the breakdown, previewing a coupon spends nothing, and a coupon can never make a payment free. Verified in a browser: valid and invalid codes, the price clearing after a bad code (a bug found and fixed there), and the carry-through to checkout.
 - **Checkout in six languages** (English, Hindi, Marathi, Tamil, Telugu, Bengali) on the payer's pages: `?lang=`, remembered choice, or browser language; a test keeps every language complete and every placeholder intact. Verified in a browser in Hindi and Tamil across the link page and the payment page. The translations are not yet reviewed by native speakers.
 - **Console payouts**: vendors' split-payment balances, a "pay from their balance" option, and a bulk upload (`vendor, amount, purpose, reference` per line; names or ids; refuses lines with extra columns so `12,500` cannot silently become ₹12; keeps the text on an error; repeat-safe by reference). Verified in a browser.
-- Still open from the plan: live AutoPay verification, Magento plugin, auto-enrol of captures into settlement batches, charge-with-token against a PCI vault, vertical campus/clinic/factory templates.
+- Still open from the plan: live AutoPay / PhonePe / sponsor sandbox verification, real PCI vault charge path, vertical campus/clinic/factory templates, counsel fund-flow + sponsor LOI (see OWN_LICENCES.md).
 
 ## UPI AutoPay mandates (simulator only)
 
@@ -93,7 +94,7 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 | Auto-collect for subscriptions | 🟡 | Link a mandate to a subscription; each invoice is scheduled as a debit and marked paid when captured. Without an active mandate nothing changes. |
 | iOS screens | 🟡 | Pay (scan, approve, taken debits, stop) and Merchant (create with QR, schedule, pause, resume, revoke, Run now) in `apps/ios`, against the simulator only. The payer sees debits taken, not upcoming ones. Merchant has since gained an Owed tab (invoices, approvals, payouts, disputes, reconciliation cases), Cashflow (settlements explained, GST totals), payment links, a payment timeline and subscriptions: driven by UI tests on a Simulator and against a real local server; see `docs/zyvor/IMPLEMENTATION_STATUS.md` for what was and was not checked. |
 | Cashfree Subscriptions adapter | 🟡 (mocks only) | Mandate create, refresh, revoke and debit through Cashfree Subscriptions (v2026-01-01), `mandates` capability on. **Built from Cashfree's public docs and tested against a local mock HTTP server only; NOT verified against Cashfree's sandbox or production.** Several behaviours the docs leave unclear are marked `UNCLEAR` in `crates/zyvor-providers/src/cashfree/subscriptions.rs`. Subscription status and authorization webhooks are not applied (a mandate is refreshed by asking); charge webhooks are. |
-| Razorpay recurring | ❌ | No adapter. Its `mandates` capability is false. With only Razorpay connected, a mandate request answers `no_route`. |
+| Razorpay recurring | 🟡 | Adapter from public docs (`razorpay/recurring.rs`); local mock only. `mandates: true`. Not sandbox-verified. |
 | The rules (notice window, per-debit ceiling default ₹15,000) | ◐ | Configurable, strict by default, **not verified against NPCI's current circular**; see [REGULATORY.md](REGULATORY.md). |
 
 ## Deviations from the brief

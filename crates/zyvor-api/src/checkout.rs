@@ -151,6 +151,7 @@ pub async fn pay(
             vpa: b.vpa,
             return_url: b.return_url,
             upi_flow: b.upi_flow,
+            card_token_id: None,
         },
     )
     .await

@@ -38,7 +38,7 @@ database, and reconciliation that explains every rupee. Those are what finance t
 marketplaces lack when they stitch two gateways together.
 
 ## What this means for the roadmap
-Acquire-mode engineering (custody ledger, settle rails, PhonePe/sponsor adapters, card tokens, console/SDK) is
-in the tree at simulator level. Next: sponsor LOI + live sandboxes, Cashfree/sponsor AutoPay verification,
-charge-with-token against a PCI vault, Magento plugin, auto-enrol of captures into settlement batches. Live money
-movement needs the standing in REGULATORY.md; simulators alone cannot prove it.
+Acquire-mode engineering (custody ledger, auto-enrol batches, settle rails, PhonePe/sponsor adapters, card-token
+charge stub, Magento/Shopify/Woo scaffolds, Cashfree+Razorpay AutoPay adapters, console/SDK) is in the tree at
+simulator level. Next: sponsor LOI + live sandboxes, AutoPay sandbox verification, charge against a real PCI vault.
+Live money movement needs the standing in REGULATORY.md; simulators alone cannot prove it.

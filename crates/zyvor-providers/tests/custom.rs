@@ -129,6 +129,7 @@ fn payment(attempt: &str) -> CreatePayment {
         return_url: None,
         upi_intent: false,
         client: None,
+        network_token_ref: None,
     }
 }
 

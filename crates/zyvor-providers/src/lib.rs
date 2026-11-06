@@ -123,6 +123,9 @@ pub struct CreatePayment {
     /// Ask for a UPI QR / intent instead of a hosted or collect flow (only sent to a provider that has `upi_intent`).
     pub upi_intent: bool,
     pub client: Option<ClientEnv>,
+    /// Network token reference from `zyvor-cards` — never a PAN. Sim / sponsor vaults charge with this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_token_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

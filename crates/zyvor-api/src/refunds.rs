@@ -284,6 +284,8 @@ pub async fn apply_refund_result(
             .map_err(zyvor_ledger::StoreError::from)?
             .post(conn, tenant_id, &format!("refund:{refund_id}"), None)
             .await?;
+        crate::settle::enrol_batch_item(conn, tenant_id, "refund", refund_id, amount, currency)
+            .await?;
         // marketplace shares owed to vendors shrink in proportion to what has been refunded
         let reverse_expense = match mode {
             zyvor_ledger::MoneyMode::Orchestrate => accounts::COLLECTIONS,

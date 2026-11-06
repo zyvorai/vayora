@@ -318,6 +318,34 @@ impl Provider for SimProvider {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        // Network-token card charge (stub vault): capture server-side; never accepts PAN.
+        if req.method == Method::Card
+            && let Some(nref) = req.network_token_ref.as_deref().filter(|s| !s.is_empty())
+        {
+            let fail = nref.starts_with("nt_fail") || nref.starts_with("sim_fail");
+            let status = if fail {
+                PaymentStatus::Failed
+            } else if req.capture_automatic {
+                PaymentStatus::Captured
+            } else {
+                PaymentStatus::Authorized
+            };
+            let state = PaymentState {
+                status: status.clone(),
+                provider_order_ref: Some(req.attempt_id.clone()),
+                provider_payment_ref: Some(new_id("simpay")),
+                failure_reason: fail.then(|| "simulated_token_decline".into()),
+                raw: json!({ "sim": true, "flow": "network_token", "network_token_ref": nref }),
+            };
+            self.payments
+                .lock()
+                .unwrap()
+                .insert(req.attempt_id.clone(), state.clone());
+            return Ok(Initiated {
+                state,
+                action: ClientAction::None,
+            });
+        }
         // UPI with no payer-typed UPI ID: issue a QR / intent payload, as a partner would. The payee is a
         // sandbox-only handle that no real UPI app can pay. The payment stays pending until the payer
         // "approves"; a lookup after that returns the final state (see `fetch_payment`).
@@ -593,6 +621,7 @@ mod payer_tests {
             return_url: None,
             upi_intent: true,
             client: None,
+            network_token_ref: None,
         }
     }
 
@@ -883,6 +912,7 @@ mod mandate_tests {
             return_url: None,
             upi_intent: true,
             client: None,
+            network_token_ref: None,
         };
         let id = req.attempt_id.clone();
         sim.initiate(&req).await.unwrap();

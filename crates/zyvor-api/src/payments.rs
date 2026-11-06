@@ -352,6 +352,9 @@ pub struct CreateAttempt {
     /// public checkout sets it, after the session said that is how UPI works for this payment.
     #[serde(default)]
     pub upi_flow: Option<String>,
+    /// Charge a previously stored network card token (never PAN/CVV). Requires `method=card`.
+    #[serde(default)]
+    pub card_token_id: Option<String>,
 }
 
 fn valid_vpa(v: &str) -> bool {
@@ -417,12 +420,19 @@ pub async fn start_attempt(
 
     // ---- tx1: claim the key, validate, route, and persist the attempt BEFORE calling the provider ----
     let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    if b.card_token_id.is_some() && method != Method::Card {
+        return Err(ApiError::invalid(
+            "card_token_requires_card",
+            "card_token_id is only valid when method is card",
+        ));
+    }
     let hash = fingerprint(&[
         intent_id,
         method.as_str(),
         b.vpa.as_deref().unwrap_or(""),
         b.return_url.as_deref().unwrap_or(""),
         b.upi_flow.as_deref().unwrap_or(""),
+        b.card_token_id.as_deref().unwrap_or(""),
     ]);
     let key = match idempotency::begin(&mut tx, tenant_id, "attempts", headers, &hash).await? {
         Begin::Replay {
@@ -571,6 +581,25 @@ pub async fn start_attempt(
     .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
     let provider = registry::load(s, &mut tx, tenant_id, env, &decision.provider).await?;
 
+    // Network token charge: load ref inside the txn; never accept PAN/CVV on this path.
+    let network_token_ref = if let Some(tok_id) = b.card_token_id.as_deref() {
+        let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+            "SELECT network_token_ref, revoked_at FROM card_tokens WHERE id = $1",
+        )
+        .bind(tok_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((nref, revoked_at)) = row else {
+            return Err(ApiError::not_found("card token"));
+        };
+        if revoked_at.is_some() {
+            return Err(ApiError::conflict("token_revoked", "card token has been revoked"));
+        }
+        Some(nref)
+    } else {
+        None
+    };
+
     let attempt_id = new_id("att");
     sqlx::query(
         "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)",
@@ -598,7 +627,7 @@ pub async fn start_attempt(
         actor,
         "payment_attempt.created",
         Some(&attempt_id),
-        json!({ "provider": decision.provider, "reasons": decision.reasons }),
+        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id }),
     )
     .await?;
     // Customer details some providers require.
@@ -628,6 +657,7 @@ pub async fn start_attempt(
             && b.vpa.is_none()
             && b.upi_flow.as_deref() == Some("intent"),
         client: Some(crate::clientenv::from_headers(headers)),
+        network_token_ref,
     };
     let result = provider.initiate(&req).await;
 
@@ -1103,6 +1133,8 @@ async fn on_captured(
     zyvor_ledger::capture_entries(mode, provider, &org, amount, currency)
         .map_err(zyvor_ledger::StoreError::from)?
         .post(conn, tenant_id, &format!("capture:{attempt_id}"), None)
+        .await?;
+    crate::settle::enrol_batch_item(conn, tenant_id, "capture", attempt_id, amount, currency)
         .await?;
     crate::splits::accrue(conn, tenant_id, intent_id, currency).await?;
     let (invoice_id, external_ref): (Option<String>, Option<String>) = sqlx::query_as("UPDATE payment_intents SET status = 'succeeded', updated_at = now() WHERE id = $1 RETURNING invoice_id, external_ref")

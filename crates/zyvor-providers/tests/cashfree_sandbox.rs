@@ -43,6 +43,7 @@ fn pay(device: &str, os: &str) -> CreatePayment {
             rendering: "mweb".into(),
             browser: "chrome".into(),
         }),
+        network_token_ref: None,
     }
 }
 

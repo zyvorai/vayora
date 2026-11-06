@@ -66,6 +66,17 @@ async fn acquire_capture_posts_escrow_not_receivable(pool: PgPool) {
     .unwrap();
     assert_eq!(payable, 10_000);
 
+    // Capture auto-enrols into an open settlement batch.
+    let enrolled: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM settlement_batch_items WHERE tenant_id = $1 AND kind = 'capture' AND reference = $2",
+    )
+    .bind(&a.id)
+    .bind(&aid)
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(enrolled, 1, "acquire capture must enrol into a settlement batch");
+
     let att = t
         .ok(
             a,
@@ -117,24 +128,13 @@ async fn settlement_batch_release_and_escrow_proof(pool: PgPool) {
     .await;
     let (_iid, aid, _) = t.paid_razorpay(a, 5_000, json!({})).await;
 
-    let batch = t
-        .ok(
-            a,
-            "POST",
-            "/v1/settlement_batches",
-            None,
-            json!({ "currency": "INR" }),
-        )
-        .await;
-    let bid = batch["id"].as_str().unwrap();
-    t.ok(
-        a,
-        "POST",
-        &format!("/v1/settlement_batches/{bid}/items"),
-        None,
-        json!({ "kind": "capture", "reference": aid, "amount_minor": 5_000 }),
-    )
-    .await;
+    // Capture already opened a batch and enrolled itself.
+    let batches = t.ok(a, "GET", "/v1/settlement_batches", None, Value::Null).await;
+    let bid = batches["data"].as_array().unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(batches["data"][0]["captures_minor"], 5_000);
     t.ok(
         a,
         "POST",
@@ -244,6 +244,58 @@ async fn acquire_live_kyc_gate(pool: PgPool) {
 
 fn a_tenant(t: &T) -> &Tenant {
     &t.a
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn charge_with_network_token_via_sim(pool: PgPool) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    // Prefer sim for card network-token charges.
+    t.ok(
+        a,
+        "POST",
+        "/v1/provider_accounts",
+        None,
+        json!({ "provider": "sim", "credentials": {}, "webhook_secret": "x" }),
+    )
+    .await;
+    let tok = t
+        .ok(
+            a,
+            "POST",
+            "/v1/card_tokens",
+            None,
+            json!({
+                "network_token_ref": "nt_sim_ok",
+                "last4": "4242",
+                "brand": "visa",
+                "exp_month": 12,
+                "exp_year": 2030
+            }),
+        )
+        .await;
+    let tok_id = tok["id"].as_str().unwrap();
+    let intent = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payment_intents",
+            Some("tok-charge-1"),
+            json!({ "amount_minor": 2_500, "currency": "INR", "allowed_providers": ["sim"] }),
+        )
+        .await;
+    let iid = intent["id"].as_str().unwrap();
+    let attempt = t
+        .ok(
+            a,
+            "POST",
+            &format!("/v1/payment_intents/{iid}/attempts"),
+            Some("tok-att-1"),
+            json!({ "method": "card", "card_token_id": tok_id }),
+        )
+        .await;
+    assert_eq!(attempt["status"], "captured", "{attempt}");
+    assert_eq!(attempt["method"], "card");
 }
 
 #[sqlx::test(migrations = "./migrations")]

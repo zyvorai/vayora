@@ -12,6 +12,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - Risk scoring (0–100) with optional `score_block_below`; Shopify/WooCommerce plugin scaffolds under `plugins/`.
 - Compliance pack: dual-mode REGULATORY, CERT-In runbook, acquire KYC/AML, PCI scope, own-licences track, ADR 0004. Sponsor LOI / RBI PA / NPCI TPAP remain operator actions.
 - **Docs and GitHub Pages:** [ACQUIRE_MODE.md](docs/zyvor/ACQUIRE_MODE.md) operator guide; HOW_IT_WORKS, ARCHITECTURE, MARKET, IMPLEMENTATION_STATUS, THREAT_MODEL, README and the site hero/FAQ/footer updated for dual money modes, PhonePe/sponsor adapters, settle rails and card tokens.
+- **Acquire completion (in-repo):** captures/refunds auto-enrol into settlement batches; worker releases after `settlement_delay_days`; RLS on batches/items/card_tokens; charge with `card_token_id` (sim stub vault); Razorpay recurring/mandates adapter (docs + local mock); Magento 2 plugin scaffold.
 
 ## 1 November 2026
 **Merchant: items, bills and sales by item (on-phone, test mode)**

@@ -118,6 +118,10 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tx.commit().await?;
             }
         }
+        // 3d. acquire: release settlement batches whose T+N delay has elapsed
+        if let Err(e) = crate::settle::auto_release_due(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "settlement auto-release failed");
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

@@ -22,6 +22,9 @@ Zyvor can run in two money modes. This page is the operator guide for **`acquire
 | Escrow proof | `GET /v1/escrow/proof` |
 | Rail payout | `POST /v1/payouts/{id}/send_rail` |
 | Cards | `GET/POST /v1/card_tokens`, `POST …/{id}/revoke` (network tokens only) |
+| Charge with token | `POST /v1/payment_intents/{id}/attempts` with `method=card` and `card_token_id` (sim/stub vault; never PAN) |
+
+Captures and refunds in acquire mode **auto-enrol** into the open settlement batch for that currency (idempotent). The worker releases batches when `settlement_delay_days` has elapsed.
 
 SDKs: Node `moneyMode`, `acquireKyc`, `settlementBatches`, `escrow`, `cardTokens`, `payouts.sendRail`; Python/Go equivalents. Console: Settings → Money mode / Acquire KYC; Providers → PhonePe & Sponsor UPI; Payouts → Send via rail.
 

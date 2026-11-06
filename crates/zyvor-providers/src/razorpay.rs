@@ -1,6 +1,8 @@
 //! Razorpay adapter (Orders + hosted Checkout). Built from Razorpay's public API docs and tested
 //! against `zyvor-provider-mock`; it has NOT been exercised against Razorpay's live sandbox.
 //! Amounts are already integer paise on Razorpay's side.
+//!
+//! Recurring / UPI AutoPay: see [`recurring`] — docs-only, local mock only.
 
 use std::time::Duration;
 
@@ -9,6 +11,8 @@ use serde_json::{Value, json};
 use zyvor_core::Currency;
 
 use crate::*;
+
+mod recurring;
 
 pub struct Razorpay {
     base: String,
@@ -106,7 +110,8 @@ impl Provider for Razorpay {
             server_initiated_upi: false,
             // Hosted flows exist, but no QR/intent payload is verified with this partner yet.
             upi_intent: false,
-            mandates: false,
+            // Recurring adapter built from public docs; NOT verified against Razorpay sandbox.
+            mandates: true,
             refund_window_days: Some(180),
         }
     }
@@ -252,6 +257,26 @@ impl Provider for Razorpay {
                 raw: rs,
             },
         })
+    }
+
+    async fn create_mandate(&self, req: &CreateMandate) -> Result<MandateState, ProviderError> {
+        self.rec_create_mandate(req).await
+    }
+    async fn fetch_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        self.rec_fetch_mandate(mandate_id).await
+    }
+    async fn revoke_mandate(&self, mandate_id: &str) -> Result<MandateState, ProviderError> {
+        self.rec_revoke_mandate(mandate_id).await
+    }
+    async fn debit(&self, req: &DebitRequest) -> Result<Initiated, ProviderError> {
+        self.rec_debit(req).await
+    }
+    async fn fetch_debit(
+        &self,
+        attempt_id: &str,
+        mandate_id: &str,
+    ) -> Result<PaymentState, ProviderError> {
+        self.rec_fetch_debit(attempt_id, mandate_id).await
     }
 
     async fn fetch_settlements(

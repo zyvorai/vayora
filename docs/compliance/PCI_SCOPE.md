@@ -20,4 +20,4 @@ Zyvor **never** stores PAN or CVV. Card acceptance uses network tokens via `zyvo
 - Separate network segment for any future hosted-fields proxy (document in deploy)
 - Quarterly review that no logs contain full PAN
 
-See crate `zyvor-cards` and `POST /v1/card_tokens`.
+See crate `zyvor-cards`, `POST /v1/card_tokens`, and charge via `POST /v1/payment_intents/{id}/attempts` with `card_token_id` (sim/stub vault today; production needs a PCI vault or sponsor hosted fields).
