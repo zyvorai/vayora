@@ -2,9 +2,10 @@
 
 Source for the gateway side: GoKwik's published comparison of eleven Indian gateways (PayU, Easebuzz, Razorpay,
 Cashfree, CCAvenue, Paytm, PhonePe, Instamojo, Stripe India, BillDesk, NTT DATA). It is a vendor's marketing
-article, so treat its claims as unverified and check pricing with each provider. Zyvor is **not** a gateway or an
-acquirer: it sits above them (orchestration, ledger, reconciliation, billing, collections). That decides which
-features make sense to build and which can only come from the underlying provider.
+article, so treat its claims as unverified and check pricing with each provider. In **`orchestrate`** mode Zyvor is
+**not** itself a gateway: it sits above Razorpay/Cashfree/PhonePe (routing, ledger, recon, billing). In **`acquire`**
+mode it is the merchant-facing PG under a licensed sponsor ([ACQUIRE_MODE.md](ACQUIRE_MODE.md)); own RBI PA / NPCI
+TPAP are a separate track ([OWN_LICENCES.md](../compliance/OWN_LICENCES.md)).
 
 ## What gateways compete on, and Zyvor's answer
 
@@ -37,7 +38,7 @@ database, and reconciliation that explains every rupee. Those are what finance t
 marketplaces lack when they stitch two gateways together.
 
 ## What this means for the roadmap
-Next candidates that fit the layer: coupons and convenience fees on links, checkout
-translations, and UPI AutoPay/e-mandate once a real provider sandbox is connected. Anything that moves money
-for real (payout rails, instant settlement, mandates) needs live provider credentials and the regulatory
-standing described in REGULATORY.md; none of that can be verified against simulators alone.
+Acquire-mode engineering (custody ledger, settle rails, PhonePe/sponsor adapters, card tokens, console/SDK) is
+in the tree at simulator level. Next: sponsor LOI + live sandboxes, Cashfree/sponsor AutoPay verification,
+charge-with-token against a PCI vault, Magento plugin, auto-enrol of captures into settlement batches. Live money
+movement needs the standing in REGULATORY.md; simulators alone cannot prove it.

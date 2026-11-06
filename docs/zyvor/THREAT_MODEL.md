@@ -1,7 +1,9 @@
 # Zyvor Payments threat model (living document)
 
-Scope: the API, worker, console and checkout as deployed from this repository. Rails are simulated; this
-document says what the code defends against today and what it does not.
+Scope: the API, worker, console and checkout as deployed from this repository. Collection and payout rails are
+simulated unless a real provider or `ZYVOR_PAYOUT_RAIL_*` is configured; this document says what the code
+defends against today and what it does not. Acquire mode adds custody ledger accounts under a licensed
+sponsor — see [ACQUIRE_MODE.md](ACQUIRE_MODE.md) and [PCI_SCOPE.md](../compliance/PCI_SCOPE.md).
 
 ## Assets
 Ledger and invoice records (integrity first), provider credentials and webhook secrets (confidentiality),

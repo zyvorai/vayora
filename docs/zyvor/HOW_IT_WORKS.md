@@ -4,14 +4,20 @@ Three views of the same system: what a **customer** sees when they pay, what the
 
 ## The one idea to hold on to
 
-Zyvor **does not hold money**. Your own Razorpay or Cashfree account collects the payment and settles it to your bank. Razorpay and Cashfree are just two adapters; you can bring your own gateway instead ([BRING_YOUR_OWN_PROVIDER.md](BRING_YOUR_OWN_PROVIDER.md)). Zyvor decides where a payment goes, records every step in an append-only ledger, and checks that what the provider settled matches what was paid. See [REGULATORY.md](REGULATORY.md).
+Zyvor has two **money modes** ([ACQUIRE_MODE.md](ACQUIRE_MODE.md), [REGULATORY.md](REGULATORY.md)):
+
+- **`orchestrate` (default):** your own Razorpay, Cashfree, PhonePe or custom account collects and settles. Zyvor routes, records and reconciles. It does not hold funds.
+- **`acquire`:** Zyvor is the merchant-facing PG; a **licensed sponsor** (PA / bank PSP) holds escrow. The ledger posts custody accounts; settlement batches and payout rails live in `zyvor-settle`. Live acquire needs counsel, a sponsor LOI, acquire KYC and `ZYVOR_ALLOW_LIVE_ACQUIRE=1`.
+
+Adapters sit behind one `Provider` trait ([BRING_YOUR_OWN_PROVIDER.md](BRING_YOUR_OWN_PROVIDER.md)).
 
 ```mermaid
 flowchart LR
-  C([Customer]) -- pays --> P[Your provider<br/>Razorpay or Cashfree]
-  P -- settles --> B[(Your bank)]
+  C([Customer]) -- pays --> P[Provider or sponsor rail]
+  P -- orchestrate: settles --> B[(Merchant bank)]
+  P -- acquire: escrow --> E[Sponsor escrow]
+  E -- settle / payout rail --> B
   Z[Zyvor] -. routes, records, reconciles .-> P
-  Z -. never touches funds .-> B
 ```
 
 ## 1. A customer pays (the common-person view)
@@ -66,7 +72,7 @@ flowchart LR
   MW --> ID["Idempotency<br/>check"]
   ID --> RT["Router<br/>capability matrix,<br/>rules, fees"]
   RT -- "1. save the attempt first" --> DB[("PostgreSQL<br/>row-level security")]
-  RT -- "2. then call the provider" --> PROV["Razorpay<br/>or Cashfree"]
+  RT -- "2. then call the provider" --> PROV["Razorpay, Cashfree,<br/>PhonePe, sponsor_upi<br/>or custom"]
   PROV -- "result or webhook" --> SM["State machine<br/>only moves forward"]
   SM --> LG["Ledger<br/>double entry"]
   SM --> OB["Outbox<br/>events to send"]

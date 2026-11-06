@@ -9,6 +9,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Architecture](zyvor/ARCHITECTURE.md) | Components and the invariants the code keeps |
 | [Threat model](zyvor/THREAT_MODEL.md) | What the code defends against today, and what it does not |
 | [Regulatory position](zyvor/REGULATORY.md) | Orchestrate vs acquire money modes, fund-flow freeze (not legal advice) |
+| [Acquire mode](zyvor/ACQUIRE_MODE.md) | Operator guide: APIs, env vars, go-live checklist for sponsor-backed PG |
 | [Compliance map](compliance/README.md) | Requirements by area and where each lands in the code |
 | [Own licences](compliance/OWN_LICENCES.md) | RBI PA + NPCI TPAP parallel track under sponsor |
 | [CERT-In runbook](compliance/CERT_IN_RUNBOOK.md) | Six-hour incident reporting checklist |

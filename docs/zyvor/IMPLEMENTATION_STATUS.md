@@ -32,8 +32,11 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 |---|---|
 | Per-merchant return-URL allowlist | Not built (basic validation only) |
 | OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
-| UPI AutoPay mandates | Built at level 1 with the simulator (see "UPI AutoPay mandates" below). No real provider adapter yet |
-| Vendor payouts through a partner | Not built (payouts are bookkeeping only) |
+| UPI AutoPay mandates | Built at level 1 (simulator + Cashfree adapter from docs, unverified). Sponsor UPI declares mandates. See [MANDATES_LIVE.md](MANDATES_LIVE.md) |
+| Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |
+| Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, settlement batches, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
+| Network card tokens | Level 1: `zyvor-cards` stores refs only; no live vault charge path |
+| Store plugins | Shopify helper + WooCommerce stub in `plugins/`; Magento not started |
 | Object storage with malware scanning for documents | Not built |
 | Authenticated SSE status stream | Not built (the checkout polls) |
 | Amounts as decimal strings in the API | Not done: integer minor units are used |

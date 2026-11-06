@@ -1,7 +1,7 @@
 {
   "name": "Zyvor Payments",
   "short_name": "Zyvor",
-  "description": "Open-source payment orchestration, ledger and reconciliation for India.",
+  "description": "Open-source payments for India: orchestrate or acquire under a licensed sponsor.",
   "start_url": "/vayora/",
   "scope": "/vayora/",
   "display": "browser",
