@@ -687,6 +687,20 @@ export const saveRisk = async (_: FormState, f: FormData) => {
   return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked, score_block_below: scoreFloor } }), "admin");
 };
 
+export const saveReturnUrlOrigins = async (_: FormState, f: FormData) => {
+  const origins = String(f.get("origins") ?? "")
+    .split(/[\n,]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return run(["/settings"], (z) => z.settings.update({ return_url_origins: origins }), "admin");
+};
+
+export const importBankCsv = async (_: FormState, f: FormData): Promise<FormState> => {
+  const csv = String(f.get("csv") ?? "").trim();
+  if (!csv) return { error: "Paste CSV statement text." };
+  return run(["/reconciliation"], (z) => z.bankStatements.importCsv(csv), "finance");
+};
+
 export const saveMoneyMode = async (_: FormState, f: FormData) => {
   const mode = text(f, "money_mode");
   if (mode !== "orchestrate" && mode !== "acquire") return { error: "Choose orchestrate or acquire." };

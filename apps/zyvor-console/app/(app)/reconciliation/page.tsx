@@ -1,7 +1,8 @@
 import { providerLabel, words } from "@/lib/labels";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { assignCase, simulateBankCredit, simulateSettlement } from "@/lib/actions";
+import { assignCase, importBankCsv, simulateBankCredit, simulateSettlement } from "@/lib/actions";
+import { SettingsForm } from "@/components/SettingsForm";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
 import { ZyvorError } from "@zyvor/node";
@@ -60,6 +61,13 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
           </tbody>
         </table>
       </div>
+      <h2>Bank statement CSV</h2>
+      <SettingsForm title="Import CSV" hint="Paste a bank statement CSV (Date, Narration, Ref/UTR, Amount). Matched by UTR, else amount ± 3 days." action={importBankCsv} button="Import">
+        <label className="field" style={{ gridColumn: "1 / -1" }}>
+          <textarea name="csv" rows={6} spellCheck={false} placeholder={"Date,Narration,Ref,Amount\n2026-11-01,SETTLEMENT,UTR123,1234.56"} />
+        </label>
+      </SettingsForm>
+
       <h2>Settlements</h2>
       {settings.env === "test" && <div className="muted" style={{ marginTop: 0, marginBottom: "1em" }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</div>}
       <div className="tablewrap">

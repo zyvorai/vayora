@@ -89,6 +89,8 @@ export interface Settings {
   webhook_events: string[];
   dunning: { enabled: boolean; channel: "email" | "sms" | "whatsapp" | "call" | "other"; min_days_overdue: number; repeat_after_days: number; requires_approval: boolean };
   gst: { gstin: string | null; legal_name: string | null; address1?: string | null; location?: string | null; pincode?: string | null };
+  /** Allowed return_url origins (`https://shop.example.com`). Empty = any https URL that passes SSRF checks. */
+  return_url_origins?: string[];
   env: string;
 }
 
@@ -114,6 +116,8 @@ export interface SettingsPatch {
   gst?: { gstin: string; legal_name?: string; address1?: string; location?: string; pincode?: string };
   /** Limits that stop a payment. Sending `risk` replaces the whole set, so include what you want to keep. */
   risk?: RiskRules;
+  /** Replace the whole allowlist. Empty array clears it. */
+  return_url_origins?: string[];
 }
 
 export interface PayoutRow { id: string; vendor_id: string; amount_minor: number; currency: string; status: "pending_approval" | "approved" | "paid" | "rejected" | "canceled"; purpose: string; external_ref: string | null; requested_by: string; approved_by: string | null; paid_by: string | null; bank_ref: string | null; created_at: string }
@@ -445,6 +449,11 @@ export class Zyvor {
   readonly settings = {
     get: () => this.req<Settings>("GET", "/v1/settings"),
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
+  };
+
+  /** Bank statement import for reconciliation (JSON lines or CSV text). */
+  readonly bankStatements = {
+    importCsv: (csv: string) => this.req("POST", "/v1/bank_statements/import_csv", { csv }),
   };
 
   readonly coupons = {

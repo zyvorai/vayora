@@ -992,6 +992,8 @@ pub struct Settings {
     email_accent: Option<String>,
     /// An `https://` logo address shown beside the business name in payer emails; empty clears.
     email_logo_url: Option<String>,
+    /// Allowed `return_url` origins (`https://shop.example.com`). Empty list = any https URL that passes SSRF checks.
+    return_url_origins: Option<Vec<String>>,
 }
 
 /// Your GST registration, needed to issue tax invoices.
@@ -1067,6 +1069,25 @@ pub async fn put_settings(
     if let Some(u) = &b.outbound_webhook_url {
         crate::ssrf::check_url(u, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("invalid_webhook_url", e))?;
+    }
+    if let Some(origins) = &b.return_url_origins {
+        if origins.len() > 50 {
+            return Err(ApiError::invalid(
+                "invalid_return_url_origins",
+                "at most 50 origins",
+            ));
+        }
+        for o in origins {
+            let u = crate::ssrf::check_url(o, s.allow_private_targets)
+                .map_err(|e| ApiError::invalid("invalid_return_url_origins", e))?;
+            let path_ok = u.path().is_empty() || u.path() == "/";
+            if !path_ok || u.query().is_some() || u.fragment().is_some() {
+                return Err(ApiError::invalid(
+                    "invalid_return_url_origins",
+                    "each entry must be an origin like https://shop.example.com (no path)",
+                ));
+            }
+        }
     }
     if let Some(d) = &b.dunning {
         let ok = d
@@ -1184,6 +1205,26 @@ pub async fn put_settings(
         .execute(&mut *tx)
         .await?;
     }
+    if let Some(origins) = &b.return_url_origins {
+        // Normalise to scheme://host[:port] without trailing slash.
+        let cleaned: Vec<String> = origins
+            .iter()
+            .filter_map(|o| {
+                let u = reqwest::Url::parse(o).ok()?;
+                let host = u.host_str()?;
+                let origin = match u.port() {
+                    Some(p) => format!("{}://{}:{p}", u.scheme(), host),
+                    None => format!("{}://{}", u.scheme(), host),
+                };
+                Some(origin)
+            })
+            .collect();
+        sqlx::query("UPDATE tenant_settings SET return_url_origins = $2 WHERE tenant_id = $1")
+            .bind(&auth.tenant_id)
+            .bind(serde_json::to_value(&cleaned).unwrap_or_default())
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(g) = &b.gst {
         sqlx::query("UPDATE tenant_settings SET gstin = $2, gst_legal_name = COALESCE($3, gst_legal_name), gst_address1 = COALESCE($4, gst_address1), gst_location = COALESCE($5, gst_location), gst_pincode = COALESCE($6, gst_pincode) WHERE tenant_id = $1")
             .bind(&auth.tenant_id).bind(&g.gstin).bind(&g.legal_name).bind(&g.address1).bind(&g.location).bind(&g.pincode).execute(&mut *tx).await?;
@@ -1245,9 +1286,15 @@ pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<
     .bind(&auth.tenant_id)
     .fetch_one(&mut *tx)
     .await?;
+    let return_url_origins: Value = sqlx::query_scalar(
+        "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_one(&mut *tx)
+    .await?;
     Ok(Json(
         json!({ "refund_approval_threshold_minor": thr, "routing": routing, "outbound_webhook_url": url, "env": auth.env,
-                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "invoice_emails": invoice_emails, "email_accent": email_accent, "email_logo_url": email_logo_url, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]) }),
+                "dunning": { "enabled": on, "channel": ch, "min_days_overdue": min, "repeat_after_days": rep, "requires_approval": appr }, "gst": { "gstin": gstin, "legal_name": legal, "address1": gaddr, "location": gloc, "pincode": gpin }, "payout_approval_threshold_minor": ptr, "payment_receipts": receipts, "reply_to_email": reply_to, "reminder_emails": reminder_emails, "invoice_emails": invoice_emails, "email_accent": email_accent, "email_logo_url": email_logo_url, "risk": risk, "webhook_events": wev.unwrap_or_else(|| vec!["*".to_string()]), "return_url_origins": return_url_origins }),
     ))
 }
 

@@ -23,7 +23,7 @@
     sandbox: {
       title: "Sandbox",
       sub: "Everything runs on your machine against a simulated provider. The fastest way to see a payment settle.",
-      list: ["API, worker, checkout and console on your laptop", "Simulated providers including PhonePe and sponsor_upi: no real money", "Try orchestrate or acquire money mode against the simulator", "A ready-to-open checkout URL and an API key", "Runnable examples: school fees, clinic billing, a shop counter, marketplace splits"],
+      list: ["API, worker, checkout and console on your laptop", "Simulated providers including PhonePe and sponsor_upi: no real money", "Try orchestrate or acquire money mode against the simulator", "A ready-to-open checkout URL and an API key", "Examples: campus fees, clinic, factory milestones, pharmacy returns, marketplace splits"],
       code: "git clone https://github.com/zyvorai/vayora.git\ncd vayora\n# needs a local Postgres and an EMPTY database\nOWNER_URL=postgres://you@localhost:5432/zyvor_sandbox \\\n  ./scripts/zyvor-sandbox.sh",
       cta: "Open the sandbox guide",
       href: "https://github.com/zyvorai/vayora#try-the-sandbox-simulated-providers-no-real-money"
@@ -31,7 +31,7 @@
     self: {
       title: "Self-host",
       sub: "Run Zyvor on your own servers. Orchestrate with your own provider accounts, or acquire under a licensed sponsor after counsel and an LOI.",
-      list: ["Apache-2.0: use it, change it, ship it", "Razorpay, Cashfree, PhonePe, sponsor_upi or a custom JSON contract", "Settlement batches, payout rails and network card tokens for acquire", "Kubernetes (k3s and Helm) and Compose assets included", "Read the regulatory position and ACQUIRE_MODE before live acquire"],
+      list: ["Apache-2.0: use it, change it, ship it", "Razorpay, Cashfree, PhonePe, sponsor_upi or a custom JSON contract", "Settlement batches (auto-enrol), payout rails, card tokens, console Settlement page", "Shopify, WooCommerce and Magento plugins with mark-paid webhooks", "Kubernetes (k3s and Helm) and Compose assets included", "Read the regulatory position and ACQUIRE_MODE before live acquire"],
       code: "git clone https://github.com/zyvorai/vayora.git\ncd vayora/deploy/zyvor/k3s\n# single-node k3s with HTTPS in front\n# follow README.md in this folder",
       cta: "Read the deploy guide",
       href: "https://github.com/zyvorai/vayora/blob/main/deploy/zyvor/k3s/README.md"

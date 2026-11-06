@@ -26,7 +26,7 @@ Zyvor can run in two money modes. This page is the operator guide for **`acquire
 
 Captures and refunds in acquire mode **auto-enrol** into the open settlement batch for that currency (idempotent). The worker releases batches when `settlement_delay_days` has elapsed.
 
-SDKs: Node `moneyMode`, `acquireKyc`, `settlementBatches`, `escrow`, `cardTokens`, `payouts.sendRail`; Python/Go equivalents. Console: Settings → Money mode / Acquire KYC; Providers → PhonePe & Sponsor UPI; Payouts → Send via rail.
+SDKs: Node `moneyMode`, `acquireKyc`, `settlementBatches`, `escrow`, `cardTokens`, `payouts.sendRail`, `payments.attempt({ cardTokenId })`; Python/Go equivalents. Console: **Settlement** (batches, escrow proof, card tokens); Settings → Money mode / Acquire KYC / return-URL allowlist; Providers → PhonePe & Sponsor UPI; Payouts → Send via rail.
 
 ## Environment
 
@@ -53,4 +53,4 @@ Sandbox may exercise acquire ledger paths against simulators without a sponsor.
 - [BRING_YOUR_OWN_PROVIDER.md](BRING_YOUR_OWN_PROVIDER.md) — adapters including PhonePe and sponsor_upi
 - [MANDATES_LIVE.md](MANDATES_LIVE.md) — AutoPay before live use
 - [STATUS.md](STATUS.md) — what is simulator-only
-- [plugins/](../../plugins/README.md) — Shopify / WooCommerce scaffolds
+- [plugins/](../../plugins/README.md) — Shopify / WooCommerce / Magento (payment links + mark-paid webhooks)

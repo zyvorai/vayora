@@ -30,7 +30,7 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 
 | Area | State |
 |---|---|
-| Per-merchant return-URL allowlist | Not built (basic validation only) |
+| Per-merchant return-URL allowlist | Built: `return_url_origins` on settings; empty = any https that passes SSRF |
 | OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
 | UPI AutoPay mandates | Level 1: simulator + Cashfree and Razorpay adapters from docs (local mocks only). Sponsor UPI declares mandates. See [MANDATES_LIVE.md](MANDATES_LIVE.md) |
 | Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |

@@ -411,7 +411,7 @@ pub async fn start_attempt(
     }
 
     // A return URL is where the payer's browser is sent afterwards. Never trust it blindly: https only, no
-    // embedded credentials. (A per-merchant allowlist of origins is the next step.)
+    // embedded credentials. When the tenant set return_url_origins, the URL's origin must match one.
     if let Some(u) = &b.return_url
         && let Err(e) = crate::ssrf::check_url(u, s.allow_private_targets)
     {
@@ -425,6 +425,32 @@ pub async fn start_attempt(
             "card_token_requires_card",
             "card_token_id is only valid when method is card",
         ));
+    }
+    if let Some(u) = &b.return_url {
+        let origins: Value = sqlx::query_scalar(
+            "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
+        )
+        .bind(tenant_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or(json!([]));
+        if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
+            let parsed = reqwest::Url::parse(u).map_err(|_| {
+                ApiError::invalid("invalid_return_url", "not a valid URL")
+            })?;
+            let host = parsed.host_str().unwrap_or("");
+            let origin = match parsed.port() {
+                Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
+                None => format!("{}://{host}", parsed.scheme()),
+            };
+            let ok = list.iter().any(|o| o.as_str() == Some(origin.as_str()));
+            if !ok {
+                return Err(ApiError::invalid(
+                    "return_url_not_allowed",
+                    "return_url origin is not on this tenant's allowlist",
+                ));
+            }
+        }
     }
     let hash = fingerprint(&[
         intent_id,

@@ -2,7 +2,7 @@ import { Act } from "@/components/Act";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
 import { slug } from "@/lib/labels";
-import { clearTestClock, moveTestClock, removeEmailLogo, removeSuppression, resetTestData, saveAcquireKyc, saveApprovals, saveCollections, saveFxRate, saveGst, saveMoneyMode, saveReceipts, saveRisk, saveWebhooks, uploadEmailLogo } from "@/lib/actions";
+import { clearTestClock, moveTestClock, removeEmailLogo, removeSuppression, resetTestData, saveAcquireKyc, saveApprovals, saveCollections, saveFxRate, saveGst, saveMoneyMode, saveReceipts, saveReturnUrlOrigins, saveRisk, saveWebhooks, uploadEmailLogo } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -91,6 +91,12 @@ export default async function Settings() {
         <label className="field">Block if risk score below (0–100)<input name="score_block_below" type="number" min={0} max={100} defaultValue={s.risk.score_block_below ?? ""} /></label>
         <label className="field" style={{ gridColumn: "1 / -1" }}>Refuse these UPI ids or handles (one per line, e.g. name@bank or @bank)
           <textarea name="blocked" rows={3} defaultValue={(s.risk.blocked_vpas ?? []).join("\n")} spellCheck={false} />
+        </label>
+      </SettingsForm>
+
+      <SettingsForm title="Return URL allowlist" hint="When set, attempt return_url must use one of these origins (https://shop.example.com). Leave empty to allow any https URL that passes SSRF checks." action={saveReturnUrlOrigins}>
+        <label className="field" style={{ gridColumn: "1 / -1" }}>Origins (one per line)
+          <textarea name="origins" rows={3} defaultValue={(s.return_url_origins ?? []).join("\n")} spellCheck={false} placeholder="https://shop.example.com" />
         </label>
       </SettingsForm>
 

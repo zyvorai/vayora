@@ -10,6 +10,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Threat model](zyvor/THREAT_MODEL.md) | What the code defends against today, and what it does not |
 | [Regulatory position](zyvor/REGULATORY.md) | Orchestrate vs acquire money modes, fund-flow freeze (not legal advice) |
 | [Acquire mode](zyvor/ACQUIRE_MODE.md) | Operator guide: APIs, env vars, go-live checklist for sponsor-backed PG |
+| [Store plugins](../plugins/README.md) | Shopify, WooCommerce, Magento payment-link + webhook scaffolds |
 | [Compliance map](compliance/README.md) | Requirements by area and where each lands in the code |
 | [Own licences](compliance/OWN_LICENCES.md) | RBI PA + NPCI TPAP parallel track under sponsor |
 | [CERT-In runbook](compliance/CERT_IN_RUNBOOK.md) | Six-hour incident reporting checklist |
@@ -39,7 +40,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Sandbox, deploy and SDK quick start](../README.md#try-the-sandbox-simulated-providers-no-real-money) | Local sandbox, tests and a first API call |
 | [k3s sandbox](../deploy/zyvor/k3s/README.md) | A single-node cluster with HTTPS in front |
 | [FluxVM lab](zyvor/FLUXVM_LAB.md) | A second, independent place to run the stack on an Apple silicon Mac |
-| [Examples](../examples/README.md) | Runnable scripts: school fees, clinic billing, a shop counter, marketplace splits |
+| [Examples](../examples/README.md) | Runnable scripts: campus, clinic, factory, pharmacy, shop counter, marketplace |
 | [iOS test apps](../apps/ios/README.md) | Vayora Pay and Vayora Merchant, and how to preview the screens |
 | [OpenAPI](../openapi/zyvor.yaml) | The API spec; a test fails if a route is undocumented |
 

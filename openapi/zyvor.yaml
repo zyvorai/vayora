@@ -2447,6 +2447,7 @@ paths:
                     - 'null'
                   risk: {}
                   webhook_events: {}
+                  return_url_origins: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -8880,6 +8881,10 @@ components:
           type: string
         email_logo_url:
           type: string
+        return_url_origins:
+          type: array
+          items:
+            type: string
     GstProfile:
       type: object
       x-generated: true

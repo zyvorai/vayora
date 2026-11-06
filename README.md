@@ -98,7 +98,7 @@ const intent = await z.intents.create({ amountMinor: 249900, externalRef: "FEE-S
 // give intent.client_secret to the browser; it can pay this one intent and nothing else
 ```
 
-Runnable examples for a school's fee schedule, a clinic's GST billing and deposits, a shop counter and a marketplace's splits and payouts are in [`examples/`](examples/README.md).
+Runnable examples for a school's fee schedule, a clinic's GST billing and deposits, factory milestones, pharmacy returns, a shop counter and a marketplace's splits and payouts are in [`examples/`](examples/README.md). Store plugins (Shopify / WooCommerce / Magento) live under [`plugins/`](plugins/README.md).
 
 ## iOS test apps
 Two SwiftUI apps in [`apps/ios`](apps/ios/README.md) let you test the whole loop on real iPhones against the simulator, with **no real money**: **Vayora Pay** (a payer: scan a QR, slide to pay, PIN, receipt) and **Vayora Merchant** (a counter keypad that shows a payment QR, a Today dashboard, refunds). Vayora Merchant also reaches the money screens: unpaid invoices, approvals, payouts, disputes, reconciliation cases, settlements explained, a GST month summary, payment links and subscriptions. The server side of the payer loop is one route, `POST /v1/sim/pay`, off unless `ZYVOR_SIM_PAYER=1`. They are not bank-linked UPI apps: a real consumer UPI app needs NPCI TPAP approval and a sponsor bank. Pay also has test-mode payees, send, split a bill and bill reminders; those person-to-person items are recorded on the phone and never reach Zyvor's ledger.
