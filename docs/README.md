@@ -8,8 +8,12 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [How it works](zyvor/HOW_IT_WORKS.md) | The customer's journey, the server's rules, the worker loop and reconciliation, each with a diagram |
 | [Architecture](zyvor/ARCHITECTURE.md) | Components and the invariants the code keeps |
 | [Threat model](zyvor/THREAT_MODEL.md) | What the code defends against today, and what it does not |
-| [Regulatory position](zyvor/REGULATORY.md) | Why Zyvor does not hold money, and what running it in production needs (not legal advice) |
+| [Regulatory position](zyvor/REGULATORY.md) | Orchestrate vs acquire money modes, fund-flow freeze (not legal advice) |
 | [Compliance map](compliance/README.md) | Requirements by area and where each lands in the code |
+| [Own licences](compliance/OWN_LICENCES.md) | RBI PA + NPCI TPAP parallel track under sponsor |
+| [CERT-In runbook](compliance/CERT_IN_RUNBOOK.md) | Six-hour incident reporting checklist |
+| [Acquire KYC/AML](compliance/KYC_AML_ACQUIRE.md) | PMLA gate for acquire mode |
+| [PCI scope](compliance/PCI_SCOPE.md) | Network tokens only — no PAN/CVV |
 | [Where Zyvor stands](zyvor/MARKET.md) | A comparison with Indian payment gateways, with its source and caveats |
 
 ## What is true today
@@ -26,6 +30,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Provider HTTP contract](zyvor/PROVIDER_CONTRACT.md) | The JSON API your gateway implements for the `custom` adapter |
 | [Cashfree partner setup](zyvor/PARTNER_SETUP.md) | What Cashfree's docs say, what is unconfirmed, and the end-to-end test plan |
 | [Real provider sandboxes](zyvor/REAL_SANDBOX.md) | Taking a payment through Razorpay test mode and Cashfree's sandbox |
+| [Mandates live](zyvor/MANDATES_LIVE.md) | Cashfree / sponsor AutoPay verification before production |
 
 ## Run and try it
 | Doc | What it covers |
@@ -38,6 +43,6 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [OpenAPI](../openapi/zyvor.yaml) | The API spec; a test fails if a route is undocumented |
 
 ## Decisions
-[ADR 0001: monorepo](adr/0001-monorepo.md) · [ADR 0002: vertical slice (superseded)](adr/0002-vertical-slice.md) · [ADR 0003: extend Rust; UPI QR and intent as the default flow](adr/0003-extend-rust-and-upi-qr-intent.md)
+[ADR 0001: monorepo](adr/0001-monorepo.md) · [ADR 0002: vertical slice (superseded)](adr/0002-vertical-slice.md) · [ADR 0003: extend Rust; UPI QR and intent as the default flow](adr/0003-extend-rust-and-upi-qr-intent.md) · [ADR 0004: orchestrate vs acquire money modes](adr/0004-money-modes-orchestrate-acquire.md)
 
 Also: [Security policy](../SECURITY.md) · [Contributing](../CONTRIBUTING.md) · [Code of conduct](../CODE_OF_CONDUCT.md)

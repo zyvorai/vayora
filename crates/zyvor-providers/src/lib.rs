@@ -13,9 +13,11 @@ use zyvor_core::Currency;
 
 pub mod cashfree;
 pub mod custom;
+pub mod phonepe;
 pub mod razorpay;
 pub mod router;
 pub mod sim;
+pub mod sponsor_upi;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

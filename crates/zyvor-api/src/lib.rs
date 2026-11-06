@@ -3,10 +3,12 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+pub mod acquire_kyc;
 pub mod admin;
 pub mod ai;
 pub mod audit;
 pub mod auth;
+pub mod cards;
 pub mod bankcsv;
 pub mod billing;
 pub mod cases;
@@ -34,6 +36,7 @@ pub mod kyc_cashfree;
 pub mod logo;
 pub mod mail;
 pub mod mandates;
+pub mod money_mode;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -47,6 +50,7 @@ pub mod registry;
 pub mod reminders;
 pub mod rota;
 pub mod saved_views;
+pub mod settle;
 pub mod signup;
 pub mod sim_circle;
 pub mod sim_mandate;
@@ -465,7 +469,31 @@ pub fn app(state: AppState) -> Router {
         .route("/payouts/{id}/approve", post(payouts::approve_payout))
         .route("/payouts/{id}/reject", post(payouts::reject_payout))
         .route("/payouts/{id}/mark_paid", post(payouts::mark_paid))
+        .route("/payouts/{id}/send_rail", post(settle::send_payout_rail))
         .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
+        .route("/money_mode", get(money_mode::get_money_mode).put(money_mode::set_money_mode))
+        .route(
+            "/settlement_batches",
+            post(settle::open_batch),
+        )
+        .route(
+            "/settlement_batches/{id}/items",
+            post(settle::add_item),
+        )
+        .route(
+            "/settlement_batches/{id}/release",
+            post(settle::release_batch),
+        )
+        .route("/escrow/proof", get(settle::escrow_proof))
+        .route(
+            "/card_tokens",
+            post(cards::store_token).get(cards::list_tokens),
+        )
+        .route("/card_tokens/{id}/revoke", post(cards::revoke_token))
+        .route(
+            "/acquire_kyc",
+            get(acquire_kyc::get_status).put(acquire_kyc::set_status),
+        )
         .route("/installment_plans", post(installments::create_plan))
         .route("/installment_plans/{id}", get(installments::get_plan))
         .route("/fx/rates", post(fx::set_rate).get(fx::list_rates))

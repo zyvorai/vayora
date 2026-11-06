@@ -162,6 +162,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "payout.paid",
         "A payout was recorded as paid, with its bank reference.",
     ),
+    (
+        "settlement_batch.released",
+        "An acquire-mode settlement batch was released to the merchant bank via the payout rail.",
+    ),
 ];
 
 pub fn known(ty: &str) -> bool {

@@ -10,8 +10,10 @@ use zyvor_providers::{
     Method, Provider,
     cashfree::Cashfree,
     custom::Custom,
+    phonepe::PhonePe,
     razorpay::Razorpay,
     router::{Candidate, Fee, Health, Rule},
+    sponsor_upi::SponsorUpi,
 };
 
 use crate::{AppState, error::ApiError};
@@ -93,6 +95,20 @@ pub async fn load(
             })?;
             Arc::new(Custom::new(base, s("api_key"), state.provider_timeout))
         }
+        "sponsor_upi" => {
+            let base = base_url.ok_or_else(ApiError::internal)?;
+            crate::ssrf::check_url(&base, state.allow_private_targets).map_err(|e| {
+                tracing::error!(provider, error = %e, "sponsor_upi base_url refused");
+                ApiError::internal()
+            })?;
+            Arc::new(SponsorUpi::new(base, s("api_key"), state.provider_timeout))
+        }
+        "phonepe" => Arc::new(PhonePe::new(
+            base_url.unwrap_or_else(|| "https://api.phonepe.com/apis/pg".into()),
+            s("merchant_id"),
+            s("salt_key"),
+            state.provider_timeout,
+        )),
         other => {
             return Err(ApiError::internal())
                 .inspect_err(|_| tracing::error!(other, "unknown provider"));
@@ -128,6 +144,11 @@ pub async fn candidates(
             "live_access_revoked",
             "this business cannot take new payments: Zyvor has taken live mode away",
         ));
+    }
+    {
+        let mut gate = crate::tenant::begin(&state.pool, tenant_id).await?;
+        crate::money_mode::acquire_live_allowed(&mut *gate, tenant_id).await?;
+        gate.rollback().await?;
     }
     let accounts: Vec<(String, bool)> = sqlx::query_as(
         "SELECT provider, enabled FROM provider_accounts WHERE tenant_id = $1 ORDER BY provider",

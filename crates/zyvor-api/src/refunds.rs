@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection};
 use zyvor_core::{Currency, new_id};
-use zyvor_ledger::{Entry, Transaction, accounts};
+use zyvor_ledger::accounts;
 use zyvor_providers::{ProviderError, RefundRequest, RefundStatus};
 
 use crate::{
@@ -278,14 +278,17 @@ pub async fn apply_refund_result(
 
     if processed {
         sqlx::query("UPDATE payment_attempts SET refunded_minor = refunded_minor + $2, reserved_refund_minor = reserved_refund_minor - $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *conn).await?;
-        Transaction::new(vec![
-            Entry::debit(accounts::COLLECTIONS, amount, currency),
-            Entry::credit(accounts::provider_receivable(&provider), amount, currency),
-        ])
-        .map_err(zyvor_ledger::StoreError::from)?
-        .post(conn, tenant_id, &format!("refund:{refund_id}"), None)
-        .await?;
+        let mode = crate::money_mode::load_for_tenant(conn, tenant_id).await?;
+        let org = crate::money_mode::organisation_id(conn, tenant_id).await?;
+        zyvor_ledger::refund_entries(mode, &provider, &org, amount, currency)
+            .map_err(zyvor_ledger::StoreError::from)?
+            .post(conn, tenant_id, &format!("refund:{refund_id}"), None)
+            .await?;
         // marketplace shares owed to vendors shrink in proportion to what has been refunded
+        let reverse_expense = match mode {
+            zyvor_ledger::MoneyMode::Orchestrate => accounts::COLLECTIONS,
+            zyvor_ledger::MoneyMode::Acquire => accounts::ADJUSTMENTS,
+        };
         crate::splits::reverse_for_refund(
             conn,
             tenant_id,
@@ -293,7 +296,7 @@ pub async fn apply_refund_result(
             &intent_id,
             &attempt_id,
             currency,
-            accounts::COLLECTIONS,
+            reverse_expense,
         )
         .await?;
         // Linked invoice goes back to partially paid / open: a reversal row, never an edit.

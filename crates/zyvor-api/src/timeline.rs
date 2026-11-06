@@ -41,6 +41,8 @@ pub(crate) fn provider_name(id: &str) -> String {
         "razorpay" => "Razorpay".into(),
         "cashfree" => "Cashfree".into(),
         "custom" => "your own gateway".into(),
+        "sponsor_upi" => "sponsor UPI".into(),
+        "phonepe" => "PhonePe".into(),
         other => other.to_string(),
     }
 }

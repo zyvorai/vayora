@@ -4,18 +4,61 @@
 //! * every transaction balances **per currency**, enforced in code and again by a
 //!   deferred DB constraint trigger;
 //! * entries are immutable: corrections post a reversal (same lines, opposite sides);
-//! * this is the accounting record only. It says nothing about who holds the funds.
+//! * in **orchestrate** mode this is the accounting record only (who holds funds is the provider);
+//! * in **acquire** mode custody accounts track escrow under a licensed sponsor / PA.
 
 use std::collections::BTreeMap;
 
 use sqlx::PgConnection;
 use zyvor_core::Currency;
 
+/// How a tenant's money flows. Drives which ledger accounts capture/refund/settle use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MoneyMode {
+    /// Merchant's own provider collects and settles; Zyvor never custodies funds.
+    #[default]
+    Orchestrate,
+    /// Zyvor is the merchant-facing PG; funds sit in sponsor escrow until settled.
+    Acquire,
+}
+
+impl MoneyMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MoneyMode::Orchestrate => "orchestrate",
+            MoneyMode::Acquire => "acquire",
+        }
+    }
+}
+
+impl std::str::FromStr for MoneyMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "orchestrate" => Ok(MoneyMode::Orchestrate),
+            "acquire" => Ok(MoneyMode::Acquire),
+            o => Err(format!("unknown money_mode {o}")),
+        }
+    }
+}
+
 pub mod accounts {
-    /// Asset: money the provider holds on the merchant's behalf (debit-normal).
+    /// Asset: money the provider holds on the merchant's behalf (debit-normal). Orchestrate mode.
     pub fn provider_receivable(provider: &str) -> String {
         format!("provider_receivable:{provider}")
     }
+    /// Asset: funds in flight into escrow (debit-normal). Acquire mode, on capture.
+    pub const ESCROW_IN_FLIGHT: &str = "escrow:in_flight";
+    /// Asset: cleared escrow available to settle (debit-normal). Acquire mode.
+    pub const ESCROW_AVAILABLE: &str = "escrow:available";
+    /// Liability: amount owed to a merchant after capture, before settlement (credit-normal).
+    pub fn merchant_payable(merchant_ref: &str) -> String {
+        format!("merchant_payable:{merchant_ref}")
+    }
+    /// Clearing account used while a settlement batch is in flight.
+    pub const SETTLEMENT_CLEARING: &str = "settlement_clearing";
+    /// Income: platform / acquire fees retained (credit-normal).
+    pub const FEE_INCOME: &str = "fee_income";
     /// Income/collections recognised from customer payments (credit-normal).
     pub const COLLECTIONS: &str = "collections";
     /// Expense: provider fees and taxes on fees (debit-normal).
@@ -30,6 +73,66 @@ pub mod accounts {
     }
     /// Settlement adjustments, chargebacks, reserves (either side).
     pub const ADJUSTMENTS: &str = "settlement_adjustments";
+}
+
+/// Capture posting lines for the tenant's money mode.
+pub fn capture_entries(
+    mode: MoneyMode,
+    provider: &str,
+    merchant_ref: &str,
+    amount_minor: i64,
+    currency: Currency,
+) -> Result<Transaction, LedgerError> {
+    match mode {
+        MoneyMode::Orchestrate => Transaction::new(vec![
+            Entry::debit(accounts::provider_receivable(provider), amount_minor, currency),
+            Entry::credit(accounts::COLLECTIONS, amount_minor, currency),
+        ]),
+        MoneyMode::Acquire => Transaction::new(vec![
+            Entry::debit(accounts::ESCROW_IN_FLIGHT, amount_minor, currency),
+            Entry::credit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+        ]),
+    }
+}
+
+/// Refund posting lines (reverses capture economics for the mode).
+pub fn refund_entries(
+    mode: MoneyMode,
+    provider: &str,
+    merchant_ref: &str,
+    amount_minor: i64,
+    currency: Currency,
+) -> Result<Transaction, LedgerError> {
+    match mode {
+        MoneyMode::Orchestrate => Transaction::new(vec![
+            Entry::debit(accounts::COLLECTIONS, amount_minor, currency),
+            Entry::credit(accounts::provider_receivable(provider), amount_minor, currency),
+        ]),
+        MoneyMode::Acquire => Transaction::new(vec![
+            Entry::debit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+            Entry::credit(accounts::ESCROW_IN_FLIGHT, amount_minor, currency),
+        ]),
+    }
+}
+
+/// Lost-dispute posting lines.
+pub fn dispute_lost_entries(
+    mode: MoneyMode,
+    provider: &str,
+    merchant_ref: &str,
+    amount_minor: i64,
+    currency: Currency,
+) -> Result<Transaction, LedgerError> {
+    match mode {
+        MoneyMode::Orchestrate => Transaction::new(vec![
+            Entry::debit(accounts::ADJUSTMENTS, amount_minor, currency),
+            Entry::credit(accounts::provider_receivable(provider), amount_minor, currency),
+        ]),
+        MoneyMode::Acquire => Transaction::new(vec![
+            Entry::debit(accounts::ADJUSTMENTS, amount_minor, currency),
+            Entry::credit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+        ]),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,5 +361,14 @@ mod tests {
         assert_eq!(r.entries()[0].side, Side::Credit);
         assert_eq!(r.entries()[1].side, Side::Debit);
         assert!(Transaction::new(r.entries().to_vec()).is_ok());
+    }
+
+    #[test]
+    fn capture_orchestrate_vs_acquire() {
+        let o = capture_entries(MoneyMode::Orchestrate, "razorpay", "org_1", 100, Inr).unwrap();
+        assert_eq!(o.entries()[0].account, "provider_receivable:razorpay");
+        let a = capture_entries(MoneyMode::Acquire, "sponsor_upi", "org_1", 100, Inr).unwrap();
+        assert_eq!(a.entries()[0].account, "escrow:in_flight");
+        assert_eq!(a.entries()[1].account, "merchant_payable:org_1");
     }
 }

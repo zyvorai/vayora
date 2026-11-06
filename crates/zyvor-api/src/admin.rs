@@ -257,19 +257,23 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
     let required: &[&str] = match b.provider.as_str() {
         "razorpay" => &["key_id", "key_secret"],
         "cashfree" => &["client_id", "client_secret"],
-        "custom" => &["api_key"],
+        "custom" | "sponsor_upi" => &["api_key"],
+        "phonepe" => &["merchant_id", "salt_key"],
         "sim" => &[],
         _ => {
             return Err(ApiError::invalid(
                 "unknown_provider",
-                "provider must be razorpay, cashfree, custom or sim",
+                "provider must be razorpay, cashfree, custom, sponsor_upi, phonepe or sim",
             ));
         }
     };
-    if b.provider == "custom" {
-        // Your own gateway: it has no default URL, and it must be a public https endpoint.
+    if b.provider == "custom" || b.provider == "sponsor_upi" {
+        // Your own gateway / sponsor PSP: no default URL; must be a public https endpoint (or sandbox private).
         let url = b.base_url.as_deref().ok_or_else(|| {
-            ApiError::invalid("missing_base_url", "the custom provider needs a base_url")
+            ApiError::invalid(
+                "missing_base_url",
+                format!("{} needs a base_url", b.provider),
+            )
         })?;
         crate::ssrf::check_url(url, s.allow_private_targets)
             .map_err(|e| ApiError::invalid("bad_base_url", e))?;

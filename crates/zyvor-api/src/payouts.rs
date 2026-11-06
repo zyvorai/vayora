@@ -1,7 +1,10 @@
 //! Payouts: money the merchant sends to vendors. Zyvor does the controlling and the bookkeeping:
 //! a request, a second person's approval (separation of duties; small amounts can be waved through
-//! by a tenant threshold), the bank reference once the transfer is made from the merchant's own
-//! bank, and the ledger entry. It does not move money: there is no payout rail adapter yet.
+//! by a tenant threshold), the bank reference, and the ledger entry.
+//!
+//! In **orchestrate** mode `mark_paid` records a transfer you made from your own bank.
+//! In **acquire** mode use `POST /v1/payouts/{id}/send_rail` to instruct the sponsor payout rail
+//! (`zyvor-settle`); `mark_paid` remains available as a manual ACK fallback.
 
 use axum::{
     Json,

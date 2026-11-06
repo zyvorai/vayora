@@ -3124,10 +3124,22 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
+ "zyvor-cards",
  "zyvor-core",
  "zyvor-ledger",
  "zyvor-provider-mock",
  "zyvor-providers",
+ "zyvor-settle",
+]
+
+[[package]]
+name = "zyvor-cards"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zyvor-core",
 ]
 
 [[package]]
@@ -3183,4 +3195,20 @@ dependencies = [
  "tracing",
  "zyvor-core",
  "zyvor-provider-mock",
+]
+
+[[package]]
+name = "zyvor-settle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "zyvor-core",
+ "zyvor-ledger",
 ]

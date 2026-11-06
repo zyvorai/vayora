@@ -4,6 +4,14 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 6 November 2026
+**Own-gateway path: orchestrate vs acquire**
+- Organisations have `money_mode` (`orchestrate` default, `acquire` for sponsor/PA custody). Capture, refund and dispute ledger postings branch on mode; live acquire needs `ZYVOR_ALLOW_LIVE_ACQUIRE=1` and approved acquire KYC.
+- New crates: `zyvor-settle` (escrow batches, payout rails, escrow proof) and `zyvor-cards` (network tokens only; PAN/CVV refused).
+- Providers: `sponsor_upi` (TPAP/sponsor PSP contract) and `phonepe` (merchant PhonePe PG). Settlement batch APIs, `POST /v1/payouts/{id}/send_rail`, card token APIs, `GET/PUT /v1/acquire_kyc`.
+- Risk scoring (0–100) with optional `score_block_below`; Shopify/WooCommerce plugin scaffolds under `plugins/`.
+- Compliance pack: dual-mode REGULATORY, CERT-In runbook, acquire KYC/AML, PCI scope, own-licences track, ADR 0004. Sponsor LOI / RBI PA / NPCI TPAP remain operator actions.
+
 ## 1 November 2026
 **Merchant: items, bills and sales by item (on-phone, test mode)**
 - A product list with optional GST lines, itemised totals on Collect, and top sellers. No server change.

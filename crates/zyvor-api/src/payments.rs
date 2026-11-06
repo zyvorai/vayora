@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection};
 use zyvor_core::{Currency, new_id};
-use zyvor_ledger::{Entry, Transaction, accounts};
 use zyvor_providers::{
     ClientAction, CreatePayment, Method, PaymentState, PaymentStatus, ProviderError, router,
 };
@@ -517,6 +516,33 @@ pub async fn start_attempt(
             refuse = Some((
                 "max_failed_per_customer_per_hour",
                 json!({ "intent_id": intent_id, "failed_last_hour": n, "limit": max }),
+            ));
+        }
+    }
+    if refuse.is_none() {
+        let attempts_on_intent: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM payment_attempts WHERE intent_id = $1")
+                .bind(intent_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let failed_last_hour: i64 = if let Some(cust) = customer_id.as_deref() {
+            sqlx::query_scalar("SELECT count(*) FROM payment_attempts a JOIN payment_intents i ON i.id = a.intent_id WHERE i.customer_id = $1 AND a.status = 'failed' AND a.created_at > now() - interval '1 hour'")
+                .bind(cust)
+                .fetch_one(&mut *tx)
+                .await?
+        } else {
+            0
+        };
+        let input = crate::risk::ScoreInput {
+            amount_minor,
+            failed_last_hour,
+            attempts_on_intent,
+            vpa: b.vpa.clone(),
+        };
+        if let Some((sc, floor)) = crate::risk::score_blocked(&rules, &input) {
+            refuse = Some((
+                "risk_score",
+                json!({ "intent_id": intent_id, "score": sc, "block_below": floor }),
             ));
         }
     }
@@ -1071,14 +1097,13 @@ async fn on_captured(
     amount: i64,
     currency: Currency,
 ) -> Result<(), ApiError> {
-    // Accounting record only: the provider holds the funds until it settles.
-    Transaction::new(vec![
-        Entry::debit(accounts::provider_receivable(provider), amount, currency),
-        Entry::credit(accounts::COLLECTIONS, amount, currency),
-    ])
-    .map_err(zyvor_ledger::StoreError::from)?
-    .post(conn, tenant_id, &format!("capture:{attempt_id}"), None)
-    .await?;
+    let mode = crate::money_mode::load_for_tenant(conn, tenant_id).await?;
+    let org = crate::money_mode::organisation_id(conn, tenant_id).await?;
+    // Orchestrate: provider holds funds. Acquire: escrow under sponsor / PA.
+    zyvor_ledger::capture_entries(mode, provider, &org, amount, currency)
+        .map_err(zyvor_ledger::StoreError::from)?
+        .post(conn, tenant_id, &format!("capture:{attempt_id}"), None)
+        .await?;
     crate::splits::accrue(conn, tenant_id, intent_id, currency).await?;
     let (invoice_id, external_ref): (Option<String>, Option<String>) = sqlx::query_as("UPDATE payment_intents SET status = 'succeeded', updated_at = now() WHERE id = $1 RETURNING invoice_id, external_ref")
         .bind(intent_id)

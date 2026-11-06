@@ -1,6 +1,9 @@
 //! A simulated payer for the iPhone payer app and tests: it approves or declines the sandbox UPI payload
 //! the simulator issued. No money moves and no bank is involved. Off unless `ZYVOR_SIM_PAYER=1`, and it
 //! only ever touches the in-process simulator, so a live provider can never be paid through it.
+//!
+//! **TPAP graduation:** Vayora Pay moves off this route onto real intent/collect against `sponsor_upi`
+//! (or a bank PSP) only after NPCI TPAP + sponsor approval. Until then keep `ZYVOR_SIM_PAYER` for tests.
 
 use axum::{Json, extract::State};
 use serde::Deserialize;

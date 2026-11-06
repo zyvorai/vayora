@@ -5069,6 +5069,322 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Paid'
+  /v1/payouts/{id}/send_rail:
+    post:
+      summary: Send an approved payout over the acquire-mode sponsor payout rail
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payout_id:
+                    type: string
+                  status:
+                    type: string
+                  bank_ref: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RailPayout'
+  /v1/money_mode:
+    get:
+      summary: Get organisation money mode (orchestrate or acquire)
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  money_mode: {}
+                  acquire_kyc_status:
+                    type: string
+                  settlement_delay_days:
+                    type: integer
+                    format: int32
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Set organisation money mode (live acquire needs ZYVOR_ALLOW_LIVE_ACQUIRE)
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  money_mode: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetMoneyMode'
+  /v1/settlement_batches:
+    post:
+      summary: Open an acquire-mode settlement batch
+      tags:
+      - recon
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                    description: ISO 4217 code, e.g. INR
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenBatch'
+  /v1/settlement_batches/{id}/items:
+    post:
+      summary: Add a capture, refund, fee or hold line to a settlement batch
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  batch_id:
+                    type: string
+                  kind:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItem'
+  /v1/settlement_batches/{id}/release:
+    post:
+      summary: Release a settlement batch via the payout rail
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/escrow/proof:
+    get:
+      summary: Daily escrow-available vs open payables proof (acquire)
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  escrow_available_net:
+                    type: integer
+                    format: int64
+                  open_payables_net:
+                    type: integer
+                    format: int64
+                  balanced: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/card_tokens:
+    get:
+      summary: List network card tokens (no PAN)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Store a network card token (rejects raw PAN/CVV)
+      tags:
+      - payments
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  last4: {}
+                  brand: {}
+                  exp_month: {}
+                  exp_year: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - network_token_ref
+              - last4
+              properties:
+                customer_id:
+                  type: string
+                network_token_ref:
+                  type: string
+                last4:
+                  type: string
+                brand:
+                  type: string
+                exp_month:
+                  type: integer
+                exp_year:
+                  type: integer
+  /v1/card_tokens/{id}/revoke:
+    post:
+      summary: Revoke a network card token
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  revoked:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/acquire_kyc:
+    get:
+      summary: Get acquire-mode KYC/AML status for the organisation
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id:
+                    type:
+                    - string
+                    - 'null'
+                  acquire_kyc_status:
+                    type: string
+                  acquire_kyc_approved_at:
+                    type:
+                    - object
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Set acquire-mode KYC/AML status
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisation_id:
+                    type:
+                    - string
+                    - 'null'
+                  acquire_kyc_status:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetStatus'
   /v1/payouts/{id}/cancel:
     post:
       summary: Cancel a payout that has not been paid
@@ -7266,6 +7582,43 @@ components:
       required:
       - email
       - password
+    RailPayout:
+      type: object
+      x-generated: true
+      properties:
+        rail:
+          type: string
+        account_number:
+          type: string
+        ifsc:
+          type: string
+        vpa:
+          type: string
+        beneficiary_name:
+          type: string
+    OpenBatch:
+      type: object
+      x-generated: true
+      properties:
+        currency:
+          type: string
+      required:
+      - currency
+    AddItem:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: string
+        reference:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+      required:
+      - kind
+      - reference
+      - amount_minor
     SavedViewsListQuery:
       type: object
       x-generated: true
@@ -7804,6 +8157,17 @@ components:
       - holder_name
       - ifsc
       - account_number
+    SetMoneyMode:
+      type: object
+      x-generated: true
+      properties:
+        money_mode:
+          type: string
+        settlement_delay_days:
+          type: integer
+          format: int32
+      required:
+      - money_mode
     NewMandate:
       type: object
       x-generated: true
@@ -8594,6 +8958,14 @@ components:
           type: string
         pincode:
           type: string
+    SetStatus:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+      required:
+      - status
     TokenIn:
       type: object
       x-generated: true

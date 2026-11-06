@@ -1,0 +1,18 @@
+[package]
+name = "zyvor-settle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Acquire-mode escrow settlement batches and payout rails"
+
+[dependencies]
+async-trait = "0.1.92"
+chrono = { version = "0.4.45", features = ["serde"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1.44"
+zyvor-core = { version = "0.1.0", path = "../zyvor-core" }
+zyvor-ledger = { version = "0.1.0", path = "../zyvor-ledger" }

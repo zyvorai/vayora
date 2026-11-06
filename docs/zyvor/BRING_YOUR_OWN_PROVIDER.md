@@ -4,14 +4,16 @@ Zyvor Payments needs a **payment provider** by design, and Razorpay and Cashfree
 
 ## Why a provider is required
 
-Zyvor **does not hold money**. It never receives, holds or pays out customer funds. That is a deliberate choice and it is the reason the platform can ship as open source without being a payment aggregator ([REGULATORY.md](REGULATORY.md)). It means someone else has to do the part Zyvor will not:
+In **`orchestrate`** mode (the default) Zyvor **does not hold money**. It never receives, holds or pays out customer funds. That is why the platform can ship without being a payment aggregator ([REGULATORY.md](REGULATORY.md)). Someone else still has to do the part Zyvor will not:
 
-| Someone has to... | Why Zyvor does not |
+In **`acquire`** mode the licensed party is the **sponsor PA / bank PSP** (or your own PA once authorised). Point `sponsor_upi` or `custom` at that party; settlement and payouts go through `zyvor-settle`. See [ADR 0004](../adr/0004-money-modes-orchestrate-acquire.md).
+
+| Someone has to... | Why (orchestrate / until licensed) |
 |---|---|
-| Collect the customer's money over UPI, cards or netbanking | Collecting on behalf of merchants is a regulated activity. Zyvor is not licensed for it |
-| Settle that money to your bank | Zyvor never touches funds, so it cannot settle them |
-| Keep card data out of your systems | Hosted checkout keeps card data with the provider. No card data touches Zyvor |
-| Handle KYC and chargebacks at the rail | Zyvor records disputes and holds the money in its books, but the rail decides them |
+| Collect the customer's money over UPI, cards or netbanking | Regulated; Zyvor is not itself a PA until authorised — use merchant providers or a sponsor |
+| Settle that money to your bank | Orchestrate: provider settles. Acquire: sponsor escrow + `zyvor-settle` rails |
+| Keep card data out of your systems | Hosted checkout / network tokens only (`zyvor-cards`). No PAN/CVV touches Zyvor |
+| Handle KYC and chargebacks at the rail | Orchestrate: provider. Acquire: sponsor + acquire KYC programme |
 
 What Zyvor adds on top of whoever does that: routing with receipts, a ledger you can audit, exactly-once payments, reconciliation, billing and collections.
 
@@ -23,11 +25,15 @@ flowchart LR
   end
   T --> RZ[Razorpay adapter]
   T --> CF[Cashfree adapter]
+  T --> PP[PhonePe adapter]
+  T --> SU[sponsor_upi]
   T --> CU["custom adapter<br/>speaks the HTTP contract"]
   T --> SIM["sim<br/>tests only"]
   CU --> YG["Your own gateway<br/>or bank API"]
   RZ --> M[["Money is collected and settled by<br/>whoever is licensed to do it"]]
   CF --> M
+  PP --> M
+  SU --> M
   YG --> M
 ```
 

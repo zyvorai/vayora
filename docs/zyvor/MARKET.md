@@ -27,7 +27,7 @@ features make sense to build and which can only come from the underlying provide
 | COD handling, RTO reduction, COD-to-prepaid (GoKwik's own focus) | **Not built**; e-commerce checkout concern, not a payments-orchestration one. |
 | Coupons / convenience-fee pass-through (Easebuzz, Instamojo) | **Built** for fixed-amount payment links (percent or flat coupons with caps and expiry; a payer-covered fee). Not for invoice links, which a credit note handles instead. |
 | Saved cards / tokenisation, one-click checkout (PayU, PhonePe) | **Not built, deliberately.** Card data stays with the provider so Zyvor stays out of PCI scope. |
-| Plugins for Shopify, WooCommerce, Magento (Razorpay, Paytm) | **Not built**; the API and payment links cover simple storefronts. |
+| Plugins for Shopify, WooCommerce, Magento (Razorpay, Paytm) | **Scaffold** in [`plugins/`](../../plugins/README.md) (Shopify helper + WooCommerce stub). |
 | Onboarding speed, KYC, transparent pricing | Not applicable until Zyvor is a licensed operator (see REGULATORY.md). |
 
 ## Where Zyvor is genuinely different

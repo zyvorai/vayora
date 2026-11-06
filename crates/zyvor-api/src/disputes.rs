@@ -11,7 +11,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use zyvor_core::{Currency, new_id};
-use zyvor_ledger::{Entry, Transaction, accounts};
+use zyvor_ledger::accounts;
 
 use crate::{ApiError, AppState, auth::Auth, payments::ListQuery, tenant};
 
@@ -179,18 +179,17 @@ pub async fn resolve_dispute(
         let currency: Currency = ccy
             .parse()
             .map_err(|e: String| ApiError::invalid("invalid_currency", e))?;
-        Transaction::new(vec![
-            Entry::debit(accounts::ADJUSTMENTS, amount, currency),
-            Entry::credit(accounts::provider_receivable(&provider), amount, currency),
-        ])
-        .map_err(zyvor_ledger::StoreError::from)?
-        .post(
-            &mut tx,
-            &auth.tenant_id,
-            &format!("dispute_lost:{id}"),
-            None,
-        )
-        .await?;
+        let mode = crate::money_mode::load_for_tenant(&mut tx, &auth.tenant_id).await?;
+        let org = crate::money_mode::organisation_id(&mut tx, &auth.tenant_id).await?;
+        zyvor_ledger::dispute_lost_entries(mode, &provider, &org, amount, currency)
+            .map_err(zyvor_ledger::StoreError::from)?
+            .post(
+                &mut tx,
+                &auth.tenant_id,
+                &format!("dispute_lost:{id}"),
+                None,
+            )
+            .await?;
         sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor - $2, refunded_minor = refunded_minor + $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *tx).await?;
         // marketplace vendors bear their share of a lost dispute, like a refund
         crate::splits::reverse_for_refund(

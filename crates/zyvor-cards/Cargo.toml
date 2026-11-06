@@ -1,0 +1,12 @@
+[package]
+name = "zyvor-cards"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Network card tokens only — never stores PAN or CVV"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+zyvor-core = { version = "0.1.0", path = "../zyvor-core" }

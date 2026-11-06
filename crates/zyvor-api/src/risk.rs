@@ -1,7 +1,7 @@
-//! A small, explicit risk screen. It does not score anything and it does not know about card
-//! networks: it enforces the limits a merchant chooses (a ceiling on one payment, a cap on tries per
-//! payment, a cap on recent failures per customer, VPAs and VPA handles to refuse). Every refusal is
-//! audited and raises `payment.risk_blocked`, so a merchant sees exactly what the screen did.
+//! A small, explicit risk screen plus a deterministic score.
+//! Hard limits: ceiling on one payment, cap on tries, failed-try velocity, blocked VPAs.
+//! Score (0–100): velocity / amount / VPA-handle heuristics — not card-network fraud intelligence.
+//! Every refusal is audited and raises `payment.risk_blocked`.
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,9 @@ pub struct Rules {
     /// Exact VPAs (`name@bank`) or whole handles (`@bank`) to refuse.
     #[serde(default)]
     pub blocked_vpas: Vec<String>,
+    /// Optional floor: scores strictly below this are blocked (0–100). None = scoring advisory only.
+    #[serde(default)]
+    pub score_block_below: Option<i64>,
 }
 
 pub fn validate(r: &Rules) -> Result<(), ApiError> {
@@ -47,7 +50,53 @@ pub fn validate(r: &Rules) -> Result<(), ApiError> {
             "blocked_vpas: up to 200 entries like name@bank or @bank",
         ));
     }
+    if r.score_block_below
+        .is_some_and(|n| !(0..=100).contains(&n))
+    {
+        return Err(ApiError::invalid(
+            "invalid_risk_rules",
+            "score_block_below must be 0-100",
+        ));
+    }
     Ok(())
+}
+
+/// Inputs for the deterministic score (higher = safer).
+#[derive(Debug, Clone, Default)]
+pub struct ScoreInput {
+    pub amount_minor: i64,
+    pub failed_last_hour: i64,
+    pub attempts_on_intent: i64,
+    pub vpa: Option<String>,
+}
+
+/// Score 0–100. Deducts for high amount, failure velocity, attempt thrash, and risky VPA handles.
+pub fn score(input: &ScoreInput) -> i64 {
+    let mut s: i64 = 100;
+    if input.amount_minor >= 100_000_00 {
+        s -= 25;
+    } else if input.amount_minor >= 25_000_00 {
+        s -= 10;
+    }
+    s -= (input.failed_last_hour * 15).min(45);
+    s -= (input.attempts_on_intent.saturating_sub(1) * 8).min(24);
+    if let Some(v) = &input.vpa {
+        let v = v.to_lowercase();
+        if v.ends_with("@okaxis") || v.ends_with("@ybl") {
+            // common handles — no penalty
+        } else if v.contains("test") || v.contains("fail") {
+            s -= 40;
+        }
+    }
+    s.clamp(0, 100)
+}
+
+pub fn score_blocked(rules: &Rules, input: &ScoreInput) -> Option<(i64, i64)> {
+    let sc = score(input);
+    rules
+        .score_block_below
+        .filter(|&floor| sc < floor)
+        .map(|floor| (sc, floor))
 }
 
 pub async fn load(conn: &mut PgConnection) -> Result<Rules, sqlx::Error> {
@@ -140,5 +189,35 @@ mod tests {
             })
             .is_ok()
         );
+    }
+
+    #[test]
+    fn score_drops_on_failures_and_test_vpa() {
+        let high = score(&ScoreInput {
+            amount_minor: 100,
+            failed_last_hour: 0,
+            attempts_on_intent: 1,
+            vpa: Some("a@oksbi".into()),
+        });
+        let low = score(&ScoreInput {
+            amount_minor: 50_000_00,
+            failed_last_hour: 3,
+            attempts_on_intent: 4,
+            vpa: Some("fail@test".into()),
+        });
+        assert!(high > low);
+        assert!(score_blocked(
+            &Rules {
+                score_block_below: Some(50),
+                ..Default::default()
+            },
+            &ScoreInput {
+                amount_minor: 50_000_00,
+                failed_last_hour: 3,
+                attempts_on_intent: 4,
+                vpa: Some("fail@test".into()),
+            }
+        )
+        .is_some());
     }
 }

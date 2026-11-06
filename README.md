@@ -4,9 +4,10 @@
 
 # Zyvor Payments
 
-**Payment orchestration, ledger and reconciliation for Indian businesses.**
+**Payment orchestration, ledger and reconciliation for Indian businesses — with an acquire path toward your own gateway.**
 
-Connect your own Razorpay and Cashfree accounts, or your own gateway. Zyvor routes, records and reconciles. Your provider settles.<br>
+**Orchestrate (default):** connect your own Razorpay, Cashfree, PhonePe or custom accounts; Zyvor routes, records and reconciles; your provider settles.<br>
+**Acquire (sponsor-first):** Zyvor is the merchant-facing PG; escrow and payouts run through `zyvor-settle` under a licensed sponsor until own RBI PA / NPCI TPAP land. See [REGULATORY.md](docs/zyvor/REGULATORY.md) and [ADR 0004](docs/adr/0004-money-modes-orchestrate-acquire.md).<br>
 Rust core · PostgreSQL · Next.js checkout and console · TypeScript, Python and Go SDKs · iOS test apps
 
 [![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
