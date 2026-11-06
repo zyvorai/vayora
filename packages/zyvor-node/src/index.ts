@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { DeleteTestClockResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse } from "./types.js";
+import type { DeleteTestClockResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementBatchesByIdResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -67,7 +67,7 @@ export interface Page<T> {
 /** One line of a GST tax invoice. `rateBp` is the slab in percent × 100 (1800 = 18%). */
 export interface GstLine { description: string; hsnSac: string; quantity: number; unitPriceMinor: number; rateBp: 0 | 25 | 100 | 150 | 300 | 500 | 1200 | 1800 | 2800 }
 
-export interface RiskRules { max_intent_amount_minor?: number | null; max_attempts_per_intent?: number | null; max_failed_per_customer_per_hour?: number | null; blocked_vpas?: string[] }
+export interface RiskRules { max_intent_amount_minor?: number | null; max_attempts_per_intent?: number | null; max_failed_per_customer_per_hour?: number | null; blocked_vpas?: string[]; score_block_below?: number | null }
 
 export interface Settings {
   risk: RiskRules;
@@ -327,7 +327,45 @@ export class Zyvor {
     reject: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/reject`),
     /** Record the bank reference (UTR) of the transfer you made; posts to the ledger once. */
     markPaid: (id: string, bankRef: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/mark_paid`, { bank_ref: bankRef }),
+    /** Acquire mode: instruct the sponsor payout rail (falls back to sim rail without ZYVOR_PAYOUT_RAIL_URL). */
+    sendRail: (id: string, p: { rail?: "imps" | "neft" | "upi"; accountNumber?: string; ifsc?: string; vpa?: string; beneficiaryName?: string } = {}) =>
+      this.req<{ payout_id: string; status: string; bank_ref: string }>("POST", `/v1/payouts/${encodeURIComponent(id)}/send_rail`, { rail: p.rail, account_number: p.accountNumber, ifsc: p.ifsc, vpa: p.vpa, beneficiary_name: p.beneficiaryName }),
     cancel: (id: string) => this.req<PayoutRow>("POST", `/v1/payouts/${encodeURIComponent(id)}/cancel`),
+  };
+
+  /** Orchestrate vs acquire money mode and settlement delay. */
+  readonly moneyMode = {
+    get: () => this.req<{ money_mode: string; acquire_kyc_status: string; settlement_delay_days: number }>("GET", "/v1/money_mode"),
+    set: (p: { moneyMode: "orchestrate" | "acquire"; settlementDelayDays?: number }) =>
+      this.req<{ money_mode: string }>("PUT", "/v1/money_mode", { money_mode: p.moneyMode, settlement_delay_days: p.settlementDelayDays }),
+  };
+
+  readonly acquireKyc = {
+    get: () => this.req<{ organisation_id: string; acquire_kyc_status: string; acquire_kyc_approved_at: string | null }>("GET", "/v1/acquire_kyc"),
+    set: (status: "not_started" | "pending" | "approved" | "rejected" | "re_kyc_due") =>
+      this.req<{ organisation_id: string; acquire_kyc_status: string }>("PUT", "/v1/acquire_kyc", { status }),
+  };
+
+  /** Acquire-mode settlement batches (escrow → merchant bank via payout rail). */
+  readonly settlementBatches = {
+    list: () => this.req<{ data: Record<string, unknown>[] }>("GET", "/v1/settlement_batches"),
+    get: (id: string) => this.req<GetSettlementBatchesByIdResponse>("GET", `/v1/settlement_batches/${encodeURIComponent(id)}`),
+    open: (currency = "INR") => this.req<{ id: string; status: string; currency: string }>("POST", "/v1/settlement_batches", { currency }),
+    addItem: (id: string, p: { kind: "capture" | "refund" | "fee" | "hold"; reference: string; amountMinor: number }) =>
+      this.req("POST", `/v1/settlement_batches/${encodeURIComponent(id)}/items`, { kind: p.kind, reference: p.reference, amount_minor: p.amountMinor }),
+    release: (id: string) => this.req("POST", `/v1/settlement_batches/${encodeURIComponent(id)}/release`, {}),
+  };
+
+  readonly escrow = {
+    proof: () => this.req<{ escrow_available_net: number; open_payables_net: number; balanced: boolean }>("GET", "/v1/escrow/proof"),
+  };
+
+  /** Network card tokens only — never send PAN/CVV. */
+  readonly cardTokens = {
+    list: () => this.req<{ tokens: { id: string; last4: string; brand: string | null }[] }>("GET", "/v1/card_tokens"),
+    store: (p: { networkTokenRef: string; last4: string; brand?: string; customerId?: string; expMonth?: number; expYear?: number }) =>
+      this.req("POST", "/v1/card_tokens", { network_token_ref: p.networkTokenRef, last4: p.last4, brand: p.brand, customer_id: p.customerId, exp_month: p.expMonth, exp_year: p.expYear }),
+    revoke: (id: string) => this.req("POST", `/v1/card_tokens/${encodeURIComponent(id)}/revoke`, {}),
   };
 
   readonly customers = {
@@ -586,7 +624,7 @@ export class Zyvor {
     /** Test environments only: an in-process provider whose outcome the payer's UPI handle chooses. */
     enableSimulator: () => this.req<{ id: string }>("POST", "/v1/provider_accounts", { provider: "sim", credentials: {}, webhook_secret: "sim-unused" }),
     /** Store these credentials for the provider, replacing its account if there is one, and turn it on. Leave `baseUrl` out for the provider's own test or live address. A Razorpay key must match the environment (rzp_test_ in test, rzp_live_ in live). */
-    connect: (provider: "razorpay" | "cashfree" | "custom", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
+    connect: (provider: "razorpay" | "cashfree" | "custom" | "phonepe" | "sponsor_upi", p: { credentials: Record<string, string | boolean>; webhookSecret: string; label?: string; baseUrl?: string }) =>
       this.req<{ id: string; provider: string; enabled: boolean; replaced: boolean }>("PUT", `/v1/provider_accounts/${provider}`, { credentials: p.credentials, webhook_secret: p.webhookSecret, label: p.label, base_url: p.baseUrl }),
     /** Ask the provider whether it accepts the credentials. Read-only; a refusal comes back as `ok: false`. */
     check: (provider: string) => this.req<{ provider: string; ok: boolean; detail: string; env: string }>("POST", `/v1/provider_accounts/${encodeURIComponent(provider)}/check`),

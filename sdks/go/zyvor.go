@@ -1115,6 +1115,81 @@ func (c *Client) MarkPayoutPaid(payoutId string, bankRef string) (map[string]any
 	return c.call("POST", "/v1/payouts/"+payoutId+"/mark_paid", body)
 }
 
+// SendPayoutRail: Acquire mode — send an approved payout over the sponsor rail.
+func (c *Client) SendPayoutRail(payoutId string, body map[string]any) (map[string]any, error) {
+	if body == nil {
+		body = map[string]any{}
+	}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/send_rail", body)
+}
+
+// GetMoneyMode: Organisation money mode (orchestrate or acquire).
+func (c *Client) GetMoneyMode() (map[string]any, error) {
+	return c.call("GET", "/v1/money_mode", nil)
+}
+
+// SetMoneyMode: Set organisation money mode.
+func (c *Client) SetMoneyMode(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/money_mode", body)
+}
+
+// GetAcquireKyc: Acquire-mode KYC/AML status.
+func (c *Client) GetAcquireKyc() (map[string]any, error) {
+	return c.call("GET", "/v1/acquire_kyc", nil)
+}
+
+// SetAcquireKyc: Set acquire-mode KYC/AML status.
+func (c *Client) SetAcquireKyc(status string) (map[string]any, error) {
+	return c.call("PUT", "/v1/acquire_kyc", map[string]any{"status": status})
+}
+
+// ListSettlementBatches: List acquire-mode settlement batches.
+func (c *Client) ListSettlementBatches() (map[string]any, error) {
+	return c.call("GET", "/v1/settlement_batches", nil)
+}
+
+// GetSettlementBatch: One settlement batch with its items.
+func (c *Client) GetSettlementBatch(batchId string) (map[string]any, error) {
+	return c.call("GET", "/v1/settlement_batches/"+batchId, nil)
+}
+
+// OpenSettlementBatch: Open an acquire-mode settlement batch.
+func (c *Client) OpenSettlementBatch(currency string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches", map[string]any{"currency": currency})
+}
+
+// AddSettlementBatchItem: Add a line to a settlement batch.
+func (c *Client) AddSettlementBatchItem(batchId string, kind string, reference string, amountMinor int64) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches/"+batchId+"/items", map[string]any{
+		"kind": kind, "reference": reference, "amount_minor": amountMinor,
+	})
+}
+
+// ReleaseSettlementBatch: Release a settlement batch via the payout rail.
+func (c *Client) ReleaseSettlementBatch(batchId string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches/"+batchId+"/release", map[string]any{})
+}
+
+// EscrowProof: Escrow available vs open payables proof.
+func (c *Client) EscrowProof() (map[string]any, error) {
+	return c.call("GET", "/v1/escrow/proof", nil)
+}
+
+// ListCardTokens: List network card tokens (no PAN).
+func (c *Client) ListCardTokens() (map[string]any, error) {
+	return c.call("GET", "/v1/card_tokens", nil)
+}
+
+// StoreCardToken: Store a network card token. Never send PAN or CVV.
+func (c *Client) StoreCardToken(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/card_tokens", body)
+}
+
+// RevokeCardToken: Revoke a network card token.
+func (c *Client) RevokeCardToken(tokenId string) (map[string]any, error) {
+	return c.call("POST", "/v1/card_tokens/"+tokenId+"/revoke", map[string]any{})
+}
+
 // ListCustomers: Customers, optionally by your own reference.
 func (c *Client) ListCustomers(opts map[string]any) (map[string]any, error) {
 	v := url.Values{}

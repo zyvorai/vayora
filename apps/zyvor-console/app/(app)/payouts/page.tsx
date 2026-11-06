@@ -1,7 +1,7 @@
 import { actorLabel } from "@/lib/labels";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { AddVendor, BulkPayouts, MarkPaid, RequestPayout } from "@/components/PayoutForms";
+import { AddVendor, BulkPayouts, MarkPaid, RequestPayout, SendRail } from "@/components/PayoutForms";
 import { approvePayout, cancelPayout, rejectPayout } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { inr, istDateTime } from "@/lib/format";
@@ -51,7 +51,7 @@ export default async function Payouts() {
                 <td style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                   {p.status === "pending_approval" && p.requested_by !== `user:${me?.u}` && <><Act action={approvePayout} id={p.id} label="Approve" primary /><Act action={rejectPayout} id={p.id} label="Reject" /></>}
                   {p.status === "pending_approval" && p.requested_by === `user:${me?.u}` && <span className="muted">Waiting for someone else</span>}
-                  {p.status === "approved" && <MarkPaid id={p.id} />}
+                  {p.status === "approved" && <><MarkPaid id={p.id} /><SendRail id={p.id} /></>}
                   {(p.status === "pending_approval" || p.status === "approved") && <Act action={cancelPayout} id={p.id} label="Cancel" />}
                 </td>
               </tr>

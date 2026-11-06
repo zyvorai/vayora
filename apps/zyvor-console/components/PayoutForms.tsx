@@ -1,6 +1,6 @@
 "use client";
 import { startTransition, useActionState, useEffect, useRef, type FormEvent } from "react";
-import { addVendor, bulkPayouts, markPayoutPaid, requestPayout } from "@/lib/actions";
+import { addVendor, bulkPayouts, markPayoutPaid, requestPayout, sendPayoutRail } from "@/lib/actions";
 
 export function RequestPayout({ vendors }: { vendors: { id: string; name: string }[] }) {
   const [state, run, pending] = useActionState(requestPayout, undefined);
@@ -42,6 +42,24 @@ export function MarkPaid({ id }: { id: string }) {
       <input name="bank_ref" placeholder="Bank reference (UTR)" aria-label="Bank reference" required minLength={6} maxLength={40} style={{ width: 170 }} />
       <button className="btn small primary" disabled={pending}>{pending ? "…" : "Mark paid"}</button>
       {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+    </form>
+  );
+}
+
+/** Acquire mode: instruct the sponsor payout rail (sim rail when no ZYVOR_PAYOUT_RAIL_URL). */
+export function SendRail({ id }: { id: string }) {
+  const [state, run, pending] = useActionState(sendPayoutRail, undefined);
+  return (
+    <form action={run} style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+      <input type="hidden" name="id" value={id} />
+      <select name="rail" aria-label="Rail" defaultValue="imps">
+        <option value="imps">IMPS</option>
+        <option value="neft">NEFT</option>
+        <option value="upi">UPI</option>
+      </select>
+      <button className="btn small" disabled={pending}>{pending ? "…" : "Send via rail"}</button>
+      {state?.error && <span className="note bad" role="alert">{state.error}</span>}
+      {state?.ok && <span className="note ok" role="status">Sent</span>}
     </form>
   );
 }

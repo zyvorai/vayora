@@ -493,6 +493,65 @@ class Zyvor:
         body = {k: v for k, v in {"bank_ref": bank_ref}.items() if v is not None}
         return self._req("POST", f"/v1/payouts/{payout_id}/mark_paid", body)
 
+    def send_payout_rail(self, payout_id: str, *, rail: Optional[str] = None, account_number: Optional[str] = None, ifsc: Optional[str] = None, vpa: Optional[str] = None, beneficiary_name: Optional[str] = None) -> types.GetMoneyModeResponse:
+        """Acquire mode: send an approved payout over the sponsor payout rail."""
+        body = {k: v for k, v in {"rail": rail, "account_number": account_number, "ifsc": ifsc, "vpa": vpa, "beneficiary_name": beneficiary_name}.items() if v is not None}
+        return self._req("POST", f"/v1/payouts/{payout_id}/send_rail", body)
+
+    def get_money_mode(self) -> types.GetMoneyModeResponse:
+        """Organisation money mode (orchestrate or acquire)."""
+        return self._req("GET", "/v1/money_mode")
+
+    def set_money_mode(self, money_mode: str, *, settlement_delay_days: Optional[int] = None) -> types.GetAcquireKycResponse:
+        """Set organisation money mode."""
+        body = {k: v for k, v in {"money_mode": money_mode, "settlement_delay_days": settlement_delay_days}.items() if v is not None}
+        return self._req("PUT", "/v1/money_mode", body)
+
+    def get_acquire_kyc(self) -> types.GetAcquireKycResponse:
+        """Acquire-mode KYC/AML status."""
+        return self._req("GET", "/v1/acquire_kyc")
+
+    def set_acquire_kyc(self, status: str) -> types.PutAcquireKycResponse:
+        """Set acquire-mode KYC/AML status."""
+        return self._req("PUT", "/v1/acquire_kyc", {"status": status})
+
+    def list_settlement_batches(self) -> types.GetSettlementBatchesResponse:
+        """List acquire-mode settlement batches."""
+        return self._req("GET", "/v1/settlement_batches")
+
+    def get_settlement_batch(self, batch_id: str) -> types.GetSettlementBatchesByIdResponse:
+        """One settlement batch with its items."""
+        return self._req("GET", f"/v1/settlement_batches/{batch_id}")
+
+    def open_settlement_batch(self, currency: str = "INR") -> types.PostSettlementBatchesResponse:
+        """Open an acquire-mode settlement batch."""
+        return self._req("POST", "/v1/settlement_batches", {"currency": currency})
+
+    def add_settlement_batch_item(self, batch_id: str, kind: str, reference: str, amount_minor: int) -> types.PostSettlementBatchesByIdItemsResponse:
+        """Add a line to a settlement batch."""
+        return self._req("POST", f"/v1/settlement_batches/{batch_id}/items", {"kind": kind, "reference": reference, "amount_minor": amount_minor})
+
+    def release_settlement_batch(self, batch_id: str) -> dict:
+        """Release a settlement batch via the payout rail."""
+        return self._req("POST", f"/v1/settlement_batches/{batch_id}/release", {})
+
+    def escrow_proof(self) -> types.GetEscrowProofResponse:
+        """Escrow available vs open payables proof."""
+        return self._req("GET", "/v1/escrow/proof")
+
+    def list_card_tokens(self) -> types.GetCardTokensResponse:
+        """List network card tokens (no PAN)."""
+        return self._req("GET", "/v1/card_tokens")
+
+    def store_card_token(self, network_token_ref: str, last4: str, *, brand: Optional[str] = None, customer_id: Optional[str] = None, exp_month: Optional[int] = None, exp_year: Optional[int] = None) -> types.PostCardTokensByIdRevokeResponse:
+        """Store a network card token. Never send PAN or CVV."""
+        body = {k: v for k, v in {"network_token_ref": network_token_ref, "last4": last4, "brand": brand, "customer_id": customer_id, "exp_month": exp_month, "exp_year": exp_year}.items() if v is not None}
+        return self._req("POST", "/v1/card_tokens", body)
+
+    def revoke_card_token(self, token_id: str) -> types.PostCardTokensByIdRevokeResponse:
+        """Revoke a network card token."""
+        return self._req("POST", f"/v1/card_tokens/{token_id}/revoke", {})
+
     def list_customers(self, *, external_ref: Optional[str] = None) -> types.GetCustomersByIdResponse:
         """Customers, optionally by your own reference."""
         q = urllib.parse.urlencode(sorted({k: v for k, v in {"external_ref": external_ref}.items() if v not in (None, '')}.items()))

@@ -2,7 +2,7 @@ import { Act } from "@/components/Act";
 import { redirect } from "next/navigation";
 import { SettingsForm } from "@/components/SettingsForm";
 import { slug } from "@/lib/labels";
-import { clearTestClock, moveTestClock, removeEmailLogo, removeSuppression, resetTestData, saveApprovals, saveCollections, saveFxRate, saveGst, saveReceipts, saveRisk, saveWebhooks, uploadEmailLogo } from "@/lib/actions";
+import { clearTestClock, moveTestClock, removeEmailLogo, removeSuppression, resetTestData, saveAcquireKyc, saveApprovals, saveCollections, saveFxRate, saveGst, saveMoneyMode, saveReceipts, saveRisk, saveWebhooks, uploadEmailLogo } from "@/lib/actions";
 import { currentSession } from "@/lib/auth";
 import { api } from "@/lib/zyvor";
 
@@ -12,7 +12,7 @@ export default async function Settings() {
   const me = await currentSession();
   if (me?.r !== "admin") redirect("/");
   const z = await api();
-  const [s, cat, fx, stopped] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates(), z.mailSuppressions.list()]);
+  const [s, cat, fx, stopped, money, kyc] = await Promise.all([z.settings.get(), z.webhooks.catalogue(), z.fx.rates(), z.mailSuppressions.list(), z.moneyMode.get(), z.acquireKyc.get()]);
   const clock = s.env === "test" ? await z.testClock.get() : null;
   const all = s.webhook_events.includes("*");
   const chosen = (t: string) => s.webhook_events.some((p) => p === t || (p.endsWith(".*") && t.startsWith(p.slice(0, -1))));
@@ -62,10 +62,33 @@ export default async function Settings() {
         <label className="field">Payouts above (₹)<input name="payout" inputMode="decimal" defaultValue={major(s.payout_approval_threshold_minor)} /></label>
       </SettingsForm>
 
+      <SettingsForm title="Money mode" hint="Orchestrate routes to your own Razorpay/Cashfree/PhonePe accounts. Acquire makes Zyvor the merchant-facing PG under a licensed sponsor (escrow + settlement batches). Live acquire also needs ZYVOR_ALLOW_LIVE_ACQUIRE and approved KYC." action={saveMoneyMode}>
+        <label className="field">Mode
+          <select name="money_mode" defaultValue={money.money_mode}>
+            <option value="orchestrate">Orchestrate</option>
+            <option value="acquire">Acquire</option>
+          </select>
+        </label>
+        <label className="field">Settlement delay (days)<input name="settlement_delay_days" type="number" min={0} max={7} defaultValue={money.settlement_delay_days} /></label>
+      </SettingsForm>
+
+      <SettingsForm title="Acquire KYC" hint="Live acquire payments are refused until status is approved. This is the operator gate; your sponsor may still require their own due diligence." action={saveAcquireKyc}>
+        <label className="field">Status
+          <select name="status" defaultValue={kyc.acquire_kyc_status}>
+            <option value="not_started">Not started</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="re_kyc_due">Re-KYC due</option>
+          </select>
+        </label>
+      </SettingsForm>
+
       <SettingsForm title="Risk limits" hint="Payments that break these are stopped before they reach a provider, and each stop is recorded. Leave a box empty for no limit." action={saveRisk}>
         <label className="field">Largest single payment (₹)<input name="max_amount" inputMode="decimal" defaultValue={s.risk.max_intent_amount_minor ? major(s.risk.max_intent_amount_minor) : ""} /></label>
         <label className="field">Tries per payment<input name="max_attempts" type="number" min={1} defaultValue={s.risk.max_attempts_per_intent ?? ""} /></label>
         <label className="field">Failed tries per customer per hour<input name="max_failed" type="number" min={1} defaultValue={s.risk.max_failed_per_customer_per_hour ?? ""} /></label>
+        <label className="field">Block if risk score below (0–100)<input name="score_block_below" type="number" min={0} max={100} defaultValue={s.risk.score_block_below ?? ""} /></label>
         <label className="field" style={{ gridColumn: "1 / -1" }}>Refuse these UPI ids or handles (one per line, e.g. name@bank or @bank)
           <textarea name="blocked" rows={3} defaultValue={(s.risk.blocked_vpas ?? []).join("\n")} spellCheck={false} />
         </label>

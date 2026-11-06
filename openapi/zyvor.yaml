@@ -5144,6 +5144,23 @@ paths:
             schema:
               $ref: '#/components/schemas/SetMoneyMode'
   /v1/settlement_batches:
+    get:
+      summary: List acquire-mode settlement batches
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
     post:
       summary: Open an acquire-mode settlement batch
       tags:
@@ -5171,6 +5188,69 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/OpenBatch'
+  /v1/settlement_batches/{id}:
+    get:
+      summary: Get a settlement batch with its items
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  captures_minor:
+                    type: integer
+                  refunds_minor:
+                    type: integer
+                  fees_minor:
+                    type: integer
+                  holds_minor:
+                    type: integer
+                  net_minor:
+                    type: integer
+                  rail: {}
+                  rail_ref: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  released_at:
+                    type:
+                    - string
+                    - 'null'
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                        reference:
+                          type: string
+                        amount_minor:
+                          type: integer
+                          format: int64
+                        currency:
+                          type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/settlement_batches/{id}/items:
     post:
       summary: Add a capture, refund, fee or hold line to a settlement batch

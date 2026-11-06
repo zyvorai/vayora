@@ -63,6 +63,12 @@ export interface DeleteTestClockResponse {
   real_date: string | null;
 }
 
+export interface GetAcquireKycResponse {
+  organisation_id: string | null;
+  acquire_kyc_status: string;
+  acquire_kyc_approved_at: unknown;
+}
+
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
@@ -120,6 +126,10 @@ export interface GetBranchesResponse {
 export interface GetBranchesResponseDataItem {
   id: string;
   name: string;
+}
+
+export interface GetCardTokensResponse {
+  tokens: unknown[];
 }
 
 export interface GetCheckoutByTenantIdByIntentIdResponse {
@@ -256,6 +266,12 @@ export interface GetDisputesResponseDataItem {
   status: string;
   respond_by: string | null;
   evidence_count: number;
+}
+
+export interface GetEscrowProofResponse {
+  escrow_available_net: number;
+  open_payables_net: number;
+  balanced: unknown;
 }
 
 export interface GetEventsCatalogueResponse {
@@ -467,6 +483,12 @@ export interface GetMilestonesResponseDataItem {
   amount_minor: number;
   status: string;
   invoice_id: string | null;
+}
+
+export interface GetMoneyModeResponse {
+  money_mode: unknown;
+  acquire_kyc_status: string;
+  settlement_delay_days: number;
 }
 
 export interface GetOnboardingResponse {
@@ -745,6 +767,34 @@ export interface GetSettingsResponse {
   webhook_events: unknown;
 }
 
+export interface GetSettlementBatchesByIdResponse {
+  id: string;
+  currency: string;
+  status: string;
+  captures_minor: number;
+  refunds_minor: number;
+  fees_minor: number;
+  holds_minor: number;
+  net_minor: number;
+  rail: unknown;
+  rail_ref: unknown;
+  created_at: string | null;
+  released_at: string | null;
+  items: GetSettlementBatchesByIdResponseItemsItem[];
+}
+
+export interface GetSettlementBatchesByIdResponseItemsItem {
+  id: string;
+  kind: string;
+  reference: string;
+  amount_minor: number;
+  currency: string;
+}
+
+export interface GetSettlementBatchesResponse {
+  data: unknown[];
+}
+
 export interface GetSettlementsByIdExplainResponse {
   settlement: unknown;
   payments: unknown[];
@@ -903,6 +953,19 @@ export interface PostBillingRunResponse {
 export interface PostBranchesResponse {
   id: string;
   name: string;
+}
+
+export interface PostCardTokensByIdRevokeResponse {
+  id: string;
+  revoked: boolean;
+}
+
+export interface PostCardTokensResponse {
+  id: string;
+  last4: unknown;
+  brand: unknown;
+  exp_month: unknown;
+  exp_year: unknown;
 }
 
 export interface PostCashEntriesResponse {
@@ -1555,6 +1618,12 @@ export interface PostPayoutsByIdRejectResponse {
   amount_minor: number;
 }
 
+export interface PostPayoutsByIdSendRailResponse {
+  payout_id: string;
+  status: string;
+  bank_ref: unknown;
+}
+
 export interface PostPayoutsResponse {
   payout_id: string;
   amount_minor: number;
@@ -1750,6 +1819,19 @@ export interface PostSettingsResponse {
   ok: boolean;
 }
 
+export interface PostSettlementBatchesByIdItemsResponse {
+  id: string;
+  batch_id: string;
+  kind: string;
+  amount_minor: number;
+}
+
+export interface PostSettlementBatchesResponse {
+  id: string;
+  status: string;
+  currency: string;
+}
+
 export interface PostSettlementsByIdSimulateBankResponse {
   added: number;
   settlements_rechecked: number;
@@ -1889,6 +1971,15 @@ export interface PostVendorsResponse {
 
 export interface PostWebhooksByProviderByTenantIdResponse {
   status: string;
+}
+
+export interface PutAcquireKycResponse {
+  organisation_id: string | null;
+  acquire_kyc_status: string;
+}
+
+export interface PutMoneyModeResponse {
+  money_mode: unknown;
 }
 
 export interface PutOnboardingResponse {

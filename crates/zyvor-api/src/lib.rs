@@ -474,8 +474,9 @@ pub fn app(state: AppState) -> Router {
         .route("/money_mode", get(money_mode::get_money_mode).put(money_mode::set_money_mode))
         .route(
             "/settlement_batches",
-            post(settle::open_batch),
+            get(settle::list_batches).post(settle::open_batch),
         )
+        .route("/settlement_batches/{id}", get(settle::get_batch))
         .route(
             "/settlement_batches/{id}/items",
             post(settle::add_item),

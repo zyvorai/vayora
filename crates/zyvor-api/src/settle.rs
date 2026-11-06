@@ -10,20 +10,152 @@ use serde_json::{Value, json};
 use zyvor_core::{Currency, new_id};
 use zyvor_ledger::MoneyMode;
 use zyvor_settle::{
-    BatchTotals, PayoutInstruction, PayoutRail, PayoutRailStatus, RailKind, SimPayoutRail,
-    escrow_proof_ok, post_escrow_available, post_settlement_banked, post_settlement_release,
+    BatchTotals, HttpPayoutRail, PayoutInstruction, PayoutRail, PayoutRailStatus, PayoutResult,
+    RailError, RailKind, SimPayoutRail, escrow_proof_ok, post_escrow_available,
+    post_settlement_banked, post_settlement_release,
 };
 
 use crate::{ApiError, AppState, auth::Auth, money_mode, tenant};
 
-fn rail() -> SimPayoutRail {
-    // Production: load HttpPayoutRail from env (ZYVOR_PAYOUT_RAIL_URL / KEY). Sandbox uses sim.
-    SimPayoutRail
+/// Prefer `ZYVOR_PAYOUT_RAIL_URL` + `ZYVOR_PAYOUT_RAIL_KEY` (sponsor HTTP rail); otherwise the sim rail.
+async fn rail_send(insn: &PayoutInstruction) -> Result<PayoutResult, RailError> {
+    let url = std::env::var("ZYVOR_PAYOUT_RAIL_URL").ok().filter(|u| !u.is_empty());
+    let key = std::env::var("ZYVOR_PAYOUT_RAIL_KEY").unwrap_or_default();
+    match url {
+        Some(base) => {
+            HttpPayoutRail::new(base, key, std::time::Duration::from_secs(30))
+                .send(insn)
+                .await
+        }
+        None => SimPayoutRail.send(insn).await,
+    }
 }
 
 #[derive(Deserialize)]
 pub struct OpenBatch {
     currency: String,
+}
+
+pub async fn list_batches(
+    State(s): State<AppState>,
+    auth: Auth,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> = sqlx::query_as(
+        "SELECT id, currency, status, captures_minor, refunds_minor, fees_minor, holds_minor, net_minor,
+                rail, rail_ref, created_at, released_at
+         FROM settlement_batches ORDER BY created_at DESC LIMIT 100",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let data: Vec<Value> = rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                currency,
+                status,
+                captures_minor,
+                refunds_minor,
+                fees_minor,
+                holds_minor,
+                net_minor,
+                rail,
+                rail_ref,
+                created_at,
+                released_at,
+            )| {
+                json!({
+                    "id": id,
+                    "currency": currency,
+                    "status": status,
+                    "captures_minor": captures_minor,
+                    "refunds_minor": refunds_minor,
+                    "fees_minor": fees_minor,
+                    "holds_minor": holds_minor,
+                    "net_minor": net_minor,
+                    "rail": rail,
+                    "rail_ref": rail_ref,
+                    "created_at": created_at,
+                    "released_at": released_at,
+                })
+            },
+        )
+        .collect();
+    Ok(Json(json!({ "data": data })))
+}
+
+pub async fn get_batch(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let row: Option<(
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> = sqlx::query_as(
+        "SELECT id, currency, status, captures_minor, refunds_minor, fees_minor, holds_minor, net_minor,
+                rail, rail_ref, created_at, released_at
+         FROM settlement_batches WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(r) = row else {
+        return Err(ApiError::not_found("settlement batch"));
+    };
+    let items: Vec<(String, String, String, i64, String)> = sqlx::query_as(
+        "SELECT id, kind, reference, amount_minor, currency FROM settlement_batch_items
+         WHERE batch_id = $1 ORDER BY created_at",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({
+        "id": r.0,
+        "currency": r.1,
+        "status": r.2,
+        "captures_minor": r.3,
+        "refunds_minor": r.4,
+        "fees_minor": r.5,
+        "holds_minor": r.6,
+        "net_minor": r.7,
+        "rail": r.8,
+        "rail_ref": r.9,
+        "created_at": r.10,
+        "released_at": r.11,
+        "items": items.into_iter().map(|(id, kind, reference, amount_minor, currency)| json!({
+            "id": id, "kind": kind, "reference": reference, "amount_minor": amount_minor, "currency": currency
+        })).collect::<Vec<_>>(),
+    })))
 }
 
 pub async fn open_batch(
@@ -188,6 +320,28 @@ pub async fn release_batch(
     if status != "open" {
         return Err(ApiError::conflict("batch_not_open", format!("batch is {status}")));
     }
+    let delay: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(settlement_delay_days, 1) FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(&auth.tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(1);
+    if delay > 0 {
+        let ready: bool = sqlx::query_scalar(
+            "SELECT created_at + make_interval(days => $2) <= now() FROM settlement_batches WHERE id = $1",
+        )
+        .bind(&batch_id)
+        .bind(delay)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !ready {
+            return Err(ApiError::conflict(
+                "settlement_delay",
+                format!("batch cannot release until {delay} day(s) after it was opened (settlement_delay_days)"),
+            ));
+        }
+    }
     let currency: Currency = ccy.parse().map_err(|_| ApiError::internal())?;
     let org = money_mode::organisation_id(&mut tx, &auth.tenant_id).await?;
     let totals = BatchTotals {
@@ -229,9 +383,9 @@ pub async fn release_batch(
         vpa: None,
         beneficiary_name: org.clone(),
     };
-    let result = rail().send(&insn).await.map_err(|e| {
-        ApiError::conflict("rail_failed", e.to_string())
-    })?;
+    let result = rail_send(&insn)
+        .await
+        .map_err(|e| ApiError::conflict("rail_failed", e.to_string()))?;
 
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     match result.status {
@@ -372,8 +526,7 @@ pub async fn send_payout_rail(
         vpa: b.vpa,
         beneficiary_name: b.beneficiary_name.unwrap_or_else(|| vendor_id.clone()),
     };
-    let result = rail()
-        .send(&insn)
+    let result = rail_send(&insn)
         .await
         .map_err(|e| ApiError::conflict("rail_failed", e.to_string()))?;
     if !matches!(

@@ -67,6 +67,12 @@ DeleteTestClockResponse = TypedDict("DeleteTestClockResponse", {
     "real_date": "Optional[str]",
 })
 
+GetAcquireKycResponse = TypedDict("GetAcquireKycResponse", {
+    "organisation_id": "Optional[str]",
+    "acquire_kyc_status": "str",
+    "acquire_kyc_approved_at": "Any",
+})
+
 GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
     "by_provider_method": "List[Any]",
     "suggestions": "Any",
@@ -124,6 +130,10 @@ GetBranchesResponse = TypedDict("GetBranchesResponse", {
 GetBranchesResponseDataItem = TypedDict("GetBranchesResponseDataItem", {
     "id": "str",
     "name": "str",
+})
+
+GetCardTokensResponse = TypedDict("GetCardTokensResponse", {
+    "tokens": "List[Any]",
 })
 
 GetCheckoutByTenantIdByIntentIdResponse = TypedDict("GetCheckoutByTenantIdByIntentIdResponse", {
@@ -260,6 +270,12 @@ GetDisputesResponseDataItem = TypedDict("GetDisputesResponseDataItem", {
     "status": "str",
     "respond_by": "Optional[str]",
     "evidence_count": "int",
+})
+
+GetEscrowProofResponse = TypedDict("GetEscrowProofResponse", {
+    "escrow_available_net": "int",
+    "open_payables_net": "int",
+    "balanced": "Any",
 })
 
 GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
@@ -471,6 +487,12 @@ GetMilestonesResponseDataItem = TypedDict("GetMilestonesResponseDataItem", {
     "amount_minor": "int",
     "status": "str",
     "invoice_id": "Optional[str]",
+})
+
+GetMoneyModeResponse = TypedDict("GetMoneyModeResponse", {
+    "money_mode": "Any",
+    "acquire_kyc_status": "str",
+    "settlement_delay_days": "int",
 })
 
 GetOnboardingResponse = TypedDict("GetOnboardingResponse", {
@@ -749,6 +771,34 @@ GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "webhook_events": "Any",
 })
 
+GetSettlementBatchesByIdResponse = TypedDict("GetSettlementBatchesByIdResponse", {
+    "id": "str",
+    "currency": "str",
+    "status": "str",
+    "captures_minor": "int",
+    "refunds_minor": "int",
+    "fees_minor": "int",
+    "holds_minor": "int",
+    "net_minor": "int",
+    "rail": "Any",
+    "rail_ref": "Any",
+    "created_at": "Optional[str]",
+    "released_at": "Optional[str]",
+    "items": "List[GetSettlementBatchesByIdResponseItemsItem]",
+})
+
+GetSettlementBatchesByIdResponseItemsItem = TypedDict("GetSettlementBatchesByIdResponseItemsItem", {
+    "id": "str",
+    "kind": "str",
+    "reference": "str",
+    "amount_minor": "int",
+    "currency": "str",
+})
+
+GetSettlementBatchesResponse = TypedDict("GetSettlementBatchesResponse", {
+    "data": "List[Any]",
+})
+
 GetSettlementsByIdExplainResponse = TypedDict("GetSettlementsByIdExplainResponse", {
     "settlement": "Any",
     "payments": "List[Any]",
@@ -907,6 +957,19 @@ PostBillingRunResponse = TypedDict("PostBillingRunResponse", {
 PostBranchesResponse = TypedDict("PostBranchesResponse", {
     "id": "str",
     "name": "str",
+})
+
+PostCardTokensByIdRevokeResponse = TypedDict("PostCardTokensByIdRevokeResponse", {
+    "id": "str",
+    "revoked": "bool",
+})
+
+PostCardTokensResponse = TypedDict("PostCardTokensResponse", {
+    "id": "str",
+    "last4": "Any",
+    "brand": "Any",
+    "exp_month": "Any",
+    "exp_year": "Any",
 })
 
 PostCashEntriesResponse = TypedDict("PostCashEntriesResponse", {
@@ -1559,6 +1622,12 @@ PostPayoutsByIdRejectResponse = TypedDict("PostPayoutsByIdRejectResponse", {
     "amount_minor": "int",
 })
 
+PostPayoutsByIdSendRailResponse = TypedDict("PostPayoutsByIdSendRailResponse", {
+    "payout_id": "str",
+    "status": "str",
+    "bank_ref": "Any",
+})
+
 PostPayoutsResponse = TypedDict("PostPayoutsResponse", {
     "payout_id": "str",
     "amount_minor": "int",
@@ -1754,6 +1823,19 @@ PostSettingsResponse = TypedDict("PostSettingsResponse", {
     "ok": "bool",
 })
 
+PostSettlementBatchesByIdItemsResponse = TypedDict("PostSettlementBatchesByIdItemsResponse", {
+    "id": "str",
+    "batch_id": "str",
+    "kind": "str",
+    "amount_minor": "int",
+})
+
+PostSettlementBatchesResponse = TypedDict("PostSettlementBatchesResponse", {
+    "id": "str",
+    "status": "str",
+    "currency": "str",
+})
+
 PostSettlementsByIdSimulateBankResponse = TypedDict("PostSettlementsByIdSimulateBankResponse", {
     "added": "int",
     "settlements_rechecked": "int",
@@ -1893,6 +1975,15 @@ PostVendorsResponse = TypedDict("PostVendorsResponse", {
 
 PostWebhooksByProviderByTenantIdResponse = TypedDict("PostWebhooksByProviderByTenantIdResponse", {
     "status": "str",
+})
+
+PutAcquireKycResponse = TypedDict("PutAcquireKycResponse", {
+    "organisation_id": "Optional[str]",
+    "acquire_kyc_status": "str",
+})
+
+PutMoneyModeResponse = TypedDict("PutMoneyModeResponse", {
+    "money_mode": "Any",
 })
 
 PutOnboardingResponse = TypedDict("PutOnboardingResponse", {

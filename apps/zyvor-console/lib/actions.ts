@@ -277,12 +277,33 @@ export async function simulateProviderUpdate(_: FormState, f: FormData): Promise
 }
 /** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
 export const connectProvider = async (_: FormState, f: FormData) => {
-  const provider = text(f, "provider") === "cashfree" ? "cashfree" : "razorpay";
-  const credentials: Record<string, string | boolean> = provider === "razorpay" ? { key_id: text(f, "id"), key_secret: text(f, "secret") } : { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
-  // Cashfree signs its webhooks with the account's secret key, so that is the webhook secret; Razorpay has its own.
-  const webhookSecret = provider === "cashfree" ? text(f, "secret") : text(f, "webhook_secret");
-  if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: provider === "cashfree" ? "Fill in the app id and its secret key." : "Fill in the key, its secret and the webhook secret." };
-  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect(provider, { credentials, webhookSecret, label: text(f, "label") || undefined }), "admin");
+  const provider = text(f, "provider");
+  if (!["razorpay", "cashfree", "phonepe", "sponsor_upi"].includes(provider)) {
+    return { error: "Choose Razorpay, Cashfree, PhonePe or Sponsor UPI." };
+  }
+  let credentials: Record<string, string | boolean>;
+  let webhookSecret: string;
+  let baseUrl: string | undefined;
+  if (provider === "razorpay") {
+    credentials = { key_id: text(f, "id"), key_secret: text(f, "secret") };
+    webhookSecret = text(f, "webhook_secret");
+    if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: "Fill in the key, its secret and the webhook secret." };
+  } else if (provider === "cashfree") {
+    credentials = { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
+    webhookSecret = text(f, "secret");
+    if (!text(f, "id") || !text(f, "secret")) return { error: "Fill in the app id and its secret key." };
+  } else if (provider === "phonepe") {
+    credentials = { merchant_id: text(f, "merchant_id"), salt_key: text(f, "salt_key") };
+    webhookSecret = text(f, "webhook_secret");
+    baseUrl = text(f, "base_url") || undefined;
+    if (!text(f, "merchant_id") || !text(f, "salt_key") || !webhookSecret) return { error: "Fill in merchant id, salt key and webhook secret." };
+  } else {
+    credentials = { api_key: text(f, "api_key") };
+    webhookSecret = text(f, "webhook_secret");
+    baseUrl = text(f, "base_url");
+    if (!text(f, "api_key") || !webhookSecret || !baseUrl) return { error: "Fill in API key, webhook secret and base URL for the sponsor." };
+  }
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect(provider as "razorpay" | "cashfree" | "phonepe" | "sponsor_upi", { credentials, webhookSecret, label: text(f, "label") || undefined, baseUrl }), "admin");
   return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
 };
 /** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */
@@ -662,8 +683,29 @@ export const saveRisk = async (_: FormState, f: FormData) => {
   const maxRupees = num("max_amount");
   if (maxRupees !== undefined && !(maxRupees > 0)) return { error: "The payment ceiling must be more than zero, or empty for none." };
   const blocked = String(f.get("blocked") ?? "").split(/[\s,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
-  return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked } }), "admin");
+  const scoreFloor = num("score_block_below");
+  return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked, score_block_below: scoreFloor } }), "admin");
 };
+
+export const saveMoneyMode = async (_: FormState, f: FormData) => {
+  const mode = text(f, "money_mode");
+  if (mode !== "orchestrate" && mode !== "acquire") return { error: "Choose orchestrate or acquire." };
+  const delayRaw = String(f.get("settlement_delay_days") ?? "").trim();
+  const settlementDelayDays = delayRaw === "" ? undefined : Number(delayRaw);
+  if (settlementDelayDays !== undefined && (!Number.isInteger(settlementDelayDays) || settlementDelayDays < 0 || settlementDelayDays > 7)) {
+    return { error: "Settlement delay must be 0–7 days." };
+  }
+  return run(["/settings"], (z) => z.moneyMode.set({ moneyMode: mode, settlementDelayDays }), "admin");
+};
+
+export const saveAcquireKyc = async (_: FormState, f: FormData) => {
+  const status = text(f, "status") as "not_started" | "pending" | "approved" | "rejected" | "re_kyc_due";
+  if (!["not_started", "pending", "approved", "rejected", "re_kyc_due"].includes(status)) return { error: "Pick a KYC status." };
+  return run(["/settings"], (z) => z.acquireKyc.set(status), "admin");
+};
+
+export const sendPayoutRail = async (_: FormState, f: FormData) =>
+  run(["/payouts"], (z) => z.payouts.sendRail(id(f), { rail: (text(f, "rail") as "imps" | "neft" | "upi") || "imps" }), "finance");
 
 export const createCoupon = async (_: FormState, f: FormData): Promise<FormState> => {
   const kind = String(f.get("kind")) === "flat" ? "flat" : "percent";

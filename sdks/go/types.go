@@ -83,6 +83,12 @@ type DeleteTestClockResponse struct {
 	RealDate *string `json:"real_date"`
 }
 
+type GetAcquireKycResponse struct {
+	OrganisationID       *string `json:"organisation_id"`
+	AcquireKycStatus     string  `json:"acquire_kyc_status"`
+	AcquireKycApprovedAt any     `json:"acquire_kyc_approved_at"`
+}
+
 type GetAnalyticsCostResponse struct {
 	ByProviderMethod []any `json:"by_provider_method"`
 	Suggestions      any   `json:"suggestions"`
@@ -140,6 +146,10 @@ type GetBranchesResponse struct {
 type GetBranchesResponseDataItem struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type GetCardTokensResponse struct {
+	Tokens []any `json:"tokens"`
 }
 
 type GetCheckoutByTenantIdByIntentIdResponse struct {
@@ -276,6 +286,12 @@ type GetDisputesResponseDataItem struct {
 	Status        string  `json:"status"`
 	RespondBy     *string `json:"respond_by"`
 	EvidenceCount int64   `json:"evidence_count"`
+}
+
+type GetEscrowProofResponse struct {
+	EscrowAvailableNet int64 `json:"escrow_available_net"`
+	OpenPayablesNet    int64 `json:"open_payables_net"`
+	Balanced           any   `json:"balanced"`
 }
 
 type GetEventsCatalogueResponse struct {
@@ -487,6 +503,12 @@ type GetMilestonesResponseDataItem struct {
 	AmountMinor int64   `json:"amount_minor"`
 	Status      string  `json:"status"`
 	InvoiceID   *string `json:"invoice_id"`
+}
+
+type GetMoneyModeResponse struct {
+	MoneyMode           any    `json:"money_mode"`
+	AcquireKycStatus    string `json:"acquire_kyc_status"`
+	SettlementDelayDays int64  `json:"settlement_delay_days"`
 }
 
 type GetOnboardingResponse struct {
@@ -765,6 +787,34 @@ type GetSettingsResponse struct {
 	WebhookEvents                any     `json:"webhook_events"`
 }
 
+type GetSettlementBatchesByIdResponse struct {
+	ID            string                                      `json:"id"`
+	Currency      string                                      `json:"currency"`
+	Status        string                                      `json:"status"`
+	CapturesMinor int64                                       `json:"captures_minor"`
+	RefundsMinor  int64                                       `json:"refunds_minor"`
+	FeesMinor     int64                                       `json:"fees_minor"`
+	HoldsMinor    int64                                       `json:"holds_minor"`
+	NetMinor      int64                                       `json:"net_minor"`
+	Rail          any                                         `json:"rail"`
+	RailRef       any                                         `json:"rail_ref"`
+	CreatedAt     *string                                     `json:"created_at"`
+	ReleasedAt    *string                                     `json:"released_at"`
+	Items         []GetSettlementBatchesByIdResponseItemsItem `json:"items"`
+}
+
+type GetSettlementBatchesByIdResponseItemsItem struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Reference   string `json:"reference"`
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
+}
+
+type GetSettlementBatchesResponse struct {
+	Data []any `json:"data"`
+}
+
 type GetSettlementsByIdExplainResponse struct {
 	Settlement          any   `json:"settlement"`
 	Payments            []any `json:"payments"`
@@ -923,6 +973,19 @@ type PostBillingRunResponse struct {
 type PostBranchesResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type PostCardTokensByIdRevokeResponse struct {
+	ID      string `json:"id"`
+	Revoked bool   `json:"revoked"`
+}
+
+type PostCardTokensResponse struct {
+	ID       string `json:"id"`
+	Last4    any    `json:"last4"`
+	Brand    any    `json:"brand"`
+	ExpMonth any    `json:"exp_month"`
+	ExpYear  any    `json:"exp_year"`
 }
 
 type PostCashEntriesResponse struct {
@@ -1575,6 +1638,12 @@ type PostPayoutsByIdRejectResponse struct {
 	AmountMinor int64   `json:"amount_minor"`
 }
 
+type PostPayoutsByIdSendRailResponse struct {
+	PayoutID string `json:"payout_id"`
+	Status   string `json:"status"`
+	BankRef  any    `json:"bank_ref"`
+}
+
 type PostPayoutsResponse struct {
 	PayoutID    string `json:"payout_id"`
 	AmountMinor int64  `json:"amount_minor"`
@@ -1770,6 +1839,19 @@ type PostSettingsResponse struct {
 	Ok bool `json:"ok"`
 }
 
+type PostSettlementBatchesByIdItemsResponse struct {
+	ID          string `json:"id"`
+	BatchID     string `json:"batch_id"`
+	Kind        string `json:"kind"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostSettlementBatchesResponse struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Currency string `json:"currency"`
+}
+
 type PostSettlementsByIdSimulateBankResponse struct {
 	Added                int64 `json:"added"`
 	SettlementsRechecked int64 `json:"settlements_rechecked"`
@@ -1909,6 +1991,15 @@ type PostVendorsResponse struct {
 
 type PostWebhooksByProviderByTenantIdResponse struct {
 	Status string `json:"status"`
+}
+
+type PutAcquireKycResponse struct {
+	OrganisationID   *string `json:"organisation_id"`
+	AcquireKycStatus string  `json:"acquire_kyc_status"`
+}
+
+type PutMoneyModeResponse struct {
+	MoneyMode any `json:"money_mode"`
 }
 
 type PutOnboardingResponse struct {

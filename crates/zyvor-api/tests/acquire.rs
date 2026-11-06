@@ -104,7 +104,7 @@ async fn settlement_batch_release_and_escrow_proof(pool: PgPool) {
         "PUT",
         "/v1/money_mode",
         None,
-        json!({ "money_mode": "acquire" }),
+        json!({ "money_mode": "acquire", "settlement_delay_days": 0 }),
     )
     .await;
     t.ok(
