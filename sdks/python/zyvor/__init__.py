@@ -63,8 +63,9 @@ class Zyvor:
     def get_intent(self, intent_id: str) -> types.GetPaymentIntentsByIdResponse:
         return self._req("GET", f"/v1/payment_intents/{intent_id}")
 
-    def create_attempt(self, intent_id: str, method: str, vpa: Optional[str] = None, idempotency_key: Optional[str] = None) -> types.PostPaymentIntentsByIdAttemptsResponse:
-        return self._req("POST", f"/v1/payment_intents/{intent_id}/attempts", {"method": method, "vpa": vpa}, idempotency_key or str(uuid.uuid4()))
+    def create_attempt(self, intent_id: str, method: str, vpa: Optional[str] = None, idempotency_key: Optional[str] = None, return_url: Optional[str] = None, upi_flow: Optional[str] = None, card_token_id: Optional[str] = None) -> types.PostPaymentIntentsByIdAttemptsResponse:
+        body = {"method": method, "vpa": vpa, "return_url": return_url, "upi_flow": upi_flow, "card_token_id": card_token_id}
+        return self._req("POST", f"/v1/payment_intents/{intent_id}/attempts", {k: v for k, v in body.items() if v is not None}, idempotency_key or str(uuid.uuid4()))
 
     def refund(self, intent_id: str, amount_minor: Optional[int] = None, idempotency_key: Optional[str] = None, **extra) -> dict:
         body = {k: v for k, v in {"amount_minor": amount_minor, **extra}.items() if v is not None}

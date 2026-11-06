@@ -25,7 +25,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Uncertain outcomes | ✅ | A timeout after the provider may have accepted produces `unknown`; no other attempt can start (through any provider) until it resolves; resolver asks the provider, never re-sends. |
 | Financial ledger | ✅ | Append-only double-entry; balanced per currency in code **and** by a deferred database constraint; corrections are reversals. Orchestrate: `provider_receivable:*`. Acquire: custody accounts (`escrow:*`, `merchant_payable:*`) per ADR 0004. |
 | Reconciliation | ✅ | Orders → payments → refunds → settlements → bank lines. Explains fees, missing settlements, duplicates, partial payments, mismatches, unmatched bank credits. Cases are assignable and resolvable. |
-| Bank statement import | ◐ | JSON lines only (matched by UTR, else amount ± 3 days). No CSV/MT940/CAMT parsing. |
+| Bank statement import | ◐ | JSON lines + CSV (`POST /v1/bank_statements/import_csv`, matched by UTR else amount ± 3 days). No MT940/CAMT.053 yet. |
 | Refund operations | ✅ | Full/partial, reservation-based over-refund protection, approval threshold with separation of duties, duplicate protection, unknown/failed queues, retry. |
 | Organisations, test/live | ✅ | An organisation has separate test and live tenants; keys are tenant-bound. |
 | Scoped API keys, audit | ✅ | Keys shown once, stored hashed, revocable; audit events are append-only. |
@@ -36,7 +36,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Sandbox simulator, webhook inspector, replay | ✅ | `zyvor-provider-mock`, `scripts/zyvor-sandbox.sh`, `/v1/inbox`, `/v1/outbox`, replay. API only, no UI. |
 | Kubernetes, Compose, Envoy TLS | ◐ | `helm lint`/`template` and `docker compose config` pass. **Not built or run** (no Docker daemon or cluster was available). |
 | Prometheus | ◐ | `/metrics` exposes queue depths and open cases. |
-| OpenTelemetry | ❌ | Not wired. |
+| OpenTelemetry | ◐ | OTLP exporter wired (`telemetry.rs`); verified against a stub collector, not a production backend. |
 | Redacted logs | ◐ | Secrets are never logged by construction; there is no generic redaction layer. |
 
 ## Acceptance tests (all passing)
@@ -81,7 +81,7 @@ Also verified: the sandbox deploys to a single-node k3s cluster (`deploy/zyvor/k
 - **Coupons and convenience fees** on fixed-amount payment links: percent or flat coupons (capped uses, expiry, deactivation, spent atomically with the payer's payment) and a fee the payer covers; the payer sees the breakdown, previewing a coupon spends nothing, and a coupon can never make a payment free. Verified in a browser: valid and invalid codes, the price clearing after a bad code (a bug found and fixed there), and the carry-through to checkout.
 - **Checkout in six languages** (English, Hindi, Marathi, Tamil, Telugu, Bengali) on the payer's pages: `?lang=`, remembered choice, or browser language; a test keeps every language complete and every placeholder intact. Verified in a browser in Hindi and Tamil across the link page and the payment page. The translations are not yet reviewed by native speakers.
 - **Console payouts**: vendors' split-payment balances, a "pay from their balance" option, and a bulk upload (`vendor, amount, purpose, reference` per line; names or ids; refuses lines with extra columns so `12,500` cannot silently become ₹12; keeps the text on an error; repeat-safe by reference). Verified in a browser.
-- Still open from the plan: live AutoPay / PhonePe / sponsor sandbox verification, real PCI vault charge path, vertical campus/clinic/factory templates, counsel fund-flow + sponsor LOI (see OWN_LICENCES.md).
+- Still open from the plan: live AutoPay / PhonePe / sponsor sandbox verification, real PCI vault charge path, MT940/CAMT bank import, counsel fund-flow + sponsor LOI (see OWN_LICENCES.md). Vertical examples: campus, clinic, factory, pharmacy under `examples/`.
 
 ## UPI AutoPay mandates (simulator only)
 

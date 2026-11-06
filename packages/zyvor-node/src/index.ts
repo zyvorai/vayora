@@ -225,8 +225,8 @@ export class Zyvor {
     /** `q` matches a payment id exactly, or part of its reference or description. */
     list: (p: { limit?: number; startingAfter?: string; status?: string; q?: string; /** Created on or after this day (IST, YYYY-MM-DD). */ createdFrom?: string; /** Created on or before this day (IST, YYYY-MM-DD). */ createdTo?: string } = {}) =>
       this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status, q: p.q, created_from: p.createdFrom, created_to: p.createdTo })}`),
-    attempt: (intentId: string, p: { method: Method; vpa?: string; idempotencyKey?: string }) =>
-      this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa }, key(p.idempotencyKey)),
+    attempt: (intentId: string, p: { method: Method; vpa?: string; returnUrl?: string; upiFlow?: string; cardTokenId?: string; idempotencyKey?: string }) =>
+      this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa, return_url: p.returnUrl, upi_flow: p.upiFlow, card_token_id: p.cardTokenId }, key(p.idempotencyKey)),
     refund: (intentId: string, p: { amountMinor?: number; reason?: string; externalRef?: string; idempotencyKey?: string }) =>
       this.req<Refund>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/refunds`, { amount_minor: p.amountMinor, reason: p.reason, external_ref: p.externalRef }, key(p.idempotencyKey)),
   };

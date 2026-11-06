@@ -5299,6 +5299,14 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  batch_id:
+                    type:
+                    - string
+                    - 'null'
+                  net_minor:
+                    type: integer
+                  rail_ref: {}
         4XX:
           $ref: '#/components/responses/Error'
       parameters:
@@ -8115,6 +8123,8 @@ components:
         return_url:
           type: string
         upi_flow:
+          type: string
+        card_token_id:
           type: string
       required:
       - method

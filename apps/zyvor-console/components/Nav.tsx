@@ -13,6 +13,7 @@ const items = [
   { href: "/stores", label: "Branches", icon: icon("M3 10l2-6h14l2 6M4 10v10h16V10M9 20v-6h6v6") },
   { href: "/closing", label: "Daily closing", icon: icon("M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z") },
   { href: "/payouts", label: "Payouts", icon: icon("M12 21V8M7 12l5-5 5 5M4 4h16") },
+  { href: "/settle", label: "Settlement", icon: icon("M3 7h18v4H3zM3 13h10v4H3zM15 13h6v4h-6z") },
   { href: "/refunds", label: "Refunds", icon: icon("M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3") },
   { href: "/disputes", label: "Disputes", icon: icon("M12 3l9 16H3zM12 10v4M12 17v.01") },
   { href: "/reconciliation", label: "Reconciliation", icon: icon("M4 6h16M4 12h10M4 18h6M17 15l2 2 3-4") },

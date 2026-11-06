@@ -22,6 +22,11 @@
                 <field id="checkout_url" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Checkout public URL</label>
                 </field>
+                <field id="webhook_secret" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Webhook signing secret</label>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <comment>Same secret as Zyvor tenant webhook endpoint. POST /zyvor/webhook/</comment>
+                </field>
             </group>
         </section>
     </system>

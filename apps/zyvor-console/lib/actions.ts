@@ -707,6 +707,15 @@ export const saveAcquireKyc = async (_: FormState, f: FormData) => {
 export const sendPayoutRail = async (_: FormState, f: FormData) =>
   run(["/payouts"], (z) => z.payouts.sendRail(id(f), { rail: (text(f, "rail") as "imps" | "neft" | "upi") || "imps" }), "finance");
 
+export const openSettlementBatch = async (_: FormState) =>
+  run(["/settle"], (z) => z.settlementBatches.open("INR"), "admin");
+
+export const releaseSettlementBatch = async (_: FormState, f: FormData) =>
+  run(["/settle"], (z) => z.settlementBatches.release(id(f)), "admin");
+
+export const revokeCardToken = async (_: FormState, f: FormData) =>
+  run(["/settle"], (z) => z.cardTokens.revoke(id(f)), "finance");
+
 export const createCoupon = async (_: FormState, f: FormData): Promise<FormState> => {
   const kind = String(f.get("kind")) === "flat" ? "flat" : "percent";
   const n = Number(String(f.get("value") ?? "").replace(/,/g, ""));

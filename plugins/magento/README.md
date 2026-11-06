@@ -15,6 +15,6 @@ Thin payment method: creates a Zyvor payment link and redirects the shopper to Z
 1. Place order with Zyvor selected.
 2. Module `POST`s `/v1/payment_links` with `amount_minor`, `external_ref=magento-{increment_id}`.
 3. Customer redirects to `{checkout_url}/?link={id}`.
-4. On `payment.captured`, mark the Magento order paid (wire a webhook endpoint or poll — stub left in `Controller/Webhook/Index.php`).
+4. Point Zyvor webhooks at `/zyvor/webhook/` with the signing secret from Admin. On `payment.captured`, the module verifies `Zyvor-Signature` and sets the order to processing when `external_ref` is `magento-{increment_id}`.
 
 See also [WooCommerce](../woocommerce/) and [Shopify](../shopify/).

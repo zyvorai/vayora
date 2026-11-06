@@ -162,11 +162,36 @@ func (c *Client) CreateIntentAt(amountMinor int64, currency, branchID, counterID
 }
 
 func (c *Client) CreateAttempt(intentID, method, vpa, idempotencyKey string) (*Attempt, error) {
+	return c.CreateAttemptOpts(intentID, method, AttemptOpts{VPA: vpa}, idempotencyKey)
+}
+
+// AttemptOpts are optional fields for CreateAttemptOpts (network token charge, return URL, UPI flow).
+type AttemptOpts struct {
+	VPA          string
+	ReturnURL    string
+	UpiFlow      string
+	CardTokenID  string
+}
+
+func (c *Client) CreateAttemptOpts(intentID, method string, opts AttemptOpts, idempotencyKey string) (*Attempt, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = newKey()
 	}
+	body := map[string]any{"method": method}
+	if opts.VPA != "" {
+		body["vpa"] = opts.VPA
+	}
+	if opts.ReturnURL != "" {
+		body["return_url"] = opts.ReturnURL
+	}
+	if opts.UpiFlow != "" {
+		body["upi_flow"] = opts.UpiFlow
+	}
+	if opts.CardTokenID != "" {
+		body["card_token_id"] = opts.CardTokenID
+	}
 	var out Attempt
-	err := c.do("POST", "/v1/payment_intents/"+intentID+"/attempts", map[string]any{"method": method, "vpa": vpa}, idempotencyKey, &out)
+	err := c.do("POST", "/v1/payment_intents/"+intentID+"/attempts", body, idempotencyKey, &out)
 	return &out, err
 }
 

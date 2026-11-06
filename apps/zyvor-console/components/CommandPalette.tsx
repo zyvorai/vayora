@@ -9,6 +9,8 @@ const ITEMS = [
   { label: "Refunds", hint: "Go to", href: "/refunds", k: "approve returns" },
   { label: "Disputes", hint: "Go to", href: "/disputes", k: "chargebacks evidence" },
   { label: "Reconciliation", hint: "Go to", href: "/reconciliation", k: "settlements cases bank" },
+  { label: "Settlement", hint: "Go to", href: "/settle", k: "acquire escrow batches card tokens" },
+  { label: "Payouts", hint: "Go to", href: "/payouts", k: "vendors rail mark paid" },
   { label: "Collections", hint: "Go to", href: "/collections", k: "ageing overdue promises reminders" },
   { label: "Billing", hint: "Go to", href: "/billing", k: "invoices subscriptions plans milestones" },
   { label: "Webhooks", hint: "Go to", href: "/webhooks", k: "events replay outbox" },
