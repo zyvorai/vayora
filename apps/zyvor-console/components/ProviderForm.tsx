@@ -45,7 +45,7 @@ export function ProviderForm({ env }: { env: string }) {
       )}
       {razor && <label className="field" style={{ flex: "1 1 200px" }}>Webhook secret<input name="webhook_secret" type="password" autoComplete="new-password" required /></label>}
       {(phonepe || sponsor) && <label className="field" style={{ flex: "1 1 200px" }}>Webhook secret<input name="webhook_secret" type="password" autoComplete="new-password" required /></label>}
-      {cashfree && <label className="field checkbox"><input type="checkbox" name="upi_intent" /> Cashfree has turned on UPI intent / QR for this account</label>}
+      {(cashfree || razor) && <label className="field checkbox"><input type="checkbox" name="upi_intent" /> {cashfree ? "Cashfree" : "Razorpay"} has turned on UPI intent / QR for this account</label>}
       <button className="btn primary" disabled={pending}>{pending ? "Connecting…" : "Connect"}</button>
       <p className="muted" style={{ flexBasis: "100%", margin: 0 }}>
         {razor && <>Use the {env === "test" ? <strong>test / sandbox</strong> : <strong>live</strong>} keys from Razorpay. The webhook secret is one you choose here and then enter in Razorpay&apos;s webhook settings.</>}

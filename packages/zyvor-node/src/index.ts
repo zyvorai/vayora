@@ -451,9 +451,11 @@ export class Zyvor {
     update: (patch: SettingsPatch) => this.req<{ ok: boolean }>("POST", "/v1/settings", patch),
   };
 
-  /** Bank statement import for reconciliation (JSON lines or CSV text). */
+  /** Bank statement import for reconciliation (JSON lines, CSV, MT940 or CAMT.053). */
   readonly bankStatements = {
     importCsv: (csv: string) => this.req("POST", "/v1/bank_statements/import_csv", { csv }),
+    importMt940: (text: string) => this.req("POST", "/v1/bank_statements/import_mt940", { text }),
+    importCamt: (text: string) => this.req("POST", "/v1/bank_statements/import_camt", { text }),
   };
 
   readonly coupons = {
@@ -650,6 +652,8 @@ export class Zyvor {
     /** Every event type with its meaning. Choose which to receive with the `webhook_events` setting. */
     catalogue: () => this.req<Page<{ type: string; description: string }>>("GET", "/v1/events/catalogue"),
     outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
+    /** Per-attempt delivery history for one outbound event (newest first). */
+    deliveries: (eventId: string) => this.req<Page<{ id: number; attempt_no: number; ok: boolean; http_status: number | null; error: string | null; latency_ms: number | null; created_at: string }>>("GET", `/v1/outbox/${encodeURIComponent(eventId)}/deliveries`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
     /** Queue a `webhook.test` event for your webhook endpoint. Needs a webhook URL in settings. */
     sendTest: () => this.req<{ id: string; status: string }>("POST", "/v1/outbox/test"),

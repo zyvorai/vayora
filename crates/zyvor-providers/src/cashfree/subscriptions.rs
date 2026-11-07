@@ -354,9 +354,9 @@ impl Cashfree {
     }
 }
 
-/// A subscription webhook (`SUBSCRIPTION_*`), or `None` when `ty` is not one. Only CHARGE payments become
-/// payment events, matched on our attempt id (`payment_id`). Status changes, authorization results and
-/// notifications are `Other` for now: the mandate is brought up to date by refreshing it, not by webhook.
+/// A subscription webhook (`SUBSCRIPTION_*`), or `None` when `ty` is not one. CHARGE payments become
+/// payment events (matched on our attempt id). Status / authorization events become `MandateUpdated`
+/// so the API can refresh the mandate; they never touch a payment attempt.
 pub(crate) fn webhook_event(ty: &str, v: &Value) -> Option<WebhookEvent> {
     if !ty.starts_with("SUBSCRIPTION_") {
         return None;
@@ -368,20 +368,36 @@ pub(crate) fn webhook_event(ty: &str, v: &Value) -> Option<WebhookEvent> {
         ("SUBSCRIPTION_PAYMENT_FAILED" | "SUBSCRIPTION_PAYMENT_CANCELLED", true) => {
             EventKind::PaymentFailed
         }
+        // AUTH payments and non-payment status events update the mandate, not an attempt.
+        _ if matches!(
+            ty,
+            "SUBSCRIPTION_STATUS_CHANGED"
+                | "SUBSCRIPTION_AUTH_STATUS"
+                | "SUBSCRIPTION_PAYMENT_NOTIFICATION_INITIATED"
+        ) || (ty == "SUBSCRIPTION_PAYMENT_SUCCESS" && !is_charge) =>
+        {
+            EventKind::MandateUpdated
+        }
         _ => EventKind::Other,
     };
     let payment_id = text(&d["payment_id"]);
-    let sub_id = text(&d["subscription_id"]);
+    let sub_id = text(&d["subscription_id"])
+        .or_else(|| text(&d["subscription_details"]["subscription_id"]));
+    let order_ref = if kind == EventKind::MandateUpdated {
+        sub_id.clone()
+    } else {
+        payment_id.clone()
+    };
     Some(WebhookEvent {
         // No event id is sent; the same delivery must dedupe to the same key.
         event_id: format!(
             "{ty}:{}:{}:{}",
-            sub_id.unwrap_or_default(),
-            payment_id.clone().unwrap_or_default(),
+            sub_id.clone().unwrap_or_default(),
+            payment_id.unwrap_or_default(),
             v["event_time"].as_str().unwrap_or_default()
         ),
         kind,
-        order_ref: payment_id,
+        order_ref,
         provider_payment_ref: text(&d["cf_payment_id"]),
         provider_refund_ref: None,
         refund_ref: None,

@@ -27,7 +27,9 @@ impl Drop for Guard {
 
 pub fn init(service: &'static str) -> Guard {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
-    let fmt = tracing_subscriber::fmt::layer();
+    // Second-line defence: redact key/PAN/VPA-like fragments that slip into a log line.
+    let fmt = tracing_subscriber::fmt::layer()
+        .with_writer(crate::redact::RedactingMakeWriter::new(std::io::stderr()));
     let provider = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .ok()
         .filter(|e| !e.is_empty())

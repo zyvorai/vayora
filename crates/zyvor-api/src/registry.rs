@@ -63,12 +63,16 @@ pub async fn load(
         })?;
     let s = |k: &str| creds[k].as_str().unwrap_or_default().to_string();
     Ok(match provider {
-        "razorpay" => Arc::new(Razorpay::new(
-            base_url.unwrap_or_else(|| "https://api.razorpay.com".into()),
-            s("key_id"),
-            s("key_secret"),
-            state.provider_timeout,
-        )),
+        "razorpay" => Arc::new(
+            Razorpay::new(
+                base_url.unwrap_or_else(|| "https://api.razorpay.com".into()),
+                s("key_id"),
+                s("key_secret"),
+                state.provider_timeout,
+            )
+            // Native UPI intent / QR is opt-in: set `"upi_intent": true` once Razorpay has enabled S2S UPI.
+            .with_upi_intent(creds["upi_intent"].as_bool().unwrap_or(false)),
+        ),
         "cashfree" => Arc::new(
             Cashfree::new(
                 base_url.unwrap_or_else(|| {

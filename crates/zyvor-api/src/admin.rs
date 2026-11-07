@@ -1380,6 +1380,44 @@ pub async fn list_outbox(
     ))
 }
 
+/// Per-attempt delivery history for one outbound event (newest first).
+pub async fn list_outbox_deliveries(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM outbox_events WHERE id = $1)")
+            .bind(&id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if !exists {
+        return Err(ApiError::not_found("event"));
+    }
+    let rows: Vec<(
+        i64,
+        i32,
+        bool,
+        Option<i32>,
+        Option<String>,
+        Option<i32>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        "SELECT id, attempt_no, ok, http_status, error, latency_ms, created_at FROM outbox_deliveries WHERE event_id = $1 ORDER BY created_at DESC, id DESC LIMIT 100",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(Json(json!({
+        "data": rows.into_iter().map(|(id, attempt_no, ok, http_status, error, latency_ms, at)| json!({
+            "id": id, "attempt_no": attempt_no, "ok": ok, "http_status": http_status,
+            "error": error, "latency_ms": latency_ms, "created_at": at
+        })).collect::<Vec<_>>()
+    })))
+}
+
 /// Re-send an event (even a delivered one). Consumers de-duplicate on the event id, so replay is safe.
 pub async fn replay_outbox(
     State(s): State<AppState>,

@@ -304,6 +304,56 @@ func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
 	return out, err
 }
 
+// Gstr1 returns GSTR-1 preparation totals for period (YYYY-MM). Zyvor does not file the return.
+func (c *Client) Gstr1(period string) (map[string]any, error) {
+	return c.call("GET", "/v1/gst/gstr1?period="+url.QueryEscape(period), nil)
+}
+
+// ImportBankCsv imports a bank statement CSV for reconciliation.
+func (c *Client) ImportBankCsv(csv string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_csv", map[string]any{"csv": csv})
+}
+
+// ImportBankMt940 imports a SWIFT MT940 bank statement.
+func (c *Client) ImportBankMt940(text string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_mt940", map[string]any{"text": text})
+}
+
+// ImportBankCamt imports an ISO 20022 CAMT.053 bank statement.
+func (c *Client) ImportBankCamt(text string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_camt", map[string]any{"text": text})
+}
+
+// ListConsoleUsers lists named console users for this organisation.
+func (c *Client) ListConsoleUsers() (map[string]any, error) {
+	return c.call("GET", "/v1/console/users", nil)
+}
+
+// AssignableBranches lists branches a person can be tied to (home environment).
+func (c *Client) AssignableBranches() (map[string]any, error) {
+	return c.call("GET", "/v1/console/branches", nil)
+}
+
+// MfaBegin starts TOTP enrolment for a console user.
+func (c *Client) MfaBegin(userID string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/begin", map[string]any{})
+}
+
+// MfaConfirm confirms TOTP enrolment with a code from the authenticator app.
+func (c *Client) MfaConfirm(userID, otp string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/confirm", map[string]any{"otp": otp})
+}
+
+// MfaReset clears a console user's second factor (admin).
+func (c *Client) MfaReset(userID string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/reset", map[string]any{})
+}
+
+// ListOutboxDeliveries returns per-attempt delivery history for one outbound webhook event.
+func (c *Client) ListOutboxDeliveries(eventID string) (map[string]any, error) {
+	return c.call("GET", "/v1/outbox/"+eventID+"/deliveries", nil)
+}
+
 // CreateMandate asks the payer to approve a UPI AutoPay mandate. frequency is daily, weekly, fortnightly, monthly,
 // bimonthly, quarterly, half_yearly, yearly or as_presented; endDate is YYYY-MM-DD. idempotencyKey "" makes a new one.
 func (c *Client) CreateMandate(customerID string, maxAmountMinor int64, frequency, endDate, idempotencyKey string) (map[string]any, error) {

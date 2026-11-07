@@ -10,6 +10,8 @@ pub mod audit;
 pub mod auth;
 pub mod cards;
 pub mod bankcsv;
+pub mod bankfmt;
+pub mod redact;
 pub mod billing;
 pub mod cases;
 pub mod checkout;
@@ -341,6 +343,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/bank_statements/import", post(recon::import_bank))
         .route("/bank_statements/import_csv", post(bankcsv::import_csv))
+        .route("/bank_statements/import_mt940", post(bankfmt::import_mt940))
+        .route("/bank_statements/import_camt", post(bankfmt::import_camt))
         .route("/recon/cases", get(recon::list_cases))
         .route("/recon/cases/{id}/assign", post(recon::assign_case))
         .route("/recon/cases/{id}/resolve", post(recon::resolve_case))
@@ -669,6 +673,7 @@ pub fn app(state: AppState) -> Router {
         .route("/outbox", get(list_outbox))
         .route("/outbox/test", post(admin::send_test_event))
         .route("/outbox/{id}/replay", post(replay_outbox))
+        .route("/outbox/{id}/deliveries", get(admin::list_outbox_deliveries))
         .route("/inbox", get(list_inbox))
         // payment links
         .route(

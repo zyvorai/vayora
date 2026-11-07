@@ -145,12 +145,12 @@
   <article class="chapter reveal">
     <div class="wrap two flip">
       <div class="copy"><h3>Routes with receipts.</h3><p>A capability matrix and your rules choose where a payment goes, and the decision records every provider it considered and why it picked one. No black box.</p></div>
-      <div class="panel" role="img" aria-label="Example routing decision: Cashfree chosen because it issues a UPI intent; Razorpay skipped because it does not.">
+      <div class="panel" role="img" aria-label="Example routing decision: Cashfree chosen because it issues a UPI intent; Razorpay skipped when its opt-in flag is off.">
         <p class="cap">Example routing decision · UPI, no UPI ID</p>
         <ul class="route">
           <li class="ok"><b>Cashfree</b>Issues a UPI intent and QR (opt-in per account). Chosen.</li>
           <li class="ok"><b>PhonePe / sponsor_upi</b>Available when connected for orchestrate or acquire.</li>
-          <li class="no"><b>Razorpay</b>No UPI intent capability. Skipped.</li>
+          <li class="no"><b>Razorpay</b>UPI intent off for this account (opt-in). Skipped.</li>
         </ul>
       </div>
     </div>

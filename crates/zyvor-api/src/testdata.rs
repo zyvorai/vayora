@@ -14,6 +14,7 @@ pub const CONFIRM: &str = "reset test data";
 
 /// Children first, so every foreign key is satisfied. All of these carry `tenant_id`.
 const TABLES: &[&str] = &[
+    "outbox_deliveries",
     "outbox_events",
     "webhook_inbox",
     "idempotency_keys",

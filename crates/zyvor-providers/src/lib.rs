@@ -218,6 +218,8 @@ pub enum EventKind {
     PaymentFailed,
     RefundProcessed,
     RefundFailed,
+    /// Mandate / subscription lifecycle (status, auth). `order_ref` is our mandate id.
+    MandateUpdated,
     Other,
 }
 

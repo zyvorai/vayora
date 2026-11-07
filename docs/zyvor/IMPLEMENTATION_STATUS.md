@@ -23,7 +23,7 @@ Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkou
 | Return URLs must be https (http in a sandbox) with no embedded credentials | same test |
 | Checkout text in six languages (translations not reviewed by native speakers) | `lib/i18n.test.ts` |
 
-**Limits.** Razorpay and Cashfree do not issue a QR / intent payload yet (`upi_intent: false`); they need a flow verified with each partner. Desktop, Android and iOS behaviour is not tested on physical devices, and the iOS flow in particular must follow the partner's documented behaviour. BHIM, PhonePe and Google Pay interoperability is not verified: that requires partner UAT on real devices. Wording says "any UPI app" and does not use BHIM branding until the current NPCI brand guidance is checked.
+**Limits.** Cashfree issues a QR / intent in sandbox (opt-in per account). Razorpay has the same opt-in adapter path (docs + local mock only; not sandbox-verified). Desktop, Android and iOS behaviour is not tested on physical devices, and the iOS flow in particular must follow the partner's documented behaviour. BHIM, PhonePe and Google Pay interoperability is not verified: that requires partner UAT on real devices. Wording says "any UPI app" and does not use BHIM branding until the current NPCI brand guidance is checked.
 
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.

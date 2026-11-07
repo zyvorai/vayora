@@ -332,7 +332,7 @@ class Tests(unittest.TestCase):
         go_src = (pathlib.Path(__file__).resolve().parent.parent / "go" / "zyvor.go").read_text()
         go = {re.sub(r"(?<!^)(?=[A-Z])", "_", m).lower() for m in re.findall(r"func \(c \*Client\) ([A-Z]\w+)", go_src)}
         py = {n for n in dir(Zyvor) if not n.startswith("_")}
-        go -= {"create_intent_at", "run_dunning_as_of", "list_payments_in_range", "create_payment_link_for"}
+        go -= {"create_intent_at", "create_attempt_opts", "run_dunning_as_of", "list_payments_in_range", "create_payment_link_for"}
         self.assertEqual(sorted(py - go), [], "in Python but not Go")
         self.assertEqual(sorted(go - py), [], "in Go but not Python")
 

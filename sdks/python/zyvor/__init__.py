@@ -146,6 +146,46 @@ class Zyvor:
         """DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal."""
         return self._req("GET", f"/v1/invoices/{invoice_id}/einvoice")
 
+    def gstr1(self, period: str) -> dict:
+        """GSTR-1 preparation totals for `period` (YYYY-MM). Zyvor does not file the return."""
+        return self._req("GET", f"/v1/gst/gstr1?period={urllib.parse.quote(period)}")
+
+    def import_bank_csv(self, csv: str) -> dict:
+        """Import a bank statement CSV for reconciliation."""
+        return self._req("POST", "/v1/bank_statements/import_csv", {"csv": csv})
+
+    def import_bank_mt940(self, text: str) -> dict:
+        """Import a SWIFT MT940 bank statement."""
+        return self._req("POST", "/v1/bank_statements/import_mt940", {"text": text})
+
+    def import_bank_camt(self, text: str) -> dict:
+        """Import an ISO 20022 CAMT.053 bank statement."""
+        return self._req("POST", "/v1/bank_statements/import_camt", {"text": text})
+
+    def list_console_users(self) -> dict:
+        """Named console users for this organisation."""
+        return self._req("GET", "/v1/console/users")
+
+    def assignable_branches(self) -> dict:
+        """Branches a person can be tied to (home environment)."""
+        return self._req("GET", "/v1/console/branches")
+
+    def mfa_begin(self, user_id: str) -> dict:
+        """Start TOTP enrolment for a console user; returns the secret and otpauth URI."""
+        return self._req("POST", f"/v1/console/users/{user_id}/mfa/begin", {})
+
+    def mfa_confirm(self, user_id: str, otp: str) -> dict:
+        """Confirm TOTP enrolment with a code from the authenticator app."""
+        return self._req("POST", f"/v1/console/users/{user_id}/mfa/confirm", {"otp": otp})
+
+    def mfa_reset(self, user_id: str) -> dict:
+        """Clear a console user's second factor (admin)."""
+        return self._req("POST", f"/v1/console/users/{user_id}/mfa/reset", {})
+
+    def list_outbox_deliveries(self, event_id: str) -> dict:
+        """Per-attempt delivery history for one outbound webhook event."""
+        return self._req("GET", f"/v1/outbox/{event_id}/deliveries")
+
     # ---- exchange rates (reporting only) ----
     def set_fx_rate(self, rate: str, currency: str = "USD", as_of: Optional[str] = None, note: Optional[str] = None) -> types.PostFxRatesResponse:
         """Record the INR-per-unit rate you use for a day, e.g. "83.2150". One per day; never edited."""

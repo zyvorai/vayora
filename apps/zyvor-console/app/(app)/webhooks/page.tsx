@@ -9,11 +9,15 @@ import { api } from "@/lib/zyvor";
 
 const FILTERS = ["", "pending", "delivered", "dead"];
 
-export default async function Webhooks({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  const { status } = await searchParams;
+export default async function Webhooks({ searchParams }: { searchParams: Promise<{ status?: string; event?: string }> }) {
+  const { status, event } = await searchParams;
   if ((await currentSession())?.r !== "admin") redirect("/");
   const z = await api();
-  const [page, settings] = await Promise.all([z.webhooks.outbox(status || undefined), z.settings.get()]);
+  const [page, settings, deliveries] = await Promise.all([
+    z.webhooks.outbox(status || undefined),
+    z.settings.get(),
+    event ? z.webhooks.deliveries(event).catch(() => ({ data: [] as Record<string, unknown>[] })) : Promise.resolve(null),
+  ]);
   return (
     <>
       <div className="head">
@@ -30,18 +34,47 @@ export default async function Webhooks({ searchParams }: { searchParams: Promise
             {page.data.length === 0 && <tr><td colSpan={8} className="empty">No events yet. They appear here when payments, refunds and invoices change.</td></tr>}
             {page.data.map((e) => {
               const r = e as Record<string, string | number | null>;
+              const id = String(r.id);
               return (
-                <tr key={String(r.id)}>
-                  <td className="mono">{String(r.id).slice(0, 14)}…</td><td>{String(r.type)}</td><td><Chip status={String(r.status)} /></td>
+                <tr key={id}>
+                  <td className="mono"><Link href={`/webhooks?event=${encodeURIComponent(id)}${status ? `&status=${status}` : ""}`}>{id.slice(0, 14)}…</Link></td>
+                  <td>{String(r.type)}</td><td><Chip status={String(r.status)} /></td>
                   <td className="num">{r.attempts}</td><td className="muted">{r.last_error ?? ""}</td><td className="muted">{istDateTime(String(r.created_at))}</td>
                   <td><details><summary className="muted" style={{ cursor: "pointer" }}>View</summary><pre className="code" tabIndex={0}>{JSON.stringify(r.payload, null, 2)}</pre></details></td>
-                  <td><Act action={replayEvent} id={String(r.id)} label="Replay" /></td>
+                  <td><Act action={replayEvent} id={id} label="Replay" /></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {event && (
+        <section style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: "1.1rem" }}>Delivery attempts for <code className="mono">{event}</code></h2>
+          <p className="muted"><Link href={status ? `/webhooks?status=${status}` : "/webhooks"}>Clear</Link></p>
+          <div className="tablewrap">
+            <table>
+              <thead><tr><th className="num">#</th><th>Result</th><th className="num">HTTP</th><th className="num">ms</th><th>Error</th><th>When (IST)</th></tr></thead>
+              <tbody>
+                {(deliveries?.data?.length ?? 0) === 0 && <tr><td colSpan={6} className="empty">No delivery attempts recorded yet for this event.</td></tr>}
+                {(deliveries?.data ?? []).map((d) => {
+                  const r = d as Record<string, string | number | boolean | null>;
+                  return (
+                    <tr key={String(r.id)}>
+                      <td className="num">{r.attempt_no}</td>
+                      <td><Chip status={r.ok ? "delivered" : "dead"} /></td>
+                      <td className="num">{r.http_status ?? "—"}</td>
+                      <td className="num">{r.latency_ms ?? "—"}</td>
+                      <td className="muted">{r.error ?? ""}</td>
+                      <td className="muted">{istDateTime(String(r.created_at))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </>
   );
 }

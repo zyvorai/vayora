@@ -85,6 +85,7 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/v1/payments", get(rz_list_payments))
         .route("/v1/orders", post(rz_create_order).get(rz_find_orders))
         .route("/v1/orders/{id}/payments", get(rz_order_payments))
+        .route("/v1/payments/create/upi", post(rz_create_upi))
         .route("/v1/payments/{id}/capture", post(rz_capture))
         .route("/v1/payments/{id}/refund", post(rz_refund))
         .route("/v1/payments/{id}/refunds", get(rz_payment_refunds))
@@ -133,6 +134,36 @@ async fn rz_create_order(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     let o = json!({ "id": id, "entity": "order", "amount": amount, "currency": b["currency"], "receipt": b["receipt"], "status": "created", "notes": b["notes"] });
     m.inner.lock().unwrap().rz_orders.insert(id, o.clone());
     Ok(Json(o))
+}
+
+/// S2S UPI intent / QR create (shape used by the Razorpay adapter's opt-in path).
+async fn rz_create_upi(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let order_id = b["order_id"]
+        .as_str()
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "order_id required"))?
+        .to_string();
+    let amount = b["amount"]
+        .as_i64()
+        .filter(|a| *a >= 100)
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "amount must be at least 100 paise"))?;
+    let flow = b["upi"]["flow"].as_str().unwrap_or("intent");
+    let id = m.next("pay_");
+    let mut p = json!({
+        "id": id, "razorpay_payment_id": id, "entity": "payment", "amount": amount,
+        "currency": b["currency"], "order_id": order_id, "status": "created", "method": "upi",
+        "notes": b["notes"],
+    });
+    if flow == "qr" {
+        p["qr_image"] = json!("data:image/png;base64,iVBORw0KGgo=");
+    } else {
+        p["link"] = json!(format!(
+            "upi://pay?pa=zyvor@rzp&pn=Zyvor&am={:.2}&cu=INR&tn={}",
+            amount as f64 / 100.0,
+            id
+        ));
+    }
+    m.inner.lock().unwrap().rz_payments.insert(id, p.clone());
+    Ok(Json(p))
 }
 
 /// A key id ending in `bad` is refused, so tests can see a rejected connection check.

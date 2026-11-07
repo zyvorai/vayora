@@ -15,6 +15,7 @@ use crate::{
     AppState,
     cases::open_case,
     error::ApiError,
+    mandates,
     payments::{Incoming, apply_provider_state},
     refunds::apply_refund_result,
     registry,
@@ -68,6 +69,7 @@ pub async fn receive(
         return Ok(Json(json!({ "status": "duplicate" })));
     }
 
+    let mut refresh_mandate: Option<String> = None;
     let outcome = match ev.kind {
         EventKind::PaymentAuthorized | EventKind::PaymentCaptured | EventKind::PaymentFailed => {
             // The order reference identifies our attempt. The provider's payment id is only a fallback,
@@ -146,9 +148,41 @@ pub async fn receive(
                 }
             }
         }
+        EventKind::MandateUpdated => match ev.order_ref.clone().filter(|s| !s.is_empty()) {
+            None => "ignored".to_string(),
+            Some(mid) => {
+                let exists: bool =
+                    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mandates WHERE id = $1)")
+                        .bind(&mid)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                if !exists {
+                    open_case(
+                        &mut tx,
+                        &tenant_id,
+                        "unmatched_webhook",
+                        "webhook",
+                        &ev.event_id,
+                        None,
+                        None,
+                        "Provider reported a mandate status change we have no record of.",
+                        json!({ "provider": provider, "mandate_id": mid }),
+                    )
+                    .await?;
+                    "unmatched".to_string()
+                } else {
+                    refresh_mandate = Some(mid);
+                    "refresh_queued".to_string()
+                }
+            }
+        },
         EventKind::Other => "ignored".to_string(),
     };
     sqlx::query("UPDATE webhook_inbox SET outcome = $4 WHERE tenant_id = $1 AND provider = $2 AND event_id = $3").bind(&tenant_id).bind(&provider).bind(&ev.event_id).bind(&outcome).execute(&mut *tx).await?;
     tx.commit().await?;
+    if let Some(mid) = refresh_mandate {
+        // Refresh asks the provider and applies through the same path as GET /v1/mandates/{id}/refresh.
+        let _ = mandates::refresh_mandate_internal(&s, &tenant_id, &env, &mid, "webhook").await;
+    }
     Ok(Json(json!({ "status": "processed", "outcome": outcome })))
 }

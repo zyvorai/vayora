@@ -285,7 +285,7 @@ export const connectProvider = async (_: FormState, f: FormData) => {
   let webhookSecret: string;
   let baseUrl: string | undefined;
   if (provider === "razorpay") {
-    credentials = { key_id: text(f, "id"), key_secret: text(f, "secret") };
+    credentials = { key_id: text(f, "id"), key_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
     webhookSecret = text(f, "webhook_secret");
     if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: "Fill in the key, its secret and the webhook secret." };
   } else if (provider === "cashfree") {

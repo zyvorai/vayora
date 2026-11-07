@@ -19,6 +19,9 @@ pub struct Razorpay {
     key_id: String,
     key_secret: String,
     http: reqwest::Client,
+    /// Native UPI intent / QR is opt-in per account: set `"upi_intent": true` in credentials once
+    /// Razorpay has enabled S2S UPI for that account. Built from public docs; not sandbox-verified.
+    upi_intent: bool,
 }
 
 impl Razorpay {
@@ -38,7 +41,14 @@ impl Razorpay {
             key_id: key_id.into(),
             key_secret: key_secret.into(),
             http,
+            upi_intent: false,
         }
+    }
+
+    /// Turn on native UPI intent / QR for this account. Only after Razorpay has enabled it.
+    pub fn with_upi_intent(mut self, on: bool) -> Self {
+        self.upi_intent = on;
+        self
     }
 
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
@@ -108,8 +118,8 @@ impl Provider for Razorpay {
             partial_refund: true,
             manual_capture: true,
             server_initiated_upi: false,
-            // Hosted flows exist, but no QR/intent payload is verified with this partner yet.
-            upi_intent: false,
+            // Opt-in: set `"upi_intent": true` in credentials. Docs-only; not sandbox-verified.
+            upi_intent: self.upi_intent,
             // Recurring adapter built from public docs; NOT verified against Razorpay sandbox.
             mandates: true,
             refund_window_days: Some(180),
@@ -130,6 +140,73 @@ impl Provider for Razorpay {
             .as_str()
             .ok_or_else(|| ProviderError::Uncertain("order response had no id".into()))?
             .to_string();
+
+        if req.method == Method::Upi && req.upi_intent && self.upi_intent {
+            // S2S UPI create (public docs). Desktop prefers QR; phones prefer intent.
+            let desktop = req
+                .client
+                .as_ref()
+                .map(|c| c.device == "desktop")
+                .unwrap_or(false);
+            let flow = if desktop { "qr" } else { "intent" };
+            let body = json!({
+                "amount": req.amount_minor,
+                "currency": req.currency.code(),
+                "order_id": order_id,
+                "email": "payer@zyvor.invalid",
+                "contact": req.customer_phone.clone().unwrap_or_else(|| "9999999999".into()),
+                "method": "upi",
+                "upi": { "flow": flow },
+                "notes": { "attempt_id": req.attempt_id },
+            });
+            let p = read_json(
+                self.post("/v1/payments/create/upi")
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(classify)?,
+            )
+            .await?;
+            let pay_id = p["razorpay_payment_id"]
+                .as_str()
+                .or_else(|| p["id"].as_str())
+                .map(str::to_string);
+            let action = if flow == "qr" {
+                let image = p["qr_image"]
+                    .as_str()
+                    .or_else(|| p["image_url"].as_str())
+                    .ok_or_else(|| {
+                        ProviderError::Uncertain("upi qr response had no image".into())
+                    })?
+                    .to_string();
+                ClientAction::UpiQr { image }
+            } else {
+                let uri = p["link"]
+                    .as_str()
+                    .or_else(|| p["upi"]["link"].as_str())
+                    .or_else(|| p["intent_url"].as_str())
+                    .ok_or_else(|| {
+                        ProviderError::Uncertain("upi intent response had no link".into())
+                    })?
+                    .to_string();
+                ClientAction::UpiIntent {
+                    uri,
+                    apps: Default::default(),
+                    expires_at: None,
+                }
+            };
+            return Ok(Initiated {
+                state: PaymentState {
+                    status: PaymentStatus::Pending,
+                    provider_order_ref: Some(order_id),
+                    provider_payment_ref: pay_id,
+                    failure_reason: None,
+                    raw: p,
+                },
+                action,
+            });
+        }
+
         Ok(Initiated {
             state: PaymentState {
                 status: PaymentStatus::Pending,

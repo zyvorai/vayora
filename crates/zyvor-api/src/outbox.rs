@@ -1,8 +1,9 @@
 //! Delivery of merchant-facing events. At-least-once with exponential backoff, dead-lettered after
 //! `MAX_ATTEMPTS`. A row only changes after the HTTP outcome is known, so a worker that crashes
-//! mid-batch leaves every event pending for the next run.
+//! mid-batch leaves every event pending for the next run. Each try is also written to
+//! `outbox_deliveries` for the inspector.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -46,6 +47,32 @@ pub fn verify(secret: &[u8], header: &str, body: &[u8], now: i64, tolerance: i64
 
 fn backoff(attempts: i32) -> f64 {
     (5i64.saturating_mul(1i64 << attempts.clamp(0, 20))).min(3600) as f64
+}
+
+async fn record_attempt(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: &str,
+    event_id: &str,
+    attempt_no: i32,
+    ok: bool,
+    http_status: Option<i32>,
+    error: Option<&str>,
+    latency_ms: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO outbox_deliveries (tenant_id, event_id, attempt_no, ok, http_status, error, latency_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(tenant_id)
+    .bind(event_id)
+    .bind(attempt_no)
+    .bind(ok)
+    .bind(http_status)
+    .bind(error)
+    .bind(latency_ms)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Deliver due events for one tenant. Returns the number delivered.
@@ -100,7 +127,9 @@ pub async fn deliver_tenant(
     let mut delivered = 0;
     for (id, payload, attempts) in due {
         let body = serde_json::to_vec(&payload).expect("json serialises");
-        let res = client
+        let started = Instant::now();
+        let attempt_no = attempts + 1;
+        let send = client
             .post(&url)
             .header("content-type", "application/json")
             .header(
@@ -109,22 +138,73 @@ pub async fn deliver_tenant(
             )
             .body(body)
             .send()
-            .await
-            .and_then(|r| r.error_for_status());
-        match res {
-            Ok(_) => {
-                delivered += 1;
-                sqlx::query("UPDATE outbox_events SET status = 'delivered', delivered_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = $1").bind(&id).execute(&mut *tx).await?;
+            .await;
+        let latency_ms = started.elapsed().as_millis().min(i32::MAX as u128) as i32;
+        match send {
+            Ok(res) => {
+                let status = res.status().as_u16() as i32;
+                if res.status().is_success() {
+                    delivered += 1;
+                    record_attempt(
+                        &mut tx,
+                        tenant_id,
+                        &id,
+                        attempt_no,
+                        true,
+                        Some(status),
+                        None,
+                        latency_ms,
+                    )
+                    .await?;
+                    sqlx::query("UPDATE outbox_events SET status = 'delivered', delivered_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = $1").bind(&id).execute(&mut *tx).await?;
+                } else {
+                    let err = format!("HTTP {status}");
+                    tracing::warn!(event = %id, status, "outbound webhook failed");
+                    let dead = attempt_no >= MAX_ATTEMPTS;
+                    record_attempt(
+                        &mut tx,
+                        tenant_id,
+                        &id,
+                        attempt_no,
+                        false,
+                        Some(status),
+                        Some(&err),
+                        latency_ms,
+                    )
+                    .await?;
+                    sqlx::query(
+                        "UPDATE outbox_events SET attempts = attempts + 1, last_error = $2, status = CASE WHEN $3 THEN 'dead' ELSE 'pending' END,
+                         next_attempt_at = now() + make_interval(secs => $4::float8) WHERE id = $1",
+                    )
+                    .bind(&id)
+                    .bind(&err)
+                    .bind(dead)
+                    .bind(backoff(attempts))
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
             Err(e) => {
                 tracing::warn!(event = %id, error = %e, "outbound webhook failed");
-                let dead = attempts + 1 >= MAX_ATTEMPTS;
+                let err = e.to_string();
+                let dead = attempt_no >= MAX_ATTEMPTS;
+                record_attempt(
+                    &mut tx,
+                    tenant_id,
+                    &id,
+                    attempt_no,
+                    false,
+                    None,
+                    Some(&err),
+                    latency_ms,
+                )
+                .await?;
                 sqlx::query(
                     "UPDATE outbox_events SET attempts = attempts + 1, last_error = $2, status = CASE WHEN $3 THEN 'dead' ELSE 'pending' END,
                      next_attempt_at = now() + make_interval(secs => $4::float8) WHERE id = $1",
                 )
                 .bind(&id)
-                .bind(e.to_string())
+                .bind(&err)
                 .bind(dead)
                 .bind(backoff(attempts))
                 .execute(&mut *tx)

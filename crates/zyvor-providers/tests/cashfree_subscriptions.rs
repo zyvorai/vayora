@@ -456,7 +456,7 @@ async fn charge_webhooks_become_payment_events_for_our_attempt() {
 }
 
 #[tokio::test]
-async fn authorization_and_status_webhooks_never_touch_a_payment_attempt() {
+async fn authorization_and_status_webhooks_update_the_mandate_not_a_payment() {
     let (cf, _) = mock().await;
     let now = 1_800_000_000i64;
     for v in [
@@ -471,7 +471,11 @@ async fn authorization_and_status_webhooks_never_touch_a_payment_attempt() {
     ] {
         let (h, body) = signed("whsec_fixture", now * 1000, &v);
         let ev = cf.verify_webhook(b"whsec_fixture", &h, &body, now).unwrap();
-        assert_eq!(ev.kind, EventKind::Other, "{v}");
+        assert_eq!(ev.kind, EventKind::MandateUpdated, "{v}");
+        assert!(
+            ev.order_ref.as_deref().is_some_and(|r| r.starts_with("mnd_") || !r.is_empty()),
+            "mandate id in order_ref: {ev:?}"
+        );
     }
 }
 
