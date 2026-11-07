@@ -4,6 +4,15 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 7 November 2026 — v0.2.0
+**In-repo PG path closed further (simulators only)**
+- Bank statements: SWIFT MT940 and ISO 20022 CAMT.053 import alongside CSV/JSON; console and SDKs.
+- Webhooks: per-attempt outbox delivery history; Cashfree mandate status/authorization webhooks refresh the mandate; checkout SSE for payment progress; Developers inbox UI.
+- Providers: Razorpay UPI intent/QR opt-in (docs + mock); generic log redaction on stderr; promtool CI for alert rules; WooCommerce and Shopify release zips.
+- Ops / console: authenticated API request log (`GET /v1/api_requests`) on Developers; `GET /v1/me` with shared `scopes_for_role`; recon “scan for missing settlements”; open a dispute from a payment; force the next simulator refund to fail (`.13` paise / `POST /v1/sim/fail_next_refund`); organisation test clock drives billing, dunning, mandate end dates, payment-link expiry reminders and cashflow insights.
+- Deploy: `scripts/compose-smoke.sh`; CI validates `docker compose config`; acceptance map (`ACCEPTANCE_SPEC.md`).
+- **Docs and GitHub Pages:** STATUS and IMPLEMENTATION_STATUS refreshed; site FAQ/self-host list for plugins, bank formats, compose smoke and Developers inspector. Sponsor LOI, RBI PA, NPCI TPAP, live provider sandboxes and PCI vault remain operator / external work.
+
 ## 6 November 2026
 **Own-gateway path: orchestrate vs acquire**
 - Organisations have `money_mode` (`orchestrate` default, `acquire` for sponsor/PA custody). Capture, refund and dispute ledger postings branch on mode; live acquire needs `ZYVOR_ALLOW_LIVE_ACQUIRE=1` and approved acquire KYC.

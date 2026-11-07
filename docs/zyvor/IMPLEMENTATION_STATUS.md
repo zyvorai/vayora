@@ -36,7 +36,7 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 | Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |
 | Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, auto-enrol into settlement batches, worker T+N release, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
 | Network card tokens | Level 1: store/revoke + charge via `card_token_id` on attempts (sim/stub vault). No live PCI vault |
-| Store plugins | Shopify + WooCommerce + Magento 2: payment links + HMAC webhooks that mark orders paid (`plugins/`); Woo/Shopify release zips via `scripts/package-*-plugin.sh` |
+| Store plugins | Shopify + WooCommerce + Magento 2: payment links + HMAC webhooks that mark orders paid (`plugins/`); Woo/Shopify release zips via `scripts/package-*-plugin.sh` (v0.2.0) |
 | Object storage with malware scanning for documents | Not built |
 | Authenticated SSE status stream | Built: `GET /v1/checkout/{tenant}/{intent}/events?secret=` (checkout prefers EventSource, polls on error) |
 | Amounts as decimal strings in the API | Not done: integer minor units are used |

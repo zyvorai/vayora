@@ -31,7 +31,7 @@
     self: {
       title: "Self-host",
       sub: "Run Zyvor on your own servers. Orchestrate with your own provider accounts, or acquire under a licensed sponsor after counsel and an LOI.",
-      list: ["Apache-2.0: use it, change it, ship it", "Razorpay, Cashfree, PhonePe, sponsor_upi or a custom JSON contract", "Settlement batches (auto-enrol), payout rails, card tokens, console Settlement page", "Shopify, WooCommerce and Magento plugins with mark-paid webhooks", "Kubernetes (k3s and Helm) and Compose assets included", "Read the regulatory position and ACQUIRE_MODE before live acquire"],
+      list: ["Apache-2.0: use it, change it, ship it", "Razorpay, Cashfree, PhonePe, sponsor_upi or a custom JSON contract", "Settlement batches (auto-enrol), payout rails, card tokens, console Settlement page", "Shopify, WooCommerce and Magento plugins (release zips) with mark-paid webhooks", "Bank statement CSV, MT940 and CAMT.053; Developers API request log", "Kubernetes (k3s and Helm) and Compose (`scripts/compose-smoke.sh`)", "Read the regulatory position and ACQUIRE_MODE before live acquire"],
       code: "git clone https://github.com/zyvorai/vayora.git\ncd vayora/deploy/zyvor/k3s\n# single-node k3s with HTTPS in front\n# follow README.md in this folder",
       cta: "Read the deploy guide",
       href: "https://github.com/zyvorai/vayora/blob/main/deploy/zyvor/k3s/README.md"

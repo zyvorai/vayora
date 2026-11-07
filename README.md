@@ -13,6 +13,7 @@ Rust core · PostgreSQL · Next.js checkout and console · TypeScript, Python an
 [![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-0088ff)](LICENSE)
 ![Status](https://img.shields.io/badge/status-sandbox-ff9f0a)
+![Release](https://img.shields.io/github/v/release/zyvorai/vayora)
 
 [Website](https://zyvorai.github.io/vayora/) · [How it works](docs/zyvor/HOW_IT_WORKS.md) · [Acquire mode](docs/zyvor/ACQUIRE_MODE.md) · [Bring your own provider](docs/zyvor/BRING_YOUR_OWN_PROVIDER.md) · [Status](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml) · [All docs](docs/README.md)
 
