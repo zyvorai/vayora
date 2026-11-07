@@ -9,7 +9,7 @@ description = "Network card tokens only — never stores PAN or CVV"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
-zyvor-core = { version = "0.2.0", path = "../zyvor-core" }
+zyvor-core = { version = "0.3.0", path = "../zyvor-core" }
 
 [lints]
 workspace = true

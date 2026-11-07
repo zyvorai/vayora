@@ -1,6 +1,6 @@
 {
   "name": "@zyvor/node",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Zyvor Payments SDK and CLI for Node.js and browsers-with-fetch",
   "license": "Apache-2.0",
   "type": "module",

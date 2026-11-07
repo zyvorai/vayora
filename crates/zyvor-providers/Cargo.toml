@@ -17,7 +17,7 @@ sha2 = "0.11.1"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = "0.1.44"
-zyvor-core = { version = "0.2.0", path = "../zyvor-core" }
+zyvor-core = { version = "0.3.0", path = "../zyvor-core" }
 
 [dev-dependencies]
 axum.workspace = true

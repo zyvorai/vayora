@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid"] }
 thiserror.workspace = true
-zyvor-core = { version = "0.2.0", path = "../zyvor-core" }
+zyvor-core = { version = "0.3.0", path = "../zyvor-core" }
 
 [lints]
 workspace = true

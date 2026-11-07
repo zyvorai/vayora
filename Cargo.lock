@@ -3116,7 +3116,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zyvor-api"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -3158,7 +3158,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-cards"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3168,7 +3168,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3177,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-ledger"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sqlx",
  "thiserror",
@@ -3186,7 +3186,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-provider-mock"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -3202,7 +3202,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-providers"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3223,7 +3223,7 @@ dependencies = [
 
 [[package]]
 name = "zyvor-settle"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",
