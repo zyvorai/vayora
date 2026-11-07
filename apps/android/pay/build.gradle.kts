@@ -33,7 +33,9 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)
     implementation(libs.activity.compose)
+    implementation(libs.biometric)
     implementation(libs.nav.compose)
     implementation(libs.lifecycle.runtime)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel)
 }

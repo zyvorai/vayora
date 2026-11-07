@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Settings
@@ -26,6 +27,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,15 +42,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.zyvor.vayora.kit.Ageing
+import dev.zyvor.vayora.kit.Cashflow
+import dev.zyvor.vayora.kit.ConnectionVerdict
+import dev.zyvor.vayora.kit.DisputeRow
+import dev.zyvor.vayora.kit.GstSummary
+import dev.zyvor.vayora.kit.MandateInfo
 import dev.zyvor.vayora.kit.Money
+import dev.zyvor.vayora.kit.PendingApproval
+import dev.zyvor.vayora.kit.ReconCase
+import dev.zyvor.vayora.kit.ReminderDraft
+import dev.zyvor.vayora.kit.SettlementInfo
+import dev.zyvor.vayora.kit.SetupPayload
 import dev.zyvor.vayora.kit.VayoraClient
 import dev.zyvor.vayora.ui.AmbientBackground
+import dev.zyvor.vayora.ui.AutoPayListScreen
 import dev.zyvor.vayora.ui.Brand
+import dev.zyvor.vayora.ui.CashflowScreen
 import dev.zyvor.vayora.ui.CollectKeypadScreen
+import dev.zyvor.vayora.ui.ConnectionRow
+import dev.zyvor.vayora.ui.OwedScreen
 import dev.zyvor.vayora.ui.PaymentRow
 import dev.zyvor.vayora.ui.PaymentRowState
 import dev.zyvor.vayora.ui.PaymentsListScreen
 import dev.zyvor.vayora.ui.QrHeroScreen
+import dev.zyvor.vayora.ui.ScannerScreen
 import dev.zyvor.vayora.ui.TestChip
 import dev.zyvor.vayora.ui.Vui
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +74,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.YearMonth
+import java.time.ZoneId
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,7 +88,11 @@ class MainActivity : ComponentActivity() {
 private sealed interface Route {
     data object Collect : Route
     data object Payments : Route
+    data object Owed : Route
     data object Settings : Route
+    data object Cashflow : Route
+    data object AutoPay : Route
+    data object SetupScan : Route
     data class Qr(val amount: Money, val note: String, val intentId: String?, val upi: String?, val paid: Boolean) : Route
 }
 
@@ -82,25 +106,38 @@ private fun MerchantApp() {
     var note by remember { mutableStateOf("") }
     var rows by remember { mutableStateOf<List<PaymentRow>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var ageing by remember { mutableStateOf<Ageing?>(null) }
+    var drafts by remember { mutableStateOf<List<ReminderDraft>>(emptyList()) }
+    var approvals by remember { mutableStateOf<List<PendingApproval>>(emptyList()) }
+    var disputes by remember { mutableStateOf<List<DisputeRow>>(emptyList()) }
+    var cases by remember { mutableStateOf<List<ReconCase>>(emptyList()) }
+    var owedMsg by remember { mutableStateOf<String?>(null) }
+    var cashflow by remember { mutableStateOf<Cashflow?>(null) }
+    var settlements by remember { mutableStateOf<List<SettlementInfo>>(emptyList()) }
+    var gst by remember { mutableStateOf<GstSummary?>(null) }
+    var gstPeriod by remember {
+        mutableStateOf(YearMonth.now(ZoneId.of("Asia/Kolkata")).minusMonths(1).toString())
+    }
+    var mandates by remember { mutableStateOf<List<MandateInfo>>(emptyList()) }
+    var autoMsg by remember { mutableStateOf<String?>(null) }
+    var verdict by remember { mutableStateOf<ConnectionVerdict?>(null) }
+    var connBusy by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun server() = prefs.getString("server", "http://10.0.2.2:8080") ?: "http://10.0.2.2:8080"
     fun key() = prefs.getString("key", "") ?: ""
     fun demo() = prefs.getBoolean("demo", true)
-
     fun client() = VayoraClient(server(), key().ifBlank { null })
-
     fun canContinue(): Boolean = Money.parseDecimal(amountText) != null
 
     fun onDigit(d: Int) {
         if (amountText.contains('.') && amountText.substringAfter('.').length >= 2) return
         if (amountText == "0") amountText = d.toString() else amountText += d.toString()
     }
-
     fun onPoint() {
         if (!amountText.contains('.')) amountText = if (amountText.isEmpty()) "0." else "$amountText."
     }
-
     fun onDelete() {
         if (amountText.isNotEmpty()) amountText = amountText.dropLast(1)
     }
@@ -108,9 +145,7 @@ private fun MerchantApp() {
     fun loadPayments() {
         if (demo()) return
         scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { client().listPayments() }
-            }.onSuccess { page ->
+            runCatching { withContext(Dispatchers.IO) { client().listPayments() } }.onSuccess { page ->
                 rows = page.data.map {
                     PaymentRow(
                         id = it.id,
@@ -126,15 +161,67 @@ private fun MerchantApp() {
         }
     }
 
+    fun loadOwed() {
+        if (demo()) {
+            owedMsg = "Turn Demo mode off and set a test key to load Owed."
+            return
+        }
+        busy = true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    ageing = client().ageing()
+                    drafts = runCatching { client().reminderDrafts() }.getOrDefault(emptyList())
+                    approvals = runCatching { client().pendingApprovals() }.getOrDefault(emptyList())
+                    disputes = runCatching { client().openDisputes() }.getOrDefault(emptyList())
+                    cases = runCatching { client().openReconCases() }.getOrDefault(emptyList())
+                }
+                owedMsg = null
+            } catch (e: Exception) {
+                owedMsg = e.message
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun loadCashflow() {
+        if (demo()) return
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    cashflow = client().cashflow()
+                    settlements = client().settlements()
+                    gst = runCatching { client().gstGstr1(gstPeriod) }.getOrNull()
+                }
+            }.onFailure { error = it.message }
+        }
+    }
+
+    fun loadMandates() {
+        if (demo()) {
+            autoMsg = "Turn Demo mode off to list mandates."
+            return
+        }
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { mandates = client().listMandates() } }
+                .onSuccess { autoMsg = null }
+                .onFailure { autoMsg = it.message }
+        }
+    }
+
+    val showBar = route is Route.Collect || route is Route.Payments || route is Route.Owed || route is Route.Settings
+
     Scaffold(
         containerColor = Vui.Ink,
         bottomBar = {
-            if (route !is Route.Qr) {
+            if (showBar) {
                 NavigationBar(containerColor = Vui.InkRaised) {
                     listOf(
                         Triple(0, "Collect", Icons.Filled.QrCode),
                         Triple(1, "Payments", Icons.Filled.Payments),
-                        Triple(2, "Settings", Icons.Filled.Settings),
+                        Triple(2, "Owed", Icons.Filled.AccountBalanceWallet),
+                        Triple(3, "Settings", Icons.Filled.Settings),
                     ).forEach { (i, label, icon) ->
                         NavigationBarItem(
                             selected = tab == i,
@@ -145,7 +232,11 @@ private fun MerchantApp() {
                                         loadPayments()
                                         Route.Payments
                                     }
-                                    2 -> Route.Settings
+                                    2 -> {
+                                        loadOwed()
+                                        Route.Owed
+                                    }
+                                    3 -> Route.Settings
                                     else -> Route.Collect
                                 }
                             },
@@ -194,8 +285,7 @@ private fun MerchantApp() {
                                     error = null
                                     val (intent, attempt) = withContext(Dispatchers.IO) {
                                         val i = client().createIntent(money.minor, description = note.ifBlank { null })
-                                        val a = client().createAttempt(i.id)
-                                        i to a
+                                        i to client().createAttempt(i.id)
                                     }
                                     route = Route.Qr(money, note, intent.id, attempt.upiURI, false)
                                 } catch (e: Exception) {
@@ -205,14 +295,153 @@ private fun MerchantApp() {
                         }
                     },
                 )
-                Route.Payments -> PaymentsListScreen(rows)
+                Route.Payments -> Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        TextButton(onClick = {
+                            loadCashflow()
+                            route = Route.Cashflow
+                        }) { Text("Cashflow", color = Vui.Emerald) }
+                        TextButton(onClick = {
+                            loadMandates()
+                            route = Route.AutoPay
+                        }) { Text("AutoPay", color = Vui.Emerald) }
+                    }
+                    PaymentsListScreen(rows)
+                }
+                Route.Owed -> OwedScreen(
+                    ageing = ageing,
+                    drafts = drafts,
+                    approvals = approvals,
+                    disputes = disputes,
+                    cases = cases,
+                    busy = busy,
+                    message = owedMsg,
+                    onRefresh = ::loadOwed,
+                    onApproveDraft = { d ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().approveReminderDraft(d.id) } }
+                                .onSuccess { owedMsg = "Reminder approved."; loadOwed() }
+                                .onFailure { owedMsg = it.message }
+                        }
+                    },
+                    onRejectDraft = { d ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().rejectReminderDraft(d.id) } }
+                                .onSuccess { owedMsg = "Reminder rejected."; loadOwed() }
+                                .onFailure { owedMsg = it.message }
+                        }
+                    },
+                    onEmailInvoice = { id ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().emailInvoice(id) } }
+                                .onSuccess { owedMsg = "Invoice emailed." }
+                                .onFailure { owedMsg = it.message }
+                        }
+                    },
+                    onDecide = { a, ok ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().decideApproval(a, ok) } }
+                                .onSuccess {
+                                    owedMsg = if (ok) "${a.title} approved." else "${a.title} rejected."
+                                    loadOwed()
+                                }
+                                .onFailure { owedMsg = it.message }
+                        }
+                    },
+                    onResolveCase = { c ->
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) { client().resolveReconCase(c.id, "Checked on phone") }
+                            }.onSuccess { owedMsg = "Case closed."; loadOwed() }
+                                .onFailure { owedMsg = it.message }
+                        }
+                    },
+                )
+                Route.Cashflow -> CashflowScreen(
+                    cashflow = cashflow,
+                    settlements = settlements,
+                    gst = gst,
+                    gstPeriod = gstPeriod,
+                    onBack = { route = Route.Payments; tab = 1 },
+                    onPrevMonth = {
+                        gstPeriod = YearMonth.parse(gstPeriod).minusMonths(1).toString()
+                        loadCashflow()
+                    },
+                    onNextMonth = {
+                        val next = YearMonth.parse(gstPeriod).plusMonths(1)
+                        val cap = YearMonth.now(ZoneId.of("Asia/Kolkata"))
+                        if (!next.isAfter(cap)) {
+                            gstPeriod = next.toString()
+                            loadCashflow()
+                        }
+                    },
+                )
+                Route.AutoPay -> AutoPayListScreen(
+                    mandates = mandates,
+                    message = autoMsg,
+                    onRefresh = ::loadMandates,
+                    onPause = { m ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().pauseMandate(m.id) } }
+                                .onSuccess { autoMsg = "Paused."; loadMandates() }
+                                .onFailure { autoMsg = it.message }
+                        }
+                    },
+                    onResume = { m ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().resumeMandate(m.id) } }
+                                .onSuccess { autoMsg = "Resumed."; loadMandates() }
+                                .onFailure { autoMsg = it.message }
+                        }
+                    },
+                    onRevoke = { m ->
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { client().revokeMandate(m.id) } }
+                                .onSuccess { autoMsg = "Revoked."; loadMandates() }
+                                .onFailure { autoMsg = it.message }
+                        }
+                    },
+                    onBack = { route = Route.Payments; tab = 1 },
+                )
                 Route.Settings -> SettingsScreen(
                     server = server(),
                     key = key(),
                     demo = demo(),
+                    verdict = verdict,
+                    connBusy = connBusy,
+                    onTest = {
+                        connBusy = true
+                        scope.launch {
+                            verdict = withContext(Dispatchers.IO) { client().checkConnection(needsKey = true) }
+                            connBusy = false
+                        }
+                    },
+                    onScanSetup = { route = Route.SetupScan },
                     onSave = { s, k, d ->
                         prefs.edit().putString("server", s).putString("key", k).putBoolean("demo", d).apply()
                     },
+                )
+                Route.SetupScan -> ScannerScreen(
+                    brand = Brand.Merchant,
+                    hint = "Scan the setup QR",
+                    onCode = { raw ->
+                        try {
+                            val p = SetupPayload.parse(raw)
+                            prefs.edit().putString("server", p.server).putString("key", p.apiKey).putBoolean("demo", false).apply()
+                            route = Route.Settings
+                            tab = 3
+                        } catch (e: SetupPayload.Failure) {
+                            error = when (e) {
+                                SetupPayload.Failure.LiveKeyRefused -> "Live keys are refused. Use a zk_test_ key."
+                                SetupPayload.Failure.NotSetup -> "Not a setup QR."
+                                SetupPayload.Failure.BadServer -> "That server address looks wrong."
+                                SetupPayload.Failure.MissingKey -> "The QR has no API key."
+                            }
+                            route = Route.Settings
+                            tab = 3
+                        }
+                    },
+                    onCancel = { route = Route.Settings; tab = 3 },
                 )
                 is Route.Qr -> {
                     if (!r.paid && r.intentId != null && !demo()) {
@@ -256,6 +485,10 @@ private fun SettingsScreen(
     server: String,
     key: String,
     demo: Boolean,
+    verdict: ConnectionVerdict?,
+    connBusy: Boolean,
+    onTest: () -> Unit,
+    onScanSetup: () -> Unit,
     onSave: (String, String, Boolean) -> Unit,
 ) {
     var s by remember { mutableStateOf(server) }
@@ -289,16 +522,12 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = fieldColors,
             )
-            Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onScanSetup) { Text("Scan setup QR", color = Vui.Emerald) }
+            ConnectionRow(verdict, connBusy, onTest)
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = d, onCheckedChange = { d = it })
                 Text(" Demo mode (no server)", color = Vui.TextPrimary)
             }
-            Text(
-                "Demo invents a QR and marks it paid after a few seconds. Against a real sandbox, set the server and a test key; the QR is the attempt’s upi:// payload.",
-                color = Vui.TextTertiary,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 8.dp),
-            )
             Spacer(Modifier.weight(1f))
             Button(onClick = { onSave(s, k, d) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("Save")

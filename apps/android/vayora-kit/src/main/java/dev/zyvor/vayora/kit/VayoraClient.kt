@@ -65,6 +65,111 @@ class VayoraClient(
         return post("/v1/sim/pay", body)
     }
 
+    fun ageing(): Ageing = get("/v1/collections/ageing")
+    fun reminderDrafts(): List<ReminderDraft> = get<ReminderDraftPage>("/v1/collections/drafts").data
+
+    fun approveReminderDraft(id: String, message: String? = null) {
+        val body = buildJsonObject { message?.let { put("message", it) } }
+        post<Unit>("/v1/collections/drafts/${enc(id)}/approve", body)
+    }
+
+    fun rejectReminderDraft(id: String) {
+        post<Unit>("/v1/collections/drafts/${enc(id)}/reject", buildJsonObject { })
+    }
+
+    fun emailInvoice(id: String) {
+        post<Unit>("/v1/invoices/${enc(id)}/send", buildJsonObject { })
+    }
+
+    fun pendingApprovals(): List<PendingApproval> {
+        val refunds = get<RefundPage>("/v1/refunds?status=pending_approval").data
+            .filter { it.status == "pending_approval" }
+            .map {
+                PendingApproval(
+                    PendingApproval.Kind.Refund, it.id, it.amountMinor, it.currency,
+                    it.reason.orEmpty(), it.requestedBy,
+                )
+            }
+        val payouts = get<PayoutPage>("/v1/payouts?status=pending_approval").data
+            .filter { it.status == "pending_approval" }
+            .map {
+                PendingApproval(
+                    PendingApproval.Kind.Payout, it.id, it.amountMinor, it.currency,
+                    it.purpose.orEmpty(), it.requestedBy,
+                )
+            }
+        return refunds + payouts
+    }
+
+    fun decideApproval(a: PendingApproval, approve: Boolean) {
+        val base = if (a.kind == PendingApproval.Kind.Refund) "/v1/refunds" else "/v1/payouts"
+        val action = if (approve) "approve" else "reject"
+        post<Unit>("$base/${enc(a.rawId)}/$action", buildJsonObject { })
+    }
+
+    fun cashflow(weeks: Int = 4): Cashflow {
+        val w = weeks.coerceIn(1, 12)
+        return get("/v1/insights/cashflow?weeks=$w")
+    }
+
+    fun settlements(): List<SettlementInfo> = get<SettlementPage>("/v1/settlements").data
+
+    fun gstGstr1(period: String): GstSummary = get("/v1/gst/gstr1?period=${enc(period)}")
+
+    fun listMandates(): List<MandateInfo> = get<MandatePage>("/v1/mandates").data
+
+    fun pauseMandate(id: String) = post<Unit>("/v1/mandates/${enc(id)}/pause", buildJsonObject { })
+    fun resumeMandate(id: String) = post<Unit>("/v1/mandates/${enc(id)}/resume", buildJsonObject { })
+    fun revokeMandate(id: String) = post<Unit>("/v1/mandates/${enc(id)}/revoke", buildJsonObject { })
+
+    fun simMandateDecide(mandateId: String, approve: Boolean = true): SimPayResult {
+        val body = buildJsonObject {
+            put("mandate_id", mandateId)
+            put("approve", approve)
+        }
+        return post("/v1/sim/mandate", body)
+    }
+
+    fun openDisputes(): List<DisputeRow> =
+        get<DisputePage>("/v1/disputes?status=open").data.filter { it.status == "open" || it.status == "needs_response" }
+
+    fun openReconCases(): List<ReconCase> =
+        get<ReconCasePage>("/v1/recon/cases?status=open").data.filter { it.status == "open" }
+
+    fun resolveReconCase(id: String, note: String) {
+        post<Unit>(
+            "/v1/recon/cases/${enc(id)}/resolve",
+            buildJsonObject { put("note", note) },
+        )
+    }
+
+    /** Reaches the server, then (when a key is set) makes one small keyed call. */
+    fun checkConnection(needsKey: Boolean = false): ConnectionVerdict {
+        val address = ConnectionCheck.parse(baseUrl)
+        val short = http.newBuilder()
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
+            .build()
+        val health = probe(short, join(baseUrl, "/healthz"), withAuth = false)
+        var authProbe: Probe? = null
+        if (health is Probe.Status && health.code == 200 && !apiKey.isNullOrBlank()) {
+            authProbe = probe(short, join(baseUrl, "/v1/payment_intents?limit=1"), withAuth = true)
+        }
+        return ConnectionCheck.classify(address, health, authProbe, needsKey)
+    }
+
+    private fun probe(client: OkHttpClient, url: String, withAuth: Boolean): Probe {
+        return try {
+            val b = Request.Builder().url(url).get()
+            if (withAuth) apiKey?.takeIf { it.isNotBlank() }?.let { b.header("Authorization", "Bearer $it") }
+            client.newCall(b.build()).execute().use { Probe.Status(it.code) }
+        } catch (_: java.net.SocketTimeoutException) {
+            Probe.Failure(timedOut = true)
+        } catch (_: Exception) {
+            Probe.Failure(timedOut = false)
+        }
+    }
+
     private inline fun <reified T> get(path: String): T =
         execute(auth(Request.Builder().url(join(baseUrl, path)).get()).build())
 
@@ -87,7 +192,7 @@ class VayoraClient(
         http.newCall(req).execute().use { res ->
             val raw = res.body?.string().orEmpty()
             if (!res.isSuccessful) throw parseApiError(res.code, raw)
-            if (raw.isBlank() || raw == "null") {
+            if (raw.isBlank() || raw == "null" || T::class == Unit::class) {
                 @Suppress("UNCHECKED_CAST")
                 return Unit as T
             }
@@ -135,5 +240,11 @@ class TestWallet(initialMinor: Long = 50_000_00L) {
         val t = LocalTxn(UUID.randomUUID().toString(), name, payee, amount, whenLabel, true)
         _history.add(0, t)
         return t
+    }
+
+    /** Set spendable balance without a history row (jar moves). */
+    fun setBalanceMinor(minor: Long) {
+        require(minor >= 0) { "balance cannot be negative" }
+        balanceMinor = minor
     }
 }

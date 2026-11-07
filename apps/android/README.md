@@ -4,10 +4,10 @@ Kotlin + Jetpack Compose counterparts to the [iPhone apps](../ios/README.md). **
 
 | Module | What it is |
 |---|---|
-| `pay` | **Vayora Pay** — scan a QR or paste a `upi://pay` link, confirm with a local test PIN, test wallet on the phone |
-| `merchant` | **Vayora Merchant** — Collect keypad → QR → watch it complete (demo auto-pays; sandbox polls the intent), Payments list |
-| `vayora-kit` | `Money` (integer paise), hostile-safe `UPIPayload`, `VayoraClient`, `TestWallet` |
-| `vayora-ui` | Dark-first tokens (`Vui` / `Brand.Pay` indigo, `Brand.Merchant` emerald) and shared Compose screens |
+| `pay` | **Vayora Pay** — scan/paste `upi://pay` or AutoPay mandate QR, test PIN, jars, biometric lock, scam hints |
+| `merchant` | **Vayora Merchant** — Collect → QR, Payments, Owed, Cashflow/GST, AutoPay, setup-QR + connection check |
+| `vayora-kit` | `Money`, `UPIPayload`, `MandatePayload`, `JarBook`, `LockPolicy`, `VayoraClient`, ops models |
+| `vayora-ui` | Dark-first tokens and shared Compose screens (Collect, Pay, Owed, Cashflow, AutoPay, Jars) |
 
 Visual language matches iOS `VayoraUI` (near-black canvas, indigo pay / emerald merchant, Test mode chip).
 
@@ -32,11 +32,10 @@ Start the API with the simulator payer for real QR approval: `ZYVOR_SIM_PAYER=1`
 
 Flow: Merchant Collect → Show QR → Pay Scan (or Paste link) → PIN → Merchant shows Received.
 
-## Honest limits (v0.2 scaffold)
+## Honest limits
 
 - Camera QR scan is wired (CameraX + ZXing); not yet exercised on a physical device in CI.
-- Pay person-to-person extras (jars, Circle, voice, budgets, Face lock) are not ported.
-- Merchant Owed / Cashflow / AutoPay / end-of-day are not ported.
+- Circle, voice notes, budgets and end-of-day are not ported.
 - Demo mode invents a QR and marks it paid after ~3.5s with no server.
 - Not checked: TalkBack, large text, haptics end-to-end on device.
 

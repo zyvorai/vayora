@@ -4,6 +4,13 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 7 November 2026 — Android parity (post v0.3.0)
+**In-repo iOS→Android gaps closed (test mode)**
+- Kit: `ConnectionCheck` / `SetupPayload`, `MandatePayload`, `JarBook`, `LockPolicy` / `ScamHints`, ops models (ageing, cashflow, GST, mandates, disputes, recon) + client methods and unit tests.
+- Merchant: Owed (ageing, reminder drafts, approvals, disputes, recon), Cashflow + GST + settlements, AutoPay pause/resume/revoke, setup-QR scan, Test connection.
+- Pay: AutoPay mandate approve/decline (sim), jars, biometric lock, scam hints on review, Test connection.
+- Circle / voice / budgets and physical-device camera remain open. Sponsor LOI, RBI PA, NPCI TPAP, live sandboxes and PCI vault remain external.
+
 ## 7 November 2026 — v0.3.0
 **Android apps (Compose, like iOS)**
 - `apps/android`: Vayora Pay + Vayora Merchant, shared `vayora-kit` / `vayora-ui` (Money, hostile-safe UPI parse, API client, indigo/emerald dark tokens).
