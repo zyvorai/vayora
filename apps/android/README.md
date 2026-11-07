@@ -4,7 +4,7 @@ Kotlin + Jetpack Compose counterparts to the [iPhone apps](../ios/README.md). **
 
 | Module | What it is |
 |---|---|
-| `pay` | **Vayora Pay** — paste a `upi://pay` link (camera scan next), confirm with a local test PIN, test wallet on the phone |
+| `pay` | **Vayora Pay** — scan a QR or paste a `upi://pay` link, confirm with a local test PIN, test wallet on the phone |
 | `merchant` | **Vayora Merchant** — Collect keypad → QR → watch it complete (demo auto-pays; sandbox polls the intent), Payments list |
 | `vayora-kit` | `Money` (integer paise), hostile-safe `UPIPayload`, `VayoraClient`, `TestWallet` |
 | `vayora-ui` | Dark-first tokens (`Vui` / `Brand.Pay` indigo, `Brand.Merchant` emerald) and shared Compose screens |
@@ -30,15 +30,15 @@ Emulator → host machine API: `http://10.0.2.2:8080` (default in Settings). Phy
 
 Start the API with the simulator payer for real QR approval: `ZYVOR_SIM_PAYER=1`. Put a `zk_test_…` key in Merchant Settings and turn **Demo mode** off.
 
-Flow: Merchant Collect → Show QR → Pay Paste link (or later Scan) → PIN → Merchant shows Received.
+Flow: Merchant Collect → Show QR → Pay Scan (or Paste link) → PIN → Merchant shows Received.
 
 ## Honest limits (v0.2 scaffold)
 
-- Camera QR scan is not wired yet (paste `upi://pay` instead); iOS has a full scanner.
+- Camera QR scan is wired (CameraX + ZXing); not yet exercised on a physical device in CI.
 - Pay person-to-person extras (jars, Circle, voice, budgets, Face lock) are not ported.
 - Merchant Owed / Cashflow / AutoPay / end-of-day are not ported.
 - Demo mode invents a QR and marks it paid after ~3.5s with no server.
-- Not checked: TalkBack, large text, haptics, a real camera on device.
+- Not checked: TalkBack, large text, haptics end-to-end on device.
 
 ## Design parity
 

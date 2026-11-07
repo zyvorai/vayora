@@ -5,10 +5,12 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 ## 7 November 2026
+**Android camera QR scan**
+- Pay “Scan & pay” opens a CameraX + ZXing viewfinder (permission, torch, dimmed brackets); a decoded `upi://pay` goes to the same review/PIN flow as paste.
 **Android apps (Compose, like iOS)**
 - `apps/android`: Vayora Pay + Vayora Merchant, shared `vayora-kit` / `vayora-ui` (Money, hostile-safe UPI parse, API client, indigo/emerald dark tokens).
-- Core flows: Merchant Collect → QR (demo auto-pay or sandbox); Pay paste `upi://pay` → test PIN → on-phone wallet; Settings for server / demo.
-- CI assembles debug APKs and runs kit unit tests. Camera scan and most iOS extras not ported yet.
+- Core flows: Merchant Collect → QR (demo auto-pay or sandbox); Pay scan or paste `upi://pay` → test PIN → on-phone wallet; Settings for server / demo.
+- CI assembles debug APKs and runs kit unit tests. Most iOS extras (Owed, AutoPay, jars, Circle) not ported yet.
 
 ## 7 November 2026 — v0.2.0
 **In-repo PG path closed further (simulators only)**

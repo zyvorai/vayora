@@ -48,6 +48,7 @@ import dev.zyvor.vayora.ui.Brand
 import dev.zyvor.vayora.ui.PasteLinkScreen
 import dev.zyvor.vayora.ui.PayHomeScreen
 import dev.zyvor.vayora.ui.PayReviewScreen
+import dev.zyvor.vayora.ui.ScannerScreen
 import dev.zyvor.vayora.ui.TestChip
 import dev.zyvor.vayora.ui.Vui
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,7 @@ private sealed interface PayRoute {
     data object History : PayRoute
     data object Settings : PayRoute
     data object Paste : PayRoute
+    data object Scan : PayRoute
     data class Review(val payload: UPIPayload, val raw: String) : PayRoute
 }
 
@@ -135,7 +137,7 @@ private fun PayApp() {
                     balance = wallet.balance,
                     spentThisMonth = Money(wallet.history.filter { it.ok }.sumOf { it.amount.minor }),
                     recent = wallet.history,
-                    onScan = { route = PayRoute.Paste },
+                    onScan = { route = PayRoute.Scan },
                     onPaste = { route = PayRoute.Paste },
                 )
                 PayRoute.Settings -> SettingsScreen(
@@ -144,6 +146,28 @@ private fun PayApp() {
                     onSave = { s, d ->
                         prefs.edit().putString("server", s).putBoolean("demo", d).apply()
                     },
+                )
+                PayRoute.Scan -> ScannerScreen(
+                    brand = Brand.Pay,
+                    hint = "Aim at a Vayora Merchant QR",
+                    onCode = { raw ->
+                        try {
+                            route = PayRoute.Review(UPIPayload.parse(raw), raw)
+                            paste = raw
+                            pin = ""
+                            payError = null
+                        } catch (e: UPIPayload.Failure) {
+                            paste = raw
+                            pasteError = when (e) {
+                                UPIPayload.Failure.NotUPI -> "Not a upi://pay link."
+                                UPIPayload.Failure.MissingPayee, UPIPayload.Failure.BadPayee -> "That UPI ID looks wrong."
+                                UPIPayload.Failure.BadAmount -> "The amount is not valid."
+                                UPIPayload.Failure.UnsupportedCurrency -> "Only INR is supported."
+                            }
+                            route = PayRoute.Paste
+                        }
+                    },
+                    onCancel = { route = PayRoute.Home; tab = 0 },
                 )
                 PayRoute.Paste -> PasteLinkScreen(
                     value = paste,
