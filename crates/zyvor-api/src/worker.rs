@@ -104,7 +104,8 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
             && !crate::platform::live_frozen(&s.pool, &tid).await?
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
-            match crate::payment_links::remind_expiring(&mut tx, &tid, base).await {
+            let today = crate::clock::today(&mut tx).await?;
+            match crate::payment_links::remind_expiring(&mut tx, &tid, base, today).await {
                 Ok(_) => tx.commit().await?,
                 Err(e) => {
                     tracing::warn!(tenant = %tid, error = ?e.message, "payment link reminders failed")

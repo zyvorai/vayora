@@ -361,22 +361,32 @@ pub async fn send_link(
 
 /// The worker's pass over one tenant: email the customer of every link that asked for it and expires within a
 /// day. Once per link (`expiry_reminded_at`, plus a unique mail key). Returns how many were queued.
+/// `as_of` is the organisation's "now" (test clock when set); compared in Asia/Kolkata.
 pub async fn remind_expiring(
     conn: &mut sqlx::PgConnection,
     tenant_id: &str,
     checkout_base: &str,
+    as_of: chrono::NaiveDate,
 ) -> Result<usize, ApiError> {
+    let as_of_ts = as_of
+        .and_hms_opt(12, 0, 0)
+        .expect("noon")
+        .and_local_timezone(chrono::FixedOffset::east_opt(19_800).expect("IST"))
+        .single()
+        .ok_or_else(ApiError::internal)?
+        .with_timezone(&Utc);
     #[allow(clippy::type_complexity)]
     let due: Vec<(String, String, Option<String>, Option<i64>, String, DateTime<Utc>, String, String)> = sqlx::query_as(
         "SELECT l.id, l.token, l.description, l.amount_minor, l.currency, l.expires_at, c.name, c.email
            FROM payment_links l JOIN customers c ON c.id = l.customer_id
           WHERE l.remind_before_expiry AND l.expiry_reminded_at IS NULL AND l.canceled_at IS NULL
-            AND l.expires_at > now() AND l.expires_at <= now() + interval '24 hours'
+            AND l.expires_at > $1 AND l.expires_at <= $1 + interval '24 hours'
             AND (l.max_uses IS NULL OR l.uses < l.max_uses)
             AND (l.invoice_id IS NULL OR invoice_settled(l.invoice_id) < (SELECT amount_minor FROM invoices WHERE id = l.invoice_id))
             AND c.email LIKE '%@%'
           ORDER BY l.expires_at LIMIT 100",
     )
+    .bind(as_of_ts)
     .fetch_all(&mut *conn)
     .await?;
     if due.is_empty() {

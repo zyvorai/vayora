@@ -787,6 +787,7 @@ pub fn app(state: AppState) -> Router {
         )
         // simulated payer (test builds only; 404 unless ZYVOR_SIM_PAYER=1)
         .route("/sim/pay", post(sim_pay::pay))
+        .route("/sim/fail_next_refund", post(sim_pay::fail_next_refund))
         .route("/sim/mandate", post(sim_mandate::decide))
         .route("/sim/mandate/revoke", post(sim_mandate::revoke))
         .route("/sim/mandate/{id}", get(sim_mandate::view))

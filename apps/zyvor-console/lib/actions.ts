@@ -379,6 +379,28 @@ export async function runAsOf(_: FormState, f: FormData): Promise<FormState> {
 export const remind = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.remind(id(f), { channel: String(f.get("channel") ?? "whatsapp") as "whatsapp" }));
 export const completeMilestone = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.milestones.complete(id(f)));
 export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], (z) => z.disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));
+/** Hold disputed money on a captured payment. */
+export async function openDispute(_: FormState, f: FormData): Promise<FormState> {
+  const attemptId = String(f.get("attempt_id") ?? "").trim();
+  const intentId = String(f.get("intent_id") ?? "").trim();
+  const reason = String(f.get("reason") ?? "").trim();
+  if (!attemptId) return { error: "Missing payment attempt." };
+  if (!reason) return { error: "Say why the dispute was opened." };
+  const raw = String(f.get("amount") ?? "").replace(/,/g, "").trim();
+  const rupees = raw === "" ? undefined : Number(raw);
+  if (rupees !== undefined && (!Number.isFinite(rupees) || rupees <= 0)) return { error: "Enter an amount greater than zero, or leave it empty for the full payment." };
+  const respondBy = String(f.get("respond_by") ?? "").trim() || undefined;
+  const paths = ["/disputes", "/", ...(intentId ? [`/payments/${intentId}`] : ["/payments"])];
+  const r = await run(paths, (z) => z.disputes.open({
+    attemptId,
+    reason,
+    amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100),
+    respondBy,
+  }));
+  return r?.ok ? { ok: "Dispute opened. The amount is held and cannot be refunded until it is resolved." } : r;
+}
+/** Test mode: the next simulator refund fails once (failed queue + retry). */
+export const failNextSimRefund = async (_: FormState) => run(["/sandbox", "/refunds"], (z) => z.sim.failNextRefund());
 
 export const createLink = async (_: FormState, f: FormData): Promise<FormState> => {
   const money = (k: string) => {

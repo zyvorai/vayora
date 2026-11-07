@@ -5,6 +5,9 @@
 //! Mandate debits are chosen by the amount's last two digits (paise): `...13` declines
 //! (`insufficient_funds`), `...07` is accepted but answers with a timeout (outcome unknown), anything
 //! else captures. A mandate must be approved first (by the payer; see `mandate_decide`).
+//!
+//! Refunds use the same last-two-digits rule: `...13` fails, `...07` is uncertain, anything else
+//! processes. `fail_next_refund` forces the next refund to fail once (sandbox / console).
 
 use std::{
     collections::HashMap,
@@ -30,6 +33,8 @@ pub struct SimProvider {
     /// When set, a pending QR / intent payment waits for `payer_decide` instead of being approved by the
     /// first lookup. This is what lets a payer app (or a test) play the payer.
     manual_payer: AtomicBool,
+    /// When set, the next `refund` call fails once (then clears). Digits rule still applies afterwards.
+    fail_next_refund: AtomicBool,
 }
 
 struct SimMandate {
@@ -256,6 +261,11 @@ impl SimProvider {
 
     pub fn set_manual_payer(&self, on: bool) {
         self.manual_payer.store(on, Ordering::Relaxed);
+    }
+
+    /// The next simulated refund fails once (sandbox / console). Cleared after that call.
+    pub fn fail_next_refund(&self) {
+        self.fail_next_refund.store(true, Ordering::Relaxed);
     }
 
     /// Stand in for the provider's late update on any payment still pending (a `pending@...` handle or a QR):
@@ -557,11 +567,30 @@ impl Provider for SimProvider {
     }
 
     async fn refund(&self, req: &RefundRequest) -> Result<RefundState, ProviderError> {
-        let st = RefundState {
-            status: RefundStatus::Processed,
-            provider_refund_ref: Some(new_id("simrf")),
-            failure_reason: None,
-            raw: json!({ "sim": true }),
+        let force_fail = self.fail_next_refund.swap(false, Ordering::Relaxed);
+        let last = (req.amount_minor % 100).unsigned_abs() as u8;
+        let st = if force_fail || last == 13 {
+            RefundState {
+                status: RefundStatus::Failed,
+                provider_refund_ref: None,
+                failure_reason: Some(if force_fail {
+                    "simulated_failure".into()
+                } else {
+                    "insufficient_funds".into()
+                }),
+                raw: json!({ "sim": true, "forced": force_fail }),
+            }
+        } else if last == 7 {
+            return Err(ProviderError::Uncertain(
+                "simulated timeout after refund acceptance".into(),
+            ));
+        } else {
+            RefundState {
+                status: RefundStatus::Processed,
+                provider_refund_ref: Some(new_id("simrf")),
+                failure_reason: None,
+                raw: json!({ "sim": true }),
+            }
         };
         self.refunds
             .lock()
@@ -969,5 +998,31 @@ mod mandate_tests {
         assert!(sim.circle_create("A", "R", 100, 99).is_err());
         assert!(sim.circle_create("A", "R", 100, 10_000_000_001).is_err());
         assert!(sim.circle_create("A", "R", 100, 100).is_ok());
+    }
+
+    #[tokio::test]
+    async fn refunds_fail_on_13_paise_uncertain_on_07_and_once_when_forced() {
+        let sim = SimProvider::new();
+        let mk = |id: &str, amt: i64| RefundRequest {
+            refund_id: id.into(),
+            attempt_id: "att".into(),
+            provider_payment_ref: "pay".into(),
+            amount_minor: amt,
+            currency: Currency::Inr,
+        };
+        let ok = sim.refund(&mk("r1", 100)).await.unwrap();
+        assert_eq!(ok.status, RefundStatus::Processed);
+        let fail = sim.refund(&mk("r2", 113)).await.unwrap();
+        assert_eq!(fail.status, RefundStatus::Failed);
+        assert!(matches!(
+            sim.refund(&mk("r3", 107)).await,
+            Err(ProviderError::Uncertain(_))
+        ));
+        sim.fail_next_refund();
+        let forced = sim.refund(&mk("r4", 100)).await.unwrap();
+        assert_eq!(forced.status, RefundStatus::Failed);
+        assert_eq!(forced.failure_reason.as_deref(), Some("simulated_failure"));
+        let again = sim.refund(&mk("r5", 100)).await.unwrap();
+        assert_eq!(again.status, RefundStatus::Processed);
     }
 }

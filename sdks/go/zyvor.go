@@ -1009,6 +1009,11 @@ func (c *Client) ListApiRequests() (map[string]any, error) {
 	return c.call("GET", "/v1/api_requests", nil)
 }
 
+// FailNextSimRefund: Test mode; the next in-process simulator refund fails once.
+func (c *Client) FailNextSimRefund() (map[string]any, error) {
+	return c.call("POST", "/v1/sim/fail_next_refund", nil)
+}
+
 // ListPlans: Billing plans.
 func (c *Client) ListPlans() (map[string]any, error) {
 	v := url.Values{}

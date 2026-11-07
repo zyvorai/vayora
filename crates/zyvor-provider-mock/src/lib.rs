@@ -474,6 +474,9 @@ async fn cf_refund(State(m): State<Mock>, Path(id): Path<String>, Json(b): Json<
         .to_string();
     let amount = cf_amount(&b["refund_amount"]);
     let behaviour = m.take_behaviour("cashfree.refund");
+    if behaviour.as_deref() == Some("reject") {
+        return Err(err(StatusCode::BAD_REQUEST, "refund rejected by bank"));
+    }
     let r = {
         let mut g = m.inner.lock().unwrap();
         if let Some(existing) = g.cf_refunds.get(&rid) {

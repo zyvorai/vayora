@@ -1938,6 +1938,10 @@ export interface PostSimCircleRevokeResponse {
   status: string;
 }
 
+export interface PostSimFailNextRefundResponse {
+  ok: boolean;
+}
+
 export interface PostSimMandateResponse {
   status: string;
 }

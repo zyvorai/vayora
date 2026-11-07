@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Chip } from "@/components/Chip";
 import { Act } from "@/components/Act";
+import { DisputeForm } from "@/components/DisputeForm";
 import { RefundForm } from "@/components/RefundForm";
 import { currentSession } from "@/lib/auth";
 import { inr, istDateTime } from "@/lib/format";
@@ -56,6 +57,7 @@ export default async function Payment({ params }: { params: Promise<{ id: string
         ))}
       </ol>
       {me && allows(me.r, "finance") && refundable > 0 && <RefundForm intentId={id} refundableMinor={refundable} />}
+      {me && allows(me.r, "finance") && paid && refundable > 0 && <DisputeForm attemptId={paid.id} intentId={id} maxMinor={refundable} />}
       <p style={{ marginTop: 24 }}><Link className="btn small" href="/payments">← All payments</Link></p>
     </>
   );

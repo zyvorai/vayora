@@ -280,6 +280,12 @@ export class Zyvor {
     list: () => this.req<Page<{ id: number; actor: string; method: string; route: string; status: number; request_id: string; latency_ms: number; created_at: string }>>("GET", "/v1/api_requests"),
   };
 
+  /** In-process simulator controls (test mode). */
+  readonly sim = {
+    /** The next simulator refund fails once (failed queue + retry). Amounts ending in .13 also fail. */
+    failNextRefund: () => this.req<{ ok: boolean }>("POST", "/v1/sim/fail_next_refund"),
+  };
+
   readonly billing = {
     createPlan: (p: { name: string; amountMinor: number; intervalUnit: "day" | "week" | "month" | "year"; intervalCount?: number; usageUnitMinor?: number; dueDays?: number; trialDays?: number; includedUnits?: number; includedPerSeat?: boolean; currency?: Currency }) =>
       this.req<{ id: string }>("POST", "/v1/plans", { name: p.name, amount_minor: p.amountMinor, interval_unit: p.intervalUnit, interval_count: p.intervalCount, usage_unit_minor: p.usageUnitMinor, due_days: p.dueDays, trial_days: p.trialDays, included_units: p.includedUnits, included_per_seat: p.includedPerSeat, currency: p.currency }),

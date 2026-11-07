@@ -4,8 +4,9 @@
 //! frozen at the day it was set (it does not tick on its own) until it is moved again or cleared. Live environments
 //! cannot set it, so they always use the calendar.
 //!
-//! Not on the clock: UPI AutoPay (mandate notice periods are measured in real hours), payment timestamps, session
-//! lifetimes and anything else stamped with the database's own `now()`.
+//! Not on the clock: UPI AutoPay notice windows (measured in real hours), payment timestamps, session
+//! lifetimes and anything else stamped with the database's own `now()`. Mandate end dates, payment-link
+//! expiry reminders and insights cashflow do follow the clock.
 
 use axum::{Json, extract::State};
 use chrono::{Days, NaiveDate};

@@ -31,6 +31,9 @@ w = json.load(sys.stdin)["webhook"]
 req = urllib.request.Request(sys.argv[1], data=w["body"].encode(), headers=w["headers"], method="POST")
 urllib.request.urlopen(req).read()' "$API/v1/webhooks/cashfree/$TENANT"
 RF=$(post "/payment_intents/$PI/refunds" '{"amount_minor":2500,"reason":"Seed refund"}' | jq_ '["id"]')
+# a failed refund (Cashfree mock rejects) so the phone can exercise retry
+curl -sf -X POST "$SIM_URL/_sim/behaviour" -H "$J" -d '{"op":"cashfree.refund","behaviour":"reject"}' >/dev/null
+RF_FAIL=$(post "/payment_intents/$PI/refunds" '{"amount_minor":1300,"reason":"Seed failed refund"}' | jq_ '["id"]')
 DP=$(post /disputes "{\"attempt_id\":\"$AT\",\"amount_minor\":45000,\"reason\":\"Customer says they were charged twice\",\"respond_by\":\"$(python3 -c 'import datetime;print(datetime.date.today()+datetime.timedelta(days=2))')\"}" | jq_ '["id"]')
 
 # a settlement for that payment (gross 500.00, fee 15.00 and GST 3.00), so the phone's settlement explanation has something real to read
@@ -51,4 +54,4 @@ if [ -n "${APPROVER_KEY_OUT:-}" ]; then
   ( umask 077; post /api_keys '{"name":"ios approver","scopes":["payments:read","refunds:approve","payouts:approve","disputes:write"]}' | jq_ '["key"]' > "$APPROVER_KEY_OUT" )
   echo "approver key written to $APPROVER_KEY_OUT"
 fi
-echo "refund=$RF dispute=$DP payout=$PO"
+echo "refund=$RF refund_failed=$RF_FAIL dispute=$DP payout=$PO"

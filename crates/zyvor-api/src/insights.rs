@@ -28,8 +28,8 @@ pub async fn cashflow(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let weeks = q.weeks.unwrap_or(4).clamp(1, 12);
-    let today = crate::ist_today();
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let today = crate::clock::today(&mut tx).await?;
     let rows: Vec<(Option<NaiveDate>, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.due_date, {OUTSTANDING} FROM invoices i WHERE i.status IN ('open', 'partially_paid') AND i.currency = 'INR'"
     ))).fetch_all(&mut *tx).await?;

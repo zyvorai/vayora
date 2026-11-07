@@ -68,6 +68,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v5
       - run: helm lint deploy/zyvor/helm/zyvor && helm template t deploy/zyvor/helm/zyvor --set sandbox.providerMock.enabled=true > /dev/null
+  compose:
+    runs-on: ubuntu-latest
+    env:
+      ZYVOR_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose file
+        run: docker compose -f deploy/zyvor/docker-compose.yml config >/dev/null
+      - name: Compose smoke script is executable
+        run: test -x scripts/compose-smoke.sh
   promtool:
     runs-on: ubuntu-latest
     steps:

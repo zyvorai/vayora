@@ -1958,6 +1958,10 @@ type PostSimCircleRevokeResponse struct {
 	Status string `json:"status"`
 }
 
+type PostSimFailNextRefundResponse struct {
+	Ok bool `json:"ok"`
+}
+
 type PostSimMandateResponse struct {
 	Status string `json:"status"`
 }

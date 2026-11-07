@@ -1942,6 +1942,10 @@ PostSimCircleRevokeResponse = TypedDict("PostSimCircleRevokeResponse", {
     "status": "str",
 })
 
+PostSimFailNextRefundResponse = TypedDict("PostSimFailNextRefundResponse", {
+    "ok": "bool",
+})
+
 PostSimMandateResponse = TypedDict("PostSimMandateResponse", {
     "status": "str",
 })

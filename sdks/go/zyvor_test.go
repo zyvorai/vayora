@@ -277,6 +277,7 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"ScanCases", func() (map[string]any, error) { return c.ScanCases(3) }, "POST", "/v1/recon/scan?older_than_days=3", map[string]any{}},
 		{"Me", func() (map[string]any, error) { return c.Me() }, "GET", "/v1/me", nil},
 		{"ListApiRequests", func() (map[string]any, error) { return c.ListApiRequests() }, "GET", "/v1/api_requests", nil},
+		{"FailNextSimRefund", func() (map[string]any, error) { return c.FailNextSimRefund() }, "POST", "/v1/sim/fail_next_refund", map[string]any{}},
 		{"ListPlans", func() (map[string]any, error) { return c.ListPlans() }, "GET", "/v1/plans", nil},
 		{"ListSubscriptions", func() (map[string]any, error) { return c.ListSubscriptions() }, "GET", "/v1/subscriptions", nil},
 		{"PauseSubscription", func() (map[string]any, error) { return c.PauseSubscription("sub_1") }, "POST", "/v1/subscriptions/sub_1/pause", map[string]any{}},
@@ -399,8 +400,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 107 {
-		t.Fatalf("expected 107 rows, got %d", len(rows))
+	if len(rows) != 108 {
+		t.Fatalf("expected 108 rows, got %d", len(rows))
 	}
 }
 

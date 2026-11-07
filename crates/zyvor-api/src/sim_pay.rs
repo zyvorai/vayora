@@ -4,12 +4,14 @@
 //!
 //! **TPAP graduation:** Vayora Pay moves off this route onto real intent/collect against `sponsor_upi`
 //! (or a bank PSP) only after NPCI TPAP + sponsor approval. Until then keep `ZYVOR_SIM_PAYER` for tests.
+//!
+//! Also: `POST /v1/sim/fail_next_refund` (test env, always on) makes the next simulator refund fail once.
 
 use axum::{Json, extract::State};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{AppState, error::ApiError};
+use crate::{AppState, auth::Auth, error::ApiError};
 
 /// The payee the simulator puts in its payloads; anything else is not ours to decide.
 const SIM_PAYEE: &str = "sandbox@zyvor-sim";
@@ -56,6 +58,20 @@ pub async fn pay(State(s): State<AppState>, Json(b): Json<Pay>) -> Result<Json<V
         ApiError::conflict("nothing_to_pay", "no pending simulated payment for this QR")
     })?;
     Ok(Json(json!({ "status": status })))
+}
+
+/// Test mode only: the next refund through the in-process simulator fails once (so the failed-refund
+/// queue and retry can be exercised). Digits ending in `13` also fail without this call.
+pub async fn fail_next_refund(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
+    auth.require("refunds:write")?;
+    if auth.env != "test" {
+        return Err(ApiError::invalid(
+            "test_only",
+            "forcing a simulated refund failure is only available in test mode",
+        ));
+    }
+    s.sim.fail_next_refund();
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]

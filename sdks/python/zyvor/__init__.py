@@ -444,6 +444,10 @@ class Zyvor:
         """Recent authenticated API calls (admin). No request bodies are stored."""
         return self._req("GET", "/v1/api_requests")
 
+    def fail_next_sim_refund(self) -> types.PostSimFailNextRefundResponse:
+        """Test mode: the next in-process simulator refund fails once."""
+        return self._req("POST", "/v1/sim/fail_next_refund")
+
     def list_plans(self) -> types.GetPlansResponse:
         """Billing plans."""
         return self._req("GET", "/v1/plans")

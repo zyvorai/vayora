@@ -948,9 +948,15 @@ pub async fn run_now(State(s): State<AppState>, auth: Auth) -> Result<Json<Value
 }
 
 /// One pass for one tenant: expire, notify, send the debits that are due, and settle the ones in flight.
+/// Mandate end dates follow the organisation's test clock; notice windows stay wall-clock (real hours).
 pub async fn run_cycle(s: &AppState, tenant_id: &str, env: &str) -> Result<Stats, ApiError> {
     let mut st = Stats::default();
-    let today = crate::ist_today();
+    let today = {
+        let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+        let d = crate::clock::today(&mut tx).await?;
+        tx.commit().await?;
+        d
+    };
 
     // 1. mandates past their end date
     {

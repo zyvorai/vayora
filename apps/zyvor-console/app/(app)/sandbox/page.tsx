@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Act } from "@/components/Act";
 import { SandboxForm } from "@/components/SandboxForm";
-import { enableSandbox } from "@/lib/actions";
+import { enableSandbox, failNextSimRefund } from "@/lib/actions";
 import { requireRole } from "@/lib/auth";
 import { OUTCOMES } from "@/lib/sandbox";
 import { api } from "@/lib/zyvor";
@@ -27,6 +27,9 @@ export default async function Sandbox() {
           <thead><tr><th>The payment…</th><th>UPI handle</th><th>What you will see</th></tr></thead>
           <tbody>{OUTCOMES.map((o) => <tr key={o.key}><td>{o.label}</td><td><code>{o.handle}</code></td><td className="muted">{o.note}</td></tr>)}</tbody>
         </table></div>
+        <h2>Failed refunds</h2>
+        <p className="muted" style={{ marginTop: 0 }}>A refund whose amount ends in <code>.13</code> fails at the simulator; ending in <code>.07</code> stays unknown until refresh. Or force the next one:</p>
+        <div style={{ marginBottom: 24 }}><Act action={failNextSimRefund} label="Next refund fails" showOk /></div>
         <p className="muted">The same handles work from your own code in test mode: create a payment, then start a UPI attempt with the handle (see <Link href="/developers">Developers</Link>). Any other handle succeeds. Test payments are real records in your test data, with ledger entries, so you can <Link href="/payments">refund them</Link> and reconcile them. Cards, wallets and netbanking use the same simulator through the API but have no console form yet.</p>
       </>)}
     </>

@@ -604,6 +604,23 @@ paths:
                     type: integer
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/sim/fail_next_refund:
+    post:
+      summary: Force the next simulator refund to fail (test mode)
+      tags:
+      - sandbox
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/analytics/cost:
     get:
       summary: Effective processing cost and routing suggestions
