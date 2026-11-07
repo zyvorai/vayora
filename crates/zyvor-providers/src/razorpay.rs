@@ -175,9 +175,7 @@ impl Provider for Razorpay {
                 let image = p["qr_image"]
                     .as_str()
                     .or_else(|| p["image_url"].as_str())
-                    .ok_or_else(|| {
-                        ProviderError::Uncertain("upi qr response had no image".into())
-                    })?
+                    .ok_or_else(|| ProviderError::Uncertain("upi qr response had no image".into()))?
                     .to_string();
                 ClientAction::UpiQr { image }
             } else {

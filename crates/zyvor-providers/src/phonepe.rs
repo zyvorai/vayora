@@ -40,7 +40,12 @@ impl PhonePe {
             salt_key: salt_key.into(),
             http,
             caps: Capabilities {
-                methods: vec![Method::Upi, Method::Card, Method::Wallet, Method::Netbanking],
+                methods: vec![
+                    Method::Upi,
+                    Method::Card,
+                    Method::Wallet,
+                    Method::Netbanking,
+                ],
                 currencies: vec![Currency::Inr],
                 partial_refund: true,
                 manual_capture: false,
@@ -237,7 +242,11 @@ impl Provider for PhonePe {
         let v = read_json(
             self.req(
                 reqwest::Method::GET,
-                &format!("/pg/v1/refund/{}/{}", seg(&self.merchant_id), seg(refund_id)),
+                &format!(
+                    "/pg/v1/refund/{}/{}",
+                    seg(&self.merchant_id),
+                    seg(refund_id)
+                ),
             )
             .send()
             .await
@@ -316,13 +325,18 @@ impl Provider for PhonePe {
         Ok(WebhookEvent {
             event_id,
             kind,
-            order_ref: text("attempt_id")
-                .or_else(|| v["data"]["merchantTransactionId"].as_str().map(str::to_string)),
+            order_ref: text("attempt_id").or_else(|| {
+                v["data"]["merchantTransactionId"]
+                    .as_str()
+                    .map(str::to_string)
+            }),
             provider_payment_ref: text("provider_payment_ref")
                 .or_else(|| v["data"]["transactionId"].as_str().map(str::to_string)),
             provider_refund_ref: text("provider_refund_ref"),
             refund_ref: text("refund_id"),
-            amount_minor: v["amount_minor"].as_i64().or_else(|| v["data"]["amount"].as_i64()),
+            amount_minor: v["amount_minor"]
+                .as_i64()
+                .or_else(|| v["data"]["amount"].as_i64()),
             failure_reason: text("failure_reason"),
             raw: v,
         })

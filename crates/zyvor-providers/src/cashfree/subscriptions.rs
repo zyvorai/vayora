@@ -381,8 +381,8 @@ pub(crate) fn webhook_event(ty: &str, v: &Value) -> Option<WebhookEvent> {
         _ => EventKind::Other,
     };
     let payment_id = text(&d["payment_id"]);
-    let sub_id = text(&d["subscription_id"])
-        .or_else(|| text(&d["subscription_details"]["subscription_id"]));
+    let sub_id =
+        text(&d["subscription_id"]).or_else(|| text(&d["subscription_details"]["subscription_id"]));
     let order_ref = if kind == EventKind::MandateUpdated {
         sub_id.clone()
     } else {

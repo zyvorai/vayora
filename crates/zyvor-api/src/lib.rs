@@ -8,12 +8,10 @@ pub mod admin;
 pub mod ai;
 pub mod audit;
 pub mod auth;
-pub mod cards;
 pub mod bankcsv;
 pub mod bankfmt;
-pub mod redact;
-pub mod reqlog;
 pub mod billing;
+pub mod cards;
 pub mod cases;
 pub mod checkout;
 pub mod clientenv;
@@ -48,9 +46,11 @@ pub mod payouts;
 pub mod pdf;
 pub mod platform;
 pub mod recon;
+pub mod redact;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
+pub mod reqlog;
 pub mod rota;
 pub mod saved_views;
 pub mod settle;
@@ -488,16 +488,16 @@ pub fn app(state: AppState) -> Router {
         .route("/payouts/{id}/mark_paid", post(payouts::mark_paid))
         .route("/payouts/{id}/send_rail", post(settle::send_payout_rail))
         .route("/payouts/{id}/cancel", post(payouts::cancel_payout))
-        .route("/money_mode", get(money_mode::get_money_mode).put(money_mode::set_money_mode))
+        .route(
+            "/money_mode",
+            get(money_mode::get_money_mode).put(money_mode::set_money_mode),
+        )
         .route(
             "/settlement_batches",
             get(settle::list_batches).post(settle::open_batch),
         )
         .route("/settlement_batches/{id}", get(settle::get_batch))
-        .route(
-            "/settlement_batches/{id}/items",
-            post(settle::add_item),
-        )
+        .route("/settlement_batches/{id}/items", post(settle::add_item))
         .route(
             "/settlement_batches/{id}/release",
             post(settle::release_batch),
@@ -686,7 +686,10 @@ pub fn app(state: AppState) -> Router {
         .route("/outbox", get(list_outbox))
         .route("/outbox/test", post(admin::send_test_event))
         .route("/outbox/{id}/replay", post(replay_outbox))
-        .route("/outbox/{id}/deliveries", get(admin::list_outbox_deliveries))
+        .route(
+            "/outbox/{id}/deliveries",
+            get(admin::list_outbox_deliveries),
+        )
         .route("/inbox", get(list_inbox))
         .route("/api_requests", get(reqlog::list))
         .route("/me", get(me))

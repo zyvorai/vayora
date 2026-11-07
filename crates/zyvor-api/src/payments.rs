@@ -435,9 +435,8 @@ pub async fn start_attempt(
         .await?
         .unwrap_or(json!([]));
         if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
-            let parsed = reqwest::Url::parse(u).map_err(|_| {
-                ApiError::invalid("invalid_return_url", "not a valid URL")
-            })?;
+            let parsed = reqwest::Url::parse(u)
+                .map_err(|_| ApiError::invalid("invalid_return_url", "not a valid URL"))?;
             let host = parsed.host_str().unwrap_or("");
             let origin = match parsed.port() {
                 Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
@@ -609,17 +608,19 @@ pub async fn start_attempt(
 
     // Network token charge: load ref inside the txn; never accept PAN/CVV on this path.
     let network_token_ref = if let Some(tok_id) = b.card_token_id.as_deref() {
-        let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-            "SELECT network_token_ref, revoked_at FROM card_tokens WHERE id = $1",
-        )
-        .bind(tok_id)
-        .fetch_optional(&mut *tx)
-        .await?;
+        let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
+            sqlx::query_as("SELECT network_token_ref, revoked_at FROM card_tokens WHERE id = $1")
+                .bind(tok_id)
+                .fetch_optional(&mut *tx)
+                .await?;
         let Some((nref, revoked_at)) = row else {
             return Err(ApiError::not_found("card token"));
         };
         if revoked_at.is_some() {
-            return Err(ApiError::conflict("token_revoked", "card token has been revoked"));
+            return Err(ApiError::conflict(
+                "token_revoked",
+                "card token has been revoked",
+            ));
         }
         Some(nref)
     } else {

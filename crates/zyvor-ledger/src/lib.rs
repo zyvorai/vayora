@@ -85,12 +85,20 @@ pub fn capture_entries(
 ) -> Result<Transaction, LedgerError> {
     match mode {
         MoneyMode::Orchestrate => Transaction::new(vec![
-            Entry::debit(accounts::provider_receivable(provider), amount_minor, currency),
+            Entry::debit(
+                accounts::provider_receivable(provider),
+                amount_minor,
+                currency,
+            ),
             Entry::credit(accounts::COLLECTIONS, amount_minor, currency),
         ]),
         MoneyMode::Acquire => Transaction::new(vec![
             Entry::debit(accounts::ESCROW_IN_FLIGHT, amount_minor, currency),
-            Entry::credit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+            Entry::credit(
+                accounts::merchant_payable(merchant_ref),
+                amount_minor,
+                currency,
+            ),
         ]),
     }
 }
@@ -106,10 +114,18 @@ pub fn refund_entries(
     match mode {
         MoneyMode::Orchestrate => Transaction::new(vec![
             Entry::debit(accounts::COLLECTIONS, amount_minor, currency),
-            Entry::credit(accounts::provider_receivable(provider), amount_minor, currency),
+            Entry::credit(
+                accounts::provider_receivable(provider),
+                amount_minor,
+                currency,
+            ),
         ]),
         MoneyMode::Acquire => Transaction::new(vec![
-            Entry::debit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+            Entry::debit(
+                accounts::merchant_payable(merchant_ref),
+                amount_minor,
+                currency,
+            ),
             Entry::credit(accounts::ESCROW_IN_FLIGHT, amount_minor, currency),
         ]),
     }
@@ -126,11 +142,19 @@ pub fn dispute_lost_entries(
     match mode {
         MoneyMode::Orchestrate => Transaction::new(vec![
             Entry::debit(accounts::ADJUSTMENTS, amount_minor, currency),
-            Entry::credit(accounts::provider_receivable(provider), amount_minor, currency),
+            Entry::credit(
+                accounts::provider_receivable(provider),
+                amount_minor,
+                currency,
+            ),
         ]),
         MoneyMode::Acquire => Transaction::new(vec![
             Entry::debit(accounts::ADJUSTMENTS, amount_minor, currency),
-            Entry::credit(accounts::merchant_payable(merchant_ref), amount_minor, currency),
+            Entry::credit(
+                accounts::merchant_payable(merchant_ref),
+                amount_minor,
+                currency,
+            ),
         ]),
     }
 }

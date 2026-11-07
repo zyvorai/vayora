@@ -14,10 +14,7 @@ use crate::{
 };
 
 fn synth_utr(key: &str) -> String {
-    format!(
-        "mt:{}",
-        &hex::encode(Sha256::digest(key.as_bytes()))[..16]
-    )
+    format!("mt:{}", &hex::encode(Sha256::digest(key.as_bytes()))[..16])
 }
 
 fn parse_mt_date(s: &str) -> Option<NaiveDate> {
@@ -65,7 +62,8 @@ pub fn parse_mt940(text: &str) -> Result<Vec<BankLine>, String> {
             if rest.len() < 8 {
                 return Err(format!("short :61: line: {rest}"));
             }
-            let date = parse_mt_date(&rest[..6]).ok_or_else(|| format!("bad :61: date in {rest}"))?;
+            let date =
+                parse_mt_date(&rest[..6]).ok_or_else(|| format!("bad :61: date in {rest}"))?;
             let mut i = 6;
             // optional booking date MMDD
             if rest.len() >= i + 5
@@ -101,11 +99,11 @@ pub fn parse_mt940(text: &str) -> Result<Vec<BankLine>, String> {
                 i += 1;
             }
             let amt_end = rest[i..]
-                .find(|c: char| c == 'N' || c == 'F' || c == 'S' || c == '/')
+                .find(['N', 'F', 'S', '/'])
                 .map(|p| i + p)
                 .unwrap_or(rest.len());
-            let mut amount =
-                parse_mt_amount(&rest[i..amt_end]).ok_or_else(|| format!("bad amount in {rest}"))?;
+            let mut amount = parse_mt_amount(&rest[i..amt_end])
+                .ok_or_else(|| format!("bad amount in {rest}"))?;
             if dc.eq_ignore_ascii_case("D") || dc.eq_ignore_ascii_case("RC") {
                 amount = -amount;
             } else if !(dc.eq_ignore_ascii_case("C") || dc.eq_ignore_ascii_case("RD")) {
@@ -162,10 +160,9 @@ fn xml_tag<'a>(s: &'a str, tag: &str) -> Option<&'a str> {
     let close = format!("</{tag}>");
     let start = if let Some(i) = s.find(&format!("<{tag}>")) {
         i + tag.len() + 2
-    } else if let Some(i) = s.find(&format!("<{tag} ")) {
-        s[i..].find('>')? + i + 1
     } else {
-        return None;
+        let i = s.find(&format!("<{tag} "))?;
+        s[i..].find('>')? + i + 1
     };
     let end = s[start..].find(&close)? + start;
     Some(s[start..end].trim())
@@ -271,7 +268,11 @@ mod tests {
         let l = parse_mt940(mt).unwrap();
         assert_eq!(l.len(), 2);
         assert_eq!(l[0].amount_minor, 123_456);
-        assert!(l[0].utr.as_deref().unwrap().contains("UTR998877") || l[0].narration.as_deref().unwrap().contains("UTR") || l[0].utr.as_deref() == Some("UTR998877"));
+        assert!(
+            l[0].utr.as_deref().unwrap().contains("UTR998877")
+                || l[0].narration.as_deref().unwrap().contains("UTR")
+                || l[0].utr.as_deref() == Some("UTR998877")
+        );
         assert_eq!(l[1].amount_minor, -1_000);
     }
 

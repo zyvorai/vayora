@@ -151,7 +151,7 @@ pub async fn candidates(
     }
     {
         let mut gate = crate::tenant::begin(&state.pool, tenant_id).await?;
-        crate::money_mode::acquire_live_allowed(&mut *gate, tenant_id).await?;
+        crate::money_mode::acquire_live_allowed(&mut gate, tenant_id).await?;
         gate.rollback().await?;
     }
     let accounts: Vec<(String, bool)> = sqlx::query_as(

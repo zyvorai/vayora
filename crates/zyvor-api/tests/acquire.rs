@@ -12,9 +12,7 @@ async fn acquire_capture_posts_escrow_not_receivable(pool: PgPool) {
     let t = setup(pool).await;
     let a = &t.a;
 
-    let mode = t
-        .ok(a, "GET", "/v1/money_mode", None, Value::Null)
-        .await;
+    let mode = t.ok(a, "GET", "/v1/money_mode", None, Value::Null).await;
     assert_eq!(mode["money_mode"], "orchestrate");
 
     t.ok(
@@ -44,7 +42,10 @@ async fn acquire_capture_posts_escrow_not_receivable(pool: PgPool) {
     .fetch_one(&t.root)
     .await
     .unwrap();
-    assert_eq!(escrow, 10_000, "acquire capture should debit escrow:in_flight");
+    assert_eq!(
+        escrow, 10_000,
+        "acquire capture should debit escrow:in_flight"
+    );
 
     let receivable: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(CASE side WHEN 'debit' THEN amount_minor ELSE -amount_minor END),0)::BIGINT
@@ -75,7 +76,10 @@ async fn acquire_capture_posts_escrow_not_receivable(pool: PgPool) {
     .fetch_one(&t.root)
     .await
     .unwrap();
-    assert_eq!(enrolled, 1, "acquire capture must enrol into a settlement batch");
+    assert_eq!(
+        enrolled, 1,
+        "acquire capture must enrol into a settlement batch"
+    );
 
     let att = t
         .ok(
@@ -129,7 +133,9 @@ async fn settlement_batch_release_and_escrow_proof(pool: PgPool) {
     let (_iid, aid, _) = t.paid_razorpay(a, 5_000, json!({})).await;
 
     // Capture already opened a batch and enrolled itself.
-    let batches = t.ok(a, "GET", "/v1/settlement_batches", None, Value::Null).await;
+    let batches = t
+        .ok(a, "GET", "/v1/settlement_batches", None, Value::Null)
+        .await;
     let bid = batches["data"].as_array().unwrap()[0]["id"]
         .as_str()
         .unwrap()

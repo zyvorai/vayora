@@ -473,7 +473,9 @@ async fn authorization_and_status_webhooks_update_the_mandate_not_a_payment() {
         let ev = cf.verify_webhook(b"whsec_fixture", &h, &body, now).unwrap();
         assert_eq!(ev.kind, EventKind::MandateUpdated, "{v}");
         assert!(
-            ev.order_ref.as_deref().is_some_and(|r| r.starts_with("mnd_") || !r.is_empty()),
+            ev.order_ref
+                .as_deref()
+                .is_some_and(|r| r.starts_with("mnd_") || !r.is_empty()),
             "mandate id in order_ref: {ev:?}"
         );
     }

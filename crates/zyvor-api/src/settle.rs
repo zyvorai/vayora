@@ -32,7 +32,10 @@ pub async fn enrol_batch_item(
         return Ok(None);
     }
     if !matches!(kind, "capture" | "refund" | "fee" | "hold") {
-        return Err(ApiError::invalid("invalid_kind", "kind must be capture, refund, fee or hold"));
+        return Err(ApiError::invalid(
+            "invalid_kind",
+            "kind must be capture, refund, fee or hold",
+        ));
     }
     let mode = money_mode::load_for_tenant(conn, tenant_id).await?;
     if mode != MoneyMode::Acquire {
@@ -107,13 +110,11 @@ pub async fn enrol_batch_item(
             .await?;
         }
         "fee" => {
-            sqlx::query(
-                "UPDATE settlement_batches SET fees_minor = fees_minor + $2 WHERE id = $1",
-            )
-            .bind(&batch_id)
-            .bind(amount_minor)
-            .execute(&mut *conn)
-            .await?;
+            sqlx::query("UPDATE settlement_batches SET fees_minor = fees_minor + $2 WHERE id = $1")
+                .bind(&batch_id)
+                .bind(amount_minor)
+                .execute(&mut *conn)
+                .await?;
         }
         "hold" => {
             sqlx::query(
@@ -173,7 +174,9 @@ pub async fn auto_release_due(s: &AppState, tenant_id: &str) -> Result<usize, Ap
 
 /// Prefer `ZYVOR_PAYOUT_RAIL_URL` + `ZYVOR_PAYOUT_RAIL_KEY` (sponsor HTTP rail); otherwise the sim rail.
 async fn rail_send(insn: &PayoutInstruction) -> Result<PayoutResult, RailError> {
-    let url = std::env::var("ZYVOR_PAYOUT_RAIL_URL").ok().filter(|u| !u.is_empty());
+    let url = std::env::var("ZYVOR_PAYOUT_RAIL_URL")
+        .ok()
+        .filter(|u| !u.is_empty());
     let key = std::env::var("ZYVOR_PAYOUT_RAIL_KEY").unwrap_or_default();
     match url {
         Some(base) => {
@@ -190,10 +193,7 @@ pub struct OpenBatch {
     currency: String,
 }
 
-pub async fn list_batches(
-    State(s): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Value>, ApiError> {
+pub async fn list_batches(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(
@@ -349,7 +349,10 @@ pub async fn open_batch(
     )
     .await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(json!({ "id": id, "status": "open", "currency": ccy }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "status": "open", "currency": ccy })),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -367,10 +370,16 @@ pub async fn add_item(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
     if b.amount_minor <= 0 {
-        return Err(ApiError::invalid("invalid_amount", "amount_minor must be positive"));
+        return Err(ApiError::invalid(
+            "invalid_amount",
+            "amount_minor must be positive",
+        ));
     }
     if !matches!(b.kind.as_str(), "capture" | "refund" | "fee" | "hold") {
-        return Err(ApiError::invalid("invalid_kind", "kind must be capture, refund, fee or hold"));
+        return Err(ApiError::invalid(
+            "invalid_kind",
+            "kind must be capture, refund, fee or hold",
+        ));
     }
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let status: Option<String> =
@@ -380,7 +389,10 @@ pub async fn add_item(
             .await?;
     let status = status.ok_or_else(|| ApiError::not_found("settlement batch"))?;
     if status != "open" {
-        return Err(ApiError::conflict("batch_closed", format!("batch is {status}")));
+        return Err(ApiError::conflict(
+            "batch_closed",
+            format!("batch is {status}"),
+        ));
     }
     let ccy: String = sqlx::query_scalar("SELECT currency FROM settlement_batches WHERE id = $1")
         .bind(&batch_id)
@@ -426,13 +438,11 @@ pub async fn add_item(
             .await?;
         }
         "fee" => {
-            sqlx::query(
-                "UPDATE settlement_batches SET fees_minor = fees_minor + $2 WHERE id = $1",
-            )
-            .bind(&batch_id)
-            .bind(b.amount_minor)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("UPDATE settlement_batches SET fees_minor = fees_minor + $2 WHERE id = $1")
+                .bind(&batch_id)
+                .bind(b.amount_minor)
+                .execute(&mut *tx)
+                .await?;
         }
         "hold" => {
             sqlx::query(
@@ -452,7 +462,9 @@ pub async fn add_item(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({ "id": item_id, "batch_id": batch_id, "kind": b.kind, "amount_minor": b.amount_minor })))
+    Ok(Json(
+        json!({ "id": item_id, "batch_id": batch_id, "kind": b.kind, "amount_minor": b.amount_minor }),
+    ))
 }
 
 pub async fn release_batch(
@@ -482,7 +494,10 @@ async fn release_batch_inner(
     let (status, ccy, cap, refn, fees, holds, net) =
         row.ok_or_else(|| ApiError::not_found("settlement batch"))?;
     if status != "open" {
-        return Err(ApiError::conflict("batch_not_open", format!("batch is {status}")));
+        return Err(ApiError::conflict(
+            "batch_not_open",
+            format!("batch is {status}"),
+        ));
     }
     let delay: i32 = sqlx::query_scalar(
         "SELECT COALESCE(settlement_delay_days, 1) FROM tenant_settings WHERE tenant_id = $1",
@@ -502,7 +517,9 @@ async fn release_batch_inner(
         if !ready {
             return Err(ApiError::conflict(
                 "settlement_delay",
-                format!("batch cannot release until {delay} day(s) after it was opened (settlement_delay_days)"),
+                format!(
+                    "batch cannot release until {delay} day(s) after it was opened (settlement_delay_days)"
+                ),
             ));
         }
     }
@@ -515,15 +532,26 @@ async fn release_batch_inner(
         holds_minor: holds,
     };
     if totals.net() != net {
-        return Err(ApiError::conflict("batch_inconsistent", "net_minor does not match totals"));
+        return Err(ApiError::conflict(
+            "batch_inconsistent",
+            "net_minor does not match totals",
+        ));
     }
     if net <= 0 {
-        return Err(ApiError::invalid("nothing_to_release", "batch net must be positive"));
+        return Err(ApiError::invalid(
+            "nothing_to_release",
+            "batch net must be positive",
+        ));
     }
     if cap > 0 {
         post_escrow_available(cap, currency)
             .map_err(zyvor_ledger::StoreError::from)?
-            .post(&mut tx, tenant_id, &format!("escrow_avail:{batch_id}"), None)
+            .post(
+                &mut tx,
+                tenant_id,
+                &format!("escrow_avail:{batch_id}"),
+                None,
+            )
             .await?;
     }
     sqlx::query("UPDATE settlement_batches SET status = 'releasing' WHERE id = $1")
@@ -532,7 +560,12 @@ async fn release_batch_inner(
         .await?;
     post_settlement_release(MoneyMode::Acquire, &org, net, fees, currency)
         .map_err(zyvor_ledger::StoreError::from)?
-        .post(&mut tx, tenant_id, &format!("settle_release:{batch_id}"), None)
+        .post(
+            &mut tx,
+            tenant_id,
+            &format!("settle_release:{batch_id}"),
+            None,
+        )
         .await?;
     tenant::audit(
         &mut tx,
@@ -611,10 +644,7 @@ async fn release_batch_inner(
     Ok(out)
 }
 
-pub async fn escrow_proof(
-    State(s): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Value>, ApiError> {
+pub async fn escrow_proof(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let escrow: i64 = sqlx::query_scalar(
@@ -681,7 +711,10 @@ pub async fn send_payout_rail(
     .await?;
     let r = r.ok_or_else(|| ApiError::not_found("payout"))?;
     if r.4 != "approved" {
-        return Err(ApiError::conflict("not_approved", format!("payout is {}", r.4)));
+        return Err(ApiError::conflict(
+            "not_approved",
+            format!("payout is {}", r.4),
+        ));
     }
     let currency: Currency = r.3.parse().map_err(|_| ApiError::internal())?;
     let amount_minor = r.2;
@@ -712,9 +745,9 @@ pub async fn send_payout_rail(
                 .unwrap_or_else(|| format!("{:?}", result.status)),
         ));
     }
-    let bank_ref = result.rail_ref.unwrap_or_else(|| {
-        format!("RAIL{}", &payout_id[payout_id.len().saturating_sub(8)..])
-    });
+    let bank_ref = result
+        .rail_ref
+        .unwrap_or_else(|| format!("RAIL{}", &payout_id[payout_id.len().saturating_sub(8)..]));
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let r: (String, String, i64, String, String) = sqlx::query_as(
         "SELECT id, vendor_id, amount_minor, currency, status FROM payouts WHERE id = $1 FOR UPDATE",
@@ -723,7 +756,10 @@ pub async fn send_payout_rail(
     .fetch_one(&mut *tx)
     .await?;
     if r.4 != "approved" {
-        return Err(ApiError::conflict("not_approved", format!("payout is {}", r.4)));
+        return Err(ApiError::conflict(
+            "not_approved",
+            format!("payout is {}", r.4),
+        ));
     }
     let ccy: Currency = r.3.parse().map_err(|_| ApiError::internal())?;
     let source: String = sqlx::query_scalar("SELECT source FROM payouts WHERE id = $1")

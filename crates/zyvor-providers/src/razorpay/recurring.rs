@@ -75,9 +75,8 @@ impl Razorpay {
                 .map_err(classify)?,
         )
         .await?;
-        let order_id = text(&order["id"]).ok_or_else(|| {
-            ProviderError::Uncertain("recurring order response had no id".into())
-        })?;
+        let order_id = text(&order["id"])
+            .ok_or_else(|| ProviderError::Uncertain("recurring order response had no id".into()))?;
         // Prefer an auth link if present; otherwise hosted checkout params for the payer.
         let auth_uri = order["upi"]["intent_url"]
             .as_str()
@@ -203,9 +202,8 @@ impl Razorpay {
                 .map_err(classify)?,
         )
         .await?;
-        let order_id = text(&order["id"]).ok_or_else(|| {
-            ProviderError::Uncertain("debit order response had no id".into())
-        })?;
+        let order_id = text(&order["id"])
+            .ok_or_else(|| ProviderError::Uncertain("debit order response had no id".into()))?;
         let pay_body = json!({
             "amount": req.amount_minor,
             "currency": req.currency.code(),

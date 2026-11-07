@@ -5,3 +5,8 @@ useDefault = true
 [[allowlists]]
 description = "maskKey docs and tests use obviously fake sk_test_ placeholders"
 paths = ['''apps/(dashboard|zyvor-console)/lib/format(\.test)?\.ts''']
+
+[[allowlists]]
+description = "CI compose job uses a fixed 64-hex fixture master key (not a live secret)"
+paths = ['''\.github/workflows/ci\.yml''']
+regexes = ['''ZYVOR_MASTER_KEY''']

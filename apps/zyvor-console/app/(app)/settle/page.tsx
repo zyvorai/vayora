@@ -43,9 +43,9 @@ export default async function Settle() {
       )}
 
       {mode === "acquire" && (
-        <form action={openSettlementBatch} style={{ marginBottom: 24 }}>
-          <button type="submit" className="pill">Open INR batch</button>
-        </form>
+        <div style={{ marginBottom: 24 }}>
+          <Act action={openSettlementBatch} label="Open INR batch" primary />
+        </div>
       )}
 
       <h2>Batches</h2>

@@ -15,3 +15,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+# Paise amounts use Indian-style groups (`50_000_00` = ₹50,000.00).
+[workspace.lints.clippy]
+inconsistent_digit_grouping = "allow"

@@ -80,7 +80,11 @@ pub struct HttpPayoutRail {
 }
 
 impl HttpPayoutRail {
-    pub fn new(base_url: impl Into<String>, api_key: impl Into<String>, timeout: std::time::Duration) -> Self {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        timeout: std::time::Duration,
+    ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
@@ -175,7 +179,10 @@ impl PayoutRail for SimPayoutRail {
     async fn send(&self, insn: &PayoutInstruction) -> Result<PayoutResult, RailError> {
         Ok(PayoutResult {
             status: PayoutRailStatus::Settled,
-            rail_ref: Some(format!("SIMUTR{}", &insn.payout_id[insn.payout_id.len().saturating_sub(8)..])),
+            rail_ref: Some(format!(
+                "SIMUTR{}",
+                &insn.payout_id[insn.payout_id.len().saturating_sub(8)..]
+            )),
             failure_reason: None,
             raw: serde_json::json!({ "sim": true }),
         })
@@ -184,7 +191,10 @@ impl PayoutRail for SimPayoutRail {
     async fn fetch(&self, payout_id: &str) -> Result<PayoutResult, RailError> {
         Ok(PayoutResult {
             status: PayoutRailStatus::Settled,
-            rail_ref: Some(format!("SIMUTR{}", &payout_id[payout_id.len().saturating_sub(8)..])),
+            rail_ref: Some(format!(
+                "SIMUTR{}",
+                &payout_id[payout_id.len().saturating_sub(8)..]
+            )),
             failure_reason: None,
             raw: serde_json::json!({ "sim": true }),
         })
@@ -206,7 +216,10 @@ impl BatchTotals {
 }
 
 /// Move in-flight escrow to available after the sponsor confirms capture clearing.
-pub fn post_escrow_available(amount_minor: i64, currency: Currency) -> Result<Transaction, LedgerError> {
+pub fn post_escrow_available(
+    amount_minor: i64,
+    currency: Currency,
+) -> Result<Transaction, LedgerError> {
     Transaction::new(vec![
         Entry::debit(accounts::ESCROW_AVAILABLE, amount_minor, currency),
         Entry::credit(accounts::ESCROW_IN_FLIGHT, amount_minor, currency),
@@ -236,7 +249,11 @@ pub fn post_settlement_release(
         currency,
     )];
     if net_minor > 0 {
-        entries.push(Entry::credit(accounts::SETTLEMENT_CLEARING, net_minor, currency));
+        entries.push(Entry::credit(
+            accounts::SETTLEMENT_CLEARING,
+            net_minor,
+            currency,
+        ));
     }
     if fee_minor > 0 {
         entries.push(Entry::credit(accounts::FEE_INCOME, fee_minor, currency));
@@ -245,7 +262,10 @@ pub fn post_settlement_release(
 }
 
 /// After the rail confirms the bank credit: clearing → bank (merchant received funds).
-pub fn post_settlement_banked(net_minor: i64, currency: Currency) -> Result<Transaction, LedgerError> {
+pub fn post_settlement_banked(
+    net_minor: i64,
+    currency: Currency,
+) -> Result<Transaction, LedgerError> {
     Transaction::new(vec![
         Entry::debit(accounts::SETTLEMENT_CLEARING, net_minor, currency),
         Entry::credit(accounts::BANK, net_minor, currency),

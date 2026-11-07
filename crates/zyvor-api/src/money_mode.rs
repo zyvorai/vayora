@@ -8,7 +8,10 @@ use zyvor_ledger::MoneyMode;
 
 use crate::{ApiError, AppState, auth::Auth, tenant};
 
-pub async fn load_for_tenant(conn: &mut PgConnection, tenant_id: &str) -> Result<MoneyMode, ApiError> {
+pub async fn load_for_tenant(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+) -> Result<MoneyMode, ApiError> {
     let mode: String = sqlx::query_scalar(
         "SELECT o.money_mode FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1",
     )
@@ -30,7 +33,10 @@ pub async fn organisation_id(conn: &mut PgConnection, tenant_id: &str) -> Result
 }
 
 /// Acquire mode may not take live payments until KYC is approved.
-pub async fn acquire_live_allowed(conn: &mut PgConnection, tenant_id: &str) -> Result<(), ApiError> {
+pub async fn acquire_live_allowed(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+) -> Result<(), ApiError> {
     let (mode, env, kyc): (String, String, String) = sqlx::query_as(
         "SELECT o.money_mode, t.env, o.acquire_kyc_status
          FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1",
@@ -87,9 +93,10 @@ pub async fn set_money_mode(
     Json(b): Json<SetMoneyMode>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
-    let mode: MoneyMode = b.money_mode.parse().map_err(|e: String| {
-        ApiError::invalid("invalid_money_mode", e)
-    })?;
+    let mode: MoneyMode = b
+        .money_mode
+        .parse()
+        .map_err(|e: String| ApiError::invalid("invalid_money_mode", e))?;
     if let Some(d) = b.settlement_delay_days
         && !(0..=7).contains(&d)
     {

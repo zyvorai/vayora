@@ -6,10 +6,7 @@ use serde_json::{Value, json};
 
 use crate::{ApiError, AppState, auth::Auth, money_mode, tenant};
 
-pub async fn get_status(
-    State(s): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Value>, ApiError> {
+pub async fn get_status(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let org = money_mode::organisation_id(&mut tx, &auth.tenant_id).await?;
@@ -76,5 +73,7 @@ pub async fn set_status(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({ "organisation_id": org, "acquire_kyc_status": b.status })))
+    Ok(Json(
+        json!({ "organisation_id": org, "acquire_kyc_status": b.status }),
+    ))
 }

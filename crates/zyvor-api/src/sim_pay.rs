@@ -62,7 +62,10 @@ pub async fn pay(State(s): State<AppState>, Json(b): Json<Pay>) -> Result<Json<V
 
 /// Test mode only: the next refund through the in-process simulator fails once (so the failed-refund
 /// queue and retry can be exercised). Digits ending in `13` also fail without this call.
-pub async fn fail_next_refund(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
+pub async fn fail_next_refund(
+    State(s): State<AppState>,
+    auth: Auth,
+) -> Result<Json<Value>, ApiError> {
     auth.require("refunds:write")?;
     if auth.env != "test" {
         return Err(ApiError::invalid(

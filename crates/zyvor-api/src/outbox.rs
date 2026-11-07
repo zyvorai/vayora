@@ -49,6 +49,7 @@ fn backoff(attempts: i32) -> f64 {
     (5i64.saturating_mul(1i64 << attempts.clamp(0, 20))).min(3600) as f64
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn record_attempt(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: &str,

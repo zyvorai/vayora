@@ -50,9 +50,7 @@ pub fn validate(r: &Rules) -> Result<(), ApiError> {
             "blocked_vpas: up to 200 entries like name@bank or @bank",
         ));
     }
-    if r.score_block_below
-        .is_some_and(|n| !(0..=100).contains(&n))
-    {
+    if r.score_block_below.is_some_and(|n| !(0..=100).contains(&n)) {
         return Err(ApiError::invalid(
             "invalid_risk_rules",
             "score_block_below must be 0-100",
@@ -206,18 +204,20 @@ mod tests {
             vpa: Some("fail@test".into()),
         });
         assert!(high > low);
-        assert!(score_blocked(
-            &Rules {
-                score_block_below: Some(50),
-                ..Default::default()
-            },
-            &ScoreInput {
-                amount_minor: 50_000_00,
-                failed_last_hour: 3,
-                attempts_on_intent: 4,
-                vpa: Some("fail@test".into()),
-            }
-        )
-        .is_some());
+        assert!(
+            score_blocked(
+                &Rules {
+                    score_block_below: Some(50),
+                    ..Default::default()
+                },
+                &ScoreInput {
+                    amount_minor: 50_000_00,
+                    failed_last_hour: 3,
+                    attempts_on_intent: 4,
+                    vpa: Some("fail@test".into()),
+                }
+            )
+            .is_some()
+        );
     }
 }

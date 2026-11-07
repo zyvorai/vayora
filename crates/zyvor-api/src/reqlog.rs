@@ -18,10 +18,7 @@ pub struct Meta {
     pub actor: String,
 }
 
-pub async fn list(
-    State(s): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Value>, ApiError> {
+pub async fn list(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("admin")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(

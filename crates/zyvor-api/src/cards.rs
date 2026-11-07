@@ -28,10 +28,10 @@ pub async fn store_token(
     Json(raw): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("payments:write")?;
-    reject_raw_card_fields(&raw).map_err(|e| ApiError::invalid("raw_card_forbidden", e.to_string()))?;
-    let b: StoreToken = serde_json::from_value(raw).map_err(|e| {
-        ApiError::invalid("invalid_token", e.to_string())
-    })?;
+    reject_raw_card_fields(&raw)
+        .map_err(|e| ApiError::invalid("raw_card_forbidden", e.to_string()))?;
+    let b: StoreToken = serde_json::from_value(raw)
+        .map_err(|e| ApiError::invalid("invalid_token", e.to_string()))?;
     let tok = NetworkToken {
         id: new_id("tok"),
         network_token_ref: b.network_token_ref.trim().to_string(),
@@ -62,8 +62,8 @@ pub async fn store_token(
     .bind(&tok.network_token_ref)
     .bind(&tok.last4)
     .bind(&tok.brand)
-    .bind(tok.exp_month.map(|m| i32::from(m)))
-    .bind(tok.exp_year.map(|y| i32::from(y)))
+    .bind(tok.exp_month.map(i32::from))
+    .bind(tok.exp_year.map(i32::from))
     .execute(&mut *tx)
     .await
     .map_err(|e| match e {
@@ -94,10 +94,7 @@ pub async fn store_token(
     ))
 }
 
-pub async fn list_tokens(
-    State(s): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Value>, ApiError> {
+pub async fn list_tokens(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(

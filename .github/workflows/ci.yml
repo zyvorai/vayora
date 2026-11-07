@@ -68,7 +68,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
+      # Do not install the removed SDK `tools` package (setup-android default).
       - uses: android-actions/setup-android@v3
+        with: { packages: "platform-tools platforms;android-35 build-tools;35.0.0" }
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests and debug APKs
         working-directory: apps/android
@@ -94,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check Prometheus alert rules
-        run: docker run --rm -v "$PWD/deploy/zyvor:/cfg:ro" prom/prometheus:v2.54.1 promtool check rules /cfg/alerts.yml
+        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/zyvor:/cfg:ro" prom/prometheus:v2.54.1 check rules /cfg/alerts.yml
   js:
     runs-on: ubuntu-latest
     steps:

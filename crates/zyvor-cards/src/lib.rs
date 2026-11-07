@@ -79,7 +79,10 @@ pub fn validate_token_ref(t: &NetworkToken) -> Result<(), CardsError> {
 }
 
 /// Build a charge instruction for the acquirer / sponsor — still no PAN.
-pub fn charge_instruction(token: &NetworkToken, req: &ChargeWithToken) -> Result<serde_json::Value, CardsError> {
+pub fn charge_instruction(
+    token: &NetworkToken,
+    req: &ChargeWithToken,
+) -> Result<serde_json::Value, CardsError> {
     validate_token_ref(token)?;
     if token.id != req.token_id && token.network_token_ref != req.network_token_ref {
         return Err(CardsError::InvalidToken("token mismatch".into()));
@@ -105,7 +108,10 @@ mod tests {
     #[test]
     fn rejects_pan() {
         let v = serde_json::json!({ "pan": "4111111111111111", "cvv": "123" });
-        assert_eq!(reject_raw_card_fields(&v), Err(CardsError::RawCardDataForbidden));
+        assert_eq!(
+            reject_raw_card_fields(&v),
+            Err(CardsError::RawCardDataForbidden)
+        );
     }
 
     #[test]

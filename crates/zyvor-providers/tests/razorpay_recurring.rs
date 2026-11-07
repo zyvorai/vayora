@@ -129,7 +129,12 @@ async fn create_fetch_debit_and_revoke_against_local_mock() {
         .unwrap();
     assert_eq!(debit.state.status, PaymentStatus::Captured);
 
-    route(&s, "DELETE /v1/tokens/token_abc", 200, json!({ "deleted": true }));
+    route(
+        &s,
+        "DELETE /v1/tokens/token_abc",
+        200,
+        json!({ "deleted": true }),
+    );
     // revoke fetches first — keep GET /v1/orders returning the token
     let rev = rz.revoke_mandate("mnd_1").await.unwrap();
     assert_eq!(rev.status, MandateStatus::Revoked);

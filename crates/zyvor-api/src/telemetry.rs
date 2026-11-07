@@ -66,11 +66,7 @@ pub fn init(service: &'static str) -> Guard {
 
 /// Wrap each request in a span and give it a request id. When Auth runs, also record a row in
 /// `api_request_log` (no bodies).
-pub async fn request_span(
-    State(s): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
+pub async fn request_span(State(s): State<AppState>, mut req: Request, next: Next) -> Response {
     let route = req
         .extensions()
         .get::<MatchedPath>()

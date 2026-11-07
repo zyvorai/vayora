@@ -121,8 +121,8 @@ fn redact_vpas(s: &str) -> String {
             let handle: String = chars[i + 1..b].iter().collect();
             // UPI handles are alphabetic bank codes (okhdfcbank, ybl), not email domains.
             if local_len >= 2 && handle.len() >= 2 && b < chars.len().saturating_add(1) {
-                let boundary_ok = b == chars.len()
-                    || !(chars[b].is_ascii_alphanumeric() || chars[b] == '.');
+                let boundary_ok =
+                    b == chars.len() || !(chars[b].is_ascii_alphanumeric() || chars[b] == '.');
                 if boundary_ok {
                     out.truncate(a);
                     out.push_str("[REDACTED]@");
@@ -231,7 +231,10 @@ mod tests {
             redact_text("card 4111 1111 1111 1111 ok"),
             "card ****1111 ok"
         );
-        assert_eq!(redact_text("pay shop@okhdfcbank"), "pay [REDACTED]@okhdfcbank");
+        assert_eq!(
+            redact_text("pay shop@okhdfcbank"),
+            "pay [REDACTED]@okhdfcbank"
+        );
         assert_eq!(redact_text("plain log line"), "plain log line");
     }
 }
