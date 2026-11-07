@@ -34,6 +34,28 @@ class PayExtrasTest {
     }
 
     @Test
+    fun requestOpenAndFixed() {
+        val open = RequestPayload.makeOpen("asha@okzyvor", "Asha K")
+        val p = RequestPayload.parse(open)
+        assertEquals("asha@okzyvor", p.payee)
+        assertNull(p.amount)
+        val fixed = RequestPayload.make("asha@okzyvor", "Asha", Money(10_00), "Tea")
+        assertEquals(10_00L, RequestPayload.parse(fixed).amount?.minor)
+    }
+
+    @Test
+    fun tipAndHourly() {
+        assertEquals(50L, Tip.amount(1000, 5))
+        assertEquals(0L, Tip.amount(0, 10))
+        val day = LocalDate.of(2026, 10, 31)
+        val zone = java.time.ZoneId.of("Asia/Kolkata")
+        val nine = day.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val t = HourlyTotals.make(listOf(nine to 100L, nine to 50L), day, zone)
+        assertEquals(150L, t[9])
+        assertEquals("9a", HourlyTotals.label(9))
+    }
+
+    @Test
     fun voiceEnglishAndHindi() {
         val asha = Payee("asha@x", "Asha")
         val ravi = Payee("ravi@x", "Ravi Kumar")

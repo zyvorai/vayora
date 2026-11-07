@@ -4,8 +4,8 @@ Kotlin + Jetpack Compose counterparts to the [iPhone apps](../ios/README.md). **
 
 | Module | What it is |
 |---|---|
-| `pay` | **Vayora Pay** — scan/paste pay or mandate/circle QR, voice pay, jars, budgets, Circle, biometric lock |
-| `merchant` | **Vayora Merchant** — Collect → QR, Payments, Owed, Cashflow/GST, AutoPay, end of day, setup-QR |
+| `pay` | **Vayora Pay** — scan/paste pay, request, mandate or circle QR; voice; jars; budgets; Receive; lock |
+| `merchant` | **Vayora Merchant** — Collect (tips/repeat) → QR, Payments (hourly + share), Owed, Cashflow, AutoPay, end of day |
 | `vayora-kit` | Money/UPI/mandate/circle/voice/budgets/jars + ops client |
 | `vayora-ui` | Dark-first tokens and shared Compose screens |
 

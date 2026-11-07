@@ -36,25 +36,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import java.time.LocalDate
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import dev.zyvor.vayora.kit.Ageing
 import dev.zyvor.vayora.kit.Cashflow
 import dev.zyvor.vayora.kit.ClosingInfo
 import dev.zyvor.vayora.kit.ConnectionVerdict
 import dev.zyvor.vayora.kit.DisputeRow
 import dev.zyvor.vayora.kit.GstSummary
+import dev.zyvor.vayora.kit.HourlyTotals
 import dev.zyvor.vayora.kit.MandateInfo
 import dev.zyvor.vayora.kit.Money
 import dev.zyvor.vayora.kit.PendingApproval
+import dev.zyvor.vayora.kit.ReceiptText
 import dev.zyvor.vayora.kit.ReconCase
 import dev.zyvor.vayora.kit.ReminderDraft
 import dev.zyvor.vayora.kit.SettlementInfo
 import dev.zyvor.vayora.kit.SetupPayload
+import dev.zyvor.vayora.kit.Tip
 import dev.zyvor.vayora.kit.VayoraClient
 import dev.zyvor.vayora.ui.AmbientBackground
 import dev.zyvor.vayora.ui.AutoPayListScreen
@@ -76,7 +81,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -108,7 +112,10 @@ private fun MerchantApp() {
     var route by remember { mutableStateOf<Route>(Route.Collect) }
     var amountText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var tipPercent by remember { mutableIntStateOf(0) }
+    var lastAmount by remember { mutableStateOf<String?>(null) }
     var rows by remember { mutableStateOf<List<PaymentRow>>(emptyList()) }
+    var paidAt by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var ageing by remember { mutableStateOf<Ageing?>(null) }
     var drafts by remember { mutableStateOf<List<ReminderDraft>>(emptyList()) }
@@ -281,44 +288,62 @@ private fun MerchantApp() {
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (val r = route) {
-                Route.Collect -> CollectKeypadScreen(
-                    text = amountText,
-                    note = note,
-                    canContinue = canContinue(),
-                    onDigit = ::onDigit,
-                    onPoint = ::onPoint,
-                    onDelete = ::onDelete,
-                    onChip = { note = if (note == it) "" else it },
-                    onShowQr = {
-                        val money = Money.parseDecimal(amountText) ?: return@CollectKeypadScreen
-                        if (demo()) {
-                            val fake = "upi://pay?pa=sandbox@zyvor-sim&pn=Vayora%20Sandbox&am=${money.decimalString}&cu=INR&tn=demo_${System.currentTimeMillis()}"
-                            route = Route.Qr(money, note, null, fake, false)
-                            scope.launch {
-                                delay(3500)
-                                if (route is Route.Qr) {
-                                    route = Route.Qr(money, note, null, fake, true)
-                                    rows = listOf(
-                                        PaymentRow("demo_${System.currentTimeMillis()}", money, "Just now", note, PaymentRowState.Succeeded),
-                                    ) + rows
-                                }
-                            }
-                        } else {
-                            scope.launch {
-                                try {
-                                    error = null
-                                    val (intent, attempt) = withContext(Dispatchers.IO) {
-                                        val i = client().createIntent(money.minor, description = note.ifBlank { null })
-                                        i to client().createAttempt(i.id)
+                Route.Collect -> {
+                    val base = Money.parseDecimal(amountText)
+                    val tipMinor = Tip.amount(base?.minor ?: 0, tipPercent)
+                    CollectKeypadScreen(
+                        text = amountText,
+                        note = note,
+                        tipPercent = tipPercent,
+                        tipLabel = if (tipMinor > 0 && base != null) {
+                            "Total ${Money(base.minor + tipMinor).display} incl. tip ${Money(tipMinor).display}"
+                        } else null,
+                        lastAmountLabel = lastAmount?.let { Money.parseDecimal(it)?.display },
+                        canContinue = canContinue(),
+                        onDigit = ::onDigit,
+                        onPoint = ::onPoint,
+                        onDelete = ::onDelete,
+                        onChip = { note = if (note == it) "" else it },
+                        onTip = { tipPercent = it },
+                        onRepeatLast = { lastAmount?.let { amountText = it } },
+                        onShowQr = {
+                            val moneyBase = Money.parseDecimal(amountText) ?: return@CollectKeypadScreen
+                            val tip = Tip.amount(moneyBase.minor, tipPercent)
+                            val money = Money(moneyBase.minor + tip)
+                            var payNote = note
+                            if (tip > 0) payNote = (if (note.isBlank()) "" else "$note · ") + "incl. tip ${Money(tip).display}"
+                            lastAmount = amountText
+                            if (demo()) {
+                                val fake = "upi://pay?pa=sandbox@zyvor-sim&pn=Vayora%20Sandbox&am=${money.decimalString}&cu=INR&tn=demo_${System.currentTimeMillis()}"
+                                route = Route.Qr(money, payNote, null, fake, false)
+                                scope.launch {
+                                    delay(3500)
+                                    if (route is Route.Qr) {
+                                        val id = "demo_${System.currentTimeMillis()}"
+                                        route = Route.Qr(money, payNote, null, fake, true)
+                                        rows = listOf(
+                                            PaymentRow(id, money, "Just now", payNote, PaymentRowState.Succeeded),
+                                        ) + rows
+                                        paidAt = paidAt + (id to System.currentTimeMillis())
                                     }
-                                    route = Route.Qr(money, note, intent.id, attempt.upiURI, false)
-                                } catch (e: Exception) {
-                                    error = e.message
+                                }
+                            } else {
+                                scope.launch {
+                                    try {
+                                        error = null
+                                        val (intent, attempt) = withContext(Dispatchers.IO) {
+                                            val i = client().createIntent(money.minor, description = payNote.ifBlank { null })
+                                            i to client().createAttempt(i.id)
+                                        }
+                                        route = Route.Qr(money, payNote, intent.id, attempt.upiURI, false)
+                                    } catch (e: Exception) {
+                                        error = e.message
+                                    }
                                 }
                             }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
                 Route.Payments -> Column(Modifier.fillMaxSize()) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         TextButton(onClick = {
@@ -330,7 +355,31 @@ private fun MerchantApp() {
                             route = Route.AutoPay
                         }) { Text("AutoPay", color = Vui.Emerald) }
                     }
-                    PaymentsListScreen(rows)
+                    val hourly = HourlyTotals.make(
+                        rows.filter { it.state == PaymentRowState.Succeeded }.map {
+                            (paidAt[it.id] ?: System.currentTimeMillis()) to it.amount.minor
+                        },
+                        LocalDate.now(ZoneId.of("Asia/Kolkata")),
+                        ZoneId.of("Asia/Kolkata"),
+                    )
+                    PaymentsListScreen(
+                        rows = rows,
+                        hourly = hourly,
+                        onShare = { r ->
+                            val text = ReceiptText.make(
+                                merchant = "Vayora Merchant",
+                                amount = r.amount,
+                                status = if (r.state == PaymentRowState.Succeeded) "succeeded" else r.state.name.lowercase(),
+                                id = r.id,
+                                whenLabel = r.whenLabel,
+                            )
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            ctx.startActivity(Intent.createChooser(send, "Share receipt"))
+                        },
+                    )
                 }
                 Route.Owed -> OwedScreen(
                     ageing = ageing,

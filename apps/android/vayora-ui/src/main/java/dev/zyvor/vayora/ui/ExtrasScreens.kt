@@ -46,6 +46,58 @@ import dev.zyvor.vayora.kit.Money
 import dev.zyvor.vayora.kit.SpendCategory
 
 @Composable
+fun ReceiveScreen(
+    name: String,
+    vpa: String,
+    link: String,
+    onBack: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        AmbientBackground(Brand.Pay)
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("Back", color = Vui.Indigo) }
+                Text("Receive", color = Vui.TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(16.dp))
+            val bmp = remember(link) {
+                runCatching {
+                    val hints = mapOf(EncodeHintType.MARGIN to 1)
+                    val matrix = QRCodeWriter().encode(link, BarcodeFormat.QR_CODE, 512, 512, hints)
+                    Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).also { b ->
+                        for (x in 0 until 512) for (y in 0 until 512) {
+                            b.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                        }
+                    }
+                }.getOrNull()
+            }
+            Box(
+                Modifier
+                    .size(240.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White)
+                    .padding(14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                bmp?.let { Image(it.asImageBitmap(), contentDescription = "Receive QR", modifier = Modifier.fillMaxSize()) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(name.ifBlank { "Your test UPI ID" }, color = Vui.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Text(vpa, color = Vui.TextSecondary, fontSize = 14.sp)
+            Text(
+                "Another Vayora Pay scans this and types the amount. Test wallets only.",
+                color = Vui.TextTertiary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
 fun BudgetsScreen(
     budgets: Budgets,
     statuses: List<BudgetStatus>,

@@ -4,6 +4,12 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 7 November 2026 — Android parity follow-through
+**More iOS test-mode extras on Android**
+- Pay: Receive QR (`vayora://request` open amount), category memory on settle, open-amount typing on review.
+- Merchant: tip chips + repeat last amount on Collect; hourly takings chart; shareable plain-text receipt.
+- Kit: `RequestPayload`, `Tip`, `HourlyTotals`, `ReceiptText`, `CategoryMemory` + tests.
+
 ## 7 November 2026 — Android parity complete (post v0.3.0)
 **In-repo iOS→Android test-mode gaps closed**
 - Kit: connection/setup, mandates, jars, lock/scam hints, budgets, Circle payload, voice parse, payees, ops models + client (circle sim, branches/cash/closings) and unit tests.

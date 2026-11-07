@@ -166,7 +166,7 @@ private fun Quick(title: String, icon: ImageVector, onClick: () -> Unit, modifie
 fun PayReviewScreen(
     name: String,
     payee: String,
-    amount: Money,
+    amount: Money?,
     note: String,
     pin: String,
     onPinChange: (String) -> Unit,
@@ -175,10 +175,13 @@ fun PayReviewScreen(
     busy: Boolean = false,
     error: String? = null,
     budgetWarning: String? = null,
+    amountText: String = "",
+    onAmountTextChange: (String) -> Unit = {},
     circleOptions: List<Pair<String, String>> = emptyList(),
     selectedCircleId: String? = null,
     onSelectCircle: (String?) -> Unit = {},
 ) {
+    val resolved = amount ?: Money.parseDecimal(amountText)
     Box(Modifier.fillMaxSize()) {
         AmbientBackground(Brand.Pay)
         Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -190,7 +193,22 @@ fun PayReviewScreen(
                 Text(name.ifBlank { payee }, color = Vui.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text(payee, color = Vui.TextSecondary, fontSize = 14.sp)
                 Spacer(Modifier.height(16.dp))
-                AmountText(amount, 48)
+                if (amount != null) {
+                    AmountText(amount, 48)
+                } else {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = onAmountTextChange,
+                        label = { Text("Amount ₹", color = Vui.TextSecondary) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Vui.TextPrimary,
+                            unfocusedTextColor = Vui.TextPrimary,
+                            focusedBorderColor = Vui.Indigo,
+                            unfocusedBorderColor = Vui.Hairline,
+                        ),
+                    )
+                }
                 if (note.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(note, color = Vui.TextTertiary, fontSize = 13.sp)
@@ -236,7 +254,7 @@ fun PayReviewScreen(
             Spacer(Modifier.weight(1f))
             Button(
                 onClick = onConfirm,
-                enabled = !busy && pin.length >= 4,
+                enabled = !busy && pin.length >= 4 && resolved != null,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Vui.Indigo, contentColor = Color.White),

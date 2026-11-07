@@ -55,11 +55,16 @@ fun CollectKeypadScreen(
     text: String,
     note: String,
     chips: List<String> = listOf("Tea", "Lunch", "Deposit", "Other"),
+    tipPercent: Int = 0,
+    tipLabel: String? = null,
+    lastAmountLabel: String? = null,
     canContinue: Boolean,
     onDigit: (Int) -> Unit,
     onPoint: () -> Unit,
     onDelete: () -> Unit,
     onChip: (String) -> Unit,
+    onTip: (Int) -> Unit = {},
+    onRepeatLast: () -> Unit = {},
     onShowQr: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -81,6 +86,9 @@ fun CollectKeypadScreen(
                     maxLines = 1,
                 )
             }
+            tipLabel?.let {
+                Text(it, color = Vui.TextSecondary, fontSize = 13.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 chips.forEach { c ->
@@ -97,6 +105,26 @@ fun CollectKeypadScreen(
                         fontSize = 14.sp,
                     )
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                (listOf(0) + TipPercents).forEach { p ->
+                    val on = tipPercent == p
+                    Text(
+                        if (p == 0) "No tip" else "Tip $p%",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (on) Brand.Merchant.glow else Color.White.copy(alpha = 0.10f))
+                            .clickable { onTip(p) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = if (on) Vui.Ink else Vui.TextPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                }
+            }
+            lastAmountLabel?.let {
+                TextButton(onClick = onRepeatLast) { Text("Repeat $it", color = Vui.Emerald) }
             }
             Spacer(Modifier.weight(1f))
             KeyPad(onDigit, onPoint, onDelete)
@@ -118,6 +146,8 @@ fun CollectKeypadScreen(
         }
     }
 }
+
+private val TipPercents = listOf(5, 10, 15)
 
 @Composable
 private fun KeyPad(onDigit: (Int) -> Unit, onPoint: () -> Unit, onDelete: () -> Unit) {
@@ -221,7 +251,12 @@ private fun rememberQrBitmap(content: String, size: Int): Bitmap? {
 }
 
 @Composable
-fun PaymentsListScreen(rows: List<PaymentRow>, onOpen: (PaymentRow) -> Unit = {}) {
+fun PaymentsListScreen(
+    rows: List<PaymentRow>,
+    hourly: LongArray? = null,
+    onOpen: (PaymentRow) -> Unit = {},
+    onShare: (PaymentRow) -> Unit = {},
+) {
     Box(Modifier.fillMaxSize()) {
         AmbientBackground(Brand.Merchant)
         Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -229,6 +264,33 @@ fun PaymentsListScreen(rows: List<PaymentRow>, onOpen: (PaymentRow) -> Unit = {}
                 Text("Payments", color = Vui.TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 TestChip()
+            }
+            hourly?.let { totals ->
+                if (totals.any { it > 0 }) {
+                    val win = HourlyWindow(totals)
+                    val max = totals.maxOrNull()?.coerceAtLeast(1) ?: 1
+                    Spacer(Modifier.height(8.dp))
+                    Text("Today by hour", color = Vui.TextSecondary, fontSize = 13.sp)
+                    Row(
+                        Modifier.fillMaxWidth().height(72.dp).padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        win.forEach { h ->
+                            val frac = (totals[h].toFloat() / max).coerceIn(0f, 1f)
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height((48 * frac).dp.coerceAtLeast(2.dp))
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Vui.Emerald.copy(alpha = 0.85f)),
+                                )
+                                Text(HourlyLabel(h), color = Vui.TextTertiary, fontSize = 9.sp)
+                            }
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(16.dp))
             if (rows.isEmpty()) {
@@ -248,28 +310,51 @@ fun PaymentsListScreen(rows: List<PaymentRow>, onOpen: (PaymentRow) -> Unit = {}
                                 Text(r.amount.display, color = Vui.TextPrimary, fontWeight = FontWeight.SemiBold)
                                 Text(r.whenLabel + if (r.note.isNotBlank()) " · ${r.note}" else "", color = Vui.TextTertiary, fontSize = 12.sp)
                             }
-                            Text(
-                                when (r.state) {
-                                    PaymentRowState.Succeeded -> "Paid"
-                                    PaymentRowState.Processing -> "Waiting"
-                                    PaymentRowState.Refunded -> "Refunded"
-                                    PaymentRowState.PartRefunded -> "Part refunded"
-                                    PaymentRowState.Failed -> "Failed"
-                                },
-                                color = when (r.state) {
-                                    PaymentRowState.Succeeded -> Vui.Emerald
-                                    PaymentRowState.Failed -> Vui.Coral
-                                    else -> Vui.Amber
-                                },
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    when (r.state) {
+                                        PaymentRowState.Succeeded -> "Paid"
+                                        PaymentRowState.Processing -> "Waiting"
+                                        PaymentRowState.Refunded -> "Refunded"
+                                        PaymentRowState.PartRefunded -> "Part refunded"
+                                        PaymentRowState.Failed -> "Failed"
+                                    },
+                                    color = when (r.state) {
+                                        PaymentRowState.Succeeded -> Vui.Emerald
+                                        PaymentRowState.Failed -> Vui.Coral
+                                        else -> Vui.Amber
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                TextButton(onClick = { onShare(r) }) { Text("Share", color = Vui.Emerald, fontSize = 12.sp) }
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+private fun HourlyWindow(totals: LongArray): IntRange {
+    val first = totals.indexOfFirst { it > 0 }
+    val last = totals.indexOfLast { it > 0 }
+    if (first < 0 || last < 0) return 9..17
+    var lo = first
+    var hi = last
+    while (hi - lo + 1 < 6) {
+        if (lo > 0) lo--
+        if (hi - lo + 1 < 6 && hi < 23) hi++
+    }
+    return lo..hi
+}
+
+private fun HourlyLabel(hour: Int): String = when {
+    hour == 0 -> "12a"
+    hour < 12 -> "${hour}a"
+    hour == 12 -> "12p"
+    else -> "${hour - 12}p"
 }
 
 fun PaymentIntent.toRow(): PaymentRow = PaymentRow(
