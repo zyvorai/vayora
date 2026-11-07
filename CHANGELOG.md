@@ -4,12 +4,12 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
-## 7 November 2026 — Android parity (post v0.3.0)
-**In-repo iOS→Android gaps closed (test mode)**
-- Kit: `ConnectionCheck` / `SetupPayload`, `MandatePayload`, `JarBook`, `LockPolicy` / `ScamHints`, ops models (ageing, cashflow, GST, mandates, disputes, recon) + client methods and unit tests.
-- Merchant: Owed (ageing, reminder drafts, approvals, disputes, recon), Cashflow + GST + settlements, AutoPay pause/resume/revoke, setup-QR scan, Test connection.
-- Pay: AutoPay mandate approve/decline (sim), jars, biometric lock, scam hints on review, Test connection.
-- Circle / voice / budgets and physical-device camera remain open. Sponsor LOI, RBI PA, NPCI TPAP, live sandboxes and PCI vault remain external.
+## 7 November 2026 — Android parity complete (post v0.3.0)
+**In-repo iOS→Android test-mode gaps closed**
+- Kit: connection/setup, mandates, jars, lock/scam hints, budgets, Circle payload, voice parse, payees, ops models + client (circle sim, branches/cash/closings) and unit tests.
+- Merchant: Owed, Cashflow/GST/settlements, AutoPay, end of day (cash + close), setup QR, Test connection.
+- Pay: mandate approve, jars, budgets (review warning), Circle create/join/pay-from, voice pay, biometric lock, scam hints, Test connection.
+- Physical-device camera/voice CI and EXTERNAL (sponsor LOI, RBI PA, NPCI TPAP, live sandboxes, PCI vault) remain open.
 
 ## 7 November 2026 — v0.3.0
 **Android apps (Compose, like iOS)**

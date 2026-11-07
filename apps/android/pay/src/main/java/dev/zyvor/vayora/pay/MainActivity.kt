@@ -1,10 +1,13 @@
 package dev.zyvor.vayora.pay
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.Box
@@ -49,17 +52,29 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.zyvor.vayora.kit.BudgetCheck
+import dev.zyvor.vayora.kit.Budgets
+import dev.zyvor.vayora.kit.CirclePayload
+import dev.zyvor.vayora.kit.CircleRecord
+import dev.zyvor.vayora.kit.CircleRole
 import dev.zyvor.vayora.kit.ConnectionVerdict
 import dev.zyvor.vayora.kit.JarBook
 import dev.zyvor.vayora.kit.LockPolicy
 import dev.zyvor.vayora.kit.MandatePayload
 import dev.zyvor.vayora.kit.Money
+import dev.zyvor.vayora.kit.Payee
+import dev.zyvor.vayora.kit.PayeeBook
 import dev.zyvor.vayora.kit.ScamHints
+import dev.zyvor.vayora.kit.SpendCategory
 import dev.zyvor.vayora.kit.TestWallet
 import dev.zyvor.vayora.kit.UPIPayload
 import dev.zyvor.vayora.kit.VayoraClient
+import dev.zyvor.vayora.kit.VoiceCommand
+import dev.zyvor.vayora.kit.toSpendEntry
 import dev.zyvor.vayora.ui.AmbientBackground
 import dev.zyvor.vayora.ui.Brand
+import dev.zyvor.vayora.ui.BudgetsScreen
+import dev.zyvor.vayora.ui.CircleScreen
 import dev.zyvor.vayora.ui.ConnectionRow
 import dev.zyvor.vayora.ui.JarsScreen
 import dev.zyvor.vayora.ui.MandateApproveScreen
@@ -68,6 +83,7 @@ import dev.zyvor.vayora.ui.PayHomeScreen
 import dev.zyvor.vayora.ui.PayReviewScreen
 import dev.zyvor.vayora.ui.ScannerScreen
 import dev.zyvor.vayora.ui.TestChip
+import dev.zyvor.vayora.ui.VoicePayScreen
 import dev.zyvor.vayora.ui.Vui
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,8 +103,12 @@ private sealed interface PayRoute {
     data object Settings : PayRoute
     data object Paste : PayRoute
     data object Scan : PayRoute
+    data object ScanCircle : PayRoute
     data object Jars : PayRoute
-    data class Review(val payload: UPIPayload, val raw: String) : PayRoute
+    data object Budgets : PayRoute
+    data object Circle : PayRoute
+    data object Voice : PayRoute
+    data class Review(val payload: UPIPayload, val raw: String, val transfer: Boolean = false) : PayRoute
     data class Mandate(val payload: MandatePayload, val raw: String) : PayRoute
 }
 
@@ -99,6 +119,23 @@ private fun PayApp() {
     val prefs = remember { ctx.getSharedPreferences("vayora_pay", Context.MODE_PRIVATE) }
     val wallet = remember { TestWallet(prefs.getLong("balance", 50_000_00L)) }
     val jars = remember { JarBook() }
+    val payees = remember {
+        PayeeBook(
+            listOf(
+                Payee("asha@zyvor-test", "Asha"),
+                Payee("ravi@zyvor-test", "Ravi Kumar"),
+                Payee("ravi2@zyvor-test", "Ravi Shah"),
+            ),
+        )
+    }
+    var budgets by remember { mutableStateOf(loadBudgets(prefs)) }
+    var circles by remember { mutableStateOf(loadCircles(prefs)) }
+    var circleQr by remember { mutableStateOf<String?>(null) }
+    var circleMsg by remember { mutableStateOf<String?>(null) }
+    var selectedCircleId by remember { mutableStateOf<String?>(null) }
+    var voiceText by remember { mutableStateOf("") }
+    var voiceMsg by remember { mutableStateOf<String?>(null) }
+    var hearing by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
     var route by remember { mutableStateOf<PayRoute>(PayRoute.Home) }
     var paste by remember { mutableStateOf("") }
@@ -120,6 +157,41 @@ private fun PayApp() {
     fun refresh() {
         prefs.edit().putLong("balance", wallet.balanceMinor).apply()
         tick++
+    }
+    fun saveBudgets(b: Budgets) {
+        budgets = b
+        prefs.edit().putString("budgets", b.limits.entries.joinToString(";") { "${it.key}=${it.value}" }).apply()
+    }
+    fun saveCircles(list: List<CircleRecord>) {
+        circles = list
+        prefs.edit().putString(
+            "circles",
+            list.joinToString("|") {
+                listOf(it.id, it.role.name, it.other, it.perPaymentMinor, it.totalMinor, it.status, it.remainingMinor).joinToString(",")
+            },
+        ).apply()
+    }
+    fun spendEntries() = wallet.history.map {
+        it.toSpendEntry(SpendCategory.guess(it.name, "", false))
+    }
+
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        hearing = false
+        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
+        voiceText = spoken
+        when (val parsed = VoiceCommand.parse(spoken, payees.all)) {
+            is VoiceCommand.Result.Pay -> {
+                val raw = "upi://pay?pa=${parsed.payee.vpa}&pn=${parsed.payee.name}&am=${parsed.amount.decimalString}&cu=INR"
+                route = PayRoute.Review(UPIPayload.parse(raw), raw, transfer = true)
+                pin = ""
+                payError = null
+                voiceMsg = null
+            }
+            is VoiceCommand.Result.Ambiguous -> voiceMsg = "Which ${parsed.payees.joinToString { it.name }}?"
+            is VoiceCommand.Result.NoPayee -> voiceMsg = if (parsed.name.isBlank()) "Say who to pay." else "No saved payee matching “${parsed.name}”."
+            VoiceCommand.Result.NoAmount -> voiceMsg = "Say an amount too."
+            VoiceCommand.Result.NotAPayment -> voiceMsg = "That didn’t sound like a payment."
+        }
     }
 
     fun unlock() {
@@ -223,6 +295,15 @@ private fun PayApp() {
                     recent = wallet.history,
                     onScan = { route = PayRoute.Scan },
                     onPaste = { route = PayRoute.Paste },
+                    onVoice = { route = PayRoute.Voice; voiceMsg = null; voiceText = "" },
+                    onSend = {
+                        val p = payees.sorted.firstOrNull()
+                        if (p != null) {
+                            val raw = "upi://pay?pa=${p.vpa}&pn=${p.name}&am=100.00&cu=INR"
+                            route = PayRoute.Review(UPIPayload.parse(raw), raw, transfer = true)
+                            pin = ""; payError = null
+                        }
+                    },
                 )
                 PayRoute.Settings -> SettingsScreen(
                     server = server(),
@@ -240,6 +321,8 @@ private fun PayApp() {
                         }
                     },
                     onJars = { route = PayRoute.Jars },
+                    onBudgets = { route = PayRoute.Budgets },
+                    onCircle = { route = PayRoute.Circle; circleMsg = null },
                     onLockChange = {
                         lockEnabled = it
                         prefs.edit().putBoolean("lock", it).apply()
@@ -248,6 +331,72 @@ private fun PayApp() {
                     onSave = { s, d ->
                         prefs.edit().putString("server", s).putBoolean("demo", d).apply()
                     },
+                )
+                PayRoute.Budgets -> BudgetsScreen(
+                    budgets = budgets,
+                    statuses = BudgetCheck.statuses(spendEntries(), budgets),
+                    onSet = { c, m -> saveBudgets(budgets.set(c, m)); tick++ },
+                    onBack = { route = PayRoute.Settings; tab = 2 },
+                )
+                PayRoute.Circle -> CircleScreen(
+                    circles = circles,
+                    message = circleMsg,
+                    showQr = circleQr,
+                    onCreate = { delegate, per, total ->
+                        scope.launch {
+                            try {
+                                val id = if (demo()) {
+                                    "cir_${System.currentTimeMillis().toString().takeLast(8)}"
+                                } else {
+                                    withContext(Dispatchers.IO) {
+                                        VayoraClient(server()).simCircleCreate("Me", delegate, per, total)
+                                    }
+                                }
+                                val rec = CircleRecord(id, CircleRole.Primary, delegate, per.minor, total.minor)
+                                saveCircles(circles + rec)
+                                circleQr = CirclePayload.make(id, "Me", per, total)
+                                circleMsg = "Circle created. Show the QR to $delegate."
+                                tick++
+                            } catch (e: Exception) {
+                                circleMsg = e.message
+                            }
+                        }
+                    },
+                    onRevoke = { c ->
+                        scope.launch {
+                            try {
+                                if (!demo()) withContext(Dispatchers.IO) { VayoraClient(server()).simCircleRevoke(c.id) }
+                                saveCircles(circles.map { if (it.id == c.id) it.copy(status = "revoked") else it })
+                                circleMsg = "Taken back."
+                                if (circleQr?.contains(c.id) == true) circleQr = null
+                            } catch (e: Exception) {
+                                circleMsg = e.message
+                            }
+                        }
+                    },
+                    onScan = { route = PayRoute.ScanCircle },
+                    onBack = { route = PayRoute.Settings; tab = 2 },
+                )
+                PayRoute.Voice -> VoicePayScreen(
+                    hearing = hearing,
+                    transcript = voiceText,
+                    message = voiceMsg,
+                    onListen = {
+                        hearing = true
+                        voiceMsg = null
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
+                            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Pay Asha 200 rupees")
+                        }
+                        runCatching { speech.launch(intent) }.onFailure {
+                            hearing = false
+                            voiceMsg = "Speech isn’t available on this device."
+                        }
+                    },
+                    onBack = { route = PayRoute.Home; tab = 0 },
                 )
                 PayRoute.Jars -> JarsScreen(
                     jars = jars.jars,
@@ -276,16 +425,47 @@ private fun PayApp() {
                     },
                     onBack = { route = PayRoute.Settings; tab = 2 },
                 )
-                PayRoute.Scan -> ScannerScreen(
+                PayRoute.Scan, PayRoute.ScanCircle -> ScannerScreen(
                     brand = Brand.Pay,
-                    hint = "Aim at a pay or AutoPay QR",
+                    hint = if (route is PayRoute.ScanCircle) "Scan a Circle invite" else "Aim at a pay, AutoPay or Circle QR",
                     onCode = { raw ->
                         when {
+                            raw.lowercase().startsWith("vayora://circle") || route is PayRoute.ScanCircle -> {
+                                try {
+                                    val link = CirclePayload.parse(raw)
+                                    scope.launch {
+                                        try {
+                                            val info = if (demo()) null else withContext(Dispatchers.IO) {
+                                                VayoraClient(server()).simCircleView(link.id)
+                                            }
+                                            val rec = CircleRecord(
+                                                id = link.id,
+                                                role = CircleRole.Delegate,
+                                                other = info?.primary ?: link.primary,
+                                                perPaymentMinor = info?.maxPerPaymentMinor ?: link.perPayment.minor,
+                                                totalMinor = info?.totalLimitMinor ?: link.total.minor,
+                                                remainingMinor = info?.remainingMinor ?: link.total.minor,
+                                                status = info?.status ?: "active",
+                                            )
+                                            saveCircles(circles.filterNot { it.id == rec.id } + rec)
+                                            circleMsg = "Joined ${rec.other}'s circle."
+                                            route = PayRoute.Circle
+                                        } catch (e: Exception) {
+                                            circleMsg = e.message
+                                            route = PayRoute.Circle
+                                        }
+                                    }
+                                } catch (_: CirclePayload.Failure) {
+                                    pasteError = "That Circle QR could not be read."
+                                    route = PayRoute.Paste
+                                    paste = raw
+                                }
+                            }
                             raw.lowercase().startsWith("upi://mandate?") -> {
                                 try {
                                     route = PayRoute.Mandate(MandatePayload.parse(raw), raw)
                                     payError = null
-                                } catch (e: MandatePayload.Failure) {
+                                } catch (_: MandatePayload.Failure) {
                                     paste = raw
                                     pasteError = "That AutoPay QR could not be read."
                                     route = PayRoute.Paste
@@ -297,6 +477,7 @@ private fun PayApp() {
                                     route = PayRoute.Review(p, raw)
                                     paste = raw
                                     pin = ""
+                                    selectedCircleId = null
                                     payError = ScamHints.check(p.name, p.note)
                                 } catch (e: UPIPayload.Failure) {
                                     paste = raw
@@ -311,20 +492,37 @@ private fun PayApp() {
                             }
                         }
                     },
-                    onCancel = { route = PayRoute.Home; tab = 0 },
+                    onCancel = {
+                        val fromCircle = route is PayRoute.ScanCircle
+                        route = if (fromCircle) PayRoute.Circle else PayRoute.Home
+                        if (!fromCircle) tab = 0
+                    },
                 )
                 PayRoute.Paste -> PasteLinkScreen(
                     value = paste,
                     onValueChange = { paste = it; pasteError = null },
                     onContinue = {
                         try {
-                            if (paste.lowercase().startsWith("upi://mandate?")) {
-                                route = PayRoute.Mandate(MandatePayload.parse(paste), paste)
-                            } else {
-                                val p = UPIPayload.parse(paste)
-                                route = PayRoute.Review(p, paste)
-                                pin = ""
-                                payError = ScamHints.check(p.name, p.note)
+                            when {
+                                paste.lowercase().startsWith("vayora://circle") -> {
+                                    val link = CirclePayload.parse(paste)
+                                    val rec = CircleRecord(
+                                        link.id, CircleRole.Delegate, link.primary,
+                                        link.perPayment.minor, link.total.minor,
+                                    )
+                                    saveCircles(circles.filterNot { it.id == rec.id } + rec)
+                                    route = PayRoute.Circle
+                                }
+                                paste.lowercase().startsWith("upi://mandate?") -> {
+                                    route = PayRoute.Mandate(MandatePayload.parse(paste), paste)
+                                }
+                                else -> {
+                                    val p = UPIPayload.parse(paste)
+                                    route = PayRoute.Review(p, paste)
+                                    pin = ""
+                                    selectedCircleId = null
+                                    payError = ScamHints.check(p.name, p.note)
+                                }
                             }
                         } catch (e: UPIPayload.Failure) {
                             pasteError = when (e) {
@@ -335,6 +533,8 @@ private fun PayApp() {
                             }
                         } catch (_: MandatePayload.Failure) {
                             pasteError = "That AutoPay QR could not be read."
+                        } catch (_: CirclePayload.Failure) {
+                            pasteError = "That Circle QR could not be read."
                         }
                     },
                     onCancel = { route = PayRoute.Home; tab = 0 },
@@ -387,6 +587,9 @@ private fun PayApp() {
                 )
                 is PayRoute.Review -> {
                     val amount = r.payload.amount ?: Money(10_000)
+                    val cat = SpendCategory.guess(r.payload.name, r.payload.note, r.transfer)
+                    val warn = BudgetCheck.warning(amount.minor, cat, spendEntries(), budgets)?.warningText()
+                    val cover = circles.filter { it.canCover(amount.minor) }.map { it.id to "${it.other}'s circle" }
                     PayReviewScreen(
                         name = r.payload.name,
                         payee = r.payload.payee,
@@ -396,22 +599,42 @@ private fun PayApp() {
                         onPinChange = { pin = it },
                         busy = busy,
                         error = payError,
+                        budgetWarning = warn?.takeIf { it.isNotBlank() },
+                        circleOptions = cover,
+                        selectedCircleId = selectedCircleId,
+                        onSelectCircle = { selectedCircleId = it },
                         onCancel = { route = PayRoute.Home; tab = 0 },
                         onConfirm = {
                             busy = true
                             payError = null
                             scope.launch {
                                 try {
-                                    if (!demo() && r.payload.payee.contains("zyvor-sim")) {
-                                        withContext(Dispatchers.IO) {
-                                            VayoraClient(server()).simPay(r.raw)
+                                    val circleId = selectedCircleId
+                                    if (circleId != null) {
+                                        if (!demo()) {
+                                            withContext(Dispatchers.IO) {
+                                                VayoraClient(server()).simCirclePay(circleId, r.raw)
+                                            }
                                         }
+                                        saveCircles(
+                                            circles.map {
+                                                if (it.id == circleId) it.copy(remainingMinor = it.remainingMinor - amount.minor) else it
+                                            },
+                                        )
+                                    } else {
+                                        if (!demo() && r.payload.payee.contains("zyvor-sim")) {
+                                            withContext(Dispatchers.IO) {
+                                                VayoraClient(server()).simPay(r.raw)
+                                            }
+                                        }
+                                        wallet.debit(r.payload.name.ifBlank { r.payload.payee }, r.payload.payee, amount)
+                                        payees.save(r.payload.name, r.payload.payee)
+                                        refresh()
                                     }
-                                    wallet.debit(r.payload.name.ifBlank { r.payload.payee }, r.payload.payee, amount)
-                                    refresh()
                                     route = PayRoute.Home
                                     tab = 0
                                     paste = ""
+                                    selectedCircleId = null
                                 } catch (e: Exception) {
                                     payError = e.message ?: "Payment failed"
                                 } finally {
@@ -426,6 +649,34 @@ private fun PayApp() {
     }
 }
 
+private fun loadBudgets(prefs: android.content.SharedPreferences): Budgets {
+    val raw = prefs.getString("budgets", "").orEmpty()
+    if (raw.isBlank()) return Budgets()
+    val map = raw.split(';').mapNotNull {
+        val p = it.split('=', limit = 2)
+        if (p.size == 2) p[0] to (p[1].toLongOrNull() ?: return@mapNotNull null) else null
+    }.toMap()
+    return Budgets(map)
+}
+
+private fun loadCircles(prefs: android.content.SharedPreferences): List<CircleRecord> {
+    val raw = prefs.getString("circles", "").orEmpty()
+    if (raw.isBlank()) return emptyList()
+    return raw.split('|').mapNotNull { row ->
+        val p = row.split(',')
+        if (p.size < 7) return@mapNotNull null
+        CircleRecord(
+            id = p[0],
+            role = runCatching { CircleRole.valueOf(p[1]) }.getOrDefault(CircleRole.Primary),
+            other = p[2],
+            perPaymentMinor = p[3].toLongOrNull() ?: return@mapNotNull null,
+            totalMinor = p[4].toLongOrNull() ?: return@mapNotNull null,
+            status = p[5],
+            remainingMinor = p[6].toLongOrNull() ?: return@mapNotNull null,
+        )
+    }
+}
+
 @Composable
 private fun SettingsScreen(
     server: String,
@@ -435,6 +686,8 @@ private fun SettingsScreen(
     connBusy: Boolean,
     onTest: () -> Unit,
     onJars: () -> Unit,
+    onBudgets: () -> Unit,
+    onCircle: () -> Unit,
     onLockChange: (Boolean) -> Unit,
     onSave: (String, Boolean) -> Unit,
 ) {
@@ -461,6 +714,8 @@ private fun SettingsScreen(
             )
             ConnectionRow(verdict, connBusy, onTest)
             TextButton(onClick = onJars) { Text("Jars", color = Vui.Indigo) }
+            TextButton(onClick = onBudgets) { Text("Budgets", color = Vui.Indigo) }
+            TextButton(onClick = onCircle) { Text("Circle", color = Vui.Indigo) }
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = lockEnabled, onCheckedChange = onLockChange)
                 Text(" Lock with biometrics", color = Vui.TextPrimary)

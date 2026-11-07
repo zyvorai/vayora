@@ -19,8 +19,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +52,7 @@ fun PayHomeScreen(
     onScan: () -> Unit,
     onPaste: () -> Unit,
     onSend: () -> Unit = {},
-    onSplit: () -> Unit = {},
+    onVoice: () -> Unit = {},
     onOpen: (LocalTxn) -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -109,7 +109,7 @@ fun PayHomeScreen(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Quick("Send", Icons.AutoMirrored.Filled.Send, onSend, Modifier.weight(1f))
-                Quick("Split", Icons.Filled.CallSplit, onSplit, Modifier.weight(1f))
+                Quick("Voice", Icons.Filled.Mic, onVoice, Modifier.weight(1f))
                 Quick("Paste link", Icons.Filled.Link, onPaste, Modifier.weight(1f))
             }
             Spacer(Modifier.height(20.dp))
@@ -174,6 +174,10 @@ fun PayReviewScreen(
     onCancel: () -> Unit,
     busy: Boolean = false,
     error: String? = null,
+    budgetWarning: String? = null,
+    circleOptions: List<Pair<String, String>> = emptyList(),
+    selectedCircleId: String? = null,
+    onSelectCircle: (String?) -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize()) {
         AmbientBackground(Brand.Pay)
@@ -190,6 +194,22 @@ fun PayReviewScreen(
                 if (note.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(note, color = Vui.TextTertiary, fontSize = 13.sp)
+                }
+            }
+            budgetWarning?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = Vui.Amber, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (circleOptions.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Pay from", color = Vui.TextSecondary, fontSize = 13.sp)
+                TextButton(onClick = { onSelectCircle(null) }) {
+                    Text(if (selectedCircleId == null) "● My wallet" else "My wallet", color = Vui.Indigo)
+                }
+                circleOptions.forEach { (id, label) ->
+                    TextButton(onClick = { onSelectCircle(id) }) {
+                        Text(if (selectedCircleId == id) "● $label" else label, color = Vui.Indigo)
+                    }
                 }
             }
             Spacer(Modifier.height(20.dp))

@@ -37,7 +37,7 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 | Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, auto-enrol into settlement batches, worker T+N release, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
 | Network card tokens | Level 1: store/revoke + charge via `card_token_id` on attempts (sim/stub vault). No live PCI vault |
 | Store plugins | Shopify + WooCommerce + Magento 2: payment links + HMAC webhooks that mark orders paid (`plugins/`); Woo/Shopify release zips via `scripts/package-*-plugin.sh` |
-| Android apps | Level 1: Compose Pay + Merchant mirroring iOS tokens; Collect/Pay home/QR + camera scan; Owed, Cashflow/GST, AutoPay, jars, biometric lock, connection/setup QR (`apps/android`); kit tests and debug APKs in CI |
+| Android apps | Level 1: Compose Pay + Merchant mirroring iOS test-mode surface (Collect/Pay, Owed, Cashflow/GST, AutoPay, Circle, voice, budgets, jars, lock, end of day, setup/connection) (`apps/android`); kit tests and debug APKs in CI |
 | Object storage with malware scanning for documents | Not built |
 | Authenticated SSE status stream | Built: `GET /v1/checkout/{tenant}/{intent}/events?secret=` (checkout prefers EventSource, polls on error) |
 | Amounts as decimal strings in the API | Not done: integer minor units are used |

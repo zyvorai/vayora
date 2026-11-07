@@ -4,10 +4,10 @@ Kotlin + Jetpack Compose counterparts to the [iPhone apps](../ios/README.md). **
 
 | Module | What it is |
 |---|---|
-| `pay` | **Vayora Pay** — scan/paste `upi://pay` or AutoPay mandate QR, test PIN, jars, biometric lock, scam hints |
-| `merchant` | **Vayora Merchant** — Collect → QR, Payments, Owed, Cashflow/GST, AutoPay, setup-QR + connection check |
-| `vayora-kit` | `Money`, `UPIPayload`, `MandatePayload`, `JarBook`, `LockPolicy`, `VayoraClient`, ops models |
-| `vayora-ui` | Dark-first tokens and shared Compose screens (Collect, Pay, Owed, Cashflow, AutoPay, Jars) |
+| `pay` | **Vayora Pay** — scan/paste pay or mandate/circle QR, voice pay, jars, budgets, Circle, biometric lock |
+| `merchant` | **Vayora Merchant** — Collect → QR, Payments, Owed, Cashflow/GST, AutoPay, end of day, setup-QR |
+| `vayora-kit` | Money/UPI/mandate/circle/voice/budgets/jars + ops client |
+| `vayora-ui` | Dark-first tokens and shared Compose screens |
 
 Visual language matches iOS `VayoraUI` (near-black canvas, indigo pay / emerald merchant, Test mode chip).
 
@@ -34,10 +34,10 @@ Flow: Merchant Collect → Show QR → Pay Scan (or Paste link) → PIN → Merc
 
 ## Honest limits
 
-- Camera QR scan is wired (CameraX + ZXing); not yet exercised on a physical device in CI.
-- Circle, voice notes, budgets and end-of-day are not ported.
+- Camera QR scan and voice recognition are wired; not exercised on a physical device in CI.
 - Demo mode invents a QR and marks it paid after ~3.5s with no server.
 - Not checked: TalkBack, large text, haptics end-to-end on device.
+- Real UPI Circle rules, NPCI TPAP, sponsor LOI, RBI PA, live sandboxes and PCI vault remain external.
 
 ## Design parity
 

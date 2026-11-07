@@ -190,3 +190,33 @@ data class ReconCase(
 
 @Serializable
 data class ReconCasePage(val data: List<ReconCase> = emptyList())
+
+@Serializable
+data class BranchInfo(val id: String, val name: String)
+
+@Serializable
+data class BranchPage(val data: List<BranchInfo> = emptyList())
+
+@Serializable
+data class ClosingDigital(
+    val method: String,
+    val payments: Int = 0,
+    @SerialName("net_minor") val netMinor: Long = 0,
+)
+
+@Serializable
+data class ClosingInfo(
+    val id: String,
+    @SerialName("expected_cash_minor") val expectedCashMinor: Long,
+    @SerialName("counted_cash_minor") val countedCashMinor: Long,
+    @SerialName("difference_minor") val differenceMinor: Long,
+    val digital: List<ClosingDigital> = emptyList(),
+    val status: String = "pending_signoff",
+) {
+    val verdict: String
+        get() = when {
+            differenceMinor == 0L -> "Matches"
+            differenceMinor < 0L -> "Short"
+            else -> "Over"
+        }
+}

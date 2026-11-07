@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.zyvor.vayora.kit.Ageing
 import dev.zyvor.vayora.kit.Cashflow
+import dev.zyvor.vayora.kit.ClosingInfo
 import dev.zyvor.vayora.kit.ConnectionVerdict
 import dev.zyvor.vayora.kit.DisputeRow
 import dev.zyvor.vayora.kit.GstSummary
@@ -61,6 +62,7 @@ import dev.zyvor.vayora.ui.Brand
 import dev.zyvor.vayora.ui.CashflowScreen
 import dev.zyvor.vayora.ui.CollectKeypadScreen
 import dev.zyvor.vayora.ui.ConnectionRow
+import dev.zyvor.vayora.ui.EndOfDayScreen
 import dev.zyvor.vayora.ui.OwedScreen
 import dev.zyvor.vayora.ui.PaymentRow
 import dev.zyvor.vayora.ui.PaymentRowState
@@ -74,6 +76,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -93,6 +96,7 @@ private sealed interface Route {
     data object Cashflow : Route
     data object AutoPay : Route
     data object SetupScan : Route
+    data object EndOfDay : Route
     data class Qr(val amount: Money, val note: String, val intentId: String?, val upi: String?, val paid: Boolean) : Route
 }
 
@@ -123,6 +127,10 @@ private fun MerchantApp() {
     var verdict by remember { mutableStateOf<ConnectionVerdict?>(null) }
     var connBusy by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var branches by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var branchId by remember { mutableStateOf<String?>(null) }
+    var closing by remember { mutableStateOf<ClosingInfo?>(null) }
+    var eodMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun server() = prefs.getString("server", "http://10.0.2.2:8080") ?: "http://10.0.2.2:8080"
@@ -207,6 +215,22 @@ private fun MerchantApp() {
             runCatching { withContext(Dispatchers.IO) { mandates = client().listMandates() } }
                 .onSuccess { autoMsg = null }
                 .onFailure { autoMsg = it.message }
+        }
+    }
+
+    fun loadBranches() {
+        if (demo()) {
+            eodMsg = "Turn Demo mode off and set a test key for end of day."
+            return
+        }
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { client().branches() }
+            }.onSuccess { list ->
+                branches = list.map { it.id to it.name }
+                if (branchId == null) branchId = list.firstOrNull()?.id
+                eodMsg = null
+            }.onFailure { eodMsg = it.message }
         }
     }
 
@@ -417,9 +441,61 @@ private fun MerchantApp() {
                         }
                     },
                     onScanSetup = { route = Route.SetupScan },
+                    onEndOfDay = {
+                        loadBranches()
+                        closing = null
+                        route = Route.EndOfDay
+                    },
                     onSave = { s, k, d ->
                         prefs.edit().putString("server", s).putString("key", k).putBoolean("demo", d).apply()
                     },
+                )
+                Route.EndOfDay -> EndOfDayScreen(
+                    branches = branches,
+                    selectedBranchId = branchId,
+                    closing = closing,
+                    message = eodMsg,
+                    busy = busy,
+                    onSelectBranch = { branchId = it },
+                    onCreateBranch = { name ->
+                        scope.launch {
+                            try {
+                                val b = withContext(Dispatchers.IO) { client().createBranch(name) }
+                                branches = branches + (b.id to b.name)
+                                branchId = b.id
+                                eodMsg = "Branch created."
+                            } catch (e: Exception) {
+                                eodMsg = e.message
+                            }
+                        }
+                    },
+                    onAddCash = { kind, amount ->
+                        val id = branchId ?: return@EndOfDayScreen
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { client().addCash(id, kind, amount) }
+                                eodMsg = "Cash $kind recorded."
+                            } catch (e: Exception) {
+                                eodMsg = e.message
+                            }
+                        }
+                    },
+                    onClose = { counted ->
+                        val id = branchId ?: return@EndOfDayScreen
+                        busy = true
+                        scope.launch {
+                            try {
+                                val day = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString()
+                                closing = withContext(Dispatchers.IO) { client().closeDay(id, day, counted) }
+                                eodMsg = "Closed. A second person signs off on the console."
+                            } catch (e: Exception) {
+                                eodMsg = e.message
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                    onBack = { route = Route.Settings; tab = 3 },
                 )
                 Route.SetupScan -> ScannerScreen(
                     brand = Brand.Merchant,
@@ -489,6 +565,7 @@ private fun SettingsScreen(
     connBusy: Boolean,
     onTest: () -> Unit,
     onScanSetup: () -> Unit,
+    onEndOfDay: () -> Unit,
     onSave: (String, String, Boolean) -> Unit,
 ) {
     var s by remember { mutableStateOf(server) }
@@ -523,6 +600,7 @@ private fun SettingsScreen(
                 colors = fieldColors,
             )
             TextButton(onClick = onScanSetup) { Text("Scan setup QR", color = Vui.Emerald) }
+            TextButton(onClick = onEndOfDay) { Text("End of day", color = Vui.Emerald) }
             ConnectionRow(verdict, connBusy, onTest)
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = d, onCheckedChange = { d = it })

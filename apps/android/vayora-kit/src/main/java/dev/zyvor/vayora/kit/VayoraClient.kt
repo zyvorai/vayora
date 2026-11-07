@@ -130,6 +130,58 @@ class VayoraClient(
         return post("/v1/sim/mandate", body)
     }
 
+    fun simCircleCreate(primary: String, delegate: String, perPayment: Money, total: Money): String {
+        val body = buildJsonObject {
+            put("primary", primary)
+            put("delegate", delegate)
+            put("max_per_payment_minor", perPayment.minor)
+            put("total_limit_minor", total.minor)
+        }
+        return post<CircleCreated>("/v1/sim/circle", body).circleId
+    }
+
+    fun simCircleView(id: String): CircleInfo {
+        require(MandatePayload.isSafeId(id)) { "Not a circle id" }
+        return get("/v1/sim/circle/${enc(id)}")
+    }
+
+    fun simCircleRevoke(id: String) {
+        post<Unit>("/v1/sim/circle/revoke", buildJsonObject { put("circle_id", id) })
+    }
+
+    fun simCirclePay(circleId: String, upiUri: String): CirclePayResult {
+        val body = buildJsonObject {
+            put("circle_id", circleId)
+            put("upi_uri", upiUri)
+        }
+        return post("/v1/sim/circle/pay", body)
+    }
+
+    fun branches(): List<BranchInfo> = get<BranchPage>("/v1/branches").data
+
+    fun createBranch(name: String): BranchInfo =
+        post("/v1/branches", buildJsonObject { put("name", name.trim()) })
+
+    fun addCash(branchId: String, kind: String, amount: Money, note: String? = null) {
+        val body = buildJsonObject {
+            put("branch_id", branchId)
+            put("kind", kind)
+            put("amount_minor", amount.minor)
+            note?.takeIf { it.isNotBlank() }?.let { put("note", it) }
+        }
+        post<Unit>("/v1/cash_entries", body, idem = true)
+    }
+
+    fun closeDay(branchId: String, day: String, counted: Money, note: String? = null): ClosingInfo {
+        val body = buildJsonObject {
+            put("branch_id", branchId)
+            put("day", day)
+            put("counted_cash_minor", counted.minor)
+            note?.takeIf { it.isNotBlank() }?.let { put("note", it) }
+        }
+        return post("/v1/closings", body)
+    }
+
     fun openDisputes(): List<DisputeRow> =
         get<DisputePage>("/v1/disputes?status=open").data.filter { it.status == "open" || it.status == "needs_response" }
 
