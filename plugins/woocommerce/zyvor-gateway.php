@@ -1,8 +1,11 @@
 <?php
 /**
  * Plugin Name: Zyvor Payments
- * Description: Take payments via Zyvor (intents / payment links). Scaffold — not production-ready.
- * Version: 0.2.0
+ * Description: Take payments via Zyvor Checkout (payment links + signed webhooks).
+ * Version: 0.3.0
+ * Requires at least: 6.0
+ * Requires PHP: 8.0
+ * WC requires at least: 8.0
  */
 
 if (!defined('ABSPATH')) {
@@ -113,10 +116,6 @@ add_action('woocommerce_api_zyvor_webhook', function () {
     }
     $payload = json_decode($raw, true);
     $type = is_array($payload) ? ($payload['type'] ?? $payload['event'] ?? '') : '';
-    if ($type !== 'payment.captured') {
-        status_header(204);
-        exit;
-    }
     $data = is_array($payload) ? ($payload['data'] ?? $payload) : [];
     $external = is_array($data) ? (string) ($data['external_ref'] ?? '') : '';
     if (!str_starts_with($external, 'woo-')) {
@@ -129,9 +128,17 @@ add_action('woocommerce_api_zyvor_webhook', function () {
         status_header(404);
         exit;
     }
-    if (!$order->is_paid()) {
-        $order->payment_complete();
-        $order->add_order_note('Zyvor payment.captured');
+    if ($type === 'payment.captured') {
+        if (!$order->is_paid()) {
+            $order->payment_complete();
+            $order->add_order_note('Zyvor payment.captured');
+        }
+    } elseif ($type === 'payment.failed') {
+        $reason = is_array($data) ? (string) ($data['failure_reason'] ?? 'failed') : 'failed';
+        $order->add_order_note('Zyvor payment.failed: ' . $reason);
+        if ($order->has_status(['pending', 'on-hold'])) {
+            $order->update_status('failed', 'Zyvor reported payment.failed');
+        }
     }
     status_header(204);
     exit;

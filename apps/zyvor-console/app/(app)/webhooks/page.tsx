@@ -13,10 +13,11 @@ export default async function Webhooks({ searchParams }: { searchParams: Promise
   const { status, event } = await searchParams;
   if ((await currentSession())?.r !== "admin") redirect("/");
   const z = await api();
-  const [page, settings, deliveries] = await Promise.all([
+  const [page, settings, deliveries, inbox] = await Promise.all([
     z.webhooks.outbox(status || undefined),
     z.settings.get(),
     event ? z.webhooks.deliveries(event).catch(() => ({ data: [] as Record<string, unknown>[] })) : Promise.resolve(null),
+    z.webhooks.inbox(30).catch(() => ({ data: [] as Record<string, unknown>[] })),
   ]);
   return (
     <>
@@ -75,6 +76,30 @@ export default async function Webhooks({ searchParams }: { searchParams: Promise
           </div>
         </section>
       )}
+      <section style={{ marginTop: 32 }}>
+        <h2 style={{ fontSize: "1.1rem" }}>From providers</h2>
+        <p className="muted">Webhooks Zyvor received from connected payment providers (inbound inspector).</p>
+        <div className="tablewrap">
+          <table>
+            <thead><tr><th>Provider</th><th>Kind</th><th>Outcome</th><th>Event</th><th>Received (IST)</th></tr></thead>
+            <tbody>
+              {inbox.data.length === 0 && <tr><td colSpan={5} className="empty">No provider webhooks received yet.</td></tr>}
+              {inbox.data.map((e) => {
+                const r = e as Record<string, string | number | null>;
+                return (
+                  <tr key={String(r.id)}>
+                    <td>{String(r.provider)}</td>
+                    <td>{String(r.kind)}</td>
+                    <td><Chip status={String(r.outcome)} /></td>
+                    <td className="mono muted">{String(r.event_id).slice(0, 18)}…</td>
+                    <td className="muted">{istDateTime(String(r.received_at))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }

@@ -9,7 +9,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 |---|---|---|
 | Payment intents, attempts, refunds, customers | ✅ | Amounts are integer minor units. Raw provider responses kept per attempt (`raw`). |
 | Authorisation / capture | 🟡 | Manual capture endpoint; relies on provider support (`manual_capture` in the capability matrix). |
-| Payment links | ◐ | A checkout URL with a per-intent client secret (stored hashed). No expiry, reminders or link management UI. |
+| Payment links | ✅ | Fixed or open amount, caps, expiry, cancel, reminders, QR, console page and checkout landing. |
 | Signed webhooks (outbound) | ✅ | HMAC-SHA256 `Zyvor-Signature` with timestamp; retries with backoff; dead-lettering; replay endpoint; per-attempt delivery history (`GET /v1/outbox/{id}/deliveries`). |
 | Razorpay adapter | 🟡 | Orders + hosted checkout, capture, refunds, lookup by receipt, settlements recon, webhook verification. Built from public docs. |
 | Cashfree adapter | 🟡 | Orders, server-initiated UPI collect, refunds, lookup by `order_id`, settlement recon, webhook verification. Built from public docs. |
@@ -51,6 +51,8 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Cross-tenant access (APIs, exports, jobs, webhooks) | `cross_tenant_access_fails_across_apis_exports_jobs_webhooks_and_the_database` (runs as a non-superuser so row-level security is real) |
 | Worker crash loses nothing | `worker_crashes_and_restarts_do_not_lose_acknowledged_events` |
 | Full sandbox flow | `complete_sandbox_flow_checkout_to_invoice_to_settlement_to_partial_refund` |
+
+Full twenty-way mapping: [ACCEPTANCE_SPEC.md](ACCEPTANCE_SPEC.md).
 
 ## Release 2 and 3
 

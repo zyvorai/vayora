@@ -73,13 +73,40 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
 
   useEffect(() => { void load(); }, [load]);
 
-  // Resumable: poll only while a payment is in flight.
+  // Live status while a payment is in flight: prefer SSE, fall back to polling.
+  const live = session ? pollDelay(session.phase) : null;
   useEffect(() => {
-    const d = session ? pollDelay(session.phase) : null;
-    if (d === null) return;
-    timer.current = setTimeout(() => { setWaited((w) => w + d); void load(); }, d);
-    return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [session, load]);
+    if (live === null) return;
+    const url = `${base}/events?secret=${encodeURIComponent(secret)}`;
+    let es: EventSource | null = null;
+    let closed = false;
+    try {
+      es = new EventSource(url);
+      es.addEventListener("session", (ev) => {
+        try {
+          const s = JSON.parse((ev as MessageEvent).data) as Session;
+          const order = ["upi", "card", "netbanking", "wallet"];
+          s.methods = [...s.methods].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+          setSession(s);
+          setWaited((w) => w + live);
+        } catch { /* ignore malformed */ }
+      });
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        if (!closed) {
+          timer.current = setTimeout(() => { setWaited((w) => w + live); void load(); }, live);
+        }
+      };
+    } catch {
+      timer.current = setTimeout(() => { setWaited((w) => w + live); void load(); }, live);
+    }
+    return () => {
+      closed = true;
+      es?.close();
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [live, base, secret, load]);
 
   const errText = error === "net" ? t("errNetwork") : error === "vpa" ? t("errVpa") : error ? t("errStart") : null;
   // With a provider-issued QR / intent the payer never types a UPI ID.

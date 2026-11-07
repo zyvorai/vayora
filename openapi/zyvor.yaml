@@ -1110,6 +1110,7 @@ paths:
                           type:
                           - string
                           - 'null'
+                        details: {}
         4XX:
           $ref: '#/components/responses/Error'
     post:
@@ -7176,27 +7177,13 @@ paths:
               schema:
                 type: object
                 properties:
-                  merchant:
-                    type:
-                    - string
-                    - 'null'
-                  amount_minor:
-                    type: integer
-                    format: int64
-                  currency:
+                  id:
                     type: string
-                  description:
-                    type:
-                    - string
-                    - 'null'
+                  method: {}
                   status:
                     type: string
-                  phase: {}
-                  methods:
-                    type: array
-                    items:
-                      type: object
-                  upi_flow: {}
+                  failure_reason: {}
+                  action: {}
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -7217,6 +7204,45 @@ paths:
         schema:
           type: string
         x-generated: true
+  /v1/checkout/{tenant_id}/{intent_id}/events:
+    get:
+      summary: Public checkout session as Server-Sent Events (client-secret authorised)
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  method: {}
+                  status:
+                    type: string
+                  failure_reason: {}
+                  action: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: secret
+        in: query
+        required: true
+        schema:
+          type: string
   /v1/payment_intents:
     post:
       summary: Create a payment intent (amount in minor units; requires an Idempotency-Key)

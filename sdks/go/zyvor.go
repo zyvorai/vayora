@@ -354,6 +354,15 @@ func (c *Client) ListOutboxDeliveries(eventID string) (map[string]any, error) {
 	return c.call("GET", "/v1/outbox/"+eventID+"/deliveries", nil)
 }
 
+// ListInbox lists provider webhooks Zyvor received (inbound inspector).
+func (c *Client) ListInbox(limit int) (map[string]any, error) {
+	path := "/v1/inbox"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	return c.call("GET", path, nil)
+}
+
 // CreateMandate asks the payer to approve a UPI AutoPay mandate. frequency is daily, weekly, fortnightly, monthly,
 // bimonthly, quarterly, half_yearly, yearly or as_presented; endDate is YYYY-MM-DD. idempotencyKey "" makes a new one.
 func (c *Client) CreateMandate(customerID string, maxAmountMinor int64, frequency, endDate, idempotencyKey string) (map[string]any, error) {

@@ -1,13 +1,22 @@
 //! Public checkout API. Authorised by a per-intent client secret (not an API key), so a browser
 //! can pay one specific intent and nothing else. Sessions are resumable: everything needed to
 //! continue (status, last attempt, next action) is re-readable from the intent id and secret.
+//! Live status also streams over SSE (`GET …/events`) so the page need not poll while a payment
+//! is in flight.
+
+use std::convert::Infallible;
+use std::time::Duration;
 
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::HeaderMap,
-    response::Response,
+    response::{
+        Response,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
+use futures_util::stream::Stream;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
@@ -54,20 +63,34 @@ async fn authorise(
     }
 }
 
-pub async fn session(
-    State(s): State<AppState>,
-    Path((tenant_id, intent_id)): Path<(String, String)>,
-    Query(q): Query<SecretQuery>,
-) -> Result<Json<Value>, ApiError> {
-    let env = authorise(&s, &tenant_id, &intent_id, &q.secret).await?;
-    let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
-    let (amount, currency, status, description, allowed): (i64, String, String, Option<String>, Option<Vec<String>>) =
-        sqlx::query_as("SELECT amount_minor, currency, status, description, allowed_providers FROM payment_intents WHERE id = $1").bind(&intent_id).fetch_one(&mut *tx).await?;
-    let merchant: Option<String> = sqlx::query_scalar("SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1").bind(&tenant_id).fetch_optional(&mut *tx).await?;
+async fn session_body(
+    s: &AppState,
+    tenant_id: &str,
+    intent_id: &str,
+    env: &str,
+) -> Result<Value, ApiError> {
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    let (amount, currency, status, description, allowed): (
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<Vec<String>>,
+    ) = sqlx::query_as(
+        "SELECT amount_minor, currency, status, description, allowed_providers FROM payment_intents WHERE id = $1",
+    )
+    .bind(intent_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let merchant: Option<String> = sqlx::query_scalar(
+        "SELECT o.name FROM tenants t JOIN organisations o ON o.id = t.organisation_id WHERE t.id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
-    // Which methods can this payment actually use? The union over enabled providers' capabilities.
-    let routing = registry::routing(&mut tx, &tenant_id).await?;
-    let candidates = registry::candidates(&s, &mut tx, &tenant_id, &env, &routing).await?;
+    let routing = registry::routing(&mut tx, tenant_id).await?;
+    let candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
     let ccy: zyvor_core::Currency = currency.parse().map_err(|_| ApiError::internal())?;
     let mut methods: Vec<&str> = [
         Method::Upi,
@@ -86,8 +109,6 @@ pub async fn session(
     .map(Method::as_str)
     .collect();
     methods.sort_unstable();
-    // How should a UPI payment work? Prefer a partner-issued QR / intent (any UPI app). Asking the payer to
-    // type a UPI ID ("collect") is only the fallback when no eligible provider can issue one.
     let upi_flow = if candidates.iter().any(|c| {
         c.enabled
             && allowed.as_ref().is_none_or(|a| a.contains(&c.provider))
@@ -99,12 +120,11 @@ pub async fn session(
         "collect"
     };
 
-    // The latest attempt tells the page what to do next (and makes the session resumable).
     let attempt: Option<AttemptRow> = sqlx::query_as(
         "SELECT id, intent_id, provider, method, status, amount_minor, currency, provider_order_ref, provider_payment_ref, failure_reason, route, client_action, refunded_minor, reserved_refund_minor, created_at, updated_at
          FROM payment_attempts WHERE intent_id = $1 ORDER BY created_at DESC LIMIT 1",
     )
-    .bind(&intent_id)
+    .bind(intent_id)
     .fetch_optional(&mut *tx)
     .await?;
     let phase = match (status.as_str(), attempt.as_ref().map(|a| a.status.as_str())) {
@@ -114,12 +134,56 @@ pub async fn session(
         (_, Some("failed")) => "failed",
         _ => "choose_method",
     };
-    Ok(Json(json!({
+    Ok(json!({
         "merchant": merchant, "amount_minor": amount, "currency": currency, "description": description,
         "status": status, "phase": phase, "methods": methods, "upi_flow": upi_flow,
-        // Only what the page needs. No provider refs, no routing internals.
         "attempt": attempt.map(|a| json!({ "id": a.id, "method": a.method, "status": a.status, "failure_reason": a.failure_reason.filter(|_| a.status == "failed"), "action": a.client_action })),
-    })))
+    }))
+}
+
+pub async fn session(
+    State(s): State<AppState>,
+    Path((tenant_id, intent_id)): Path<(String, String)>,
+    Query(q): Query<SecretQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let env = authorise(&s, &tenant_id, &intent_id, &q.secret).await?;
+    Ok(Json(session_body(&s, &tenant_id, &intent_id, &env).await?))
+}
+
+/// `GET /v1/checkout/{tenant}/{intent}/events?secret=`: Server-Sent Events of the same session JSON.
+/// Emits on change; ends when the phase is terminal (`paid` / `failed` / `choose_method`).
+pub async fn events(
+    State(s): State<AppState>,
+    Path((tenant_id, intent_id)): Path<(String, String)>,
+    Query(q): Query<SecretQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    let env = authorise(&s, &tenant_id, &intent_id, &q.secret).await?;
+    let stream = async_stream::stream! {
+        let mut last = String::new();
+        // Cap the stream so a forgotten tab cannot hold a connection forever.
+        for _ in 0..450 {
+            match session_body(&s, &tenant_id, &intent_id, &env).await {
+                Ok(body) => {
+                    let phase = body["phase"].as_str().unwrap_or_default().to_string();
+                    let data = body.to_string();
+                    if data != last {
+                        last = data.clone();
+                        yield Ok(Event::default().event("session").data(data));
+                    }
+                    if matches!(phase.as_str(), "paid" | "failed" | "choose_method") {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    };
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("ping"),
+    ))
 }
 
 #[derive(Deserialize)]

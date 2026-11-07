@@ -68,6 +68,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v5
       - run: helm lint deploy/zyvor/helm/zyvor && helm template t deploy/zyvor/helm/zyvor --set sandbox.providerMock.enabled=true > /dev/null
+  promtool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Prometheus alert rules
+        run: docker run --rm -v "$PWD/deploy/zyvor:/cfg:ro" prom/prometheus:v2.54.1 promtool check rules /cfg/alerts.yml
   js:
     runs-on: ubuntu-latest
     steps:

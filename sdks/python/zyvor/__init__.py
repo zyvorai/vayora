@@ -186,6 +186,11 @@ class Zyvor:
         """Per-attempt delivery history for one outbound webhook event."""
         return self._req("GET", f"/v1/outbox/{event_id}/deliveries")
 
+    def list_inbox(self, *, limit: Optional[int] = None) -> dict:
+        """Provider webhooks Zyvor received (inbound inspector)."""
+        q = urllib.parse.urlencode({k: v for k, v in {"limit": limit}.items() if v is not None})
+        return self._req("GET", "/v1/inbox" + ("?" + q if q else ""))
+
     # ---- exchange rates (reporting only) ----
     def set_fx_rate(self, rate: str, currency: str = "USD", as_of: Optional[str] = None, note: Optional[str] = None) -> types.PostFxRatesResponse:
         """Record the INR-per-unit rate you use for a day, e.g. "83.2150". One per day; never edited."""

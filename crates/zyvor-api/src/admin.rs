@@ -950,8 +950,8 @@ pub async fn list_invoices(
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, i64, String, Option<NaiveDate>, i64, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT i.id, i.number, i.amount_minor, i.status, i.due_date, invoice_settled(i.id), i.customer_id, c.name
+    let rows: Vec<(String, String, i64, String, Option<NaiveDate>, i64, Option<String>, Option<String>, Option<Value>)> = sqlx::query_as(
+        "SELECT i.id, i.number, i.amount_minor, i.status, i.due_date, invoice_settled(i.id), i.customer_id, c.name, i.details
          FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
          WHERE ($1::text IS NULL OR i.status = $1) ORDER BY i.created_at DESC LIMIT $2",
     )
@@ -960,7 +960,7 @@ pub async fn list_invoices(
     .fetch_all(&mut *tx)
     .await?;
     Ok(Json(
-        json!({ "data": rows.into_iter().map(|(id, number, amount, status, due, paid, customer_id, customer_name)| json!({ "id": id, "number": number, "amount_minor": amount, "paid_minor": paid, "outstanding_minor": amount - paid, "status": status, "due_date": due, "customer_id": customer_id, "customer_name": customer_name })).collect::<Vec<_>>() }),
+        json!({ "data": rows.into_iter().map(|(id, number, amount, status, due, paid, customer_id, customer_name, details)| json!({ "id": id, "number": number, "amount_minor": amount, "paid_minor": paid, "outstanding_minor": amount - paid, "status": status, "due_date": due, "customer_id": customer_id, "customer_name": customer_name, "details": details })).collect::<Vec<_>>() }),
     ))
 }
 

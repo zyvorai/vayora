@@ -298,7 +298,7 @@ export class Zyvor {
   };
 
   readonly invoices = {
-    list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null; customer_id: string | null; customer_name: string | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
+    list: (status?: string) => this.req<Page<{ id: string; number: string; amount_minor: number; paid_minor: number; outstanding_minor: number; status: string; due_date: string | null; customer_id: string | null; customer_name: string | null; details?: { description: string; quantity: number; unit_price_minor: number; amount_minor: number }[] | null }>>("GET", `/v1/invoices${this.qs({ status })}`),
     retrieve: (id: string) => this.req<GetInvoicesByIdResponse>("GET", `/v1/invoices/${encodeURIComponent(id)}`),
     /** Email an invoice to its customer: what it is made of, what is owed and by when (once per invoice per day; needs a customer with an email address and an invoice that is still owed). */
     send: (id: string) => this.req<{ id: string; queued: boolean }>("POST", `/v1/invoices/${encodeURIComponent(id)}/send`),
@@ -654,6 +654,8 @@ export class Zyvor {
     outbox: (status?: string) => this.req<Page<Record<string, unknown>>>("GET", `/v1/outbox${this.qs({ status })}`),
     /** Per-attempt delivery history for one outbound event (newest first). */
     deliveries: (eventId: string) => this.req<Page<{ id: number; attempt_no: number; ok: boolean; http_status: number | null; error: string | null; latency_ms: number | null; created_at: string }>>("GET", `/v1/outbox/${encodeURIComponent(eventId)}/deliveries`),
+    /** Provider webhooks Zyvor received (inbound inspector). */
+    inbox: (limit?: number) => this.req<Page<{ id: number; provider: string; event_id: string; kind: string; outcome: string; received_at: string }>>("GET", `/v1/inbox${this.qs({ limit })}`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
     /** Queue a `webhook.test` event for your webhook endpoint. Needs a webhook URL in settings. */
     sendTest: () => this.req<{ id: string; status: string }>("POST", "/v1/outbox/test"),

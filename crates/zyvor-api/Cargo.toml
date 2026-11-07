@@ -8,8 +8,10 @@ license.workspace = true
 uuid.workspace = true
 aes-gcm = "0.11"
 async-trait = "0.1.92"
+async-stream = "0.3"
 axum.workspace = true
 base64 = "0.23.1"
+futures-util = "0.3"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = { version = "0.10.4", default-features = false }
 hex = "0.4.3"

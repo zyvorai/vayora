@@ -110,7 +110,7 @@ reset. Verified against a plain local SMTP server and, on 2026-11-03, one real m
 - **Verify for real:** with TLS and a username and password, send to a mailbox you can read; check it arrives and is
   not in spam. Needs SPF, DKIM and DMARC on the sending domain (done at your DNS and mail provider, not in this repo).
 - **Watch it:** **Done:** `/metrics` now carries `zyvor_mail_pending` and `zyvor_mail_dead`, and `deploy/zyvor/alerts.yml`
-  has alert rules for them (and the other gauges). The rules are valid YAML but have **not** been run through `promtool`.
+  has alert rules for them (and the other gauges). CI runs `promtool check rules deploy/zyvor/alerts.yml`.
 - **Done:** payment receipts. `payment_receipts` in settings (off by default; a Receipts box on the Settings page) queues a plain-text
   receipt in the same transaction as the capture, to the intent's customer when that customer has an email address, once per attempt
   (`mail_queue.dedupe_key`). Checked in the local sandbox: the Settings box saves and persists, and a simulated captured payment for a customer with an email queued one receipt that the worker handed to the log-only mailer (no SMTP configured, so nothing was delivered). Delivery uses the mailer above, so it is as verified as that is (plain local SMTP only).

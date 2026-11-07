@@ -759,6 +759,10 @@ pub fn app(state: AppState) -> Router {
         // public checkout: authorised by the intent's client secret, not an API key
         .route("/checkout/{tenant_id}/{intent_id}", get(checkout::session))
         .route(
+            "/checkout/{tenant_id}/{intent_id}/events",
+            get(checkout::events),
+        )
+        .route(
             "/checkout/{tenant_id}/{intent_id}/attempts",
             post(checkout::pay),
         )
