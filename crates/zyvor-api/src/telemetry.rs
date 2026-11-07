@@ -1,9 +1,10 @@
 //! Tracing: structured logs always, OpenTelemetry spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 //! Every API request gets a span keyed by its route template (never the raw path, which holds ids)
 //! and an `x-request-id` that is echoed back, so a merchant's support ticket can name one request.
+//! Authenticated calls are also written to `api_request_log` for the Developers inspector.
 
 use axum::{
-    extract::{MatchedPath, Request},
+    extract::{MatchedPath, Request, State},
     http::HeaderValue,
     middleware::Next,
     response::Response,
@@ -13,6 +14,8 @@ use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tracing::Instrument;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::{AppState, reqlog};
 
 /// Flushes buffered spans on drop; keep it alive for the life of the process.
 pub struct Guard(Option<SdkTracerProvider>);
@@ -61,8 +64,13 @@ pub fn init(service: &'static str) -> Guard {
     Guard(provider)
 }
 
-/// Wrap each request in a span and give it a request id.
-pub async fn request_span(req: Request, next: Next) -> Response {
+/// Wrap each request in a span and give it a request id. When Auth runs, also record a row in
+/// `api_request_log` (no bodies).
+pub async fn request_span(
+    State(s): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let route = req
         .extensions()
         .get::<MatchedPath>()
@@ -77,13 +85,30 @@ pub async fn request_span(req: Request, next: Next) -> Response {
                     .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
         })
         .map_or_else(|| zyvor_core::new_id("req"), str::to_string);
-    let span = tracing::info_span!("http", method = %req.method(), %route, request_id = %id, status = tracing::field::Empty);
+    let method = req.method().to_string();
+    let slot = reqlog::Slot::default();
+    req.extensions_mut().insert(slot.clone());
+    let span = tracing::info_span!("http", method = %method, %route, request_id = %id, status = tracing::field::Empty);
     let started = std::time::Instant::now();
     let mut res = next.run(req).instrument(span.clone()).await;
-    span.record("status", res.status().as_u16());
-    tracing::info!(parent: &span, ms = started.elapsed().as_millis() as u64, "request");
+    let status = res.status().as_u16();
+    let ms = started.elapsed().as_millis() as u64;
+    span.record("status", status);
+    tracing::info!(parent: &span, ms, "request");
     if let Ok(v) = HeaderValue::from_str(&id) {
         res.headers_mut().insert("x-request-id", v);
+    }
+    // Skip the log endpoint itself and unauthenticated traffic (no Auth → empty slot).
+    if route != "/v1/api_requests"
+        && let Some(meta) = slot.0.get()
+    {
+        let pool = s.pool.clone();
+        let meta = meta.clone();
+        let route = route.clone();
+        let id = id.clone();
+        tokio::spawn(async move {
+            reqlog::record(&pool, &meta, &method, &route, status, &id, ms).await;
+        });
     }
     res
 }

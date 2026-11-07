@@ -146,7 +146,7 @@ class Zyvor:
         """DRAFT e-invoice JSON (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal."""
         return self._req("GET", f"/v1/invoices/{invoice_id}/einvoice")
 
-    def gstr1(self, period: str) -> dict:
+    def gstr1(self, period: str) -> types.GetGstGstr1Response:
         """GSTR-1 preparation totals for `period` (YYYY-MM). Zyvor does not file the return."""
         return self._req("GET", f"/v1/gst/gstr1?period={urllib.parse.quote(period)}")
 
@@ -162,31 +162,31 @@ class Zyvor:
         """Import an ISO 20022 CAMT.053 bank statement."""
         return self._req("POST", "/v1/bank_statements/import_camt", {"text": text})
 
-    def list_console_users(self) -> dict:
+    def list_console_users(self) -> types.GetConsoleUsersResponse:
         """Named console users for this organisation."""
         return self._req("GET", "/v1/console/users")
 
-    def assignable_branches(self) -> dict:
+    def assignable_branches(self) -> types.GetConsoleBranchesResponse:
         """Branches a person can be tied to (home environment)."""
         return self._req("GET", "/v1/console/branches")
 
-    def mfa_begin(self, user_id: str) -> dict:
+    def mfa_begin(self, user_id: str) -> types.PostConsoleUsersByIdMfaBeginResponse:
         """Start TOTP enrolment for a console user; returns the secret and otpauth URI."""
         return self._req("POST", f"/v1/console/users/{user_id}/mfa/begin", {})
 
-    def mfa_confirm(self, user_id: str, otp: str) -> dict:
+    def mfa_confirm(self, user_id: str, otp: str) -> types.PostConsoleUsersByIdMfaConfirmResponse:
         """Confirm TOTP enrolment with a code from the authenticator app."""
         return self._req("POST", f"/v1/console/users/{user_id}/mfa/confirm", {"otp": otp})
 
-    def mfa_reset(self, user_id: str) -> dict:
+    def mfa_reset(self, user_id: str) -> types.PostConsoleUsersByIdMfaResetResponse:
         """Clear a console user's second factor (admin)."""
         return self._req("POST", f"/v1/console/users/{user_id}/mfa/reset", {})
 
-    def list_outbox_deliveries(self, event_id: str) -> dict:
+    def list_outbox_deliveries(self, event_id: str) -> types.GetOutboxByIdDeliveriesResponse:
         """Per-attempt delivery history for one outbound webhook event."""
         return self._req("GET", f"/v1/outbox/{event_id}/deliveries")
 
-    def list_inbox(self, *, limit: Optional[int] = None) -> dict:
+    def list_inbox(self, *, limit: Optional[int] = None) -> types.PostFxRatesResponse:
         """Provider webhooks Zyvor received (inbound inspector)."""
         q = urllib.parse.urlencode({k: v for k, v in {"limit": limit}.items() if v is not None})
         return self._req("GET", "/v1/inbox" + ("?" + q if q else ""))
@@ -431,6 +431,19 @@ class Zyvor:
         body = {k: v for k, v in {"resolution": resolution}.items() if v is not None}
         return self._req("POST", f"/v1/recon/cases/{case_id}/resolve", body)
 
+    def scan_cases(self, *, older_than_days: Optional[int] = None) -> types.PostReconScanResponse:
+        """Open cases for captured payments still missing a settlement."""
+        q = urllib.parse.urlencode({"older_than_days": older_than_days} if older_than_days is not None else {})
+        return self._req("POST", "/v1/recon/scan" + ("?" + q if q else ""))
+
+    def me(self) -> types.GetMeResponse:
+        """Who this key is: tenant, env, scopes and actor."""
+        return self._req("GET", "/v1/me")
+
+    def list_api_requests(self) -> types.GetApiRequestsResponse:
+        """Recent authenticated API calls (admin). No request bodies are stored."""
+        return self._req("GET", "/v1/api_requests")
+
     def list_plans(self) -> types.GetPlansResponse:
         """Billing plans."""
         return self._req("GET", "/v1/plans")
@@ -577,7 +590,7 @@ class Zyvor:
         """Add a line to a settlement batch."""
         return self._req("POST", f"/v1/settlement_batches/{batch_id}/items", {"kind": kind, "reference": reference, "amount_minor": amount_minor})
 
-    def release_settlement_batch(self, batch_id: str) -> dict:
+    def release_settlement_batch(self, batch_id: str) -> types.PostSettlementBatchesByIdReleaseResponse:
         """Release a settlement batch via the payout rail."""
         return self._req("POST", f"/v1/settlement_batches/{batch_id}/release", {})
 

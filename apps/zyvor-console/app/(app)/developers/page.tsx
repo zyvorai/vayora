@@ -12,10 +12,11 @@ export default async function Developers({ searchParams }: { searchParams: Promi
   if (me?.r !== "admin") redirect("/");
   const lang: Lang = LANGS.find((l) => l === q.lang) ?? "curl";
   const z = await api();
-  const [s, keys, recent] = await Promise.all([z.settings.get(), z.keys.list(), z.webhooks.outbox()]);
+  const [s, keys, recent, apiCalls] = await Promise.all([z.settings.get(), z.keys.list(), z.webhooks.outbox(), z.apiRequests.list()]);
   const base = (process.env.ZYVOR_PUBLIC_API_URL ?? process.env.ZYVOR_API_URL ?? "http://localhost:8080").replace(/\/$/, "");
   const activeKeys = keys.data.filter((k) => !k.revoked_at && (!k.expires_at || new Date(k.expires_at) > new Date()) && !k.name.startsWith("console session"));
   const last = recent.data.slice(0, 5) as Record<string, string | number | null>[];
+  const calls = apiCalls.data.slice(0, 25);
   return (
     <>
       <div className="head"><div><h1>Developers</h1><p className="lede">Make your first API call, then point webhooks at your own system. You are in <strong>{s.env}</strong> mode: keys and events here never touch {s.env === "test" ? "live money" : "test data"}.</p></div></div>
@@ -50,6 +51,16 @@ export default async function Developers({ searchParams }: { searchParams: Promi
           )}
           <h3 style={{ margin: "18px 0 8px", fontSize: ".9375rem" }}>Check the signature</h3>
           <pre className="code" tabIndex={0}>{VERIFY_WEBHOOK}</pre>
+        </li>
+        <li className="card">
+          <h2>4. Recent API calls</h2>
+          <p className="muted">Authenticated requests to this tenant (route templates only — no bodies). Useful when debugging a key or a support ticket that names an <code>x-request-id</code>.</p>
+          {calls.length === 0
+            ? <p className="muted">No authenticated calls recorded yet.</p>
+            : <div className="tablewrap" style={{ marginTop: 14 }}><table>
+              <thead><tr><th>When</th><th>Actor</th><th>Method</th><th>Route</th><th className="num">Status</th><th className="num">ms</th><th>Request id</th></tr></thead>
+              <tbody>{calls.map((c) => <tr key={c.id}><td className="muted">{new Date(c.created_at).toLocaleString()}</td><td>{c.actor}</td><td>{c.method}</td><td><code>{c.route}</code></td><td className="num">{c.status}</td><td className="num">{c.latency_ms}</td><td className="muted" style={{ overflowWrap: "anywhere" }}>{c.request_id}</td></tr>)}</tbody>
+            </table></div>}
         </li>
       </ol>
     </>

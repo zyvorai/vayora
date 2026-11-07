@@ -12,6 +12,7 @@ pub mod cards;
 pub mod bankcsv;
 pub mod bankfmt;
 pub mod redact;
+pub mod reqlog;
 pub mod billing;
 pub mod cases;
 pub mod checkout;
@@ -253,6 +254,18 @@ impl AppState {
             .map(|v| v.trim().to_string())
             .filter(|v| v.contains('@'));
     }
+}
+
+/// Who is calling: tenant, environment, scopes and actor. Useful for console People/roles checks.
+pub async fn me(auth: auth::Auth) -> Result<axum::Json<serde_json::Value>, ApiError> {
+    Ok(axum::Json(serde_json::json!({
+        "tenant_id": auth.tenant_id,
+        "env": auth.env,
+        "key_id": auth.key_id,
+        "actor": auth.actor,
+        "scopes": auth.scopes,
+        "branch_id": auth.branch_id,
+    })))
 }
 
 /// Today's date in India. Dates the product defaults to (billing, dunning, reports, FX) are Indian business days,
@@ -675,6 +688,8 @@ pub fn app(state: AppState) -> Router {
         .route("/outbox/{id}/replay", post(replay_outbox))
         .route("/outbox/{id}/deliveries", get(admin::list_outbox_deliveries))
         .route("/inbox", get(list_inbox))
+        .route("/api_requests", get(reqlog::list))
+        .route("/me", get(me))
         // payment links
         .route(
             "/payment_links",
@@ -790,7 +805,10 @@ pub fn app(state: AppState) -> Router {
             state.clone(),
             ratelimit::limit,
         ))
-        .layer(axum::middleware::from_fn(telemetry::request_span));
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            telemetry::request_span,
+        ));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route(

@@ -233,6 +233,9 @@ class Tests(unittest.TestCase):
             ("z.case_suggestions('cas_1')", 'GET', '/v1/recon/cases/cas_1/suggestions', None),
             ("z.assign_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/assign', {'assignee': 'x1'}),
             ("z.resolve_case('cas_1', 'x1')", 'POST', '/v1/recon/cases/cas_1/resolve', {'resolution': 'x1'}),
+            ("z.scan_cases(older_than_days=3)", 'POST', '/v1/recon/scan?older_than_days=3', None),
+            ('z.me()', 'GET', '/v1/me', None),
+            ('z.list_api_requests()', 'GET', '/v1/api_requests', None),
             ("z.list_saved_views()", 'GET', '/v1/saved_views?scope=payments', None),
             ("z.create_saved_view('Failed', {'status': 'failed'}, shared=True)", 'POST', '/v1/saved_views', {'scope': 'payments', 'name': 'Failed', 'query': {'status': 'failed'}, 'shared': True}),
             ("z.delete_saved_view('sv_1')", 'DELETE', '/v1/saved_views/sv_1', None),
@@ -318,7 +321,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 91)
+        self.assertEqual(len(rows), 94)
 
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []

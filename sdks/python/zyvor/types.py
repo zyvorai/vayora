@@ -95,6 +95,21 @@ GetApiKeysResponseDataItem = TypedDict("GetApiKeysResponseDataItem", {
     "allowed_cidrs": "List[str]",
 })
 
+GetApiRequestsResponse = TypedDict("GetApiRequestsResponse", {
+    "data": "List[GetApiRequestsResponseDataItem]",
+})
+
+GetApiRequestsResponseDataItem = TypedDict("GetApiRequestsResponseDataItem", {
+    "id": "int",
+    "actor": "str",
+    "method": "str",
+    "route": "str",
+    "status": "int",
+    "request_id": "str",
+    "latency_ms": "int",
+    "created_at": "Any",
+})
+
 GetAuditEventsResponse = TypedDict("GetAuditEventsResponse", {
     "data": "List[GetAuditEventsResponseDataItem]",
 })
@@ -136,15 +151,20 @@ GetCardTokensResponse = TypedDict("GetCardTokensResponse", {
     "tokens": "List[Any]",
 })
 
-GetCheckoutByTenantIdByIntentIdResponse = TypedDict("GetCheckoutByTenantIdByIntentIdResponse", {
-    "merchant": "Optional[str]",
-    "amount_minor": "int",
-    "currency": "str",
-    "description": "Optional[str]",
+GetCheckoutByTenantIdByIntentIdEventsResponse = TypedDict("GetCheckoutByTenantIdByIntentIdEventsResponse", {
+    "id": "str",
+    "method": "Any",
     "status": "str",
-    "phase": "Any",
-    "methods": "List[Any]",
-    "upi_flow": "Any",
+    "failure_reason": "Any",
+    "action": "Any",
+})
+
+GetCheckoutByTenantIdByIntentIdResponse = TypedDict("GetCheckoutByTenantIdByIntentIdResponse", {
+    "id": "str",
+    "method": "Any",
+    "status": "str",
+    "failure_reason": "Any",
+    "action": "Any",
 })
 
 GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantIdByTokenResponse", {
@@ -451,6 +471,7 @@ GetInvoicesResponseDataItem = TypedDict("GetInvoicesResponseDataItem", {
     "due_date": "Optional[str]",
     "customer_id": "Optional[str]",
     "customer_name": "Optional[str]",
+    "details": "Any",
 })
 
 GetMailSuppressionsResponse = TypedDict("GetMailSuppressionsResponse", {
@@ -474,6 +495,15 @@ GetMandatesByIdResponse = TypedDict("GetMandatesByIdResponse", {
 
 GetMandatesResponse = TypedDict("GetMandatesResponse", {
     "data": "List[MandateRow]",
+})
+
+GetMeResponse = TypedDict("GetMeResponse", {
+    "tenant_id": "str",
+    "env": "str",
+    "key_id": "str",
+    "actor": "str",
+    "scopes": "List[str]",
+    "branch_id": "Optional[str]",
 })
 
 GetMilestonesResponse = TypedDict("GetMilestonesResponse", {
@@ -543,6 +573,20 @@ GetOnboardingResponseProfileItem = TypedDict("GetOnboardingResponseProfileItem",
 GetOnboardingUploadsResponse = TypedDict("GetOnboardingUploadsResponse", {
     "data": "Any",
     "reader_available": "Any",
+})
+
+GetOutboxByIdDeliveriesResponse = TypedDict("GetOutboxByIdDeliveriesResponse", {
+    "data": "List[GetOutboxByIdDeliveriesResponseDataItem]",
+})
+
+GetOutboxByIdDeliveriesResponseDataItem = TypedDict("GetOutboxByIdDeliveriesResponseDataItem", {
+    "id": "int",
+    "attempt_no": "int",
+    "ok": "bool",
+    "http_status": "Optional[int]",
+    "error": "Optional[str]",
+    "latency_ms": "Optional[int]",
+    "created_at": "Any",
 })
 
 GetOutboxResponse = TypedDict("GetOutboxResponse", {
@@ -769,6 +813,7 @@ GetSettingsResponse = TypedDict("GetSettingsResponse", {
     "email_logo_url": "Optional[str]",
     "risk": "Any",
     "webhook_events": "Any",
+    "return_url_origins": "Any",
 })
 
 GetSettlementBatchesByIdResponse = TypedDict("GetSettlementBatchesByIdResponse", {
@@ -1828,6 +1873,12 @@ PostSettlementBatchesByIdItemsResponse = TypedDict("PostSettlementBatchesByIdIte
     "batch_id": "str",
     "kind": "str",
     "amount_minor": "int",
+})
+
+PostSettlementBatchesByIdReleaseResponse = TypedDict("PostSettlementBatchesByIdReleaseResponse", {
+    "batch_id": "Optional[str]",
+    "net_minor": "int",
+    "rail_ref": "Any",
 })
 
 PostSettlementBatchesResponse = TypedDict("PostSettlementBatchesResponse", {

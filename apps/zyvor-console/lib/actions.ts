@@ -328,6 +328,23 @@ export const resolveCase = async (_: FormState, f: FormData) => {
   if (!note) return { error: "Say how it was resolved." };
   return run(["/reconciliation", "/"], (z) => z.cases.resolve(id(f), note));
 };
+/** Open cases for captured payments still missing a settlement after N days (default 3). */
+export async function scanMissingSettlements(_: FormState, f: FormData): Promise<FormState> {
+  const raw = String(f.get("older_than_days") ?? "3").trim();
+  const days = Number.parseInt(raw, 10);
+  if (!Number.isFinite(days) || days < 0 || days > 90) return { error: "Days must be 0–90." };
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  try {
+    const r = await (await api(s.u)).cases.scan(days);
+    revalidatePath("/reconciliation");
+    revalidatePath("/");
+    return { ok: `Opened ${r.new_cases} new case(s).` };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
 const PAYMENT_FILTERS = ["status", "q", "from", "to"] as const;
 export const saveView = async (_: FormState, f: FormData) => {
   const name = String(f.get("name") ?? "").trim();

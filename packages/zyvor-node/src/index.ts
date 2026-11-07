@@ -268,6 +268,16 @@ export class Zyvor {
     suggestions: (id: string, opts: { ai?: boolean } = {}) => this.req<{ case_id: string; kind: string; summary: string; ai_summary: string | null; evidence: Record<string, unknown>[]; next_steps: string[]; note: string }>("GET", `/v1/recon/cases/${encodeURIComponent(id)}/suggestions${opts.ai ? "?ai=true" : ""}`),
     assign: (id: string, assignee: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/assign`, { assignee }),
     resolve: (id: string, resolution: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/resolve`, { resolution }),
+    /** Open cases for captured payments still missing a settlement after `olderThanDays` (default 3). */
+    scan: (olderThanDays?: number) => this.req<{ new_cases: number }>("POST", `/v1/recon/scan${olderThanDays != null ? `?older_than_days=${olderThanDays}` : ""}`),
+  };
+
+  /** Who this key is: tenant, env, scopes and actor. */
+  me = () => this.req<{ tenant_id: string; env: string; key_id: string; actor: string; scopes: string[]; branch_id: string | null }>("GET", "/v1/me");
+
+  /** Recent authenticated API calls (admin). No request bodies are stored. */
+  readonly apiRequests = {
+    list: () => this.req<Page<{ id: number; actor: string; method: string; route: string; status: number; request_id: string; latency_ms: number; created_at: string }>>("GET", "/v1/api_requests"),
   };
 
   readonly billing = {

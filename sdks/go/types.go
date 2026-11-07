@@ -111,6 +111,21 @@ type GetApiKeysResponseDataItem struct {
 	AllowedCidrs []string `json:"allowed_cidrs"`
 }
 
+type GetApiRequestsResponse struct {
+	Data []GetApiRequestsResponseDataItem `json:"data"`
+}
+
+type GetApiRequestsResponseDataItem struct {
+	ID        int64  `json:"id"`
+	Actor     string `json:"actor"`
+	Method    string `json:"method"`
+	Route     string `json:"route"`
+	Status    int64  `json:"status"`
+	RequestID string `json:"request_id"`
+	LatencyMs int64  `json:"latency_ms"`
+	CreatedAt any    `json:"created_at"`
+}
+
 type GetAuditEventsResponse struct {
 	Data []GetAuditEventsResponseDataItem `json:"data"`
 }
@@ -152,15 +167,20 @@ type GetCardTokensResponse struct {
 	Tokens []any `json:"tokens"`
 }
 
+type GetCheckoutByTenantIdByIntentIdEventsResponse struct {
+	ID            string `json:"id"`
+	Method        any    `json:"method"`
+	Status        string `json:"status"`
+	FailureReason any    `json:"failure_reason"`
+	Action        any    `json:"action"`
+}
+
 type GetCheckoutByTenantIdByIntentIdResponse struct {
-	Merchant    *string `json:"merchant"`
-	AmountMinor int64   `json:"amount_minor"`
-	Currency    string  `json:"currency"`
-	Description *string `json:"description"`
-	Status      string  `json:"status"`
-	Phase       any     `json:"phase"`
-	Methods     []any   `json:"methods"`
-	UPIFlow     any     `json:"upi_flow"`
+	ID            string `json:"id"`
+	Method        any    `json:"method"`
+	Status        string `json:"status"`
+	FailureReason any    `json:"failure_reason"`
+	Action        any    `json:"action"`
 }
 
 type GetCheckoutLinksByTenantIdByTokenResponse struct {
@@ -467,6 +487,7 @@ type GetInvoicesResponseDataItem struct {
 	DueDate          *string `json:"due_date"`
 	CustomerID       *string `json:"customer_id"`
 	CustomerName     *string `json:"customer_name"`
+	Details          any     `json:"details"`
 }
 
 type GetMailSuppressionsResponse struct {
@@ -490,6 +511,15 @@ type GetMandatesByIdResponse struct {
 
 type GetMandatesResponse struct {
 	Data []MandateRow `json:"data"`
+}
+
+type GetMeResponse struct {
+	TenantID string   `json:"tenant_id"`
+	Env      string   `json:"env"`
+	KeyID    string   `json:"key_id"`
+	Actor    string   `json:"actor"`
+	Scopes   []string `json:"scopes"`
+	BranchID *string  `json:"branch_id"`
 }
 
 type GetMilestonesResponse struct {
@@ -559,6 +589,20 @@ type GetOnboardingResponseProfileItem struct {
 type GetOnboardingUploadsResponse struct {
 	Data            any `json:"data"`
 	ReaderAvailable any `json:"reader_available"`
+}
+
+type GetOutboxByIdDeliveriesResponse struct {
+	Data []GetOutboxByIdDeliveriesResponseDataItem `json:"data"`
+}
+
+type GetOutboxByIdDeliveriesResponseDataItem struct {
+	ID         int64   `json:"id"`
+	AttemptNo  int64   `json:"attempt_no"`
+	Ok         bool    `json:"ok"`
+	HttpStatus *int64  `json:"http_status"`
+	Error      *string `json:"error"`
+	LatencyMs  *int64  `json:"latency_ms"`
+	CreatedAt  any     `json:"created_at"`
 }
 
 type GetOutboxResponse struct {
@@ -785,6 +829,7 @@ type GetSettingsResponse struct {
 	EmailLogoURL                 *string `json:"email_logo_url"`
 	Risk                         any     `json:"risk"`
 	WebhookEvents                any     `json:"webhook_events"`
+	ReturnURLOrigins             any     `json:"return_url_origins"`
 }
 
 type GetSettlementBatchesByIdResponse struct {
@@ -1844,6 +1889,12 @@ type PostSettlementBatchesByIdItemsResponse struct {
 	BatchID     string `json:"batch_id"`
 	Kind        string `json:"kind"`
 	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostSettlementBatchesByIdReleaseResponse struct {
+	BatchID  *string `json:"batch_id"`
+	NetMinor int64   `json:"net_minor"`
+	RailRef  any     `json:"rail_ref"`
 }
 
 type PostSettlementBatchesResponse struct {

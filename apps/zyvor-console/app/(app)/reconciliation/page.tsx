@@ -1,7 +1,7 @@
 import { providerLabel, words } from "@/lib/labels";
 import { Act } from "@/components/Act";
 import { Chip } from "@/components/Chip";
-import { assignCase, importBankCsv, simulateBankCredit, simulateSettlement } from "@/lib/actions";
+import { assignCase, importBankCsv, scanMissingSettlements, simulateBankCredit, simulateSettlement } from "@/lib/actions";
 import { SettingsForm } from "@/components/SettingsForm";
 import { inr } from "@/lib/format";
 import { api } from "@/lib/zyvor";
@@ -35,6 +35,10 @@ export default async function Reconciliation({ searchParams }: { searchParams: P
   return (
     <>
       <div className="head"><div><h1>Reconciliation</h1><p className="lede">Every difference between what we recorded and what arrived becomes a task with an owner.</p></div></div>
+      <div className="muted" style={{ marginTop: 0, marginBottom: "1em", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <Act action={scanMissingSettlements} label="Scan for missing settlements" extra={{ older_than_days: "3" }} showOk />
+        Opens a case for each captured payment still missing from a settlement after three days.
+      </div>
       <h2>Cases ({open.length} open)</h2>
       <div className="tablewrap" style={{ marginBottom: 28 }}>
         <table>

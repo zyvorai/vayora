@@ -28,6 +28,33 @@ pub const ALL_SCOPES: &[&str] = &[
     "admin",
 ];
 
+/// Scopes a console role's session key receives. Login, invitations and People UI all use this.
+pub fn scopes_for_role(role: &str) -> Vec<String> {
+    let s: &[&str] = match role {
+        "admin" => &["admin"],
+        "finance" => &[
+            "payments:read",
+            "payments:write",
+            "refunds:write",
+            "refunds:approve",
+            "recon:read",
+            "recon:write",
+            "invoices:write",
+            "customers:write",
+            "collections:write",
+            "billing:write",
+            "disputes:write",
+            "payouts:write",
+            "payouts:approve",
+            "closings:approve",
+            "onboarding:write",
+        ],
+        "cashier" => &["payments:read", "payments:write"],
+        _ => &["payments:read", "recon:read"],
+    };
+    s.iter().map(|x| (*x).to_string()).collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct Auth {
     pub tenant_id: String,
@@ -214,6 +241,12 @@ impl FromRequestParts<AppState> for Auth {
         let actor = believed
             .map(|a| format!("user:{a}"))
             .unwrap_or_else(|| format!("key:{key_id}"));
+        if let Some(slot) = parts.extensions.get::<crate::reqlog::Slot>() {
+            let _ = slot.0.set(crate::reqlog::Meta {
+                tenant_id: tenant_id.clone(),
+                actor: actor.clone(),
+            });
+        }
         Ok(Auth {
             tenant_id,
             key_id,

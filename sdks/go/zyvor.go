@@ -986,6 +986,29 @@ func (c *Client) ResolveCase(caseId string, resolution string) (map[string]any, 
 	return c.call("POST", "/v1/recon/cases/"+caseId+"/resolve", body)
 }
 
+// ScanCases: Open cases for captured payments still missing a settlement.
+func (c *Client) ScanCases(olderThanDays ...int) (map[string]any, error) {
+	v := url.Values{}
+	if len(olderThanDays) > 0 {
+		v.Set("older_than_days", fmt.Sprint(olderThanDays[0]))
+	}
+	path := "/v1/recon/scan"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("POST", path, nil)
+}
+
+// Me: Who this key is (tenant, env, scopes, actor).
+func (c *Client) Me() (map[string]any, error) {
+	return c.call("GET", "/v1/me", nil)
+}
+
+// ListApiRequests: Recent authenticated API calls (admin). No bodies.
+func (c *Client) ListApiRequests() (map[string]any, error) {
+	return c.call("GET", "/v1/api_requests", nil)
+}
+
 // ListPlans: Billing plans.
 func (c *Client) ListPlans() (map[string]any, error) {
 	v := url.Values{}

@@ -12,7 +12,7 @@ use zyvor_core::new_id;
 use crate::{
     ApiError, AppState,
     admin::bootstrap_org,
-    auth::mint_key,
+    auth::{self, mint_key},
     console_users::{Login, authenticate_in, check_password, hash_password, valid_username},
     tenant,
 };
@@ -169,32 +169,9 @@ pub struct LoginIn {
     otp: Option<String>,
 }
 
-/// What a signed-in person's session key may do. The console still enforces roles on its own pages;
-/// this limits what a leaked session key could do against the API directly.
+/// What a signed-in person's session key may do. Single source: `auth::scopes_for_role`.
 fn session_scopes(role: &str) -> Vec<String> {
-    let s: &[&str] = match role {
-        "admin" => &["admin"],
-        "finance" => &[
-            "payments:read",
-            "payments:write",
-            "refunds:write",
-            "refunds:approve",
-            "recon:read",
-            "recon:write",
-            "invoices:write",
-            "customers:write",
-            "collections:write",
-            "billing:write",
-            "disputes:write",
-            "payouts:write",
-            "payouts:approve",
-            "closings:approve",
-            "onboarding:write",
-        ],
-        "cashier" => &["payments:read", "payments:write"],
-        _ => &["payments:read", "recon:read"],
-    };
-    s.iter().map(|x| x.to_string()).collect()
+    auth::scopes_for_role(role)
 }
 
 /// `POST /v1/console/login`: public. Finds the organisation from the email, checks the password

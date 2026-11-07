@@ -20,5 +20,6 @@ ZYVOR_WEBHOOK_SECRET=whsec_...
 
 - `create-payment-link.js` — server call for payment links  
 - `webhook.js` — HMAC verify + `markPaid(orderId)` hook  
+- `.env.example` — required env vars  
 
-Publish as a Shopify app when you have Partner credentials.
+Release zip: `scripts/package-shopify-plugin.sh` → `dist/zyvor-shopify-*.zip`. Publish as a Shopify app when you have Partner credentials.

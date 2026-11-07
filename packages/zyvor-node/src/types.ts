@@ -91,6 +91,21 @@ export interface GetApiKeysResponseDataItem {
   allowed_cidrs: string[];
 }
 
+export interface GetApiRequestsResponse {
+  data: GetApiRequestsResponseDataItem[];
+}
+
+export interface GetApiRequestsResponseDataItem {
+  id: number;
+  actor: string;
+  method: string;
+  route: string;
+  status: number;
+  request_id: string;
+  latency_ms: number;
+  created_at: unknown;
+}
+
 export interface GetAuditEventsResponse {
   data: GetAuditEventsResponseDataItem[];
 }
@@ -132,15 +147,20 @@ export interface GetCardTokensResponse {
   tokens: unknown[];
 }
 
-export interface GetCheckoutByTenantIdByIntentIdResponse {
-  merchant: string | null;
-  amount_minor: number;
-  currency: string;
-  description: string | null;
+export interface GetCheckoutByTenantIdByIntentIdEventsResponse {
+  id: string;
+  method: unknown;
   status: string;
-  phase: unknown;
-  methods: unknown[];
-  upi_flow: unknown;
+  failure_reason: unknown;
+  action: unknown;
+}
+
+export interface GetCheckoutByTenantIdByIntentIdResponse {
+  id: string;
+  method: unknown;
+  status: string;
+  failure_reason: unknown;
+  action: unknown;
 }
 
 export interface GetCheckoutLinksByTenantIdByTokenResponse {
@@ -447,6 +467,7 @@ export interface GetInvoicesResponseDataItem {
   due_date: string | null;
   customer_id: string | null;
   customer_name: string | null;
+  details: unknown;
 }
 
 export interface GetMailSuppressionsResponse {
@@ -470,6 +491,15 @@ export interface GetMandatesByIdResponse {
 
 export interface GetMandatesResponse {
   data: MandateRow[];
+}
+
+export interface GetMeResponse {
+  tenant_id: string;
+  env: string;
+  key_id: string;
+  actor: string;
+  scopes: string[];
+  branch_id: string | null;
 }
 
 export interface GetMilestonesResponse {
@@ -539,6 +569,20 @@ export interface GetOnboardingResponseProfileItem {
 export interface GetOnboardingUploadsResponse {
   data: unknown;
   reader_available: unknown;
+}
+
+export interface GetOutboxByIdDeliveriesResponse {
+  data: GetOutboxByIdDeliveriesResponseDataItem[];
+}
+
+export interface GetOutboxByIdDeliveriesResponseDataItem {
+  id: number;
+  attempt_no: number;
+  ok: boolean;
+  http_status: number | null;
+  error: string | null;
+  latency_ms: number | null;
+  created_at: unknown;
 }
 
 export interface GetOutboxResponse {
@@ -765,6 +809,7 @@ export interface GetSettingsResponse {
   email_logo_url: string | null;
   risk: unknown;
   webhook_events: unknown;
+  return_url_origins: unknown;
 }
 
 export interface GetSettlementBatchesByIdResponse {
@@ -1824,6 +1869,12 @@ export interface PostSettlementBatchesByIdItemsResponse {
   batch_id: string;
   kind: string;
   amount_minor: number;
+}
+
+export interface PostSettlementBatchesByIdReleaseResponse {
+  batch_id: string | null;
+  net_minor: number;
+  rail_ref: unknown;
 }
 
 export interface PostSettlementBatchesResponse {

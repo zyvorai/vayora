@@ -274,6 +274,9 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"ResetTestData", func() (map[string]any, error) { return c.ResetTestData() }, "POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"}},
 		{"AssignCase", func() (map[string]any, error) { return c.AssignCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/assign", map[string]any{"assignee": "x1"}},
 		{"ResolveCase", func() (map[string]any, error) { return c.ResolveCase("cas_1", "x1") }, "POST", "/v1/recon/cases/cas_1/resolve", map[string]any{"resolution": "x1"}},
+		{"ScanCases", func() (map[string]any, error) { return c.ScanCases(3) }, "POST", "/v1/recon/scan?older_than_days=3", map[string]any{}},
+		{"Me", func() (map[string]any, error) { return c.Me() }, "GET", "/v1/me", nil},
+		{"ListApiRequests", func() (map[string]any, error) { return c.ListApiRequests() }, "GET", "/v1/api_requests", nil},
 		{"ListPlans", func() (map[string]any, error) { return c.ListPlans() }, "GET", "/v1/plans", nil},
 		{"ListSubscriptions", func() (map[string]any, error) { return c.ListSubscriptions() }, "GET", "/v1/subscriptions", nil},
 		{"PauseSubscription", func() (map[string]any, error) { return c.PauseSubscription("sub_1") }, "POST", "/v1/subscriptions/sub_1/pause", map[string]any{}},
@@ -396,8 +399,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 104 {
-		t.Fatalf("expected 101 rows, got %d", len(rows))
+	if len(rows) != 107 {
+		t.Fatalf("expected 107 rows, got %d", len(rows))
 	}
 }
 
