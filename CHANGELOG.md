@@ -4,6 +4,12 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 7 November 2026
+**Android apps (Compose, like iOS)**
+- `apps/android`: Vayora Pay + Vayora Merchant, shared `vayora-kit` / `vayora-ui` (Money, hostile-safe UPI parse, API client, indigo/emerald dark tokens).
+- Core flows: Merchant Collect → QR (demo auto-pay or sandbox); Pay paste `upi://pay` → test PIN → on-phone wallet; Settings for server / demo.
+- CI assembles debug APKs and runs kit unit tests. Camera scan and most iOS extras not ported yet.
+
 ## 7 November 2026 — v0.2.0
 **In-repo PG path closed further (simulators only)**
 - Bank statements: SWIFT MT940 and ISO 20022 CAMT.053 import alongside CSV/JSON; console and SDKs.

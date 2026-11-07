@@ -11,6 +11,8 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Regulatory position](zyvor/REGULATORY.md) | Orchestrate vs acquire money modes, fund-flow freeze (not legal advice) |
 | [Acquire mode](zyvor/ACQUIRE_MODE.md) | Operator guide: APIs, env vars, go-live checklist for sponsor-backed PG |
 | [Store plugins](../plugins/README.md) | Shopify, WooCommerce, Magento payment-link + webhook scaffolds |
+| [iPhone apps](../apps/ios/README.md) | Vayora Pay + Merchant (SwiftUI, test mode) |
+| [Android apps](../apps/android/README.md) | Vayora Pay + Merchant (Compose, mirrors iOS design, test mode) |
 | [Compliance map](compliance/README.md) | Requirements by area and where each lands in the code |
 | [Own licences](compliance/OWN_LICENCES.md) | RBI PA + NPCI TPAP parallel track under sponsor |
 | [CERT-In runbook](compliance/CERT_IN_RUNBOOK.md) | Six-hour incident reporting checklist |
