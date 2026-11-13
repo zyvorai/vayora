@@ -71,7 +71,7 @@ jobs:
       # Do not install the removed SDK `tools` package (setup-android default).
       - uses: android-actions/setup-android@v3
         with: { packages: "platform-tools platforms;android-35 build-tools;35.0.0" }
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Unit tests and debug APKs
         working-directory: apps/android
         run: ./gradlew :vayora-kit:test :pay:assembleDebug :merchant:assembleDebug
