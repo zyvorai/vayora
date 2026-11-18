@@ -127,6 +127,7 @@ impl Provider for Razorpay {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        check_request(&self.capabilities(), req)?;
         let body = json!({ "amount": req.amount_minor, "currency": req.currency.code(), "receipt": req.attempt_id, "notes": { "attempt_id": req.attempt_id } });
         let order = read_json(
             self.post("/v1/orders")
@@ -256,7 +257,12 @@ impl Provider for Razorpay {
                 .map_err(classify)?,
         )
         .await?;
-        let Some(order) = orders["items"].as_array().and_then(|a| a.first()) else {
+        // An answer that is not a list of orders is not "no orders": reading it that way would report a payment
+        // that may exist as never having happened.
+        let orders_list = orders["items"]
+            .as_array()
+            .ok_or_else(|| ProviderError::Uncertain("order lookup did not return a list".into()))?;
+        if orders_list.is_empty() {
             return Ok(PaymentState {
                 status: PaymentStatus::Failed,
                 provider_order_ref: None,
@@ -264,33 +270,47 @@ impl Provider for Razorpay {
                 failure_reason: Some("not_found".into()),
                 raw: orders,
             });
-        };
-        let order_id = order["id"].as_str().unwrap_or_default().to_string();
-        let pays = read_json(
-            self.get(&format!("/v1/orders/{order_id}/payments"))
-                .send()
-                .await
-                .map_err(classify)?,
-        )
-        .await?;
-        let items = pays["items"].as_array().cloned().unwrap_or_default();
-        // A paid payment wins over everything; otherwise report the most advanced state.
+        }
+        // Razorpay does not de-duplicate on `receipt`, so an attempt that was initiated twice has two orders.
+        // Look at the payments of every one of them: money paid on any counts.
+        let mut best: Option<(i32, PaymentState)> = None;
         let rank = |p: &Value| match status_of(p["status"].as_str().unwrap_or("")) {
             PaymentStatus::Captured => 3,
             PaymentStatus::Authorized => 2,
             PaymentStatus::Pending => 1,
             PaymentStatus::Failed => 0,
         };
-        Ok(match items.iter().max_by_key(|p| rank(p)) {
-            Some(p) => payment_state(p, Some(&order_id)),
-            None => PaymentState {
-                status: PaymentStatus::Pending,
-                provider_order_ref: Some(order_id),
-                provider_payment_ref: None,
-                failure_reason: None,
-                raw: pays,
-            },
-        })
+        for order in orders_list {
+            let order_id = order["id"].as_str().unwrap_or_default().to_string();
+            let pays = read_json(
+                self.get(&format!("/v1/orders/{order_id}/payments"))
+                    .send()
+                    .await
+                    .map_err(classify)?,
+            )
+            .await?;
+            let items = pays["items"].as_array().ok_or_else(|| {
+                ProviderError::Uncertain("payment lookup did not return a list".into())
+            })?;
+            // A paid payment wins over everything; otherwise report the most advanced state.
+            let candidate = match items.iter().max_by_key(|p| rank(p)) {
+                Some(p) => (rank(p), payment_state(p, Some(&order_id))),
+                None => (
+                    1,
+                    PaymentState {
+                        status: PaymentStatus::Pending,
+                        provider_order_ref: Some(order_id),
+                        provider_payment_ref: None,
+                        failure_reason: None,
+                        raw: pays.clone(),
+                    },
+                ),
+            };
+            if best.as_ref().is_none_or(|(r, _)| candidate.0 > *r) {
+                best = Some(candidate);
+            }
+        }
+        Ok(best.expect("at least one order").1)
     }
 
     async fn refund(&self, req: &RefundRequest) -> Result<RefundState, ProviderError> {
@@ -319,10 +339,12 @@ impl Provider for Razorpay {
                 .map_err(classify)?,
         )
         .await?;
-        let found = rs["items"].as_array().and_then(|a| {
-            a.iter()
-                .find(|r| r["notes"]["refund_id"] == refund_id || r["receipt"] == refund_id)
-        });
+        let list = rs["items"].as_array().ok_or_else(|| {
+            ProviderError::Uncertain("refund lookup did not return a list".into())
+        })?;
+        let found = list
+            .iter()
+            .find(|r| r["notes"]["refund_id"] == refund_id || r["receipt"] == refund_id);
         Ok(match found {
             Some(r) => refund_state(r),
             None => RefundState {

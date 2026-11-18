@@ -13,6 +13,8 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 | Signed webhooks (outbound) | ✅ | HMAC-SHA256 `Zyvor-Signature` with timestamp; retries with backoff; dead-lettering; replay endpoint; per-attempt delivery history (`GET /v1/outbox/{id}/deliveries`). |
 | Razorpay adapter | 🟡 | Orders + hosted checkout, capture, refunds, lookup by receipt, settlements recon, webhook verification. Built from public docs. |
 | Cashfree adapter | 🟡 | Orders, server-initiated UPI collect, refunds, lookup by `order_id`, settlement recon, webhook verification. Built from public docs. |
+| PayU adapter | 🟡 | Hosted checkout, Verify Payment, refunds (queued, then followed), reverse-hash webhooks, Settlement Detail Range report. **Mock only, built from public docs, not verified against a live sandbox.** Refund callbacks are refused (no documented signature). Open questions: [PAYU.md](PAYU.md). |
+| Adapter conformance suite | 🟡 | One reusable suite (`crates/zyvor-providers/tests/conformance`) runs the provider contract against every adapter: Rejected vs Uncertain mapping, lost responses, idempotent create, refunds, webhook signatures and replays, settlement parsing, paise round trips, capability honesty. Simulators only. [ADD_A_PROVIDER.md](ADD_A_PROVIDER.md) |
 | PhonePe adapter | 🟡 | PG pay/status/refund + webhook verify; built from public docs; simulator/mock only until sandbox credentials. |
 | Sponsor UPI / acquire | 🟡 | `sponsor_upi` provider + `zyvor-settle` batches/rails + money_mode; needs sponsor LOI before live. |
 | Network card tokens | 🟡 | `zyvor-cards` + `/v1/card_tokens`; charge via `card_token_id` on attempts (sim stub); rejects PAN/CVV; no live PCI vault. |

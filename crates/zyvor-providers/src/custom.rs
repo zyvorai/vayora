@@ -134,6 +134,7 @@ impl Provider for Custom {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        check_request(&self.caps, req)?;
         let body = json!({
             "attempt_id": req.attempt_id,
             "amount_minor": req.amount_minor,
@@ -144,6 +145,9 @@ impl Provider for Custom {
             "customer_phone": req.customer_phone,
             "capture_automatic": req.capture_automatic,
             "return_url": req.return_url,
+            // Asked for only when this gateway declared `upi_intent`: without the flag a gateway cannot know
+            // to answer with a UPI QR / intent, so a declared capability would never be exercised.
+            "upi_intent": req.upi_intent && self.caps.upi_intent,
         });
         let v = read_json(
             self.req(reqwest::Method::POST, "/payments")
@@ -235,18 +239,24 @@ impl Provider for Custom {
         refund_id: &str,
         _provider_payment_ref: &str,
     ) -> Result<RefundState, ProviderError> {
-        refund_state(
-            read_json(
-                self.req(
-                    reqwest::Method::GET,
-                    &format!("/refunds/{}", seg(refund_id)),
-                )
-                .send()
-                .await
-                .map_err(classify)?,
+        let res = self
+            .req(
+                reqwest::Method::GET,
+                &format!("/refunds/{}", seg(refund_id)),
             )
-            .await?,
-        )
+            .send()
+            .await
+            .map_err(classify)?;
+        // As for payments: a 404 means the gateway never saw this refund, which is a definite "not done".
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(RefundState {
+                status: RefundStatus::Failed,
+                provider_refund_ref: None,
+                failure_reason: Some("not_found".into()),
+                raw: Value::Null,
+            });
+        }
+        refund_state(read_json(res).await?)
     }
 
     async fn fetch_settlements(

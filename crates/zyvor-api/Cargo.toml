@@ -41,6 +41,7 @@ lettre = { version = "0.11.23", default-features = false, features = ["builder",
 
 [dev-dependencies]
 http-body-util = "0.1.5"
+form_urlencoded = "1.2.2"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }
 tower = { version = "0.5.3", features = ["util"] }
 zyvor-provider-mock = { path = "../zyvor-provider-mock" }

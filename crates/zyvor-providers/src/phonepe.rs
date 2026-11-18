@@ -115,6 +115,7 @@ impl Provider for PhonePe {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        check_request(&self.caps, req)?;
         let body = json!({
             "merchantId": self.merchant_id,
             "merchantTransactionId": req.attempt_id,
@@ -239,8 +240,8 @@ impl Provider for PhonePe {
         refund_id: &str,
         _provider_payment_ref: &str,
     ) -> Result<RefundState, ProviderError> {
-        let v = read_json(
-            self.req(
+        let res = self
+            .req(
                 reqwest::Method::GET,
                 &format!(
                     "/pg/v1/refund/{}/{}",
@@ -250,9 +251,17 @@ impl Provider for PhonePe {
             )
             .send()
             .await
-            .map_err(classify)?,
-        )
-        .await?;
+            .map_err(classify)?;
+        // As for payments: a 404 means PhonePe never saw this refund, which is a definite "not done".
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(RefundState {
+                status: RefundStatus::Failed,
+                provider_refund_ref: None,
+                failure_reason: Some("not_found".into()),
+                raw: Value::Null,
+            });
+        }
+        let v = read_json(res).await?;
         let status = match v["status"].as_str().or_else(|| v["code"].as_str()) {
             Some("pending" | "PENDING") => RefundStatus::Pending,
             Some("processed" | "PAYMENT_SUCCESS" | "COMPLETED") => RefundStatus::Processed,
@@ -265,7 +274,11 @@ impl Provider for PhonePe {
         };
         Ok(RefundState {
             status,
-            provider_refund_ref: v["refundId"].as_str().map(str::to_string),
+            // the same two spellings `refund` reads, so a refund has one reference whichever call reports it
+            provider_refund_ref: v["provider_refund_ref"]
+                .as_str()
+                .or_else(|| v["refundId"].as_str())
+                .map(str::to_string),
             failure_reason: v["failure_reason"].as_str().map(str::to_string),
             raw: v,
         })
@@ -283,10 +296,12 @@ impl Provider for PhonePe {
             .get("x-verify")
             .or_else(|| headers.get("x-zyvor-signature"))
             .ok_or(WebhookError::MissingSignature)?;
+        // The timestamp is part of what is signed and is what bounds a replay, so it is required: a delivery
+        // without one used to be checked against the current time instead, which defeats the replay window.
         let ts = headers
             .get("x-zyvor-timestamp")
             .cloned()
-            .unwrap_or_else(|| now_unix.to_string());
+            .ok_or(WebhookError::MissingSignature)?;
         let key = if secret.is_empty() {
             self.salt_key.as_bytes()
         } else {
@@ -340,34 +355,5 @@ impl Provider for PhonePe {
             failure_reason: text("failure_reason"),
             raw: v,
         })
-    }
-}
-
-async fn read_json(res: reqwest::Response) -> Result<Value, ProviderError> {
-    let status = res.status();
-    let v: Value = res
-        .json()
-        .await
-        .map_err(|e| ProviderError::Uncertain(e.to_string()))?;
-    if status.is_server_error() {
-        return Err(ProviderError::Uncertain(format!("phonepe {status}")));
-    }
-    if !status.is_success() {
-        return Err(ProviderError::Rejected(
-            v["message"]
-                .as_str()
-                .or_else(|| v["error"].as_str())
-                .unwrap_or("rejected")
-                .into(),
-        ));
-    }
-    Ok(v)
-}
-
-fn classify(e: reqwest::Error) -> ProviderError {
-    if e.is_timeout() || e.is_connect() {
-        ProviderError::Uncertain(e.to_string())
-    } else {
-        ProviderError::Rejected(e.to_string())
     }
 }
