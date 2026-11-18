@@ -522,6 +522,30 @@ pub fn payment_link(
     (subject, lines.join("\n"))
 }
 
+/// The words of the email that carries a buyer's event tickets: where they are and when the event starts.
+pub fn ticket_order(
+    merchant: &str,
+    buyer_name: &str,
+    event_name: &str,
+    starts: &str,
+    url: &str,
+) -> (String, String) {
+    let subject = format!("Your tickets for {event_name}");
+    let lines = [
+        format!("Hello {buyer_name},"),
+        String::new(),
+        format!(
+            "Your payment to {merchant} was received. Your tickets for {event_name} are ready."
+        ),
+        format!("Starts: {starts}"),
+        String::new(),
+        format!("Open your tickets (each has a QR code to show at the door): {url}"),
+        String::new(),
+        "Keep this link private: anyone who has it can see your tickets.".into(),
+    ];
+    (subject, lines.join("\n"))
+}
+
 /// The words of an invoice sent to its customer: what it is made of (when it says), what is still owed and by when.
 /// With a checkout address it carries a pay link; without one it says how to pay in words the business can answer.
 #[allow(clippy::too_many_arguments)]

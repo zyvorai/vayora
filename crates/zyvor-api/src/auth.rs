@@ -25,6 +25,9 @@ pub const ALL_SCOPES: &[&str] = &[
     "closings:approve",
     "onboarding:write",
     "onboarding:review",
+    "events:read",
+    "events:write",
+    "events:checkin",
     "admin",
 ];
 
@@ -48,6 +51,8 @@ pub fn scopes_for_role(role: &str) -> Vec<String> {
             "payouts:approve",
             "closings:approve",
             "onboarding:write",
+            "events:read",
+            "events:write",
         ],
         "cashier" => &["payments:read", "payments:write"],
         _ => &["payments:read", "recon:read"],

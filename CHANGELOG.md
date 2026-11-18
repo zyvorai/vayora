@@ -5,6 +5,16 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Events and ticketing (simulators only)
+- **Events** with ticket tiers (price in paise, quantity cap, per-order maximum, sale window, early-bird price and window, optional per-tier payment methods), a registration form (text, email, phone, select, checkbox; required, length limits) and optional vendor shares. Draft, on sale, closed, cancelled.
+- **Seats never oversold:** held and sold counters on the event and each tier change only under the event row lock, with a database check that held + sold never passes capacity. An unpaid order holds its seats for a configurable time; the worker releases it (not while a payment is authorised or unknown), gives its coupon use back and cancels its intent. A payment that arrives after the release takes free seats back or is queued for a refund with a reconciliation case.
+- **Payment:** an order creates an ordinary payment intent through the existing routing; tickets are issued in the same transaction as the verified capture, once (one row per order and seat). Coupons, vendor splits, refunds and idempotency keys are the existing ones. Free tiers need no payment.
+- **Check-in:** each ticket has a signed QR payload (HMAC bound to its event) and a code; a scoped `events:checkin` key can scan, sync offline scans, export valid tickets and read counts, and nothing else. A second scan is reported with who and when; two devices at once admit a ticket once.
+- **Attendees:** search and a CSV export (formula-defused). **Cancellation:** cancelling an event or an order refunds through the ordinary refund flow in a tracked batch (the over-refund guard and the approval threshold apply; the requester cannot approve), with progress and a per-event refund report.
+- **Public pages** in `apps/zyvor-checkout`: event page, registration form, order and ticket page with QR codes (English; Hindi partly, machine-assisted and unreviewed).
+- Migration 0081 (nine tables, all with row-level security), new scopes `events:read`, `events:write`, `events:checkin`, four webhook event types, OpenAPI and generated SDK types updated, `refunds::reserve_refund` extracted from the refund endpoint so bulk refunds share it. See [docs/zyvor/EVENTS.md](docs/zyvor/EVENTS.md).
+- **Not done:** partial payments with reminders (the instalment mechanism does not fit a one-off ticket order), a door app, console pages. QR check-in was never tried on a device and the public pages were not run in a browser.
+
 ## 18 November 2026 — Console pages for fee checks, bank statements and routing health
 - **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
 - **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.

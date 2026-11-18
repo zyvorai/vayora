@@ -171,6 +171,22 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "A payout was recorded as paid, with its bank reference.",
     ),
     (
+        "ticket_order.paid",
+        "An event ticket order was paid and its tickets were issued.",
+    ),
+    (
+        "ticket_order.expired",
+        "An unpaid event ticket order ran out of hold time and its seats were released.",
+    ),
+    (
+        "ticket_order.needs_refund",
+        "A payment arrived for a ticket order whose seats were no longer free; a refund is queued.",
+    ),
+    (
+        "event.cancelled",
+        "An event was cancelled; refunds for its paid orders are queued as one batch.",
+    ),
+    (
         "settlement_batch.released",
         "An acquire-mode settlement batch was released to the merchant bank via the payout rail.",
     ),
