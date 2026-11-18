@@ -456,6 +456,111 @@ type GetDisputesResponseDataItem struct {
 	EvidenceCount int64   `json:"evidence_count"`
 }
 
+type GetDonateByTenantIdByCampaignIdResponse struct {
+	Merchant         *string `json:"merchant"`
+	Name             string  `json:"name"`
+	Description      *string `json:"description"`
+	SuggestedMinor   int64   `json:"suggested_minor"`
+	MinMinor         int64   `json:"min_minor"`
+	MaxMinor         int64   `json:"max_minor"`
+	Currency         string  `json:"currency"`
+	RecurringEnabled any     `json:"recurring_enabled"`
+}
+
+type GetDonationsCampaignsByIdSummaryResponse struct {
+	CampaignID       string `json:"campaign_id"`
+	PaidCount        int64  `json:"paid_count"`
+	PaidMinor        int64  `json:"paid_minor"`
+	RefundedMinor    int64  `json:"refunded_minor"`
+	NetMinor         int64  `json:"net_minor"`
+	PendingCount     int64  `json:"pending_count"`
+	GoalMinor        *int64 `json:"goal_minor"`
+	RecurringPledges int64  `json:"recurring_pledges"`
+}
+
+type GetDonationsCampaignsResponse struct {
+	Data any `json:"data"`
+}
+
+type GetDonationsResponse struct {
+	Data []GetDonationsResponseDataItem `json:"data"`
+}
+
+type GetDonationsResponseDataItem struct {
+	ID            string  `json:"id"`
+	CampaignID    *string `json:"campaign_id"`
+	IntentID      *string `json:"intent_id"`
+	AmountMinor   int64   `json:"amount_minor"`
+	Status        string  `json:"status"`
+	Donor         any     `json:"donor"`
+	Anonymous     any     `json:"anonymous"`
+	ReceiptNo     any     `json:"receipt_no"`
+	CreatedAt     *string `json:"created_at"`
+	PaidAt        *string `json:"paid_at"`
+	RefundedMinor int64   `json:"refunded_minor"`
+}
+
+type GetDuesByKindGroupsResponse struct {
+	Data []GetDuesByKindGroupsResponseDataItem `json:"data"`
+}
+
+type GetDuesByKindGroupsResponseDataItem struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Members         int64  `json:"members"`
+	HeadsTotalMinor int64  `json:"heads_total_minor"`
+}
+
+type GetDuesByKindHeadsResponse struct {
+	Data []GetDuesByKindHeadsResponseDataItem `json:"data"`
+}
+
+type GetDuesByKindHeadsResponseDataItem struct {
+	ID          string `json:"id"`
+	GroupID     string `json:"group_id"`
+	Name        string `json:"name"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type GetDuesByKindMembersResponse struct {
+	Data []GetDuesByKindMembersResponseDataItem `json:"data"`
+}
+
+type GetDuesByKindMembersResponseDataItem struct {
+	ID        string                                          `json:"id"`
+	GroupID   *string                                         `json:"group_id"`
+	Group     any                                             `json:"group"`
+	MemberRef any                                             `json:"member_ref"`
+	Name      string                                          `json:"name"`
+	Active    any                                             `json:"active"`
+	Payer     []GetDuesByKindMembersResponseDataItemPayerItem `json:"payer"`
+}
+
+type GetDuesByKindMembersResponseDataItemPayerItem struct {
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Phone *string `json:"phone"`
+}
+
+type GetDuesByKindReportCsvResponse struct {
+	Kind   string  `json:"kind"`
+	AsOf   *string `json:"as_of"`
+	Totals any     `json:"totals"`
+	Data   any     `json:"data"`
+}
+
+type GetDuesByKindReportResponse struct {
+	Kind   string  `json:"kind"`
+	AsOf   *string `json:"as_of"`
+	Totals any     `json:"totals"`
+	Data   any     `json:"data"`
+}
+
+type GetDuesByKindSettingsResponse struct {
+	Kind        string `json:"kind"`
+	ReceiptNote string `json:"receipt_note"`
+}
+
 type GetEscrowProofResponse struct {
 	EscrowAvailableNet int64 `json:"escrow_available_net"`
 	OpenPayablesNet    int64 `json:"open_payables_net"`
@@ -1363,6 +1468,21 @@ type GetSettlementsResponse struct {
 	Data []any `json:"data"`
 }
 
+type GetStorefrontItemsResponse struct {
+	Data any `json:"data"`
+}
+
+type GetStorefrontOrdersByIdResponse struct {
+	ItemID    *string `json:"item_id"`
+	Name      string  `json:"name"`
+	UnitMinor int64   `json:"unit_minor"`
+	Quantity  int64   `json:"quantity"`
+}
+
+type GetStorefrontOrdersResponse struct {
+	Data any `json:"data"`
+}
+
 type GetSubscriptionsResponse struct {
 	Data []GetSubscriptionsResponseDataItem `json:"data"`
 }
@@ -1449,6 +1569,20 @@ type PatchCustomersByIdResponse struct {
 	Pincode     *string `json:"pincode"`
 }
 
+type PatchDonationsCampaignsByIdResponse struct {
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	Description      *string `json:"description"`
+	SuggestedMinor   int64   `json:"suggested_minor"`
+	MinMinor         int64   `json:"min_minor"`
+	MaxMinor         int64   `json:"max_minor"`
+	GoalMinor        int64   `json:"goal_minor"`
+	ReceiptFields    any     `json:"receipt_fields"`
+	RecurringEnabled any     `json:"recurring_enabled"`
+	Status           string  `json:"status"`
+	CreatedAt        *string `json:"created_at"`
+}
+
 type PatchPlansByIdResponse struct {
 	ID                        string `json:"id"`
 	Name                      string `json:"name"`
@@ -1458,6 +1592,17 @@ type PatchPlansByIdResponse struct {
 	IncludedUnits             any    `json:"included_units"`
 	IncludedPerSeat           any    `json:"included_per_seat"`
 	SubscribersKeptOnOldPrice any    `json:"subscribers_kept_on_old_price"`
+}
+
+type PatchStorefrontItemsByIdResponse struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	PriceMinor  int64   `json:"price_minor"`
+	ImageID     *string `json:"image_id"`
+	Stock       any     `json:"stock"`
+	Active      any     `json:"active"`
+	Position    any     `json:"position"`
 }
 
 type PostApiKeysByIdRevokeResponse struct {
@@ -1755,6 +1900,72 @@ type PostDisputesResponse struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostDonateByTenantIdByCampaignIdStartResponse struct {
+	DonationID   *string `json:"donation_id"`
+	IntentID     *string `json:"intent_id"`
+	ClientSecret string  `json:"client_secret"`
+	AmountMinor  int64   `json:"amount_minor"`
+	Currency     string  `json:"currency"`
+	Path         string  `json:"path"`
+}
+
+type PostDonationsCampaignsByIdPledgesResponse struct {
+	ID         string  `json:"id"`
+	CustomerID *string `json:"customer_id"`
+	Mandate    any     `json:"mandate"`
+}
+
+type PostDonationsCampaignsResponse struct {
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	Description      *string `json:"description"`
+	SuggestedMinor   int64   `json:"suggested_minor"`
+	MinMinor         int64   `json:"min_minor"`
+	MaxMinor         int64   `json:"max_minor"`
+	GoalMinor        int64   `json:"goal_minor"`
+	ReceiptFields    any     `json:"receipt_fields"`
+	RecurringEnabled any     `json:"recurring_enabled"`
+	Status           string  `json:"status"`
+	CreatedAt        *string `json:"created_at"`
+}
+
+type PostDuesByKindAssignResponse struct {
+	Created           any `json:"created"`
+	AlreadyAssigned   any `json:"already_assigned"`
+	SkippedNoPayer    any `json:"skipped_no_payer"`
+	SkippedNoFeeHeads any `json:"skipped_no_fee_heads"`
+}
+
+type PostDuesByKindGroupsResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+type PostDuesByKindHeadsResponse struct {
+	ID          string `json:"id"`
+	GroupID     string `json:"group_id"`
+	Name        string `json:"name"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostDuesByKindMembersImportResponse struct {
+	Saved    bool  `json:"saved"`
+	Rows     int64 `json:"rows"`
+	Problems any   `json:"problems"`
+}
+
+type PostDuesByKindMembersResponse struct {
+	ID      string `json:"id"`
+	Created any    `json:"created"`
+}
+
+type PostDuesByKindRemindersResponse struct {
+	Queued                  any `json:"queued"`
+	SkippedNoEmail          any `json:"skipped_no_email"`
+	SkippedAlreadySentToday any `json:"skipped_already_sent_today"`
 }
 
 type PostEventsByIdCancelResponse struct {
@@ -2714,6 +2925,49 @@ type PostSimPayResponse struct {
 	Status string `json:"status"`
 }
 
+type PostStoreBySlugOrdersResponse struct {
+	OrderID      *string `json:"order_id"`
+	Code         string  `json:"code"`
+	IntentID     *string `json:"intent_id"`
+	ClientSecret string  `json:"client_secret"`
+	AmountMinor  int64   `json:"amount_minor"`
+	Currency     string  `json:"currency"`
+	TenantID     *string `json:"tenant_id"`
+	Path         string  `json:"path"`
+	HoldMinutes  any     `json:"hold_minutes"`
+}
+
+type PostStorefrontImagesResponse struct {
+	ID          string `json:"id"`
+	ContentType any    `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
+type PostStorefrontItemsResponse struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	PriceMinor  int64   `json:"price_minor"`
+	ImageID     *string `json:"image_id"`
+	Stock       any     `json:"stock"`
+	Active      any     `json:"active"`
+	Position    any     `json:"position"`
+}
+
+type PostStorefrontOrdersByIdCancelResponse struct {
+	ItemID    *string `json:"item_id"`
+	Name      string  `json:"name"`
+	UnitMinor int64   `json:"unit_minor"`
+	Quantity  int64   `json:"quantity"`
+}
+
+type PostStorefrontOrdersByIdFulfillResponse struct {
+	ItemID    *string `json:"item_id"`
+	Name      string  `json:"name"`
+	UnitMinor int64   `json:"unit_minor"`
+	Quantity  int64   `json:"quantity"`
+}
+
 type PostSubscriptionsByIdCancelResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
@@ -2791,6 +3045,11 @@ type PostWebhooksByProviderByTenantIdResponse struct {
 type PutAcquireKycResponse struct {
 	OrganisationID   *string `json:"organisation_id"`
 	AcquireKycStatus string  `json:"acquire_kyc_status"`
+}
+
+type PutDuesByKindSettingsResponse struct {
+	Kind        string `json:"kind"`
+	ReceiptNote any    `json:"receipt_note"`
 }
 
 type PutEventsByIdFormFieldsResponse struct {

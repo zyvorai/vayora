@@ -325,7 +325,7 @@ impl Parsed {
 }
 
 /// Split a file into records, honouring quotes (a quoted field may hold commas, `""` and line breaks).
-fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, String> {
+pub(crate) fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let (mut out, mut rec, mut cur) = (Vec::new(), Vec::new(), String::new());
     let (mut q, mut line, mut start, mut quote_line) = (false, 1usize, 1usize, 1usize);
@@ -386,7 +386,7 @@ fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, St
     Ok(out)
 }
 
-fn detect_delimiter(text: &str) -> char {
+pub(crate) fn detect_delimiter(text: &str) -> char {
     let sample: String = text.lines().take(40).collect::<Vec<_>>().join("\n");
     [',', ';', '\t', '|']
         .into_iter()
