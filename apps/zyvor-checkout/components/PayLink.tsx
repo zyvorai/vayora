@@ -1,12 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LangPicker, useI18n } from "@/components/useI18n";
-import { money } from "@/lib/checkout";
+import { cardProps, money, safeHttps, type Brand } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
 
-type Info = { merchant: string | null; description: string | null; open_amount?: boolean; amount_mode?: "exact" | "minimum" | "up_to" | "pay_what_you_want"; suggested_amount_minor?: number | null; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
+type Partial = { total_minor: number; paid_minor: number; balance_minor: number; available_minor: number; min_part_minor: number | null };
+type Info = { merchant: string | null; description: string | null; message?: string | null; brand?: Brand | null; partial?: Partial | null; open_amount?: boolean; amount_mode?: "exact" | "minimum" | "up_to" | "pay_what_you_want"; suggested_amount_minor?: number | null; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" | "in_progress" };
 
-const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid" };
+const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid", in_progress: "goneBusy" };
+/** Server error codes the payer can act on, mapped to the words for them. */
+const START_ERR: Record<string, string> = { coupon_invalid: "coupon", link_busy: "busy", amount_out_of_range: "amount", link_unavailable: "gone" };
 
 /** Landing page for a payment link: shows what is being paid, then opens the payer's own checkout. */
 export function PayLink({ tenant, token }: { tenant: string; token: string }) {
@@ -26,11 +29,7 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   useEffect(() => {
     fetch(base)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((j: Info) => {
-        setInfo(j);
-        // the amount the merchant suggests, as a starting point the payer can change
-        if (j.open_amount && j.suggested_amount_minor) setTyped((j.suggested_amount_minor / 100).toFixed(2));
-      })
+      .then(setInfo)
       .catch(() => setMissing(true));
   }, [base]);
 
@@ -51,21 +50,33 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
     }
   }
 
+  const part = info?.partial ?? null;
+  /** A link the payer types an amount on: open-amount, or paid in parts (then the whole balance is filled in). */
+  const typing = !!info?.open_amount || !!part;
+  const prefilled = useRef(false);
+  useEffect(() => {
+    // fill in the whole balance once, so paying it all is one tap; after that the payer's own edits stand
+    if (part && !prefilled.current) {
+      prefilled.current = true;
+      setTyped((part.available_minor / 100).toFixed(2));
+    } else if (!part && info?.open_amount && info.suggested_amount_minor && !prefilled.current) {
+      // the amount the merchant suggests, as a starting point the payer can change
+      prefilled.current = true;
+      setTyped((info.suggested_amount_minor / 100).toFixed(2));
+    }
+  }, [part, info]);
   const chosenMinor = Math.round(Number(typed.replace(/,/g, "")) * 100);
-  const lo = info?.min_amount_minor ?? 1;
-  const hi = info?.max_amount_minor ?? 1_000_000_000_000;
+  const lo = part ? Math.min(part.min_part_minor ?? 1, part.available_minor) : (info?.min_amount_minor ?? 1);
+  const hi = part ? part.available_minor : (info?.max_amount_minor ?? 1_000_000_000_000);
   const amountOk = Number.isFinite(chosenMinor) && chosenMinor >= lo && chosenMinor <= hi;
-  /** The rule for what may be paid, in the payer's language: a floor, a cap, both, or nothing to say. */
-  const hasLo = info?.min_amount_minor != null, hasHi = info?.max_amount_minor != null;
-  const rule = !info ? null : hasLo && hasHi ? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) }) : hasLo ? t("amountMin", { min: money(lo, info.currency) }) : hasHi ? t("amountMax", { max: money(hi, info.currency) }) : null;
 
   async function start() {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${base}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coupon: appliedCode ?? undefined, amount_minor: info?.open_amount ? chosenMinor : undefined }) });
+      const r = await fetch(`${base}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ coupon: appliedCode ?? undefined, amount_minor: typing ? chosenMinor : undefined }) });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.error?.code === "coupon_invalid" ? "coupon" : "start");
+      if (!r.ok) throw new Error(START_ERR[j?.error?.code as string] ?? "start");
       window.location.assign(`/pay/${tenant}/${j.intent_id}?s=${encodeURIComponent(j.client_secret)}`);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "start");
@@ -78,18 +89,37 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   if (!info) return <div className="card state" role="status"><div className="spin" /><p>{t("loadingShort")}</p></div>;
   const goneKey = GONE[info.status];
   const adjusted = info.discount_minor > 0 || info.fee_minor > 0;
-  const errText = error === "coupon" ? t("couponBad") : error ? t("errStart") : null;
+  const errText = error === "coupon" ? t("couponBad") : error === "busy" ? t("errBusy") : error === "amount" ? t("errAmount") : error === "gone" ? t("errGone") : error ? t("errStart") : null;
+  const logo = safeHttps(info.brand?.logo_url);
+  const card = cardProps(info.brand) as React.HTMLAttributes<HTMLElement>;
+  const rangeErr = typing && !!typed && !amountOk;
+  /** The rule for an open amount in the payer's language: a floor, a cap, both, or nothing to say. */
+  const hasLo = !part && info?.min_amount_minor != null, hasHi = !part && info?.max_amount_minor != null;
+  const rule = !info || part ? null : hasLo && hasHi ? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) }) : hasLo ? t("amountMin", { min: money(lo, info.currency) }) : hasHi ? t("amountMax", { max: money(hi, info.currency) }) : null;
   return (
-    <div className="card">
+    <div {...card}>
+      {logo && <img className="brandlogo" src={logo} alt="" height={40} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
       <p className="merchant">{info.merchant ?? t("payment")}</p>
-      {info.open_amount && !goneKey ? (
+      {typing && !goneKey ? (
         <h1 className="amount">{amountOk ? money(chosenMinor, info.currency) : money(0, info.currency)}</h1>
       ) : (
         <h1 className="amount">{money(goneKey ? info.amount_minor : info.total_minor, info.currency)}</h1>
       )}
       <p className="desc">{info.description ?? " "}</p>
-      {goneKey ? <p className="notice warn" role="status">{t(goneKey)}</p> : (
+      {info.message && !goneKey && <p className="note">{info.message}</p>}
+      {goneKey ? (
+        <div className="notice warn" role="status">
+          <p style={{ margin: 0 }}><strong>{t(goneKey)}</strong></p>
+          {info.status !== "paid" && <p style={{ margin: "6px 0 0" }}>{info.merchant ? t("goneAsk", { merchant: info.merchant }) : t("goneAskPlain")}</p>}
+        </div>
+      ) : (
         <>
+          {part && (
+            <dl className="rows">
+              <dt>{t("partialPaid")}</dt><dd>{money(part.paid_minor, info.currency)}</dd>
+              <dt>{t("partialLeft")}</dt><dd>{money(part.balance_minor, info.currency)}</dd>
+            </dl>
+          )}
           {adjusted && (
             <dl className="rows">
               <dt>{t("rowAmount")}</dt><dd>{money(info.amount_minor, info.currency)}</dd>
@@ -97,21 +127,23 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
               {info.fee_minor > 0 && <><dt>{t("rowFee")}</dt><dd>{money(info.fee_minor, info.currency)}</dd></>}
             </dl>
           )}
-          {info.open_amount && (
+          {typing && (
             <>
               <label className="f" htmlFor="amt">{t("enterAmount")}</label>
-              <input id="amt" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" aria-describedby={rule ? "amt-rule" : undefined} />
-              {rule && <p id="amt-rule" className={typed && !amountOk ? "err" : "desc"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{rule}</p>}
+              <input id="amt" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" aria-invalid={rangeErr} aria-describedby="amt-help" />
+              <p id="amt-help" className={rangeErr ? "err" : "desc"} role={rangeErr ? "alert" : undefined} style={{ margin: "6px 2px 0", textAlign: "left" }}>
+                {rangeErr ? (rule ?? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) })) : part ? t("partialHint", { min: money(lo, info.currency), max: money(hi, info.currency) }) : (rule ?? "")}
+              </p>
             </>
           )}
-          {!info.open_amount && <label className="f" htmlFor="coupon">{t("couponCode")}</label>}
-          {!info.open_amount && <div className="couponrow">
+          {!typing && <label className="f" htmlFor="coupon">{t("couponCode")}</label>}
+          {!typing && <div className="couponrow">
             <input id="coupon" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" spellCheck={false} autoComplete="off" />
             <button type="button" className="link" onClick={apply} disabled={!code.trim()}>{t("apply")}</button>
           </div>}
           {couponMsg && <p className={appliedCode ? "desc" : "err"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{couponMsg === "ok" ? t("couponOk") : t("couponBad")}</p>}
           {errText && <div className="notice bad" role="alert">{errText}</div>}
-          <button className="pay" onClick={start} disabled={busy || (info.open_amount && !amountOk)}>{busy ? t("starting") : t("continuePay", { amount: money(info.open_amount ? (amountOk ? chosenMinor : 0) : info.total_minor, info.currency) })}</button>
+          <button className="pay" onClick={start} disabled={busy || (typing && !amountOk)}>{busy ? t("starting") : t("continuePay", { amount: money(typing ? (amountOk ? chosenMinor : 0) : info.total_minor, info.currency) })}</button>
         </>
       )}
       <p className="foot">{t("secured")}</p>

@@ -45,6 +45,9 @@ struct Inner {
     /// Sticky outage per provider ("razorpay" / "cashfree"): `reject` (HTTP 400, nothing created: a definitive
     /// answer), `unavailable` (HTTP 503: outcome unknown to the caller) or `hang` (no answer: a timeout).
     outages: BTreeMap<String, String>,
+    /// Optional partial failure for a sticky outage: provider -> (percent of create-order calls the outage applies
+    /// to, seed, calls seen so far). Absent means every call (a full outage).
+    outage_partial: BTreeMap<String, (u8, u64, u64)>,
     charges: BTreeMap<String, i64>,
     /// calls received by the Secure ID (verification) endpoints, by path
     kyc_calls: BTreeMap<String, u64>,
@@ -87,13 +90,33 @@ impl Mock {
         g.seq += 1;
         format!("{prefix}{:014}", g.seq)
     }
-    /// The sticky outage mode for a provider, if one is set.
+    /// The sticky outage mode for a provider, if one is set and applies to THIS call. A partial outage
+    /// (`fail_pct` below 100) applies to a fixed, seed-determined subset of the calls, so a run can be repeated.
     fn outage(&self, provider: &str) -> Option<String> {
-        self.inner.lock().unwrap().outages.get(provider).cloned()
+        let mut g = self.inner.lock().unwrap();
+        let mode = g.outages.get(provider).cloned()?;
+        if let Some((pct, seed, seen)) = g.outage_partial.get_mut(provider) {
+            let hit = partial_hit(*seed, *seen, *pct);
+            *seen += 1;
+            if !hit {
+                return None;
+            }
+        }
+        Some(mode)
     }
     fn take_behaviour(&self, op: &str) -> Option<String> {
         self.inner.lock().unwrap().behaviours.remove(op)
     }
+}
+
+/// Whether call number `n` falls in the failing `pct` percent: a splitmix64 hash of (seed, n), so the same seed gives the
+/// same pattern on every run and the long-run share converges on `pct`.
+fn partial_hit(seed: u64, n: u64, pct: u8) -> bool {
+    let mut z = seed.wrapping_add(n.wrapping_add(1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z % 100) < u64::from(pct)
 }
 
 /// A twelve-digit made-up bank reference, stable per payment id.
@@ -803,7 +826,9 @@ async fn sim_behaviour(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
 }
 
 /// Switch a provider's outage on or off: `{"provider": "razorpay", "mode": "reject" | "unavailable" | "hang" | "off"}`.
-/// Sticky until switched off, unlike `behaviour`, which is one-shot.
+/// Sticky until switched off, unlike `behaviour`, which is one-shot. Optional `fail_pct` (0 to 100, default 100) makes it
+/// a brown-out: only that percentage of create-order calls fail (which ones is fixed by `seed`, default 0); the rest
+/// are served normally. Without `fail_pct` every call fails, as before.
 async fn sim_outage(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     let provider = b["provider"].as_str().unwrap_or_default().to_string();
     let mode = b["mode"].as_str().unwrap_or("off");
@@ -819,10 +844,24 @@ async fn sim_outage(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
             "mode must be reject, unavailable, hang or off",
         ));
     }
+    let pct = match b.get("fail_pct") {
+        None | Some(Value::Null) => 100,
+        Some(v) => v.as_u64().filter(|p| *p <= 100).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "fail_pct must be a whole number from 0 to 100",
+            )
+        })? as u8,
+    };
+    let seed = b["seed"].as_u64().unwrap_or(0);
     let mut g = m.inner.lock().unwrap();
+    g.outage_partial.remove(&provider);
     if mode == "off" {
         g.outages.remove(&provider);
     } else {
+        if pct < 100 {
+            g.outage_partial.insert(provider.clone(), (pct, seed, 0));
+        }
         g.outages.insert(provider, mode.to_string());
     }
     Ok(Json(json!({ "ok": true })))
@@ -840,8 +879,19 @@ async fn sim_stats(State(m): State<Mock>) -> Resp {
                 .or_default() += 1;
             a
         });
+    // money actually taken per Razorpay order (a captured payment each), so a test can tell a double charge from one
+    let rz_orders: BTreeMap<String, usize> = g
+        .rz_payments
+        .values()
+        .filter(|p| p["status"] == "captured")
+        .fold(BTreeMap::new(), |mut a, p| {
+            *a.entry(p["order_id"].as_str().unwrap_or_default().to_string())
+                .or_default() += 1;
+            a
+        });
     Ok(Json(json!({
         "charges": g.charges,
+        "razorpay_captured_payments_by_order": rz_orders,
         "kyc_calls": g.kyc_calls,
         "cashfree_successful_payments_by_order": cf_orders,
         "cashfree_payments": g.cf_payments.len(),
@@ -1541,4 +1591,153 @@ async fn payu_settlement_range(
         "status": 0,
         "result": { "page": page, "size": data.len(), "totalCount": rows.len(), "data": data },
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_hit_is_repeatable_and_close_to_the_requested_share() {
+        for pct in [0u8, 30, 60, 100] {
+            let a: Vec<bool> = (0..2000).map(|n| partial_hit(42, n, pct)).collect();
+            let b: Vec<bool> = (0..2000).map(|n| partial_hit(42, n, pct)).collect();
+            assert_eq!(a, b, "same seed, same pattern");
+            let hits = a.iter().filter(|x| **x).count() as f64 / 2000.0 * 100.0;
+            assert!((hits - f64::from(pct)).abs() < 3.0, "{pct}% gave {hits}%");
+        }
+        let other: Vec<bool> = (0..200).map(|n| partial_hit(43, n, 50)).collect();
+        let base: Vec<bool> = (0..200).map(|n| partial_hit(42, n, 50)).collect();
+        assert_ne!(other, base, "a different seed gives a different pattern");
+    }
+
+    async fn post(c: &reqwest::Client, url: &str, body: Value) -> (u16, Value) {
+        let r = c.post(url).json(&body).send().await.unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+
+    fn cfg() -> MockConfig {
+        MockConfig {
+            razorpay_webhook_secret: "x".into(),
+            cashfree_webhook_secret: "y".into(),
+        }
+    }
+
+    async fn failures(c: &reqwest::Client, base: &str, n: usize) -> Vec<bool> {
+        let mut out = Vec::new();
+        for _ in 0..n {
+            let (s, _) = post(
+                c,
+                &format!("{base}/v1/orders"),
+                json!({ "amount": 1000, "currency": "INR" }),
+            )
+            .await;
+            out.push(s != 200);
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_brown_out_fails_only_a_share_of_calls_the_same_way_every_time_and_off_clears_it() {
+        let c = reqwest::Client::new();
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            let base = spawn(cfg()).await;
+            let (s, _) = post(
+                &c,
+                &format!("{base}/_sim/outage"),
+                json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 30, "seed": 7 }),
+            )
+            .await;
+            assert_eq!(s, 200);
+            runs.push(failures(&c, &base, 200).await);
+        }
+        assert_eq!(runs[0], runs[1], "a seeded brown-out repeats exactly");
+        let failed = runs[0].iter().filter(|f| **f).count();
+        assert!(
+            (46..=74).contains(&failed),
+            "about 30% of 200, got {failed}"
+        );
+
+        let base = spawn(cfg()).await;
+        // no fail_pct: a full outage, as before
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject" }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| *f));
+        // fail_pct 0 serves everything; off clears it
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 0 }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| !*f));
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "off" }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| !*f));
+        // a bad percentage is refused
+        let (s, _) = post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 101 }),
+        )
+        .await;
+        assert_eq!(s, 400);
+        // stats count money taken per order, per provider
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "off" }),
+        )
+        .await;
+        let (_, o) = post(
+            &c,
+            &format!("{base}/v1/orders"),
+            json!({ "amount": 1000, "currency": "INR" }),
+        )
+        .await;
+        let oid = o["id"].as_str().unwrap().to_string();
+        for _ in 0..2 {
+            post(
+                &c,
+                &format!("{base}/_sim/razorpay/pay"),
+                json!({ "order_id": oid, "outcome": "captured" }),
+            )
+            .await;
+        }
+        let stats: Value = c
+            .get(format!("{base}/_sim/stats"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            stats["razorpay_captured_payments_by_order"][oid.as_str()],
+            2
+        );
+        // the other provider is unaffected
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 100 }),
+        )
+        .await;
+        let (s, _) = post(
+            &c,
+            &format!("{base}/pg/orders"),
+            json!({ "order_id": "o1", "order_amount": 10.0, "order_currency": "INR" }),
+        )
+        .await;
+        assert_eq!(s, 200);
+    }
 }

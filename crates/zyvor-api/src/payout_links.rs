@@ -588,7 +588,18 @@ pub async fn claim(
         "purpose": locked.purpose, "external_ref": format!("plink:{}", locked.id),
     }))
     .map_err(|_| ApiError::internal())?;
-    let (_, payout) = crate::payouts::create_one(&mut tx, &maker, &request).await?;
+    // the payout rules of the business (vendor status and limits, blocked payees, daily caps) apply as to any payout; a
+    // refusal rolls the vendor back too, and the recipient is told only that it cannot be done now
+    let (_, payout) = crate::payouts::create_one(&mut tx, &s.crypto, &maker, &request)
+        .await
+        .map_err(|e| {
+            if e.status == StatusCode::CONFLICT || e.status == StatusCode::UNPROCESSABLE_ENTITY {
+                tracing::info!(link = %locked.id, code = e.code, "payout link claim refused by payout rules");
+                ApiError::conflict("try_later", "this payment cannot be set up right now; ask the sender")
+            } else {
+                e
+            }
+        })?;
     let payout_id = payout["id"].as_str().unwrap_or_default().to_string();
     sqlx::query("UPDATE payout_links SET vendor_id = $2, payout_id = $3, verification_id = $4, claimed_at = now() WHERE id = $1 AND payout_id IS NULL")
         .bind(&locked.id).bind(&vendor_id).bind(&payout_id).bind(&v.id)

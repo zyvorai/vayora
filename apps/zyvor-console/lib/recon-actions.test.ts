@@ -14,7 +14,7 @@ vi.mock("@/lib/rest", () => {
   return { rest: async () => ({ get: (p: string) => go("GET", p), post: (p: string, b?: unknown) => go("POST", p, b), put: (p: string, b: unknown) => go("PUT", p, b), del: (p: string) => go("DELETE", p) }) };
 });
 
-import { addFeeRule, confirmBankMatch, deleteFeeRule, importStatement, previewStatement, rejectBankMatch, runFeeCheck, saveFeeSettings, saveRoutingSettings, takeBankCase } from "./recon-actions";
+import { addFeeRule, confirmBankMatch, deleteFeeRule, importStatement, previewStatement, rejectBankMatch, runFeeCheck, saveFeeSettings, saveRoutingAutomation, saveRoutingSettings, setRoutingKillSwitch, takeBankCase } from "./recon-actions";
 
 const form = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const refused = (status: number, code: string, message: string, body: unknown = null) => ({ ok: false, status, code, message, body });
@@ -47,6 +47,28 @@ describe("who may do what", () => {
     session.current = { u: "root", r: "admin" };
     expect(await saveRoutingSettings(undefined, form(health))).toEqual({ ok: "Saved." });
     expect(calls.list).toEqual([{ method: "PUT", path: "/v1/routing/health/settings", body: { breaker_enabled: true, failover_enabled: false, window_attempts: 100, window_minutes: 30, min_samples: 10, degrade_failure_pct: 50, recover_failure_pct: 20, cooldown_seconds: 120 } }]);
+  });
+});
+
+describe("routing automation", () => {
+  const auto = { soft_retry_max_attempts: "2", soft_retry_window_seconds: "600", cost_success_floor_pct: "80", cost_premium_pct: "5", cost_min_fee_samples: "30", cost_aware_enabled: "on" };
+  it("lets only an admin change it or pull the kill switch", async () => {
+    expect(await saveRoutingAutomation(undefined, form(auto))).toEqual({ error: "Only an admin can change routing automation." });
+    expect(await setRoutingKillSwitch(undefined, form({ action: "pause" }))).toEqual({ error: "Only an admin can use the kill switch." });
+    expect(calls.list).toEqual([]);
+    session.current = { u: "root", r: "admin" };
+    expect(await saveRoutingAutomation(undefined, form(auto))).toEqual({ ok: "Saved." });
+    expect(calls.list[0]).toEqual({ method: "PUT", path: "/v1/routing/automation", body: { shadow_enabled: false, soft_retry_enabled: false, cost_aware_enabled: true, soft_retry_max_attempts: 2, soft_retry_window_seconds: 600, cost_success_floor_bps: 8000, cost_premium_bps: 500, cost_min_fee_samples: 30 } });
+    expect(revalidated).toContain("/routing");
+  });
+  it("pauses with a reason and resumes, and does not call the API for a bad form", async () => {
+    session.current = { u: "root", r: "admin" };
+    expect(await setRoutingKillSwitch(undefined, form({ action: "pause", reason: "  provider talks " }))).toHaveProperty("ok");
+    expect(await setRoutingKillSwitch(undefined, form({ action: "resume" }))).toEqual({ ok: "Routing automation can act again." });
+    expect(calls.list).toEqual([{ method: "POST", path: "/v1/routing/automation/pause", body: { reason: "provider talks" } }, { method: "POST", path: "/v1/routing/automation/resume", body: {} }]);
+    calls.list.length = 0;
+    expect(await saveRoutingAutomation(undefined, form({ ...auto, soft_retry_max_attempts: "9" }))).toEqual({ error: "Most attempts per payment: enter a whole number from 2 to 5." });
+    expect(calls.list).toEqual([]);
   });
 });
 

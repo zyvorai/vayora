@@ -1050,7 +1050,7 @@ pub async fn delete_pin_tier(
 }
 
 #[derive(Deserialize)]
-pub struct OrderBody {
+pub struct OrderScoreBody {
     /// Six digits.
     pin_code: String,
     order_value_minor: i64,
@@ -1075,7 +1075,7 @@ pub struct OrderBody {
 pub async fn order_score(
     State(s): State<AppState>,
     auth: Auth,
-    Json(b): Json<OrderBody>,
+    Json(b): Json<OrderScoreBody>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("risk:write")?;
     if !risk::valid_pin_code(b.pin_code.trim()) {

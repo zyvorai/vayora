@@ -432,17 +432,24 @@ pub async fn evaluate_one(
 
 /// Compute the signal and breaker state for every enabled candidate, for the method being routed, and record any
 /// degrade / recovery (an audit entry and a webhook event) in the caller's transaction.
+///
+/// With `automation_paused` (the business's kill switch) the signal is still computed, so it can be shown, but
+/// nothing is recorded and every breaker reads healthy: routing ignores provider health and no provider is skipped.
+/// The stored breaker state is left as it is and applies again when the kill switch is released.
 pub async fn attach_signals(
     conn: &mut PgConnection,
     tenant_id: &str,
     cfg: &Config,
+    automation_paused: bool,
     method: Method,
     candidates: &mut [Candidate],
 ) -> Result<(), ApiError> {
     for c in candidates.iter_mut().filter(|c| c.enabled) {
         let m = method.as_str();
-        let e = evaluate_one(conn, tenant_id, &c.provider, m, cfg).await?;
-        if let Some(t) = &e.eval.transition {
+        let mut e = evaluate_one(conn, tenant_id, &c.provider, m, cfg).await?;
+        if automation_paused {
+            e.signal.breaker = Breaker::Healthy;
+        } else if let Some(t) = &e.eval.transition {
             record_transition(conn, tenant_id, &c.provider, m, t, &e.signal).await?;
         }
         c.signal = Some(e.signal);
@@ -488,6 +495,10 @@ pub async fn sweep_tenant(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Sweep,
             skipped_busy: true,
             ..Sweep::default()
         });
+    }
+    // The kill switch: nothing is evaluated or recorded while routing automation is paused.
+    if crate::routing_auto::load(&mut tx, tenant_id).await?.paused {
+        return Ok(Sweep::default());
     }
     let cfg = load_config(&mut tx, tenant_id).await?;
     let pairs: Vec<(String, String)> = sqlx::query_as(
@@ -652,6 +663,9 @@ pub async fn get_health(
     };
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let cfg = load_config(&mut tx, &auth.tenant_id).await?;
+    let paused = crate::routing_auto::load(&mut tx, &auth.tenant_id)
+        .await?
+        .paused;
     let accounts: Vec<(String, bool)> = sqlx::query_as(
         "SELECT provider, enabled FROM provider_accounts WHERE tenant_id = $1 ORDER BY provider",
     )
@@ -677,7 +691,14 @@ pub async fn get_health(
         let mut rows = Vec::new();
         for m in methods {
             let e = evaluate_one(&mut tx, &auth.tenant_id, &provider, &m, &cfg).await?;
-            let (effect, effect_text) = routing_effect(e.eval.breaker, enabled);
+            let (effect, effect_text) = if paused && enabled {
+                (
+                    "paused",
+                    "The routing kill switch is on: routing ignores provider health, so this provider takes new payments normally.",
+                )
+            } else {
+                routing_effect(e.eval.breaker, enabled)
+            };
             rows.push(json!({
                 "method": m,
                 "signal": e.signal,
@@ -714,7 +735,10 @@ pub async fn get_health(
         .collect();
     Ok(Json(json!({
         "config": cfg,
-        "routing_health_rule": if cfg.breaker_enabled {
+        "automation_paused": paused,
+        "routing_health_rule": if paused {
+            "The routing kill switch is on, so provider health does not change which provider routing picks (POST /v1/routing/automation/resume turns automation back on). The figures below are still computed."
+        } else if cfg.breaker_enabled {
             "The circuit breaker shown here is the only health rule routing applies. A degraded provider is skipped for new payments, unless every other eligible provider is degraded too. Payer declines are not counted. A provider or method with no attempts in the window has no row here and is used normally."
         } else {
             "The circuit breaker is switched off for this business, so provider health does not change which provider routing picks."

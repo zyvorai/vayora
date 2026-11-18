@@ -11,6 +11,8 @@
 //! the stored minimum and maximum), so a payer who edits the page or calls the API directly cannot pay outside it.
 //! The payment intent that is created carries the amount the payer chose, so the checkout, the receipt and the
 //! ledger all agree. Coupons and the convenience fee apply to `exact` links only (unchanged).
+//! Part payments (`allow_partial`, from the link-upgrades work) also apply only to `exact` links: the balance is what is
+//! left of `amount_minor`, which an open amount does not have. Asking for both is refused with `invalid_amount_mode`.
 //!
 //! These are thin wrappers around `payment_links::create_link` and `payment_links::link_info`: they translate the
 //! mode into the open-amount fields, call the original handler, and add what is new. Nothing in the original
@@ -70,6 +72,8 @@ pub struct Given {
     pub min: Option<i64>,
     pub max: Option<i64>,
     pub suggested: Option<i64>,
+    /// A part-payment link (`allow_partial`): the payer pays the amount in parts. Only with `exact`.
+    pub allow_partial: bool,
 }
 
 fn in_range(v: i64) -> bool {
@@ -84,6 +88,12 @@ fn bad(m: &str) -> ApiError {
 /// `open_amount` true is `pay_what_you_want`, otherwise `exact`. The original handler still checks the rest
 /// (invoice, splits, fee, expiry) after this.
 pub fn plan(mode: Option<&str>, g: &Given) -> Result<Plan, ApiError> {
+    let open_requested = mode.map_or(g.open_amount.unwrap_or(false), |m| m != "exact");
+    if g.allow_partial && open_requested {
+        return Err(bad(
+            "allow_partial (part payments) only works with an exact amount: the balance is what is left of amount_minor",
+        ));
+    }
     let mode = match mode {
         None => {
             if g.suggested.is_some() && !g.open_amount.unwrap_or(false) {
@@ -233,6 +243,10 @@ pub async fn create_link(
         min: int(&base, "min_amount_minor"),
         max: int(&base, "max_amount_minor"),
         suggested: b.suggested_amount_minor,
+        allow_partial: base
+            .get("allow_partial")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     };
     let plan = plan(b.amount_mode.as_deref(), &given)?;
     if let Some(r) = &b.instrument_rules {
@@ -301,6 +315,7 @@ pub struct InfoQuery {
 /// `GET /v1/checkout/links/{tenant_id}/{token}`: the original page data plus the amount rule in words.
 pub async fn link_info(
     State(s): State<AppState>,
+    parts: axum::http::request::Parts,
     Path((tenant_id, token)): Path<(String, String)>,
     Query(q): Query<InfoQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -308,6 +323,7 @@ pub async fn link_info(
         serde_json::from_value(json!({ "coupon": q.coupon })).map_err(|_| ApiError::internal())?;
     let Json(mut out) = crate::payment_links::link_info(
         State(s.clone()),
+        parts,
         Path((tenant_id.clone(), token.clone())),
         Query(inner),
     )
@@ -379,6 +395,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn part_payments_only_combine_with_exact() {
+        let part = |mode: Option<&str>, open: Option<bool>| {
+            plan(
+                mode,
+                &Given {
+                    allow_partial: true,
+                    has_amount: true,
+                    open_amount: open,
+                    ..Default::default()
+                },
+            )
+        };
+        assert!(part(None, None).is_ok());
+        assert!(part(Some("exact"), None).is_ok());
+        assert!(part(Some("minimum"), None).is_err());
+        assert!(part(Some("up_to"), None).is_err());
+        assert!(part(Some("pay_what_you_want"), None).is_err());
+        assert!(part(None, Some(true)).is_err());
     }
 
     #[test]

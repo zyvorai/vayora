@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LangPicker, useI18n } from "@/components/useI18n";
-import { METHOD_KEY, VPA, failureKey, money, pollDelay, supportLink, supportRef, type Session } from "@/lib/checkout";
+import { METHOD_KEY, VPA, cardProps, failureKey, money, pollDelay, safeHttps, supportLink, supportRef, type Session } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
+import { evt } from "@/lib/events-i18n";
 
 type Method = Session["methods"][number];
 
@@ -42,7 +43,11 @@ function Help({ t, intent }: { t: (k: Key, v?: Record<string, string>) => string
 
 export function Checkout({ tenant, intent }: { tenant: string; intent: string }) {
   const { lang, setLang, t } = useI18n();
-  const secret = useSearchParams().get("s") ?? "";
+  const params = useSearchParams();
+  const secret = params.get("s") ?? "";
+  // set when this payment is for an event ticket order: after paying, the buyer goes on to their tickets
+  const eventOrder = params.get("eo");
+  const eventToken = params.get("et");
   const base = `/api/zyvor/${tenant}/${intent}`;
   const [session, setSession] = useState<Session | null>(null);
   const [gone, setGone] = useState(false);
@@ -54,6 +59,13 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   const [retrying, setRetrying] = useState(false);
   const [waited, setWaited] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // keep the secret for this tab so the order page can offer "Pay now" if the buyer comes back before paying
+    try {
+      if (eventOrder && secret) sessionStorage.setItem(`zyvor:evt-pay:${eventOrder}`, secret);
+    } catch {}
+  }, [eventOrder, secret]);
 
   const load = useCallback(async () => {
     try {
@@ -178,22 +190,45 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   }
 
   const amount = money(session.amount_minor, session.currency);
+  const card = cardProps(session.link?.brand) as React.HTMLAttributes<HTMLElement>;
+  const logo = safeHttps(session.link?.brand?.logo_url);
   const head = (
     <>
+      {logo && <img className="brandlogo" src={logo} alt="" height={40} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
       <p className="merchant">{session.merchant ?? t("payment")}</p>
       <h1 className="amount">{amount}</h1>
       <p className="desc">{session.description ?? " "}</p>
     </>
   );
 
+  const returnUrl = safeHttps(session.link?.return_url);
   if (session.phase === "paid") {
     return (
-      <div className="card">
+      <div {...card}>
         {head}
         <div className="state" role="status">
           <svg className="badge" viewBox="0 0 84 84" aria-hidden="true" stroke="var(--ok)"><circle cx="42" cy="42" r="40" /><path d="M26 43l11 11 21-23" /></svg>
           <h2 tabIndex={-1} data-announce>{t("paidTitle")}</h2>
           <p>{session.merchant ? t("paidTo", { amount, merchant: session.merchant }) : t("paidPlain", { amount })}</p>
+          {session.link?.thank_you && <p className="note">{session.link.thank_you}</p>}
+          {session.link?.partial && session.link.partial.balance_minor > 0 && <p>{t("partialMore", { left: money(session.link.partial.balance_minor, session.currency) })}</p>}
+          {returnUrl && <a className="pay" href={returnUrl} rel="noopener noreferrer">{session.merchant ? t("returnTo", { merchant: session.merchant }) : t("returnToPlain")}</a>}
+          {eventOrder && eventToken && <a className="pay" href={`/events/${tenant}/orders/${eventOrder}?t=${encodeURIComponent(eventToken)}`}>{evt(lang, "viewTickets")}</a>}
+        </div>
+        <Help t={t} intent={intent} />
+      </div>
+    );
+  }
+  if (session.phase === "trying_another_way") {
+    // A definite failure that the merchant's settings answer with another provider. No second payment exists until
+    // the first has failed, and the payer is never asked to pay twice.
+    return (
+      <div {...card}>
+        {head}
+        <div className="state" role="status" aria-live="polite">
+          <div className="spin" />
+          <h2 tabIndex={-1} data-announce>{t("retryTitle")}</h2>
+          <p>{t("retryBody")}</p>
         </div>
         <Help t={t} intent={intent} />
       </div>
@@ -201,7 +236,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   }
   if (session.phase === "confirming") {
     return (
-      <div className="card">
+      <div {...card}>
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
@@ -219,7 +254,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
     // A partner-rendered QR (desktop and counter screens): only a PNG data URL is ever shown.
     if (qrImage.startsWith("data:image/png;base64,")) {
       return (
-        <div className="card">
+        <div {...card}>
           {head}
           <div className="state" role="status" aria-live="polite">
             <h2 tabIndex={-1} data-announce>{t("scanTitle")}</h2>
@@ -237,7 +272,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       // A partner-issued payload, shown as-is. Neither the QR nor the app opening proves payment: the page
       // moves to "paid" only when the server reports a verified result.
       return (
-        <div className="card">
+        <div {...card}>
           {head}
           <div className="state" role="status" aria-live="polite">
             <h2 tabIndex={-1} data-announce>{t("scanTitle")}</h2>
@@ -253,7 +288,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       );
     }
     return (
-      <div className="card">
+      <div {...card}>
         {head}
         <div className="state" role="status" aria-live="polite">
           <div className="spin" />
@@ -270,7 +305,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   // choose_method, or failed (shown with a way to retry)
   const failed = session.phase === "failed" && !retrying;
   return (
-    <form className="card" onSubmit={pay} noValidate>
+    <form {...card} onSubmit={pay} noValidate>
       {head}
       {failed && (
         <div className="notice bad" role="alert" tabIndex={-1} data-announce>
@@ -279,6 +314,7 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       )}
       {(!failed) && (
         <>
+          {session.link?.message && <p className="note">{session.link.message}</p>}
           <fieldset className="methods" tabIndex={-1} data-announce>
             <legend>{t("methodLegend")}</legend>
             {session.methods.map((m) => (

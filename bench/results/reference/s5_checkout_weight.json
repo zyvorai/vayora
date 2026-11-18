@@ -1,0 +1,110 @@
+{
+  "description": "Checkout page weight (local production build served by `next start`; API on the same machine)",
+  "page": "/pay/{tenant}/{intent}",
+  "curl_accounting": {
+    "note": "bytes the server sends for the HTML and every static file it references, with gzip/br accepted; excludes API calls the page makes after it loads",
+    "html_js_css_font_transferred_bytes": 192411,
+    "html_js_css_font_decoded_bytes": 632264,
+    "by_kind_transferred_bytes": {
+      "html": 3106,
+      "js": 187324,
+      "css": 1981,
+      "font": 0,
+      "other": 0
+    },
+    "files": 9
+  },
+  "headless_browser": {
+    "chrome_found": true,
+    "version": "Google Chrome 157.0.8103.79",
+    "unthrottled": {
+      "requests": 10,
+      "transferred_bytes_total": 157755,
+      "by_resource_type_bytes": {
+        "Document": 3648,
+        "Stylesheet": 2449,
+        "Script": 150820,
+        "Fetch": 459,
+        "Other": 379
+      },
+      "load_event_ms": 65,
+      "failed_or_unfinished_requests": 0
+    },
+    "throttled_profile": {
+      "name": "fast-3g-like",
+      "latency_ms": 562.5,
+      "down_bytes_per_s": 180000,
+      "up_bytes_per_s": 84375
+    },
+    "throttled": {
+      "requests": 10,
+      "transferred_bytes_total": 157755,
+      "by_resource_type_bytes": {
+        "Document": 3648,
+        "Stylesheet": 2449,
+        "Script": 150820,
+        "Fetch": 459,
+        "Other": 379
+      },
+      "load_event_ms": 2043,
+      "failed_or_unfinished_requests": 0
+    }
+  },
+  "file_list": [
+    {
+      "url": "/pay/ten_01a1ef21431474e7897b8d9aaae8e85a/pi_01a1ef21434274d49fa0688c64b4435b?s=pis_a946aa4be8354e8aa9ba2727bc38808102c61ad25c6943a3a4abb6a599a99b62",
+      "kind": "html",
+      "transferred": 3106,
+      "decoded": 7964
+    },
+    {
+      "url": "/_next/static/chunks/21tm85fbmf6vk.css",
+      "kind": "css",
+      "transferred": 1981,
+      "decoded": 5676
+    },
+    {
+      "url": "/_next/static/chunks/3ec0ejoh3ggw4.js",
+      "kind": "js",
+      "transferred": 8961,
+      "decoded": 32577
+    },
+    {
+      "url": "/_next/static/chunks/32og0kg7rgd-h.js",
+      "kind": "js",
+      "transferred": 46666,
+      "decoded": 171319
+    },
+    {
+      "url": "/_next/static/chunks/0nfsy3vqc5g6l.js",
+      "kind": "js",
+      "transferred": 71776,
+      "decoded": 229282
+    },
+    {
+      "url": "/_next/static/chunks/turbopack-2u1d16houkiyo.js",
+      "kind": "js",
+      "transferred": 3909,
+      "decoded": 9974
+    },
+    {
+      "url": "/_next/static/chunks/2x-moexh2_r4l.js",
+      "kind": "js",
+      "transferred": 3519,
+      "decoded": 13991
+    },
+    {
+      "url": "/_next/static/chunks/0w6rrczp87q5m.js",
+      "kind": "js",
+      "transferred": 13020,
+      "decoded": 48887
+    },
+    {
+      "url": "/_next/static/chunks/0cz1d0mv5g_q7.js",
+      "kind": "js",
+      "transferred": 39473,
+      "decoded": 112594
+    }
+  ],
+  "checkout_install_and_build_seconds": 5.3
+}

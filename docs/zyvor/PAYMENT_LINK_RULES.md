@@ -30,6 +30,7 @@ These are additive. A link created without the new fields behaves exactly as bef
   amount on an `exact` link is `amount_not_allowed`. The payment intent carries the amount the payer chose.
 - The public link details (`GET /v1/checkout/links/{tenant_id}/{token}`) add `amount_mode`, `suggested_amount_minor`
   and `amount_rule`, one sentence the page can show ("Pay ₹500.00 or more. You choose the amount.").
+- **Part payments** (`allow_partial` with `min_part_minor`, from the link-upgrades work) combine only with `exact`: the balance is what is left of `amount_minor`, which an open amount does not have. Any open mode with `allow_partial` is refused with `invalid_amount_mode`. Every other field of the create body (bulk, branding, `message`, `allowed_methods`, `external_ref`, ...) is passed through to the main handler unchanged.
 - Coupons and the convenience fee still apply to `exact` links only. Links made before this change have no stored mode
   and read as `exact` (or `pay_what_you_want` if they were open-amount links).
 
@@ -71,10 +72,7 @@ API: `GET /v1/payment_links/lifecycle` (the model above, machine-readable), `GET
 (status computed now, the recorded status, `payable`, `paid_minor`, history), and `lifecycle_status`, `payable`,
 `paid_minor` on each row of `GET /v1/payment_links`.
 
-Relation to the payment-link-upgrades work (part payments, branch `feat/payment-link-upgrades`): this model reads
-that branch's `allow_partial` column when it exists (`to_jsonb(link)->>'allow_partial'`, which is simply false
-where the column is absent) and counts a part-payment link as `partially_paid` until its balance is paid. Nothing here
-edits those handlers; whoever merges second should check `partially_paid` for part-payment links.
+Part-payment links (`allow_partial`) are `partially_paid` once some of the balance is captured and `paid` when the captured parts reach `amount_minor` (read from the link's own `allow_partial` column and the payments made through it; tested in `link_rules.rs`).
 
 ## 3. Payer-instrument rules
 

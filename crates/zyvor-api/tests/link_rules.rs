@@ -2276,3 +2276,206 @@ async fn simultaneous_claims_of_one_payout_link_make_exactly_one_payout(pool: Pg
         "a refused claim leaves no vendor behind"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn part_payment_links_follow_the_lifecycle_and_combine_only_with_an_exact_amount(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    // part payments need an exact amount: every open mode with allow_partial is refused, and nothing is made
+    for body in [
+        json!({ "amount_mode": "minimum", "min_amount_minor": 1_000, "allow_partial": true, "min_part_minor": 100 }),
+        json!({ "amount_mode": "up_to", "max_amount_minor": 1_000, "allow_partial": true, "min_part_minor": 100 }),
+        json!({ "amount_mode": "pay_what_you_want", "allow_partial": true, "min_part_minor": 100 }),
+        json!({ "open_amount": true, "allow_partial": true, "min_part_minor": 100 }),
+    ] {
+        let (s, e) = t
+            .call(a, "POST", "/v1/payment_links", None, body.clone())
+            .await;
+        assert_eq!(
+            (s.as_u16(), e["error"]["code"].clone()),
+            (422, json!("invalid_amount_mode")),
+            "{body}"
+        );
+    }
+    assert_eq!(t.count("SELECT count(*) FROM payment_links").await, 0);
+
+    // exact + allow_partial: the wrapper hands the main branch's fields through untouched
+    let l = t
+        .ok(a, "POST", "/v1/payment_links", None, json!({ "amount_mode": "exact", "amount_minor": 100_000, "allow_partial": true, "min_part_minor": 20_000, "message": "Course fee", "allowed_methods": ["upi"] }))
+        .await;
+    assert_eq!(l["amount_mode"], "exact");
+    let (id, tok) = (
+        l["id"].as_str().unwrap().to_string(),
+        l["token"].as_str().unwrap().to_string(),
+    );
+    let (partial, msg, methods): (bool, Option<String>, Option<Vec<String>>) = sqlx::query_as(
+        "SELECT allow_partial, message, allowed_methods FROM payment_links WHERE id = $1",
+    )
+    .bind(&id)
+    .fetch_one(&t.root)
+    .await
+    .unwrap();
+    assert_eq!(
+        (partial, msg.as_deref(), methods),
+        (true, Some("Course fee"), Some(vec!["upi".to_string()]))
+    );
+    let info = t
+        .ok_public(
+            "GET",
+            &format!("/v1/checkout/links/{}/{tok}", a.id),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        (
+            info["amount_mode"].clone(),
+            info["partial"]["balance_minor"].clone()
+        ),
+        (json!("exact"), json!(100_000))
+    );
+    assert_eq!(
+        info["message"], "Course fee",
+        "the main handler's fields are still there"
+    );
+
+    assert_eq!(lifecycle(&t, a, &id).await["status"], "created");
+    // first part
+    let s1 = start(&t, &a.id, &tok, json!({ "amount_minor": 30_000 }))
+        .await
+        .1;
+    assert_eq!(lifecycle(&t, a, &id).await["status"], "active");
+    pay(
+        &t,
+        a,
+        s1["intent_id"].as_str().unwrap(),
+        "captured",
+        json!({}),
+    )
+    .await;
+    sweep_links(&t, a).await;
+    let lc = lifecycle(&t, a, &id).await;
+    assert_eq!(
+        (
+            lc["status"].clone(),
+            lc["paid_minor"].clone(),
+            lc["payable"].clone()
+        ),
+        (json!("partially_paid"), json!(30_000), json!(true))
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM outbox_events WHERE type = 'payment_link.partially_paid'")
+            .await,
+        1
+    );
+    let listed = t.ok(a, "GET", "/v1/payment_links", None, Value::Null).await;
+    assert_eq!(listed["data"][0]["lifecycle_status"], "partially_paid");
+    // the rest: paid
+    let s2 = start(&t, &a.id, &tok, json!({ "amount_minor": 70_000 }))
+        .await
+        .1;
+    pay(
+        &t,
+        a,
+        s2["intent_id"].as_str().unwrap(),
+        "captured",
+        json!({}),
+    )
+    .await;
+    sweep_links(&t, a).await;
+    let lc = lifecycle(&t, a, &id).await;
+    assert_eq!(
+        (
+            lc["status"].clone(),
+            lc["paid_minor"].clone(),
+            lc["payable"].clone()
+        ),
+        (json!("paid"), json!(100_000), json!(false))
+    );
+    let hist: Vec<String> = lc["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["to"].as_str().unwrap().to_string())
+        .collect();
+    // the worker first looked after the first part was paid, so `active` was never a recorded stop
+    assert_eq!(hist, ["created", "partially_paid", "paid"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_payout_link_claim_respects_the_payout_policy_and_leaves_nothing_behind_when_refused(
+    pool: PgPool,
+) {
+    let t = setup(pool).await;
+    let a = &t.a;
+    t.ok(
+        a,
+        "PUT",
+        "/v1/payout_policy",
+        None,
+        json!({ "max_payout_minor": 100_000 }),
+    )
+    .await;
+    let l = t
+        .ok(
+            a,
+            "POST",
+            "/v1/payout_links",
+            None,
+            json!({ "amount_minor": 250_000, "purpose": "Refund", "expected_name": "Asha Rao" }),
+        )
+        .await;
+    let path = claim_path(&a.id, l["token"].as_str().unwrap());
+    let (s, e) = t
+        .public(
+            "POST",
+            &path,
+            None,
+            json!({ "upi": { "vpa": "asha.rao@ybl" } }),
+        )
+        .await;
+    assert_eq!(
+        (s.as_u16(), e["error"]["code"].clone()),
+        (409, json!("try_later"))
+    );
+    assert!(
+        !e.to_string().contains("limit"),
+        "the recipient is not shown the business's limits: {e}"
+    );
+    assert_eq!(
+        t.count("SELECT count(*) FROM vendors").await,
+        0,
+        "a refused claim rolls the vendor back"
+    );
+    assert_eq!(t.count("SELECT count(*) FROM payouts").await, 0);
+    // the link was not used up: raising the limit lets the same link be claimed
+    t.ok(
+        a,
+        "PUT",
+        "/v1/payout_policy",
+        None,
+        json!({ "max_payout_minor": 300_000 }),
+    )
+    .await;
+    let (s, _) = t
+        .public(
+            "POST",
+            &path,
+            None,
+            json!({ "upi": { "vpa": "asha.rao@ybl" } }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CREATED);
+    // the vendor made for the link is an ordinary active vendor, and the payout is pending the usual second person
+    let v: (String,) = sqlx::query_as("SELECT status FROM vendors")
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(v.0, "active");
+    let p: (String, String) = sqlx::query_as("SELECT status, requested_by FROM payouts")
+        .fetch_one(&t.root)
+        .await
+        .unwrap();
+    assert_eq!(p.0, "pending_approval");
+}

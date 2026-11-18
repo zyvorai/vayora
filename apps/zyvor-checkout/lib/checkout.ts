@@ -1,4 +1,20 @@
-export type Phase = "choose_method" | "awaiting_payment" | "confirming" | "paid" | "failed";
+export type Phase = "choose_method" | "awaiting_payment" | "confirming" | "trying_another_way" | "paid" | "failed";
+
+/** The business's look for a payment link: only what the server judged safe and readable; checked again here. */
+export interface Brand {
+  accent: { color: string; on_color: string } | null;
+  logo_url: string | null;
+}
+
+/** What a payment link adds to the payer's pages (all of it plain text or checked addresses). */
+export interface LinkBlock {
+  message: string | null;
+  thank_you: string | null;
+  return_url: string | null;
+  brand: Brand | null;
+  allowed_methods: string[] | null;
+  partial: { total_minor: number; paid_minor: number; balance_minor: number; min_part_minor: number | null } | null;
+}
 
 export interface Session {
   merchant: string | null;
@@ -10,6 +26,10 @@ export interface Session {
   methods: ("upi" | "card" | "netbanking" | "wallet")[];
   /** How UPI works for this payment: a provider-issued QR / intent, or the payer types a UPI ID (fallback). */
   upi_flow?: "intent" | "collect";
+  /** Present when the payment was made through a payment link. */
+  link?: LinkBlock | null;
+  /** True when the attempt shown is a second try on another provider after the first one failed definitively. */
+  retried_on_another_provider?: boolean;
   attempt: { id: string; method: string; status: string; failure_reason: string | null; action: { type: string; [k: string]: unknown } | null } | null;
 }
 
@@ -45,7 +65,7 @@ export const METHOD_LABEL: Record<string, string> = { upi: "UPI", card: "Card", 
 
 /** How long to wait between status checks for each phase (ms). */
 export function pollDelay(phase: Phase): number | null {
-  return phase === "awaiting_payment" ? 2000 : phase === "confirming" ? 4000 : null;
+  return phase === "awaiting_payment" || phase === "trying_another_way" ? 2000 : phase === "confirming" ? 4000 : null;
 }
 
 /** A short code the payer can quote to support. Derived from the payment's id; it grants no access. */
@@ -69,4 +89,25 @@ export function supportLink(base: string | undefined, ref: string): string | nul
   } catch {
     return null;
   }
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** Only an https address is ever used for a logo or a return button, so a bad value can never become a script link. */
+export function safeHttps(u: string | null | undefined): string | null {
+  if (!u) return null;
+  try {
+    const p = new URL(u);
+    return p.protocol === "https:" && !p.username && !p.password ? p.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Card attributes for a branded link: the colour only when it is a plain hex pair (the server already checked that
+ *  it is readable); otherwise the page keeps its own look. */
+export function cardProps(brand: Brand | null | undefined): { className: string; style?: Record<string, string> } {
+  const a = brand?.accent;
+  if (a && HEX.test(a.color) && HEX.test(a.on_color)) return { className: "card branded", style: { "--brand": a.color, "--brand-on": a.on_color } };
+  return { className: "card" };
 }

@@ -21,6 +21,8 @@ A payout link lets a recipient enter their own bank account or UPI id and be pai
    claimed again whatever happens to the payout. Its status follows the payout: `claimed`, `paid`, or `payout_ended` (rejected or
    cancelled: make a new link). Other states: `active`, `expired`, `cancelled`, `locked`.
 
+The payout is created by `payouts::create_one`, so the vendor and tenant rules of the payout policy (limits, daily caps, blocked payees, vendor status) apply too. A claim the policy refuses rolls the vendor back, leaves the link unused and tells the recipient only `try_later`. The vendor made for a link is an ordinary active vendor, like one from `POST /v1/vendors`; it does not go through the vendor onboarding workflow.
+
 What the recipient sees: your business name, the amount, the purpose, the expiry and the state of their payout. Never the name the bank
 holds. A token from another business or a wrong one is the same `404`. Concurrent claims make one payout (the link row is locked and
 the payout reference is `plink:<id>`). `GET /v1/payout_links`, `GET /v1/payout_links/{id}` and `POST /v1/payout_links/{id}/cancel`

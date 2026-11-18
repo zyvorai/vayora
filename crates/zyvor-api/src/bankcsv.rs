@@ -265,7 +265,7 @@ pub struct Problem {
     pub message: String,
 }
 
-fn problem(line: usize, column: Option<&str>, message: impl Into<String>) -> Problem {
+pub(crate) fn problem(line: usize, column: Option<&str>, message: impl Into<String>) -> Problem {
     Problem {
         line,
         column: column.map(str::to_string),
@@ -325,7 +325,7 @@ impl Parsed {
 }
 
 /// Split a file into records, honouring quotes (a quoted field may hold commas, `""` and line breaks).
-fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, String> {
+pub(crate) fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let (mut out, mut rec, mut cur) = (Vec::new(), Vec::new(), String::new());
     let (mut q, mut line, mut start, mut quote_line) = (false, 1usize, 1usize, 1usize);
@@ -386,7 +386,7 @@ fn read_records(text: &str, delim: char) -> Result<Vec<(usize, Vec<String>)>, St
     Ok(out)
 }
 
-fn detect_delimiter(text: &str) -> char {
+pub(crate) fn detect_delimiter(text: &str) -> char {
     let sample: String = text.lines().take(40).collect::<Vec<_>>().join("\n");
     [',', ';', '\t', '|']
         .into_iter()
@@ -394,7 +394,7 @@ fn detect_delimiter(text: &str) -> char {
         .unwrap_or(',')
 }
 
-fn norm_header(s: &str) -> String {
+pub(crate) fn norm_header(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_alphanumeric())
         .flat_map(char::to_lowercase)
@@ -615,6 +615,16 @@ fn grouping_ok(int_part: &str) -> bool {
     let western = mid.iter().all(|x| x.len() == 3);
     let indian = mid.iter().all(|x| x.len() == 2) && first.len() <= 2;
     western || indian
+}
+
+/// An amount in rupees as people type it ("1,250.50", "₹ 499"), as whole paise. No sign, no Dr/Cr, at most two
+/// decimals, grouping only the Indian or western way. For files that are not bank statements.
+pub(crate) fn parse_rupees(s: &str) -> Result<i64, String> {
+    match parse_amount(s)? {
+        Some(a) if !a.negative && a.credit.is_none() && a.minor > 0 => Ok(a.minor),
+        Some(_) => Err(format!("`{}` must be a positive amount", s.trim())),
+        None => Err("the amount is empty".into()),
+    }
 }
 
 fn parse_amount(s: &str) -> Result<Option<Amt>, String> {

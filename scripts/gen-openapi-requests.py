@@ -269,13 +269,14 @@ OVERRIDES = {
     ("post", "/v1/payment_intents/{id}/refunds"): ("201", _ref("RefundRow")),
     ("post", "/v1/mandates"): ("201", _ref("MandateRow")),
     ("post", "/v1/mandates/{id}/debits"): ("201", _ref("DebitRow")),
-    # wrappers that call the original handler and add fields (link_amount.rs, link_lifecycle.rs)
+    # wrappers that call the original handler and add fields (link_amount.rs, link_lifecycle.rs): the original
+    # handler's response plus what the wrapper adds
     ("post", "/v1/payment_links"): (
         "201",
         {"type": "object", "properties": {
             "id": {"type": "string"}, "token": {}, "currency": {"type": "string"}, "path": {"type": "string"},
             "max_uses": {"type": ["integer", "null"], "format": "int32"},
-            "expires_at": {"type": ["string", "null"], "format": "date-time"},
+            "expires_at": {"type": ["string", "null"]}, "existing": {},
             "amount_mode": {"type": "string", "enum": ["exact", "minimum", "up_to", "pay_what_you_want"]},
             "lifecycle_status": {"type": "string", "enum": ["created", "active", "partially_paid", "paid", "expired", "cancelled", "failed"]}}},
     ),
@@ -296,17 +297,21 @@ OVERRIDES = {
             "merchant": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]},
             "amount_minor": {"type": "integer"}, "discount_minor": {"type": "integer"}, "fee_minor": {"type": "integer"},
             "total_minor": {"type": "integer"}, "coupon_applied": {}, "currency": {"type": "string"}, "status": {"type": "string"},
-            "open_amount": {"type": "boolean"},
-            "min_amount_minor": {"type": ["integer", "null"], "format": "int64"},
-            "max_amount_minor": {"type": ["integer", "null"], "format": "int64"},
+            "open_amount": {}, "min_amount_minor": {"type": "integer"}, "max_amount_minor": {"type": "integer"},
+            "message": {"type": ["string", "null"]}, "brand": {}, "allowed_methods": {}, "partial": {},
             "amount_mode": {"type": "string", "enum": ["exact", "minimum", "up_to", "pay_what_you_want"]},
             "suggested_amount_minor": {"type": ["integer", "null"], "format": "int64"},
             "amount_rule": {"type": "string"}}},
     ),
 }
+# Structs whose schema stays in the spec although a wrapper handler (link_amount.rs) now takes the request instead
+KEEP_SCHEMAS = [("payment_links", "NewLink"), ("payment_links", "CouponQuery")]
+# A wrapper's body struct passes the rest of the body through to another struct: document that struct's fields too
+FLATTEN_INTO = {("link_amount", "LinkCreate"): ("payment_links", "NewLink")}
 # Not JSON: (status, media type, a note on the body)
 NOT_JSON = {
     ("get", "/v1/payment_links/{id}/qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
+    ("get", "/v1/payment_links/imports/{id}/export.csv"): ("200", "text/csv", {"type": "string"}),
     ("get", "/v1/onboarding/uploads/{id}/file"): ("200", "application/octet-stream", {"type": "string", "format": "binary"}),
     ("get", "/v1/platform/reviews/{organisation_id}/uploads/{id}/file"): ("200", "application/octet-stream", {"type": "string", "format": "binary"}),
     ("get", "/v1/checkout/{tenant_id}/{intent_id}/upi-qr.svg"): ("200", "image/svg+xml", {"type": "string"}),
@@ -441,7 +446,7 @@ def main() -> int:
             wanted[(verb, path)] = took
 
     # schema names: the struct's own name when only one module uses it, else prefixed with the module
-    used = sorted({t[:2] for v in wanted.values() for t in v.values()})
+    used = sorted({t[:2] for v in wanted.values() for t in v.values()} | set(KEEP_SCHEMAS))
     count = {}
     for _, n in used:
         count[n] = count.get(n, 0) + 1
@@ -461,6 +466,14 @@ def main() -> int:
             props[fname] = schema_of(ty, known)
             if not ty.startswith("Option<") and not has_default:
                 required.append(fname)
+        if (mod, name) in FLATTEN_INTO:
+            omod, oname = FLATTEN_INTO[(mod, name)]
+            oknown = {n: name_of[(m, n)] for (m, n) in name_of if m == omod}
+            for fname, ty, has_default, flat in per_file[omod][oname]:
+                if not flat and fname not in props:
+                    props[fname] = schema_of(ty, oknown)
+                    if not ty.startswith("Option<") and not has_default:
+                        required.append(fname)
         return props, required
 
     # nested structs referenced from a body
