@@ -35,6 +35,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [Provider HTTP contract](zyvor/PROVIDER_CONTRACT.md) | The JSON API your gateway implements for the `custom` adapter |
 | [Cashfree partner setup](zyvor/PARTNER_SETUP.md) | What Cashfree's docs say, what is unconfirmed, and the end-to-end test plan |
 | [Real provider sandboxes](zyvor/REAL_SANDBOX.md) | Taking a payment through Razorpay test mode and Cashfree's sandbox |
+| [Fee checks](zyvor/FEE_CHECKS.md) | Compare what a provider deducted with your own contract's fee rules (level 1, simulators; no rates shipped) |
 | [Mandates live](zyvor/MANDATES_LIVE.md) | Cashfree / sponsor AutoPay verification before production |
 
 ## Run and try it

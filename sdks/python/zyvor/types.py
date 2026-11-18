@@ -38,6 +38,11 @@ DebitRow = TypedDict("DebitRow", {
     "created_at": "str",
 })
 
+DeleteFeeRulesByIdResponse = TypedDict("DeleteFeeRulesByIdResponse", {
+    "id": "str",
+    "deleted": "bool",
+})
+
 DeleteMailSuppressionsByEmailResponse = TypedDict("DeleteMailSuppressionsByEmailResponse", {
     "email": "str",
     "removed": "bool",
@@ -305,6 +310,45 @@ GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
 GetEventsCatalogueResponseDataItem = TypedDict("GetEventsCatalogueResponseDataItem", {
     "type": "Any",
     "description": "Optional[str]",
+})
+
+GetFeeChecksFindingsResponse = TypedDict("GetFeeChecksFindingsResponse", {
+    "data": "List[Any]",
+    "note": "str",
+})
+
+GetFeeChecksSettingsResponse = TypedDict("GetFeeChecksSettingsResponse", {
+    "tolerance_minor": "int",
+    "owner": "Any",
+})
+
+GetFeeChecksSummaryResponse = TypedDict("GetFeeChecksSummaryResponse", {
+    "rules_configured": "int",
+    "open_findings": "Any",
+    "open_cases": "int",
+    "over_deducted_minor": "int",
+    "under_deducted_minor": "int",
+    "total_variance_minor": "int",
+    "total_absolute_variance_minor": "int",
+    "by_provider_method": "List[GetFeeChecksSummaryResponseByProviderMethodItem]",
+    "lines_without_a_rule": "int",
+    "message": "Optional[str]",
+    "note": "str",
+})
+
+GetFeeChecksSummaryResponseByProviderMethodItem = TypedDict("GetFeeChecksSummaryResponseByProviderMethodItem", {
+    "provider": "str",
+    "method": "str",
+    "open_findings": "int",
+    "settlements": "int",
+    "over_deducted_minor": "int",
+    "under_deducted_minor": "int",
+    "total_variance_minor": "int",
+})
+
+GetFeeRulesResponse = TypedDict("GetFeeRulesResponse", {
+    "data": "Any",
+    "note": "str",
 })
 
 GetFxConvertResponse = TypedDict("GetFxConvertResponse", {
@@ -856,6 +900,7 @@ GetSettlementsByIdExplainResponse = TypedDict("GetSettlementsByIdExplainResponse
     "refunds": "List[Any]",
     "adjustments": "List[Any]",
     "fees": "Any",
+    "fee_check": "Any",
     "arithmetic": "Any",
     "expected_minor": "int",
     "received_minor": "int",
@@ -864,6 +909,19 @@ GetSettlementsByIdExplainResponse = TypedDict("GetSettlementsByIdExplainResponse
     "bank_match": "Any",
     "cases": "List[Any]",
     "narrative": "bool",
+})
+
+GetSettlementsByIdFeeCheckResponse = TypedDict("GetSettlementsByIdFeeCheckResponse", {
+    "attempt_id": "Optional[str]",
+    "provider": "str",
+    "method": "Any",
+    "status": "str",
+    "payment_minor": "int",
+    "refunded_minor": "int",
+    "actual_minor": "int",
+    "expected_minor": "int",
+    "variance_minor": "int",
+    "rule": "Any",
 })
 
 GetSettlementsResponse = TypedDict("GetSettlementsResponse", {
@@ -1200,6 +1258,32 @@ PostDisputesResponse = TypedDict("PostDisputesResponse", {
     "id": "str",
     "status": "str",
     "amount_minor": "int",
+})
+
+PostFeeChecksRunResponse = TypedDict("PostFeeChecksRunResponse", {
+    "settlements_checked": "int",
+    "flagged": "Any",
+    "ok": "bool",
+    "no_rule": "Any",
+})
+
+PostFeeChecksSettingsResponse = TypedDict("PostFeeChecksSettingsResponse", {
+    "tolerance_minor": "int",
+    "owner": "bool",
+})
+
+PostFeeRulesResponse = TypedDict("PostFeeRulesResponse", {
+    "id": "str",
+    "provider": "str",
+    "method": "Any",
+    "bps": "Any",
+    "flat_minor": "int",
+    "cap_minor": "int",
+    "gst_bps": "Any",
+    "refund_returns_fee": "Any",
+    "effective_from": "Any",
+    "note": "Optional[str]",
+    "created_by": "Any",
 })
 
 PostFxRatesResponse = TypedDict("PostFxRatesResponse", {
@@ -1893,6 +1977,19 @@ PostSettlementBatchesResponse = TypedDict("PostSettlementBatchesResponse", {
     "currency": "str",
 })
 
+PostSettlementsByIdFeeCheckResponse = TypedDict("PostSettlementsByIdFeeCheckResponse", {
+    "attempt_id": "Optional[str]",
+    "provider": "str",
+    "method": "Any",
+    "status": "str",
+    "payment_minor": "int",
+    "refunded_minor": "int",
+    "actual_minor": "int",
+    "expected_minor": "int",
+    "variance_minor": "int",
+    "rule": "Any",
+})
+
 PostSettlementsByIdSimulateBankResponse = TypedDict("PostSettlementsByIdSimulateBankResponse", {
     "added": "int",
     "settlements_rechecked": "int",
@@ -1904,6 +2001,7 @@ PostSettlementsImportResponse = TypedDict("PostSettlementsImportResponse", {
     "refunds": "List[Any]",
     "adjustments": "List[Any]",
     "fees": "Any",
+    "fee_check": "Any",
     "arithmetic": "Any",
     "expected_minor": "int",
     "received_minor": "int",
