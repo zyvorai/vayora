@@ -18,6 +18,7 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 | [CERT-In runbook](compliance/CERT_IN_RUNBOOK.md) | Six-hour incident reporting checklist |
 | [Acquire KYC/AML](compliance/KYC_AML_ACQUIRE.md) | PMLA gate for acquire mode |
 | [PCI scope](compliance/PCI_SCOPE.md) | Network tokens only — no PAN/CVV |
+| [Client overview (PDF)](Zyvor-Payments-Client-Overview.pdf) | A 7-page brochure for clients: what it does, benefits, honest status |
 | [Where Zyvor stands](zyvor/MARKET.md) | A comparison with Indian payment gateways, with its source and caveats |
 
 ## What is true today
