@@ -862,6 +862,7 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
 
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
+    "routing_health_rule": "str",
     "providers": "Any",
     "recent_changes": "List[Any]",
 })

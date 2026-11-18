@@ -858,6 +858,7 @@ export interface GetRefundsResponse {
 
 export interface GetRoutingHealthResponse {
   config: unknown;
+  routing_health_rule: string;
   providers: unknown;
   recent_changes: unknown[];
 }

@@ -34,10 +34,15 @@ Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkou
 | An unknown attempt is settled by asking the provider, and only a "failed" answer opens failover; a "captured" answer blocks any second attempt | `an_unknown_attempt_is_settled_by_asking_the_provider_and_only_then_can_another_provider_be_used` |
 | Replaying an idempotency key returns the same attempt; two simultaneous attempts create one | the first test above, `two_simultaneous_attempts_on_one_payment_create_exactly_one` |
 | Thresholds per tenant, validated, scoped, audited; state isolated by row-level security | `thresholds_are_per_tenant_validated_scoped_and_audited`, `health_state_and_thresholds_stay_inside_their_tenant` |
+| A decline is classified payer / provider / unknown; payer declines are shown but excluded from the success rate and the breaker and are no reason to fail over; unknown counts against the provider | `a_failed_attempt_is_classified_by_who_caused_it`, `payer_declines_are_shown_but_never_degrade_a_provider_or_sway_success_rate_routing`, `success_rate_routing_ignores_payer_declines`, `a_payer_decline_does_not_move_the_payment_to_another_provider_but_a_provider_fault_does`, decline unit tests |
+| A background sweeper degrades and recovers a quiet business once per transition, safe with several workers, never starts a payment or takes a probe | `the_sweeper_degrades_and_recovers_a_quiet_business_once_per_transition`, `several_workers_sweeping_at_once_record_each_transition_exactly_once`, `the_worker_runs_the_sweep_for_every_business_and_keeps_them_apart`, `evidence_older_than_the_window_is_not_held_against_a_provider` |
+| One health rule: the health endpoint says what routing does (`routing_effect`); the older router heuristic is gone; the "only eligible provider" reason is accurate; every decision has a plain-language `explanation` | `the_health_endpoint_tells_the_truth_about_routing_and_every_decision_explains_itself`, router unit tests |
 
 **Limits.** Simulators and the local provider mock only (`/_sim/outage`); no real provider was used and the default
-thresholds are not tuned on real traffic. Payer declines count as failures. Transitions are recorded when a payment is
-routed (no background sweeper). No console screen. Details in [ROUTING.md](ROUTING.md).
+thresholds are not tuned on real traffic. The decline classifier recognises only codes found in this repository
+(simulator, local mock, tests); Razorpay and PhonePe have none, every unrecognised decline counts against the provider,
+and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
+(minutes-long window on the database clock). No console screen. Details in [ROUTING.md](ROUTING.md).
 
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.

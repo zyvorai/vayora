@@ -5,6 +5,14 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Decline classes, health sweeper, one health rule, routing explanations (simulators only)
+**Routing health tells the truth**
+- Declines are classified when recorded (`payment_attempts.failure_class`: `payer_declined`, `provider_fault`, `declined` = unknown, `provider_rejected`, `cancelled`). Payer declines (insufficient funds, the payer left) are left out of the success rate and the circuit breaker, shown as `payer_declines` in `GET /v1/routing/health`, and are not a reason to fail over. Unknown causes still count against the provider. Only codes found in the repository's simulator, mock and tests are recognised; nothing was checked against a live provider.
+- Worker health sweeper: a quiet business degrades or recovers without a new payment, once per transition across worker replicas (advisory lock plus a conditional update), writing the same `provider.degraded` / `provider.recovered` audit entry and event. It never starts a payment or takes a probe slot.
+- **Behaviour change:** the router's older heuristic (any unresolved payment, or most of the last 50 attempts failing, only reordered providers) is removed. The circuit breaker is the one health rule, and `GET /v1/routing/health` now shows `routing_effect` for each provider and method, so it cannot say healthy while routing skips. One unresolved payment alone no longer deprioritises a provider; with the breaker switched off routing ignores health entirely.
+- Every `route.considered` entry and `route.explanation` carry a plain-language sentence ("Chosen because it has the lowest estimated fee ..."). The reason `only eligible provider` is no longer shown when another provider was set aside; it names what was skipped.
+- Migration 0079 (widens the allowed `failure_class` values; additive). OpenAPI and generated SDK types updated. See [docs/zyvor/ROUTING.md](docs/zyvor/ROUTING.md).
+
 ## 18 November 2026 — SDK methods for fee checks, bank statements and routing health
 - Node, Python and Go SDKs gain typed methods for fee rules, fee checks (settings, summary, findings, run, per-settlement check), bank statements (preview, layouts, imports, lines, rematch, match confirm and reject), reconciliation ageing and routing health with its settings. CSV import and preview accept the layout options. The Node CLI gains matching read commands. Tested with mocked HTTP only; no server change.
 

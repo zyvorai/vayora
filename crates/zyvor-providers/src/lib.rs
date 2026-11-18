@@ -13,6 +13,7 @@ use zyvor_core::Currency;
 
 pub mod cashfree;
 pub mod custom;
+pub mod decline;
 pub mod phonepe;
 pub mod razorpay;
 pub mod router;

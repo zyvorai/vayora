@@ -13,6 +13,8 @@ pub struct Stats {
     pub attempts_checked: usize,
     pub refunds_checked: usize,
     pub events_delivered: usize,
+    /// Provider health changes (degraded or recovered) the sweeper recorded this cycle.
+    pub health_changes: usize,
 }
 
 pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, sqlx::Error> {
@@ -122,6 +124,13 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         // 3d. acquire: release settlement batches whose T+N delay has elapsed
         if let Err(e) = crate::settle::auto_release_due(s, &tid).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "settlement auto-release failed");
+        }
+        // 3e. provider health: re-evaluate the circuit breaker so a quiet business degrades or recovers without a payment
+        match crate::health::sweep_tenant(&s.pool, &tid).await {
+            Ok(sw) => st.health_changes += sw.degraded + sw.recovered,
+            Err(e) => {
+                tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
+            }
         }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
