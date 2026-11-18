@@ -3012,6 +3012,609 @@ paths:
                   by_kind:
                     type: object
         4XX: *id001
+  /v1/cash/dashboard:
+    get:
+      summary: "Money in transit by provider: captured not settled, settled not matched to a bank credit, matched, refunds and payouts pending"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    as_of:
+                      type: string
+                      format: date
+                    currency:
+                      type: string
+                    matched_window_days:
+                      type: integer
+                    by_provider:
+                      type: array
+                      items:
+                        type: object
+                    totals:
+                      type: object
+                    payouts_pending:
+                      type: object
+                    paid_payouts_without_bank_debit_match:
+                      type: object
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: matched_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: "Window for matched settlements, 1-365 days (default 30)"
+  /v1/cash/lag:
+    get:
+      summary: "Observed settlement lag per provider and method (median and spread), or not enough data"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    as_of:
+                      type: string
+                      format: date
+                    lookback_days:
+                      type: integer
+                    min_samples:
+                      type: integer
+                    data:
+                      type: array
+                      items:
+                        type: object
+                    tenant_rules:
+                      type: array
+                      items:
+                        type: object
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/cash/forecast:
+    get:
+      summary: "Expected credits per day for the next N days, with a range from observed lag"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    as_of:
+                      type: string
+                      format: date
+                    currency:
+                      type: string
+                    horizon_days:
+                      type: integer
+                    days:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          date:
+                            type: string
+                            format: date
+                          expected_minor:
+                            type: integer
+                          cumulative_low_minor:
+                            type: integer
+                          cumulative_expected_minor:
+                            type: integer
+                          cumulative_high_minor:
+                            type: integer
+                    overdue:
+                      type: object
+                    expected_after_horizon_minor:
+                      type: integer
+                    expected_without_range_minor:
+                      type: integer
+                    not_forecast:
+                      type: array
+                      items:
+                        type: object
+                    basis:
+                      type: array
+                      items:
+                        type: object
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: "Days ahead, 1-30 (default 7)"
+  /v1/cash/alerts/scan:
+    post:
+      summary: "Check for settlements later than the provider's observed range or your expected lag; opens cases and settlement.delayed events once per subject"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    pending_cases_opened:
+                      type: integer
+                    late_cases_opened:
+                      type: integer
+                    case_kinds:
+                      type: array
+                      items:
+                        type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: lookback_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: "How far back to look for settlements that arrived late, 1-90 (default 14)"
+  /v1/cash/settings:
+    get:
+      summary: "Forecast and alert settings: minimum samples, grace days, refund SLA hours"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    min_samples:
+                      type: integer
+                    alert_grace_days:
+                      type: integer
+                    refund_sla_hours:
+                      type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: "Set the minimum samples (3-500), alert grace days (0-30) and refund SLA hours"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    min_samples:
+                      type: integer
+                    alert_grace_days:
+                      type: integer
+                    refund_sla_hours:
+                      type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                min_samples:
+                  type: integer
+                alert_grace_days:
+                  type: integer
+                refund_sla_hours:
+                  type: integer
+  /v1/cash/lag_rules:
+    get:
+      summary: "List the settlement lags you expect per provider and method"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: "Set the settlement lag you expect (days) for a provider and method"
+      tags:
+      - reconciliation
+      responses:
+        '201':
+          description: "Created"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    provider:
+                      type: string
+                    method:
+                      type: string
+                    expected_lag_days:
+                      type: integer
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - provider
+              - expected_lag_days
+              properties:
+                provider:
+                  type: string
+                method:
+                  type: string
+                expected_lag_days:
+                  type: integer
+                note:
+                  type: string
+  /v1/cash/lag_rules/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      summary: "Remove a lag rule"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    deleted:
+                      type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/analytics/refunds:
+    get:
+      summary: "Refund rate over time, time to refund, refunds past the SLA, fee-not-returned leakage and duplicate refunds blocked"
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+                    bucket:
+                      type: string
+                    currency:
+                      type: string
+                    series:
+                      type: array
+                      items:
+                        type: object
+                    totals:
+                      type: object
+                    time_to_refund:
+                      type: object
+                    sla:
+                      type: object
+                    leakage:
+                      type: object
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "First IST day, YYYY-MM-DD (default 29 days before to)"
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "Last IST day (default today)"
+      - name: bucket
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "day (default) or week"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: "SLA breaches to list, 1-200 (default 50)"
+  /v1/exports/journal:
+    get:
+      summary: "One page of the double-entry journal for a date range as CSV, Tally CSV, Tally XML or JSON; every voucher balances"
+      tags:
+      - exports
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+                    currency:
+                      type: string
+                    vouchers:
+                      type: array
+                      items:
+                        type: object
+                    totals:
+                      type: object
+                    unmapped_accounts:
+                      type: array
+                      items:
+                        type: string
+                    next_cursor:
+                      type:
+                      - string
+                      - 'null'
+            text/csv:
+              schema:
+                type: string
+            application/xml:
+              schema:
+                type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "First IST day, YYYY-MM-DD (required)"
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "Last IST day, inclusive (required, at most 366 days after from)"
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "csv (default), tally_csv, tally_xml or json"
+      - name: currency
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "INR (default) or USD"
+      - name: kinds
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "Comma list of payments, refunds, fees, settlements, payouts, other"
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "The x-next-cursor of the previous page"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: "Vouchers per page, 1-5000 (default 1000)"
+  /v1/exports/gst_summary:
+    get:
+      summary: "GST summary for a date range by supply type and rate, sales less credit notes, as CSV or JSON"
+      tags:
+      - exports
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+                    rows:
+                      type: array
+                      items:
+                        type: object
+                    net:
+                      type: object
+                    note:
+                      type: string
+            text/csv:
+              schema:
+                type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "First IST day, YYYY-MM-DD (required)"
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "Last IST day, inclusive (required)"
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+        description: "csv (default) or json"
+  /v1/exports/account_mappings:
+    get:
+      summary: "Account codes for exports: built-in chart, your overrides, and what each ledger account resolves to"
+      tags:
+      - exports
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    defaults:
+                      type: array
+                      items:
+                        type: object
+                    overrides:
+                      type: array
+                      items:
+                        type: object
+                    effective:
+                      type: array
+                      items:
+                        type: object
+                    unmapped_code:
+                      type: string
+                    note:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: "Map a ledger account (or a family ending in :*) to your accounting code and name"
+      tags:
+      - exports
+      responses:
+        '201':
+          description: "Created"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    ledger_account:
+                      type: string
+                    code:
+                      type: string
+                    name:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ledger_account
+              - code
+              - name
+              properties:
+                ledger_account:
+                  type: string
+                code:
+                  type: string
+                name:
+                  type: string
+  /v1/exports/account_mappings/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    delete:
+      summary: "Remove an account mapping; the built-in code applies again"
+      tags:
+      - exports
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+                schema:
+                  type: object
+                  properties:
+                    deleted:
+                      type: boolean
+                    ledger_account:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/disputes:
     get:
       summary: Open or list disputes (an open dispute holds the amount so it cannot be refunded)

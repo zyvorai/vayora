@@ -54,6 +54,15 @@ type DebitRow struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+type DeleteCashLagRulesByIdResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+type DeleteExportsAccountMappingsByIdResponse struct {
+	Deleted       bool   `json:"deleted"`
+	LedgerAccount string `json:"ledger_account"`
+}
+
 type DeleteFeeRulesByIdResponse struct {
 	ID      string `json:"id"`
 	Deleted bool   `json:"deleted"`
@@ -97,6 +106,19 @@ type GetAcquireKycResponse struct {
 type GetAnalyticsCostResponse struct {
 	ByProviderMethod []any `json:"by_provider_method"`
 	Suggestions      any   `json:"suggestions"`
+}
+
+type GetAnalyticsRefundsResponse struct {
+	From         string `json:"from"`
+	To           string `json:"to"`
+	Bucket       string `json:"bucket"`
+	Currency     string `json:"currency"`
+	Series       []any  `json:"series"`
+	Totals       any    `json:"totals"`
+	TimeToRefund any    `json:"time_to_refund"`
+	Sla          any    `json:"sla"`
+	Leakage      any    `json:"leakage"`
+	Note         string `json:"note"`
 }
 
 type GetApiKeysResponse struct {
@@ -185,6 +207,57 @@ type GetBranchesResponseDataItem struct {
 
 type GetCardTokensResponse struct {
 	Tokens []any `json:"tokens"`
+}
+
+type GetCashDashboardResponse struct {
+	AsOf                             string `json:"as_of"`
+	Currency                         string `json:"currency"`
+	MatchedWindowDays                int64  `json:"matched_window_days"`
+	ByProvider                       []any  `json:"by_provider"`
+	Totals                           any    `json:"totals"`
+	PayoutsPending                   any    `json:"payouts_pending"`
+	PaidPayoutsWithoutBankDebitMatch any    `json:"paid_payouts_without_bank_debit_match"`
+	Note                             string `json:"note"`
+}
+
+type GetCashForecastResponse struct {
+	AsOf                      string                            `json:"as_of"`
+	Currency                  string                            `json:"currency"`
+	HorizonDays               int64                             `json:"horizon_days"`
+	Days                      []GetCashForecastResponseDaysItem `json:"days"`
+	Overdue                   any                               `json:"overdue"`
+	ExpectedAfterHorizonMinor int64                             `json:"expected_after_horizon_minor"`
+	ExpectedWithoutRangeMinor int64                             `json:"expected_without_range_minor"`
+	NotForecast               []any                             `json:"not_forecast"`
+	Basis                     []any                             `json:"basis"`
+	Note                      string                            `json:"note"`
+}
+
+type GetCashForecastResponseDaysItem struct {
+	Date                    string `json:"date"`
+	ExpectedMinor           int64  `json:"expected_minor"`
+	CumulativeLowMinor      int64  `json:"cumulative_low_minor"`
+	CumulativeExpectedMinor int64  `json:"cumulative_expected_minor"`
+	CumulativeHighMinor     int64  `json:"cumulative_high_minor"`
+}
+
+type GetCashLagResponse struct {
+	AsOf         string `json:"as_of"`
+	LookbackDays int64  `json:"lookback_days"`
+	MinSamples   int64  `json:"min_samples"`
+	Data         []any  `json:"data"`
+	TenantRules  []any  `json:"tenant_rules"`
+	Note         string `json:"note"`
+}
+
+type GetCashLagRulesResponse struct {
+	Data []any `json:"data"`
+}
+
+type GetCashSettingsResponse struct {
+	MinSamples     int64 `json:"min_samples"`
+	AlertGraceDays int64 `json:"alert_grace_days"`
+	RefundSlaHours int64 `json:"refund_sla_hours"`
 }
 
 type GetCheckoutByTenantIdByIntentIdEventsResponse struct {
@@ -341,6 +414,32 @@ type GetEventsCatalogueResponse struct {
 type GetEventsCatalogueResponseDataItem struct {
 	Type        any     `json:"type"`
 	Description *string `json:"description"`
+}
+
+type GetExportsAccountMappingsResponse struct {
+	Defaults     []any  `json:"defaults"`
+	Overrides    []any  `json:"overrides"`
+	Effective    []any  `json:"effective"`
+	UnmappedCode string `json:"unmapped_code"`
+	Note         string `json:"note"`
+}
+
+type GetExportsGstSummaryResponse struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Rows []any  `json:"rows"`
+	Net  any    `json:"net"`
+	Note string `json:"note"`
+}
+
+type GetExportsJournalResponse struct {
+	From             string   `json:"from"`
+	To               string   `json:"to"`
+	Currency         string   `json:"currency"`
+	Vouchers         []any    `json:"vouchers"`
+	Totals           any      `json:"totals"`
+	UnmappedAccounts []string `json:"unmapped_accounts"`
+	NextCursor       *string  `json:"next_cursor"`
 }
 
 type GetFeeChecksFindingsResponse struct {
@@ -1165,8 +1264,28 @@ type PostCardTokensResponse struct {
 	ExpYear  any    `json:"exp_year"`
 }
 
+type PostCashAlertsScanResponse struct {
+	PendingCasesOpened int64    `json:"pending_cases_opened"`
+	LateCasesOpened    int64    `json:"late_cases_opened"`
+	CaseKinds          []string `json:"case_kinds"`
+}
+
 type PostCashEntriesResponse struct {
 	ID string `json:"id"`
+}
+
+type PostCashLagRulesResponse struct {
+	ID              string `json:"id"`
+	Provider        string `json:"provider"`
+	Method          string `json:"method"`
+	ExpectedLagDays int64  `json:"expected_lag_days"`
+	Note            string `json:"note"`
+}
+
+type PostCashSettingsResponse struct {
+	MinSamples     int64 `json:"min_samples"`
+	AlertGraceDays int64 `json:"alert_grace_days"`
+	RefundSlaHours int64 `json:"refund_sla_hours"`
 }
 
 type PostCheckoutByTenantIdByIntentIdAttemptsResponse struct {
@@ -1342,6 +1461,13 @@ type PostDisputesResponse struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostExportsAccountMappingsResponse struct {
+	ID            int64  `json:"id"`
+	LedgerAccount string `json:"ledger_account"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
 }
 
 type PostFeeChecksRunResponse struct {

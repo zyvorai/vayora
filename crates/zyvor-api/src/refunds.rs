@@ -64,6 +64,31 @@ pub struct CreateRefund {
     external_ref: Option<String>,
 }
 
+/// Count a refund request that was stopped as a duplicate (never blocks the request if the write fails).
+async fn record_block(
+    s: &AppState,
+    tenant_id: &str,
+    intent_id: &str,
+    reason: &str,
+    amount: Option<i64>,
+) {
+    let r = async {
+        let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+        sqlx::query("INSERT INTO refund_blocks (tenant_id, intent_id, reason, amount_minor) VALUES ($1, $2, $3, $4)")
+            .bind(tenant_id)
+            .bind(intent_id)
+            .bind(reason)
+            .bind(amount)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await
+    }
+    .await;
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "could not count a blocked refund");
+    }
+}
+
 pub async fn create_refund(
     State(s): State<AppState>,
     auth: Auth,
@@ -95,6 +120,14 @@ pub async fn create_refund(
             body,
             resource_id,
         } => {
+            record_block(
+                &s,
+                &auth.tenant_id,
+                &intent_id,
+                "idempotent_replay",
+                b.amount_minor,
+            )
+            .await;
             let body = match resource_id {
                 Some(id) => serde_json::to_value(fetch_refund(&mut tx, &id).await?).unwrap(),
                 None => body.unwrap_or(Value::Null),
@@ -115,6 +148,15 @@ pub async fn create_refund(
     let remaining = total - refunded - reserved;
     let amount = b.amount_minor.unwrap_or(remaining);
     if amount <= 0 || amount > remaining {
+        // the transaction is about to roll back, so the count is written on its own
+        record_block(
+            &s,
+            &auth.tenant_id,
+            &intent_id,
+            "exceeds_refundable",
+            b.amount_minor,
+        )
+        .await;
         return Err(ApiError::invalid(
             "refund_exceeds_refundable",
             format!(

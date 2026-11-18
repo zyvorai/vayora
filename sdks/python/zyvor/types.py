@@ -38,6 +38,15 @@ DebitRow = TypedDict("DebitRow", {
     "created_at": "str",
 })
 
+DeleteCashLagRulesByIdResponse = TypedDict("DeleteCashLagRulesByIdResponse", {
+    "deleted": "bool",
+})
+
+DeleteExportsAccountMappingsByIdResponse = TypedDict("DeleteExportsAccountMappingsByIdResponse", {
+    "deleted": "bool",
+    "ledger_account": "str",
+})
+
 DeleteFeeRulesByIdResponse = TypedDict("DeleteFeeRulesByIdResponse", {
     "id": "str",
     "deleted": "bool",
@@ -81,6 +90,19 @@ GetAcquireKycResponse = TypedDict("GetAcquireKycResponse", {
 GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
     "by_provider_method": "List[Any]",
     "suggestions": "Any",
+})
+
+GetAnalyticsRefundsResponse = TypedDict("GetAnalyticsRefundsResponse", {
+    "from": "str",
+    "to": "str",
+    "bucket": "str",
+    "currency": "str",
+    "series": "List[Any]",
+    "totals": "Any",
+    "time_to_refund": "Any",
+    "sla": "Any",
+    "leakage": "Any",
+    "note": "str",
 })
 
 GetApiKeysResponse = TypedDict("GetApiKeysResponse", {
@@ -169,6 +191,57 @@ GetBranchesResponseDataItem = TypedDict("GetBranchesResponseDataItem", {
 
 GetCardTokensResponse = TypedDict("GetCardTokensResponse", {
     "tokens": "List[Any]",
+})
+
+GetCashDashboardResponse = TypedDict("GetCashDashboardResponse", {
+    "as_of": "str",
+    "currency": "str",
+    "matched_window_days": "int",
+    "by_provider": "List[Any]",
+    "totals": "Any",
+    "payouts_pending": "Any",
+    "paid_payouts_without_bank_debit_match": "Any",
+    "note": "str",
+})
+
+GetCashForecastResponse = TypedDict("GetCashForecastResponse", {
+    "as_of": "str",
+    "currency": "str",
+    "horizon_days": "int",
+    "days": "List[GetCashForecastResponseDaysItem]",
+    "overdue": "Any",
+    "expected_after_horizon_minor": "int",
+    "expected_without_range_minor": "int",
+    "not_forecast": "List[Any]",
+    "basis": "List[Any]",
+    "note": "str",
+})
+
+GetCashForecastResponseDaysItem = TypedDict("GetCashForecastResponseDaysItem", {
+    "date": "str",
+    "expected_minor": "int",
+    "cumulative_low_minor": "int",
+    "cumulative_expected_minor": "int",
+    "cumulative_high_minor": "int",
+})
+
+GetCashLagResponse = TypedDict("GetCashLagResponse", {
+    "as_of": "str",
+    "lookback_days": "int",
+    "min_samples": "int",
+    "data": "List[Any]",
+    "tenant_rules": "List[Any]",
+    "note": "str",
+})
+
+GetCashLagRulesResponse = TypedDict("GetCashLagRulesResponse", {
+    "data": "List[Any]",
+})
+
+GetCashSettingsResponse = TypedDict("GetCashSettingsResponse", {
+    "min_samples": "int",
+    "alert_grace_days": "int",
+    "refund_sla_hours": "int",
 })
 
 GetCheckoutByTenantIdByIntentIdEventsResponse = TypedDict("GetCheckoutByTenantIdByIntentIdEventsResponse", {
@@ -325,6 +398,32 @@ GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
 GetEventsCatalogueResponseDataItem = TypedDict("GetEventsCatalogueResponseDataItem", {
     "type": "Any",
     "description": "Optional[str]",
+})
+
+GetExportsAccountMappingsResponse = TypedDict("GetExportsAccountMappingsResponse", {
+    "defaults": "List[Any]",
+    "overrides": "List[Any]",
+    "effective": "List[Any]",
+    "unmapped_code": "str",
+    "note": "str",
+})
+
+GetExportsGstSummaryResponse = TypedDict("GetExportsGstSummaryResponse", {
+    "from": "str",
+    "to": "str",
+    "rows": "List[Any]",
+    "net": "Any",
+    "note": "str",
+})
+
+GetExportsJournalResponse = TypedDict("GetExportsJournalResponse", {
+    "from": "str",
+    "to": "str",
+    "currency": "str",
+    "vouchers": "List[Any]",
+    "totals": "Any",
+    "unmapped_accounts": "List[str]",
+    "next_cursor": "Optional[str]",
 })
 
 GetFeeChecksFindingsResponse = TypedDict("GetFeeChecksFindingsResponse", {
@@ -1149,8 +1248,28 @@ PostCardTokensResponse = TypedDict("PostCardTokensResponse", {
     "exp_year": "Any",
 })
 
+PostCashAlertsScanResponse = TypedDict("PostCashAlertsScanResponse", {
+    "pending_cases_opened": "int",
+    "late_cases_opened": "int",
+    "case_kinds": "List[str]",
+})
+
 PostCashEntriesResponse = TypedDict("PostCashEntriesResponse", {
     "id": "str",
+})
+
+PostCashLagRulesResponse = TypedDict("PostCashLagRulesResponse", {
+    "id": "str",
+    "provider": "str",
+    "method": "str",
+    "expected_lag_days": "int",
+    "note": "str",
+})
+
+PostCashSettingsResponse = TypedDict("PostCashSettingsResponse", {
+    "min_samples": "int",
+    "alert_grace_days": "int",
+    "refund_sla_hours": "int",
 })
 
 PostCheckoutByTenantIdByIntentIdAttemptsResponse = TypedDict("PostCheckoutByTenantIdByIntentIdAttemptsResponse", {
@@ -1326,6 +1445,13 @@ PostDisputesResponse = TypedDict("PostDisputesResponse", {
     "id": "str",
     "status": "str",
     "amount_minor": "int",
+})
+
+PostExportsAccountMappingsResponse = TypedDict("PostExportsAccountMappingsResponse", {
+    "id": "int",
+    "ledger_account": "str",
+    "code": "str",
+    "name": "str",
 })
 
 PostFeeChecksRunResponse = TypedDict("PostFeeChecksRunResponse", {

@@ -5,6 +5,20 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Cash visibility, refund analytics and accounting exports (simulators only)
+**Cash visibility**
+- `GET /v1/cash/dashboard`: by provider, money captured but not settled, settled but not matched to a bank credit, matched, refunds pending and payouts pending.
+- Observed settlement lag per provider and method (median, p10/p90, min and max) shown only with enough samples (default 10, configurable); otherwise "not enough data". `GET /v1/cash/lag`, tenant-stated expected lags (`/v1/cash/lag_rules`) and settings (`/v1/cash/settings`).
+- `GET /v1/cash/forecast`: expected credits per day for the next 1-30 days with a low/expected/high range; overdue and not-forecast payments are reported, not guessed. No provider SLA is built in.
+- Delay alerts (`POST /v1/cash/alerts/scan`, also run by the worker): a `settlement_delayed` or `settlement_late` case and one `settlement.delayed` event per subject when a settlement is later than the provider's own observed range or the lag you stated. Idempotent.
+**Refund analytics**
+- `GET /v1/analytics/refunds`: refund rate over time (day or week), time to refund, refunds past the SLA (default 48 hours), leakage (refunds where your fee rule says the fee should come back but it did not; duplicate refund requests blocked, counted from now on). Aggregates only.
+**Accounting exports**
+- `GET /v1/exports/journal`: paged, deterministic, audited journal for a date range as generic CSV, Tally-style CSV, Tally XML or JSON; every voucher balances; per-tenant account codes (`/v1/exports/account_mappings`). Imported provider settlements appear as built settlement and fee vouchers because the ledger does not post them.
+- `GET /v1/exports/gst_summary`: sales and credit notes by supply type and rate, with net.
+- New scopes `cash:read`, `cash:write`, `exports:read`, `exports:write` (finance role has all four, the read-only role `cash:read`). Migration 0085 (additive). OpenAPI and generated SDK types updated; no new SDK methods. See [CASH_VISIBILITY.md](docs/zyvor/CASH_VISIBILITY.md) and [EXPORTS.md](docs/zyvor/EXPORTS.md).
+- Tested against simulators and hand-built synthetic histories only. The Tally layout follows Tally's public sample but was never run against Tally.
+
 ## 18 November 2026 — Console pages for fee checks, bank statements and routing health
 - **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
 - **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.

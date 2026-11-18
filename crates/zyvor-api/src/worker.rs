@@ -132,6 +132,16 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
             }
         }
+        // 3f. settlement delay alerts: later than the provider's own observed range or the lag the merchant set
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::cash::scan_alerts(&mut tx, &tid, 14).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "settlement delay scan failed")
+                }
+            }
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

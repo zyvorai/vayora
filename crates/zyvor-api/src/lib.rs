@@ -14,6 +14,7 @@ pub mod bankmatch;
 pub mod billing;
 pub mod cards;
 pub mod cases;
+pub mod cash;
 pub mod checkout;
 pub mod clientenv;
 pub mod clock;
@@ -28,6 +29,7 @@ pub mod docfacts;
 pub mod docread;
 pub mod error;
 pub mod events;
+pub mod exports;
 pub mod fee_check;
 pub mod fx;
 pub mod gst;
@@ -50,6 +52,7 @@ pub mod pdf;
 pub mod platform;
 pub mod recon;
 pub mod redact;
+pub mod refund_stats;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
@@ -404,6 +407,35 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/settlements/{id}/fee_check",
             get(fee_check::get_check).post(fee_check::recheck),
+        )
+        // cash visibility: money in transit, settlement lag, forecast and delay alerts
+        .route("/cash/dashboard", get(cash::dashboard))
+        .route("/cash/lag", get(cash::lag))
+        .route("/cash/forecast", get(cash::forecast_endpoint))
+        .route("/cash/alerts/scan", post(cash::scan))
+        .route(
+            "/cash/settings",
+            get(cash::get_settings).post(cash::set_settings),
+        )
+        .route(
+            "/cash/lag_rules",
+            post(cash::create_lag_rule).get(cash::list_lag_rules),
+        )
+        .route(
+            "/cash/lag_rules/{id}",
+            axum::routing::delete(cash::delete_lag_rule),
+        )
+        .route("/analytics/refunds", get(refund_stats::analytics))
+        // accounting exports
+        .route("/exports/journal", get(exports::journal))
+        .route("/exports/gst_summary", get(exports::gst_summary))
+        .route(
+            "/exports/account_mappings",
+            post(exports::set_mapping).get(exports::list_mappings),
+        )
+        .route(
+            "/exports/account_mappings/{id}",
+            axum::routing::delete(exports::delete_mapping),
         )
         // administration
         .route("/api_keys", post(create_key).get(list_keys))
