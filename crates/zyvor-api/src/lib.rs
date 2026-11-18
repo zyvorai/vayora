@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod acquire_kyc;
 pub mod admin;
 pub mod ai;
+pub mod alerts;
 pub mod audit;
 pub mod auth;
 pub mod bankcsv;
@@ -28,6 +29,7 @@ pub mod docfacts;
 pub mod docread;
 pub mod error;
 pub mod events;
+pub mod experiments;
 pub mod fee_check;
 pub mod fx;
 pub mod gst;
@@ -35,12 +37,14 @@ pub mod health;
 pub mod idempotency;
 pub mod insights;
 pub mod installments;
+pub mod instrument;
 pub mod kyc;
 pub mod kyc_cashfree;
 pub mod logo;
 pub mod mail;
 pub mod mandates;
 pub mod money_mode;
+pub mod offers;
 pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
@@ -55,6 +59,7 @@ pub mod registry;
 pub mod reminders;
 pub mod reqlog;
 pub mod rota;
+pub mod rulebuilder;
 pub mod saved_views;
 pub mod settle;
 pub mod signup;
@@ -592,6 +597,60 @@ pub fn app(state: AppState) -> Router {
             "/routing/health/settings",
             get(health::get_settings).put(health::put_settings),
         )
+        // routing rule builder, experiments and downtime alerts
+        .route("/routing/dry_run", post(rulebuilder::dry_run))
+        .route(
+            "/routing/rule_sets",
+            post(rulebuilder::create_version).get(rulebuilder::list_versions),
+        )
+        .route(
+            "/routing/rule_sets/validate",
+            post(rulebuilder::validate_rules),
+        )
+        .route("/routing/rule_sets/rollback", post(rulebuilder::rollback))
+        .route(
+            "/routing/rule_sets/deactivate",
+            post(rulebuilder::deactivate),
+        )
+        .route(
+            "/routing/rule_sets/{version}",
+            get(rulebuilder::get_version),
+        )
+        .route(
+            "/routing/rule_sets/{version}/activate",
+            post(rulebuilder::activate),
+        )
+        .route(
+            "/routing/experiments",
+            post(experiments::create).get(experiments::list),
+        )
+        .route("/routing/experiments/{id}", get(experiments::results))
+        .route("/routing/experiments/{id}/stop", post(experiments::stop))
+        .route(
+            "/routing/experiments/{id}/evaluate",
+            post(experiments::evaluate),
+        )
+        .route("/routing/alerts", get(alerts::list))
+        .route(
+            "/routing/alerts/settings",
+            get(alerts::get_settings).put(alerts::put_settings),
+        )
+        .route("/routing/alerts/evaluate", post(alerts::evaluate))
+        .route("/routing/alerts/{id}", get(alerts::get))
+        .route("/routing/alerts/{id}/ack", post(alerts::acknowledge))
+        // offers (merchant-funded discounts)
+        .route(
+            "/offers",
+            post(offers::create_offer).get(offers::list_offers),
+        )
+        .route("/offers/preview", post(offers::preview))
+        .route("/offers/refund_preview", post(offers::refund_preview))
+        .route(
+            "/offers/{id}",
+            get(offers::get_offer).patch(offers::update_offer),
+        )
+        .route("/offers/{id}/redemptions", get(offers::list_redemptions))
+        .route("/payment_intents/{id}/offers", get(offers::intent_offers))
         .route("/test_data/reset", post(testdata::reset))
         .route(
             "/settings/logo",
@@ -826,6 +885,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/checkout/{tenant_id}/{intent_id}/attempts",
             post(checkout::pay),
+        )
+        .route(
+            "/checkout/{tenant_id}/{intent_id}/offers",
+            post(checkout::offers),
         )
         .route(
             "/checkout/{tenant_id}/{intent_id}/upi-qr.svg",

@@ -194,6 +194,12 @@ pub struct PayRequest {
     return_url: Option<String>,
     /// `"intent"` when the session's `upi_flow` said so.
     upi_flow: Option<String>,
+    /// What the payer chose (card network, UPI app, bank), never a card number. Not checked against the provider.
+    #[serde(default)]
+    instrument: Option<crate::instrument::InstrumentIn>,
+    /// Offer codes the payer typed.
+    #[serde(default)]
+    offer_codes: Option<Vec<String>>,
 }
 
 pub async fn pay(
@@ -216,9 +222,66 @@ pub async fn pay(
             return_url: b.return_url,
             upi_flow: b.upi_flow,
             card_token_id: None,
+            instrument: b.instrument,
+            offer_codes: b.offer_codes,
         },
     )
     .await
+}
+
+#[derive(Deserialize)]
+pub struct OffersRequest {
+    secret: String,
+    method: String,
+    vpa: Option<String>,
+    #[serde(default)]
+    instrument: Option<crate::instrument::InstrumentIn>,
+    #[serde(default)]
+    offer_codes: Option<Vec<String>>,
+}
+
+/// `POST /v1/checkout/{tenant}/{intent}/offers`: the price the payer would be asked for with this method, after any
+/// offers. Nothing is reserved; the offers are judged again, and the caps counted again, when the payment starts.
+/// Only what the payer needs is returned: the offers that apply, not the ones that do not.
+pub async fn offers(
+    State(s): State<AppState>,
+    Path((tenant_id, intent_id)): Path<(String, String)>,
+    Json(b): Json<OffersRequest>,
+) -> Result<Json<Value>, ApiError> {
+    authorise(&s, &tenant_id, &intent_id, &b.secret).await?;
+    let method: Method = b
+        .method
+        .parse()
+        .map_err(|e: String| ApiError::invalid("invalid_method", e))?;
+    let ins = crate::instrument::build(b.instrument.as_ref(), b.vpa.as_deref(), None)?;
+    let codes = crate::offers::clean_codes(b.offer_codes.as_ref());
+    let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
+    let (amount, currency, customer): (i64, String, Option<String>) = sqlx::query_as(
+        "SELECT amount_minor, currency, customer_id FROM payment_intents WHERE id = $1",
+    )
+    .bind(&intent_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let segment = crate::offers::segment(&mut tx, customer.as_deref(), Some(&intent_id)).await?;
+    let ev = crate::offers::preview_for_attempt(
+        &mut tx,
+        &crate::offers::AttemptFacts {
+            intent_id: &intent_id,
+            amount_minor: amount,
+            currency: &currency,
+            method: method.as_str(),
+            instrument: &ins,
+            customer_id: customer.as_deref(),
+            segment,
+            codes: &codes,
+        },
+    )
+    .await?;
+    Ok(Json(json!({
+        "gross_minor": ev.gross_minor, "discount_minor": ev.discount_minor, "net_minor": ev.net_minor,
+        "currency": currency, "funded_by": "merchant",
+        "offers": ev.applied.iter().map(|a| json!({ "name": a.name, "discount_minor": a.discount_minor })).collect::<Vec<_>>(),
+    })))
 }
 
 /// `GET /v1/checkout/{tenant}/{intent}/upi-qr.svg?secret=`: the QR of the latest attempt's partner-issued

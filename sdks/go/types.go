@@ -600,6 +600,19 @@ type GetMoneyModeResponse struct {
 	SettlementDelayDays int64  `json:"settlement_delay_days"`
 }
 
+type GetOffersByIdRedemptionsResponse struct {
+	Data []any `json:"data"`
+}
+
+type GetOffersByIdResponse struct {
+	Offer  any `json:"offer"`
+	Totals any `json:"totals"`
+}
+
+type GetOffersResponse struct {
+	Data []OfferRow `json:"data"`
+}
+
 type GetOnboardingResponse struct {
 	AutomatedChecks         any                                     `json:"automated_checks"`
 	ReviewReasons           []string                                `json:"review_reasons"`
@@ -695,6 +708,12 @@ type GetPaymentAttemptsByIdResponse struct {
 	ReservedRefundMinor int64   `json:"reserved_refund_minor"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+}
+
+type GetPaymentIntentsByIdOffersResponse struct {
+	IntentID string `json:"intent_id"`
+	FundedBy string `json:"funded_by"`
+	Data     []any  `json:"data"`
 }
 
 type GetPaymentIntentsByIdResponse struct {
@@ -876,11 +895,62 @@ type GetRefundsResponse struct {
 	HasMore bool        `json:"has_more"`
 }
 
+type GetRoutingAlertsByIdResponse struct {
+	Alert any `json:"alert"`
+	Case  any `json:"case"`
+}
+
+type GetRoutingAlertsResponse struct {
+	Open int64 `json:"open"`
+	Data []any `json:"data"`
+}
+
+type GetRoutingExperimentsByIdResponse struct {
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Status                   string  `json:"status"`
+	ControlVersion           any     `json:"control_version"`
+	VariantVersion           any     `json:"variant_version"`
+	VariantPercent           any     `json:"variant_percent"`
+	Method                   any     `json:"method"`
+	StartedAt                *string `json:"started_at"`
+	EndedAt                  *string `json:"ended_at"`
+	StopReason               any     `json:"stop_reason"`
+	Guardrails               any     `json:"guardrails"`
+	Control                  any     `json:"control"`
+	Variant                  any     `json:"variant"`
+	LeftOutFellBackToControl int64   `json:"left_out_fell_back_to_control"`
+	Verdict                  any     `json:"verdict"`
+	WouldAutoStop            any     `json:"would_auto_stop"`
+}
+
+type GetRoutingExperimentsResponse struct {
+	Data []any `json:"data"`
+}
+
 type GetRoutingHealthResponse struct {
-	Config            any    `json:"config"`
-	RoutingHealthRule string `json:"routing_health_rule"`
-	Providers         any    `json:"providers"`
-	RecentChanges     []any  `json:"recent_changes"`
+	Config            any   `json:"config"`
+	RoutingHealthRule any   `json:"routing_health_rule"`
+	Providers         any   `json:"providers"`
+	RecentChanges     []any `json:"recent_changes"`
+}
+
+type GetRoutingRuleSetsByVersionResponse struct {
+	Version   any     `json:"version"`
+	Rules     any     `json:"rules"`
+	Note      *string `json:"note"`
+	CreatedBy any     `json:"created_by"`
+	CreatedAt *string `json:"created_at"`
+	Active    any     `json:"active"`
+}
+
+type GetRoutingRuleSetsResponse struct {
+	ActiveVersion   any     `json:"active_version"`
+	PreviousVersion any     `json:"previous_version"`
+	ActivatedAt     *string `json:"activated_at"`
+	ActivatedBy     any     `json:"activated_by"`
+	Source          string  `json:"source"`
+	Data            []any   `json:"data"`
 }
 
 type GetSavedViewsResponse struct {
@@ -1044,6 +1114,41 @@ type MandateRow struct {
 	UpdatedAt          string  `json:"updated_at"`
 }
 
+type OfferRow struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Description      *string  `json:"description"`
+	Code             *string  `json:"code"`
+	Status           string   `json:"status"`
+	Kind             string   `json:"kind"`
+	Value            int64    `json:"value"`
+	MaxDiscountMinor *int64   `json:"max_discount_minor"`
+	Currency         string   `json:"currency"`
+	Methods          []string `json:"methods"`
+	CardNetworks     []string `json:"card_networks"`
+	BinRanges        any      `json:"bin_ranges"`
+	UPIApps          []string `json:"upi_apps"`
+	UPIHandles       []string `json:"upi_handles"`
+	Banks            []string `json:"banks"`
+	MinAmountMinor   *int64   `json:"min_amount_minor"`
+	MaxAmountMinor   *int64   `json:"max_amount_minor"`
+	Segment          *string  `json:"segment"`
+	ValidFrom        *string  `json:"valid_from"`
+	ValidUntil       *string  `json:"valid_until"`
+	MaxRedemptions   *int64   `json:"max_redemptions"`
+	MaxPerCustomer   *int64   `json:"max_per_customer"`
+	BudgetMinor      *int64   `json:"budget_minor"`
+	Redemptions      int64    `json:"redemptions"`
+	SpentMinor       int64    `json:"spent_minor"`
+	Stackable        bool     `json:"stackable"`
+	StackGroup       *string  `json:"stack_group"`
+	Priority         int64    `json:"priority"`
+	FundedBy         string   `json:"funded_by"`
+	CreatedBy        string   `json:"created_by"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
+}
+
 type PatchCustomersByIdResponse struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
@@ -1186,6 +1291,20 @@ type PostCheckoutByTenantIdByIntentIdAttemptsResponse struct {
 	ReservedRefundMinor int64   `json:"reserved_refund_minor"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+}
+
+type PostCheckoutByTenantIdByIntentIdOffersResponse struct {
+	GrossMinor    int64                                                      `json:"gross_minor"`
+	DiscountMinor int64                                                      `json:"discount_minor"`
+	NetMinor      int64                                                      `json:"net_minor"`
+	Currency      string                                                     `json:"currency"`
+	FundedBy      string                                                     `json:"funded_by"`
+	Offers        []PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem `json:"offers"`
+}
+
+type PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem struct {
+	Name          string `json:"name"`
+	DiscountMinor int64  `json:"discount_minor"`
 }
 
 type PostCheckoutLinksByTenantIdByTokenStartResponse struct {
@@ -1576,6 +1695,24 @@ type PostMilestonesByIdCompleteResponse struct {
 type PostMilestonesResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+type PostOffersPreviewResponse struct {
+	Preview         bool   `json:"preview"`
+	Note            string `json:"note"`
+	CustomerSegment any    `json:"customer_segment"`
+	Evaluation      any    `json:"evaluation"`
+	FundedBy        string `json:"funded_by"`
+}
+
+type PostOffersRefundPreviewResponse struct {
+	IntentID              string `json:"intent_id"`
+	AttemptID             string `json:"attempt_id"`
+	PaidMinor             int64  `json:"paid_minor"`
+	RefundMinor           int64  `json:"refund_minor"`
+	DiscountReturnedMinor int64  `json:"discount_returned_minor"`
+	Redemptions           []any  `json:"redemptions"`
+	Rule                  string `json:"rule"`
 }
 
 type PostOnboardingBankAccountsByIdVerifyResponse struct {
@@ -2025,6 +2162,104 @@ type PostRefundsByIdRetryResponse struct {
 	FailureReason     *string `json:"failure_reason"`
 	CreatedAt         string  `json:"created_at"`
 	UpdatedAt         string  `json:"updated_at"`
+}
+
+type PostRoutingAlertsByIdAckResponse struct {
+	ID             string `json:"id"`
+	AcknowledgedBy any    `json:"acknowledged_by"`
+}
+
+type PostRoutingDryRunResponse struct {
+	DryRun            bool   `json:"dry_run"`
+	Provider          string `json:"provider"`
+	Explanation       any    `json:"explanation"`
+	WouldProbe        any    `json:"would_probe"`
+	Decision          any    `json:"decision"`
+	RuleSource        any    `json:"rule_source"`
+	MatchedRules      any    `json:"matched_rules"`
+	UnmatchedRules    []any  `json:"unmatched_rules"`
+	Experiment        any    `json:"experiment"`
+	FellBackToControl any    `json:"fell_back_to_control"`
+	Notes             any    `json:"notes"`
+}
+
+type PostRoutingExperimentsByIdEvaluateResponse struct {
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Status                   string  `json:"status"`
+	ControlVersion           any     `json:"control_version"`
+	VariantVersion           any     `json:"variant_version"`
+	VariantPercent           any     `json:"variant_percent"`
+	Method                   any     `json:"method"`
+	StartedAt                *string `json:"started_at"`
+	EndedAt                  *string `json:"ended_at"`
+	StopReason               any     `json:"stop_reason"`
+	Guardrails               any     `json:"guardrails"`
+	Control                  any     `json:"control"`
+	Variant                  any     `json:"variant"`
+	LeftOutFellBackToControl int64   `json:"left_out_fell_back_to_control"`
+	Verdict                  any     `json:"verdict"`
+	WouldAutoStop            any     `json:"would_auto_stop"`
+}
+
+type PostRoutingExperimentsByIdStopResponse struct {
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Status                   string  `json:"status"`
+	ControlVersion           any     `json:"control_version"`
+	VariantVersion           any     `json:"variant_version"`
+	VariantPercent           any     `json:"variant_percent"`
+	Method                   any     `json:"method"`
+	StartedAt                *string `json:"started_at"`
+	EndedAt                  *string `json:"ended_at"`
+	StopReason               any     `json:"stop_reason"`
+	Guardrails               any     `json:"guardrails"`
+	Control                  any     `json:"control"`
+	Variant                  any     `json:"variant"`
+	LeftOutFellBackToControl int64   `json:"left_out_fell_back_to_control"`
+	Verdict                  any     `json:"verdict"`
+	WouldAutoStop            any     `json:"would_auto_stop"`
+}
+
+type PostRoutingExperimentsResponse struct {
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Status                   string  `json:"status"`
+	ControlVersion           any     `json:"control_version"`
+	VariantVersion           any     `json:"variant_version"`
+	VariantPercent           any     `json:"variant_percent"`
+	Method                   any     `json:"method"`
+	StartedAt                *string `json:"started_at"`
+	EndedAt                  *string `json:"ended_at"`
+	StopReason               any     `json:"stop_reason"`
+	Guardrails               any     `json:"guardrails"`
+	Control                  any     `json:"control"`
+	Variant                  any     `json:"variant"`
+	LeftOutFellBackToControl int64   `json:"left_out_fell_back_to_control"`
+	Verdict                  any     `json:"verdict"`
+	WouldAutoStop            any     `json:"would_auto_stop"`
+}
+
+type PostRoutingRuleSetsByVersionActivateResponse struct {
+	ActiveVersion any  `json:"active_version"`
+	Changed       bool `json:"changed"`
+}
+
+type PostRoutingRuleSetsDeactivateResponse struct {
+	ActiveVersion any  `json:"active_version"`
+	Changed       bool `json:"changed"`
+}
+
+type PostRoutingRuleSetsResponse struct {
+	Version  int64 `json:"version"`
+	Active   bool  `json:"active"`
+	Warnings any   `json:"warnings"`
+}
+
+type PostRoutingRuleSetsRollbackResponse struct {
+	ActiveVersion  any    `json:"active_version"`
+	RolledBackFrom any    `json:"rolled_back_from"`
+	Source         string `json:"source"`
 }
 
 type PostSavedViewsResponse struct {

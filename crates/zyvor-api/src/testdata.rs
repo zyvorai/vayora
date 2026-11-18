@@ -28,6 +28,10 @@ const TABLES: &[&str] = &[
     "invoice_lines",
     "invoice_allocations",
     "payment_splits",
+    "offer_refund_adjustments",
+    "offer_redemptions",
+    "routing_experiment_assignments",
+    "provider_alerts",
     "fee_check_lines",
     "settlement_items",
     "bank_line_matches",
@@ -97,6 +101,11 @@ pub async fn reset(
         }
     }
     sqlx::query("UPDATE coupons SET uses = 0 WHERE tenant_id = $1")
+        .bind(&auth.tenant_id)
+        .execute(&mut *tx)
+        .await?;
+    // offers keep their setup; what was redeemed against them is gone, so their counters start again
+    sqlx::query("UPDATE offers SET redemptions = 0, spent_minor = 0 WHERE tenant_id = $1")
         .bind(&auth.tenant_id)
         .execute(&mut *tx)
         .await?;

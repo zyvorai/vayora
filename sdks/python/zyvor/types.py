@@ -584,6 +584,19 @@ GetMoneyModeResponse = TypedDict("GetMoneyModeResponse", {
     "settlement_delay_days": "int",
 })
 
+GetOffersByIdRedemptionsResponse = TypedDict("GetOffersByIdRedemptionsResponse", {
+    "data": "List[Any]",
+})
+
+GetOffersByIdResponse = TypedDict("GetOffersByIdResponse", {
+    "offer": "Any",
+    "totals": "Any",
+})
+
+GetOffersResponse = TypedDict("GetOffersResponse", {
+    "data": "List[OfferRow]",
+})
+
 GetOnboardingResponse = TypedDict("GetOnboardingResponse", {
     "automated_checks": "Any",
     "review_reasons": "List[str]",
@@ -679,6 +692,12 @@ GetPaymentAttemptsByIdResponse = TypedDict("GetPaymentAttemptsByIdResponse", {
     "reserved_refund_minor": "int",
     "created_at": "str",
     "updated_at": "str",
+})
+
+GetPaymentIntentsByIdOffersResponse = TypedDict("GetPaymentIntentsByIdOffersResponse", {
+    "intent_id": "str",
+    "funded_by": "str",
+    "data": "List[Any]",
 })
 
 GetPaymentIntentsByIdResponse = TypedDict("GetPaymentIntentsByIdResponse", {
@@ -860,11 +879,62 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRoutingAlertsByIdResponse = TypedDict("GetRoutingAlertsByIdResponse", {
+    "alert": "Any",
+    "case": "Any",
+})
+
+GetRoutingAlertsResponse = TypedDict("GetRoutingAlertsResponse", {
+    "open": "int",
+    "data": "List[Any]",
+})
+
+GetRoutingExperimentsByIdResponse = TypedDict("GetRoutingExperimentsByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "status": "str",
+    "control_version": "Any",
+    "variant_version": "Any",
+    "variant_percent": "Any",
+    "method": "Any",
+    "started_at": "Optional[str]",
+    "ended_at": "Optional[str]",
+    "stop_reason": "Any",
+    "guardrails": "Any",
+    "control": "Any",
+    "variant": "Any",
+    "left_out_fell_back_to_control": "int",
+    "verdict": "Any",
+    "would_auto_stop": "Any",
+})
+
+GetRoutingExperimentsResponse = TypedDict("GetRoutingExperimentsResponse", {
+    "data": "List[Any]",
+})
+
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
-    "routing_health_rule": "str",
+    "routing_health_rule": "Any",
     "providers": "Any",
     "recent_changes": "List[Any]",
+})
+
+GetRoutingRuleSetsByVersionResponse = TypedDict("GetRoutingRuleSetsByVersionResponse", {
+    "version": "Any",
+    "rules": "Any",
+    "note": "Optional[str]",
+    "created_by": "Any",
+    "created_at": "Optional[str]",
+    "active": "Any",
+})
+
+GetRoutingRuleSetsResponse = TypedDict("GetRoutingRuleSetsResponse", {
+    "active_version": "Any",
+    "previous_version": "Any",
+    "activated_at": "Optional[str]",
+    "activated_by": "Any",
+    "source": "str",
+    "data": "List[Any]",
 })
 
 GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
@@ -1028,6 +1098,41 @@ MandateRow = TypedDict("MandateRow", {
     "updated_at": "str",
 })
 
+OfferRow = TypedDict("OfferRow", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "code": "Optional[str]",
+    "status": "str",
+    "kind": "str",
+    "value": "int",
+    "max_discount_minor": "Optional[int]",
+    "currency": "str",
+    "methods": "List[str]",
+    "card_networks": "List[str]",
+    "bin_ranges": "Any",
+    "upi_apps": "List[str]",
+    "upi_handles": "List[str]",
+    "banks": "List[str]",
+    "min_amount_minor": "Optional[int]",
+    "max_amount_minor": "Optional[int]",
+    "segment": "Optional[str]",
+    "valid_from": "Optional[str]",
+    "valid_until": "Optional[str]",
+    "max_redemptions": "Optional[int]",
+    "max_per_customer": "Optional[int]",
+    "budget_minor": "Optional[int]",
+    "redemptions": "int",
+    "spent_minor": "int",
+    "stackable": "bool",
+    "stack_group": "Optional[str]",
+    "priority": "int",
+    "funded_by": "str",
+    "created_by": "str",
+    "created_at": "str",
+    "updated_at": "str",
+})
+
 PatchCustomersByIdResponse = TypedDict("PatchCustomersByIdResponse", {
     "id": "str",
     "name": "str",
@@ -1170,6 +1275,20 @@ PostCheckoutByTenantIdByIntentIdAttemptsResponse = TypedDict("PostCheckoutByTena
     "reserved_refund_minor": "int",
     "created_at": "str",
     "updated_at": "str",
+})
+
+PostCheckoutByTenantIdByIntentIdOffersResponse = TypedDict("PostCheckoutByTenantIdByIntentIdOffersResponse", {
+    "gross_minor": "int",
+    "discount_minor": "int",
+    "net_minor": "int",
+    "currency": "str",
+    "funded_by": "str",
+    "offers": "List[PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem]",
+})
+
+PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem = TypedDict("PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem", {
+    "name": "str",
+    "discount_minor": "int",
 })
 
 PostCheckoutLinksByTenantIdByTokenStartResponse = TypedDict("PostCheckoutLinksByTenantIdByTokenStartResponse", {
@@ -1560,6 +1679,24 @@ PostMilestonesByIdCompleteResponse = TypedDict("PostMilestonesByIdCompleteRespon
 PostMilestonesResponse = TypedDict("PostMilestonesResponse", {
     "id": "str",
     "status": "str",
+})
+
+PostOffersPreviewResponse = TypedDict("PostOffersPreviewResponse", {
+    "preview": "bool",
+    "note": "str",
+    "customer_segment": "Any",
+    "evaluation": "Any",
+    "funded_by": "str",
+})
+
+PostOffersRefundPreviewResponse = TypedDict("PostOffersRefundPreviewResponse", {
+    "intent_id": "str",
+    "attempt_id": "str",
+    "paid_minor": "int",
+    "refund_minor": "int",
+    "discount_returned_minor": "int",
+    "redemptions": "List[Any]",
+    "rule": "str",
 })
 
 PostOnboardingBankAccountsByIdVerifyResponse = TypedDict("PostOnboardingBankAccountsByIdVerifyResponse", {
@@ -2009,6 +2146,104 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "failure_reason": "Optional[str]",
     "created_at": "str",
     "updated_at": "str",
+})
+
+PostRoutingAlertsByIdAckResponse = TypedDict("PostRoutingAlertsByIdAckResponse", {
+    "id": "str",
+    "acknowledged_by": "Any",
+})
+
+PostRoutingDryRunResponse = TypedDict("PostRoutingDryRunResponse", {
+    "dry_run": "bool",
+    "provider": "str",
+    "explanation": "Any",
+    "would_probe": "Any",
+    "decision": "Any",
+    "rule_source": "Any",
+    "matched_rules": "Any",
+    "unmatched_rules": "List[Any]",
+    "experiment": "Any",
+    "fell_back_to_control": "Any",
+    "notes": "Any",
+})
+
+PostRoutingExperimentsByIdEvaluateResponse = TypedDict("PostRoutingExperimentsByIdEvaluateResponse", {
+    "id": "str",
+    "name": "str",
+    "status": "str",
+    "control_version": "Any",
+    "variant_version": "Any",
+    "variant_percent": "Any",
+    "method": "Any",
+    "started_at": "Optional[str]",
+    "ended_at": "Optional[str]",
+    "stop_reason": "Any",
+    "guardrails": "Any",
+    "control": "Any",
+    "variant": "Any",
+    "left_out_fell_back_to_control": "int",
+    "verdict": "Any",
+    "would_auto_stop": "Any",
+})
+
+PostRoutingExperimentsByIdStopResponse = TypedDict("PostRoutingExperimentsByIdStopResponse", {
+    "id": "str",
+    "name": "str",
+    "status": "str",
+    "control_version": "Any",
+    "variant_version": "Any",
+    "variant_percent": "Any",
+    "method": "Any",
+    "started_at": "Optional[str]",
+    "ended_at": "Optional[str]",
+    "stop_reason": "Any",
+    "guardrails": "Any",
+    "control": "Any",
+    "variant": "Any",
+    "left_out_fell_back_to_control": "int",
+    "verdict": "Any",
+    "would_auto_stop": "Any",
+})
+
+PostRoutingExperimentsResponse = TypedDict("PostRoutingExperimentsResponse", {
+    "id": "str",
+    "name": "str",
+    "status": "str",
+    "control_version": "Any",
+    "variant_version": "Any",
+    "variant_percent": "Any",
+    "method": "Any",
+    "started_at": "Optional[str]",
+    "ended_at": "Optional[str]",
+    "stop_reason": "Any",
+    "guardrails": "Any",
+    "control": "Any",
+    "variant": "Any",
+    "left_out_fell_back_to_control": "int",
+    "verdict": "Any",
+    "would_auto_stop": "Any",
+})
+
+PostRoutingRuleSetsByVersionActivateResponse = TypedDict("PostRoutingRuleSetsByVersionActivateResponse", {
+    "active_version": "Any",
+    "changed": "bool",
+})
+
+PostRoutingRuleSetsDeactivateResponse = TypedDict("PostRoutingRuleSetsDeactivateResponse", {
+    "active_version": "Any",
+    "changed": "bool",
+})
+
+PostRoutingRuleSetsResponse = TypedDict("PostRoutingRuleSetsResponse", {
+    "version": "int",
+    "active": "bool",
+    "warnings": "Any",
+})
+
+PostRoutingRuleSetsRollbackResponse = TypedDict("PostRoutingRuleSetsRollbackResponse", {
+    "active_version": "Any",
+    "rolled_back_from": "Any",
+    "source": "str",
 })
 
 PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {

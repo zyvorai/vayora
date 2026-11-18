@@ -132,6 +132,13 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
             }
         }
+        // 3f. downtime alerts (provider, bank, UPI handle) and the running routing experiment's guardrail
+        if let Err(e) = crate::alerts::sweep_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "downtime alert sweep failed");
+        }
+        if let Err(e) = crate::experiments::sweep_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "routing experiment check failed");
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

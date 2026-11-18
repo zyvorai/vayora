@@ -44,6 +44,23 @@ thresholds are not tuned on real traffic. The decline classifier recognises only
 and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
 (minutes-long window on the database clock). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
 
+## Delivered in this slice: offers, routing rule builder, experiments and downtime alerts (level 1)
+| Behaviour | Evidence |
+|---|---|
+| An offer prices the attempt, previews match what is applied, and the funding source is recorded (merchant only) | `an_offer_prices_the_attempt_and_says_who_funds_it`, `the_public_checkout_shows_the_price_without_reserving_anything` |
+| Conditions (method, network, BIN range, UPI handle, bank, amount band, new/returning, code, window); a full card number is refused and no BIN is stored | `conditions_decide_and_the_preview_says_why_not`, `new_and_returning_customers_and_a_code`, instrument and offer unit tests |
+| Caps cannot be over-used by concurrent attempts; a failed or cancelled attempt gives them back; a late capture keeps the discount | `a_capped_offer_cannot_be_over_used_by_concurrent_attempts`, `per_customer_and_budget_caps_hold_under_concurrency`, `a_failed_or_cancelled_attempt_gives_the_cap_back`, `a_late_capture_keeps_the_discount_the_payer_already_had` |
+| Stacking; refunds return the same share of the discount; invoice and split payments are left alone | `stackable_offers_combine_and_a_non_stackable_one_stands_alone`, `a_refund_returns_the_same_share_of_the_discount`, `marketplace_and_invoice_payments_are_left_alone`, `plan` and `discount_share` unit tests |
+| Rules validated, versioned, activated, rolled back and audited; conditions route as stated; a rule cannot override a hard filter; a dry run creates nothing and matches a real attempt | `rules_are_validated_versioned_activated_and_rolled_back`, `conditions_method_amount_network_time_of_day_and_segment`, `a_dry_run_creates_nothing_and_can_try_unsaved_rules_and_old_versions`, `a_rule_cannot_send_a_payment_where_the_router_would_refuse` |
+| An experiment splits by hash, never makes a payment fail, and stops a clearly worse variant (worker and on demand) | `an_experiment_splits_traffic_and_stops_a_clearly_worse_variant`, `a_variant_that_cannot_route_falls_back_and_a_small_sample_stops_nothing`, experiment unit tests |
+| Downtime alerts: one per group with a case, event and email; bank and UPI handle groups; hysteresis, hold, flap control, several workers | `an_outage_raises_one_alert_with_a_case_an_event_and_an_email_and_resolves_itself`, `a_failing_bank_or_upi_handle_alerts_on_its_own_and_payer_declines_do_not_count`, `flap_control_reopens_quietly_and_does_not_count_old_failures_twice`, `several_workers_checking_at_once_raise_one_alert` |
+| Every new table is isolated by row-level security; new scopes are enforced | `offers_are_private_to_their_business_and_need_their_scope`, `rule_sets_and_experiments_are_private_to_their_business`, `alerts_belong_to_one_business_and_need_the_routing_scope` |
+
+**Limits.** Simulators, the local provider mock and seeded history only; no real provider, bank or money. Offers are
+merchant-funded only; the card network, UPI app or bank is the caller's claim and is not verified; the discount is not a
+ledger entry; no console page. Experiment and alert thresholds are reasoned defaults, not tuned on real traffic.
+Details in [OFFERS.md](OFFERS.md) and [ROUTING.md](ROUTING.md) sections 6 to 8.
+
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.
 

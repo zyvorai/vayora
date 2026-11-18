@@ -580,6 +580,19 @@ export interface GetMoneyModeResponse {
   settlement_delay_days: number;
 }
 
+export interface GetOffersByIdRedemptionsResponse {
+  data: unknown[];
+}
+
+export interface GetOffersByIdResponse {
+  offer: unknown;
+  totals: unknown;
+}
+
+export interface GetOffersResponse {
+  data: OfferRow[];
+}
+
 export interface GetOnboardingResponse {
   automated_checks: unknown;
   review_reasons: string[];
@@ -675,6 +688,12 @@ export interface GetPaymentAttemptsByIdResponse {
   reserved_refund_minor: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GetPaymentIntentsByIdOffersResponse {
+  intent_id: string;
+  funded_by: string;
+  data: unknown[];
 }
 
 export interface GetPaymentIntentsByIdResponse {
@@ -856,11 +875,62 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRoutingAlertsByIdResponse {
+  alert: unknown;
+  case: unknown;
+}
+
+export interface GetRoutingAlertsResponse {
+  open: number;
+  data: unknown[];
+}
+
+export interface GetRoutingExperimentsByIdResponse {
+  id: string;
+  name: string;
+  status: string;
+  control_version: unknown;
+  variant_version: unknown;
+  variant_percent: unknown;
+  method: unknown;
+  started_at: string | null;
+  ended_at: string | null;
+  stop_reason: unknown;
+  guardrails: unknown;
+  control: unknown;
+  variant: unknown;
+  left_out_fell_back_to_control: number;
+  verdict: unknown;
+  would_auto_stop: unknown;
+}
+
+export interface GetRoutingExperimentsResponse {
+  data: unknown[];
+}
+
 export interface GetRoutingHealthResponse {
   config: unknown;
-  routing_health_rule: string;
+  routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
+}
+
+export interface GetRoutingRuleSetsByVersionResponse {
+  version: unknown;
+  rules: unknown;
+  note: string | null;
+  created_by: unknown;
+  created_at: string | null;
+  active: unknown;
+}
+
+export interface GetRoutingRuleSetsResponse {
+  active_version: unknown;
+  previous_version: unknown;
+  activated_at: string | null;
+  activated_by: unknown;
+  source: string;
+  data: unknown[];
 }
 
 export interface GetSavedViewsResponse {
@@ -1024,6 +1094,41 @@ export interface MandateRow {
   updated_at: string;
 }
 
+export interface OfferRow {
+  id: string;
+  name: string;
+  description: string | null;
+  code: string | null;
+  status: string;
+  kind: string;
+  value: number;
+  max_discount_minor: number | null;
+  currency: string;
+  methods: string[];
+  card_networks: string[];
+  bin_ranges: unknown;
+  upi_apps: string[];
+  upi_handles: string[];
+  banks: string[];
+  min_amount_minor: number | null;
+  max_amount_minor: number | null;
+  segment: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  max_redemptions: number | null;
+  max_per_customer: number | null;
+  budget_minor: number | null;
+  redemptions: number;
+  spent_minor: number;
+  stackable: boolean;
+  stack_group: string | null;
+  priority: number;
+  funded_by: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PatchCustomersByIdResponse {
   id: string;
   name: string;
@@ -1166,6 +1271,20 @@ export interface PostCheckoutByTenantIdByIntentIdAttemptsResponse {
   reserved_refund_minor: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface PostCheckoutByTenantIdByIntentIdOffersResponse {
+  gross_minor: number;
+  discount_minor: number;
+  net_minor: number;
+  currency: string;
+  funded_by: string;
+  offers: PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem[];
+}
+
+export interface PostCheckoutByTenantIdByIntentIdOffersResponseOffersItem {
+  name: string;
+  discount_minor: number;
 }
 
 export interface PostCheckoutLinksByTenantIdByTokenStartResponse {
@@ -1556,6 +1675,24 @@ export interface PostMilestonesByIdCompleteResponse {
 export interface PostMilestonesResponse {
   id: string;
   status: string;
+}
+
+export interface PostOffersPreviewResponse {
+  preview: boolean;
+  note: string;
+  customer_segment: unknown;
+  evaluation: unknown;
+  funded_by: string;
+}
+
+export interface PostOffersRefundPreviewResponse {
+  intent_id: string;
+  attempt_id: string;
+  paid_minor: number;
+  refund_minor: number;
+  discount_returned_minor: number;
+  redemptions: unknown[];
+  rule: string;
 }
 
 export interface PostOnboardingBankAccountsByIdVerifyResponse {
@@ -2005,6 +2142,104 @@ export interface PostRefundsByIdRetryResponse {
   failure_reason: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PostRoutingAlertsByIdAckResponse {
+  id: string;
+  acknowledged_by: unknown;
+}
+
+export interface PostRoutingDryRunResponse {
+  dry_run: boolean;
+  provider: string;
+  explanation: unknown;
+  would_probe: unknown;
+  decision: unknown;
+  rule_source: unknown;
+  matched_rules: unknown;
+  unmatched_rules: unknown[];
+  experiment: unknown;
+  fell_back_to_control: unknown;
+  notes: unknown;
+}
+
+export interface PostRoutingExperimentsByIdEvaluateResponse {
+  id: string;
+  name: string;
+  status: string;
+  control_version: unknown;
+  variant_version: unknown;
+  variant_percent: unknown;
+  method: unknown;
+  started_at: string | null;
+  ended_at: string | null;
+  stop_reason: unknown;
+  guardrails: unknown;
+  control: unknown;
+  variant: unknown;
+  left_out_fell_back_to_control: number;
+  verdict: unknown;
+  would_auto_stop: unknown;
+}
+
+export interface PostRoutingExperimentsByIdStopResponse {
+  id: string;
+  name: string;
+  status: string;
+  control_version: unknown;
+  variant_version: unknown;
+  variant_percent: unknown;
+  method: unknown;
+  started_at: string | null;
+  ended_at: string | null;
+  stop_reason: unknown;
+  guardrails: unknown;
+  control: unknown;
+  variant: unknown;
+  left_out_fell_back_to_control: number;
+  verdict: unknown;
+  would_auto_stop: unknown;
+}
+
+export interface PostRoutingExperimentsResponse {
+  id: string;
+  name: string;
+  status: string;
+  control_version: unknown;
+  variant_version: unknown;
+  variant_percent: unknown;
+  method: unknown;
+  started_at: string | null;
+  ended_at: string | null;
+  stop_reason: unknown;
+  guardrails: unknown;
+  control: unknown;
+  variant: unknown;
+  left_out_fell_back_to_control: number;
+  verdict: unknown;
+  would_auto_stop: unknown;
+}
+
+export interface PostRoutingRuleSetsByVersionActivateResponse {
+  active_version: unknown;
+  changed: boolean;
+}
+
+export interface PostRoutingRuleSetsDeactivateResponse {
+  active_version: unknown;
+  changed: boolean;
+}
+
+export interface PostRoutingRuleSetsResponse {
+  version: number;
+  active: boolean;
+  warnings: unknown;
+}
+
+export interface PostRoutingRuleSetsRollbackResponse {
+  active_version: unknown;
+  rolled_back_from: unknown;
+  source: string;
 }
 
 export interface PostSavedViewsResponse {

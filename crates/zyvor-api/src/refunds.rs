@@ -278,6 +278,8 @@ pub async fn apply_refund_result(
 
     if processed {
         sqlx::query("UPDATE payment_attempts SET refunded_minor = refunded_minor + $2, reserved_refund_minor = reserved_refund_minor - $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *conn).await?;
+        // the same share of any offer discount comes back as of the cash
+        crate::offers::on_refund(conn, tenant_id, &attempt_id, refund_id, amount).await?;
         let mode = crate::money_mode::load_for_tenant(conn, tenant_id).await?;
         let org = crate::money_mode::organisation_id(conn, tenant_id).await?;
         zyvor_ledger::refund_entries(mode, &provider, &org, amount, currency)

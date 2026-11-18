@@ -555,6 +555,37 @@ func TestFeeCheckBankStatementAndRoutingHealthMethods(t *testing.T) {
 		{"UpdateRoutingHealthSettings", func() (map[string]any, error) {
 			return c.UpdateRoutingHealthSettings(map[string]any{"min_samples": 20})
 		}, "PUT", "/v1/routing/health/settings", map[string]any{"min_samples": float64(20)}},
+		{"ListOffers", func() (map[string]any, error) { return c.ListOffers("active") }, "GET", "/v1/offers?status=active", nil},
+		{"CreateOffer", func() (map[string]any, error) {
+			return c.CreateOffer(map[string]any{"name": "x", "kind": "flat", "value": 100})
+		}, "POST", "/v1/offers", map[string]any{"name": "x", "kind": "flat", "value": float64(100)}},
+		{"GetOffer", func() (map[string]any, error) { return c.GetOffer("ofx_1") }, "GET", "/v1/offers/ofx_1", nil},
+		{"UpdateOffer", func() (map[string]any, error) {
+			return c.UpdateOffer("ofx_1", map[string]any{"status": "paused"})
+		}, "PATCH", "/v1/offers/ofx_1", map[string]any{"status": "paused"}},
+		{"PreviewOffers", func() (map[string]any, error) {
+			return c.PreviewOffers(map[string]any{"amount_minor": 1000, "method": "upi"})
+		}, "POST", "/v1/offers/preview", map[string]any{"amount_minor": float64(1000), "method": "upi"}},
+		{"OfferRefundPreview", func() (map[string]any, error) { return c.OfferRefundPreview("pi_1", 450) }, "POST", "/v1/offers/refund_preview", map[string]any{"intent_id": "pi_1", "amount_minor": float64(450)}},
+		{"IntentOffers", func() (map[string]any, error) { return c.IntentOffers("pi_1") }, "GET", "/v1/payment_intents/pi_1/offers", nil},
+		{"ValidateRoutingRules", func() (map[string]any, error) { return c.ValidateRoutingRules([]any{}) }, "POST", "/v1/routing/rule_sets/validate", map[string]any{"rules": []any{}}},
+		{"CreateRoutingRuleSet", func() (map[string]any, error) { return c.CreateRoutingRuleSet([]any{}, "n", true) }, "POST", "/v1/routing/rule_sets", map[string]any{"activate": true, "note": "n", "rules": []any{}}},
+		{"ListRoutingRuleSets", func() (map[string]any, error) { return c.ListRoutingRuleSets() }, "GET", "/v1/routing/rule_sets", nil},
+		{"ActivateRoutingRuleSet", func() (map[string]any, error) { return c.ActivateRoutingRuleSet(2) }, "POST", "/v1/routing/rule_sets/2/activate", map[string]any{}},
+		{"RollbackRoutingRuleSet", func() (map[string]any, error) { return c.RollbackRoutingRuleSet() }, "POST", "/v1/routing/rule_sets/rollback", map[string]any{}},
+		{"RoutingDryRun", func() (map[string]any, error) {
+			return c.RoutingDryRun(map[string]any{"method": "card", "amount_minor": 500})
+		}, "POST", "/v1/routing/dry_run", map[string]any{"amount_minor": float64(500), "method": "card"}},
+		{"StartRoutingExperiment", func() (map[string]any, error) {
+			return c.StartRoutingExperiment(map[string]any{"name": "e", "variant_version": 2, "variant_percent": 10})
+		}, "POST", "/v1/routing/experiments", map[string]any{"name": "e", "variant_percent": float64(10), "variant_version": float64(2)}},
+		{"RoutingExperimentResults", func() (map[string]any, error) { return c.RoutingExperimentResults("rex_1") }, "GET", "/v1/routing/experiments/rex_1", nil},
+		{"StopRoutingExperiment", func() (map[string]any, error) { return c.StopRoutingExperiment("rex_1") }, "POST", "/v1/routing/experiments/rex_1/stop", map[string]any{}},
+		{"ListRoutingAlerts", func() (map[string]any, error) { return c.ListRoutingAlerts("open") }, "GET", "/v1/routing/alerts?status=open", nil},
+		{"RoutingAlertSettings", func() (map[string]any, error) { return c.RoutingAlertSettings() }, "GET", "/v1/routing/alerts/settings", nil},
+		{"UpdateRoutingAlertSettings", func() (map[string]any, error) {
+			return c.UpdateRoutingAlertSettings(map[string]any{"min_samples": 10})
+		}, "PUT", "/v1/routing/alerts/settings", map[string]any{"min_samples": float64(10)}},
 	}
 	for _, r := range rows {
 		got = seen{}

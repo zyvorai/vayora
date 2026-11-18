@@ -210,6 +210,134 @@ ignores provider health completely; turn failover off to keep retrying the same 
   `POST /_sim/behaviour` (`cashfree.pay` = `hang_after_accept`) models a timeout after the provider accepted the payment.
 - The in-process `sim` provider already declines by UPI handle (`fail*`) and times out by handle (`uncertain*`).
 
+## 6. The routing rule builder
+
+Status: **implemented and tested against simulators only.** Code: `crates/zyvor-api/src/rulebuilder.rs`. It sits on top of
+the router; `zyvor_providers::router::choose` is unchanged. For each payment the rules whose conditions hold are handed
+to the router as ordinary `prefer` / `exclude` / `prefer_success_rate` rules, so every hard filter, the circuit breaker,
+failover and the "unknown payment blocks retries" rule apply exactly as before. **A rule cannot send a payment somewhere the
+router would refuse** (tested: a preference for a provider the payment may not use is ignored).
+
+```json
+{ "name": "rupay cards to cashfree",
+  "when": { "methods": ["card"], "card_networks": ["rupay"], "min_amount_minor": 100000,
+            "currencies": ["INR"], "segments": ["new"],
+            "time_window": { "from": "22:00", "to": "06:00", "utc_offset_minutes": 330 } },
+  "then": { "prefer": ["cashfree"], "exclude": [], "prefer_success_rate": false } }
+```
+
+Every condition is optional and all of them must hold. Unknown field names are refused (a typo is an error, not a rule
+that silently does nothing). Order matters: the first `prefer` that names an eligible provider wins, as before.
+
+| Condition | Meaning |
+|---|---|
+| `methods`, `currencies` | the payment's method and currency |
+| `min_amount_minor`, `max_amount_minor` | the amount the payer is charged (after any offer discount) |
+| `card_networks` | network class from `instrument.card_network`, a saved card token, or a BIN; an unknown network matches no network rule |
+| `segments` | `new` or `returning`; a payment with no customer matches no segment rule |
+| `time_window` | `HH:MM` from (inclusive) to (exclusive) in a fixed UTC offset (default +330); `to` earlier than `from` crosses midnight. A fixed offset, not a time-zone database: no daylight saving |
+
+**Validation** (`POST /v1/routing/rule_sets/validate`, and on every save) reports each problem with the rule it is in:
+unknown provider, method, currency, card network or segment; amount band the wrong way round; a time window that is
+malformed or empty; a rule that does nothing; a provider both preferred and excluded; a card-network condition on a rule
+whose methods exclude `card`; more than 50 rules; and a rule that would exclude **every** provider account (matching
+payments could not be routed). A provider with no account here is a warning, not an error.
+
+**Versions.** `POST /v1/routing/rule_sets` saves an immutable numbered version (optionally activating it). One active
+pointer per business. `POST .../{version}/activate` switches; `POST .../rollback` activates what was active before the
+current one (rolling back twice toggles); `POST .../deactivate` goes back to the older `tenant_settings.routing.rules`.
+With no active version the settings rules apply exactly as before; with one, it **replaces** them (fees still come from
+the settings). Each change is audited (`routing_rules.version_created`, `.activated`, `.rolled_back`, `.deactivated`)
+and every attempt records the version and which rules matched (`route.rule_set`). Switching is refused while an
+experiment runs.
+
+**Dry run.** `POST /v1/routing/dry_run` answers "which provider would this payment take": the full decision
+(`considered`, explanations, signals), the rules that matched and the ones that did not (with why), and the experiment
+arm. It can try unsaved `rules`, an older `version`, an `at` time for time-of-day rules, a `card_network` or `card_bin`,
+and a `customer_id` or `segment`. It creates nothing and claims no circuit-breaker probe (`would_probe` says whether a
+real payment would be the probe). Tested: attempts and audit entries do not change, and the answer equals what a real
+attempt then does.
+
+## 7. Routing experiments (A/B)
+
+Status: **implemented and tested against simulators only.** Code: `crates/zyvor-api/src/experiments.rs`.
+
+A running experiment sends a share of payments (1 to 50 percent, optionally one method only) through a saved variant
+version instead of the active one (the control). The split is by hash of the experiment's salt and the **intent id**:
+every attempt on a payment is in the same arm, retries and failovers included. One experiment per business at a time. The
+variant is an ordinary version, so every router guard applies to it. If its rules leave a payment with no provider, the
+control's rules route it and the attempt is marked `fell_back` and left out of the results, so an experiment cannot make a
+payment fail that would have been routed.
+
+**Guardrails** (documented, not tuned on real traffic):
+
+- nothing is concluded until **both** arms have `min_sample` resolved attempts (default 100, at least 20);
+- the variant is stopped **automatically** only when it is clearly worse: its success rate is at least `min_drop_bps`
+  below the control's (default 300, three percentage points) **and** a one-sided two-proportion z-test gives
+  z >= 2.33 (about 99% one-sided; stored as `z_x100`);
+- a variant that looks better is only reported (`variant_better`); nothing is promoted automatically;
+- what counts is the same as for routing health: successes are captured or authorised attempts, failures are provider-side
+  declines and declines of unknown cause, an unknown outcome counts against the arm, payer declines and merchant
+  cancellations are shown but left out of the rates;
+- checking repeatedly raises the chance of a false stop, so the threshold is deliberately strict. This is a safety stop
+  against a clearly broken variant, not a statistical study. It does not adjust for amount mix, method mix or time of day.
+
+The worker evaluates the running experiment each cycle and `POST /v1/routing/experiments/{id}/evaluate` does the same on
+demand; a read (`GET`) never stops anything and shows `would_auto_stop`. A stop (by a person or automatic) writes an audit
+entry, queues `routing.experiment_stopped`, and an automatic one also opens a case (`routing_experiment_stopped`) and
+records the reason (both rates, the gap, z, the sample sizes). The control rules are in force again at once.
+`GET /v1/routing/experiments/{id}` returns per arm the stats, providers used and the verdict.
+
+## 8. Provider and bank downtime alerts
+
+Status: **implemented and tested against seeded history and simulators only.** Code: `crates/zyvor-api/src/alerts.rs`.
+
+The worker (step 3f) and `POST /v1/routing/alerts/evaluate` read the last `window_minutes` (default 30) of attempts and
+look at three kinds of group: a provider for one method, a **bank** within it and a **UPI handle** within it, where
+attempts carry one (`instrument.bank`, the handle of the typed UPI ID, or `instrument.upi_handle`). A group whose failures
+(provider-side and unknown-cause declines, plus unknown outcomes; never payer declines or cancellations) reach
+`open_failure_pct` (default 50) of at least `min_samples` (default 20) opens **one** alert: a case (`provider_alert`), a
+`provider.alert_opened` event for the webhook outbox, an audit entry and, when `email_to` is set, an email through the
+existing mail queue. It sits beside the circuit breaker, which steers routing per provider and method; alerts also cover
+banks and handles, and tell people. Alerts are **on by default** for every business (no row in `provider_alert_config` means the defaults; turn them off with `enabled: false`), and a business that subscribes to all webhook events will now receive the new event types. Bank and handle alerts need the caller to send them (see OFFERS.md, `instrument`);
+no attempt is classed by a bank or handle unless one was given.
+
+De-duplication and flap control:
+
+- at most one open alert per provider, method, kind and value (a partial unique index), however often it is checked, and
+  from however many worker replicas (an advisory lock per business);
+- hysteresis: it opens at `open_failure_pct` and resolves only at or below `resolve_failure_pct` (default 20, always
+  lower) with at least `min_samples` attempts, and not before it has been open `hold_seconds` (default 300);
+- after it resolves, the failures that caused it are not counted again: only attempts made since can reopen it;
+- a recurrence within `flap_window_seconds` (default 900) of the resolution **reopens the same alert quietly**
+  (`flap_count` goes up, the case reopens, an audit entry is written, but no new event or email); a later one raises a new
+  alert;
+- a provider-level alert also resolves when the circuit breaker has recovered that provider and method, and any alert
+  resolves after 24 hours with no attempts at all (a skipped provider gets no traffic to prove it is back);
+- resolving writes `provider.alert_resolved`, closes the case and emails once.
+
+## 9. API (rule builder, experiments, alerts)
+
+| Route | Scope | Purpose |
+|---|---|---|
+| `POST /v1/routing/rule_sets/validate` | `routing:read` | check rules, nothing saved |
+| `POST /v1/routing/rule_sets` | `routing:write` | save a version (validated); `activate: true` to use it |
+| `GET /v1/routing/rule_sets`, `GET .../{version}` | `routing:read` | versions, the active one, the previous one |
+| `POST .../{version}/activate`, `POST .../rollback`, `POST .../deactivate` | `routing:write` | switch (refused while an experiment runs) |
+| `POST /v1/routing/dry_run` | `routing:read` | which provider would this payment take |
+| `POST /v1/routing/experiments`, `GET`, `GET .../{id}` | `routing:write` / `routing:read` | start, list, results |
+| `POST .../{id}/stop`, `POST .../{id}/evaluate` | `routing:write` | stop; run the guardrail now |
+| `GET /v1/routing/alerts[?status=]`, `GET .../{id}` | `routing:read` | alerts, one alert with its case |
+| `POST .../{id}/ack`, `PUT .../settings`, `POST .../evaluate` | `routing:write` | acknowledge; thresholds and email; check now |
+| `GET /v1/routing/alerts/settings` | `routing:read` | thresholds |
+
+New scopes: `offers:read`, `offers:write`, `routing:read`, `routing:write` (`admin` has all; `finance` console roles get
+the offers pair and `routing:read`, viewers get both read scopes). New events in the catalogue: `provider.alert_opened`,
+`provider.alert_resolved`, `routing.experiment_stopped`. New tables (migration 0086) are all tenant-scoped by row-level
+security and tested as the app role: `routing_rule_versions`, `routing_rule_active`, `routing_experiments`,
+`routing_experiment_assignments`, `provider_alert_config`, `provider_alerts` (and the offers tables, see OFFERS.md).
+Tests: `crates/zyvor-api/tests/routing_rules.rs`, `crates/zyvor-api/tests/provider_alerts.rs`, unit tests in the three modules.
+
 ## What is not done
 
 The console has a **Routing health** page (success rate or "not enough data", saved and current state, recent changes, and limits that only an admin can change); it was looked at in a browser against a stand-in API with made-up data, not against a running Zyvor API. No per-provider threshold overrides
@@ -217,3 +345,9 @@ The console has a **Routing health** page (success rate or "not enough data", sa
 Razorpay and PhonePe have none, and no failure code of any provider was verified against a live account. Existing
 declines recorded before migration 0079 stay `declined` (unknown) and keep counting against the provider until they age
 out of the window. The sweeper and the classifier are tested against simulators only.
+
+Rule builder, experiments and alerts (sections 6 to 8): no console page yet (the API and SDKs only); the time-of-day
+condition uses a fixed UTC offset; an experiment compares two saved versions of the one rule set, not arbitrary
+configurations, and has no stratification or multiple-testing correction; the alerts see a bank or UPI handle only when
+the caller sends one (a provider that reports the bank itself is not read), and nothing was checked against a real provider
+outage or a real bank's downtime pattern. Thresholds are reasoned starting points, not tuned values.

@@ -355,6 +355,13 @@ pub struct CreateAttempt {
     /// Charge a previously stored network card token (never PAN/CVV). Requires `method=card`.
     #[serde(default)]
     pub card_token_id: Option<String>,
+    /// What the payer used, without any card number: a card network or the first 6-8 digits of the card (BIN), a UPI
+    /// app, a bank. Offers, routing rules and the downtime alerts use it. See `instrument.rs`.
+    #[serde(default)]
+    pub instrument: Option<crate::instrument::InstrumentIn>,
+    /// Offer codes the payer typed. Offers that need no code apply by themselves.
+    #[serde(default)]
+    pub offer_codes: Option<Vec<String>>,
 }
 
 fn valid_vpa(v: &str) -> bool {
@@ -458,6 +465,7 @@ pub async fn start_attempt(
         b.return_url.as_deref().unwrap_or(""),
         b.upi_flow.as_deref().unwrap_or(""),
         b.card_token_id.as_deref().unwrap_or(""),
+        &format!("{:?}|{:?}", b.instrument, b.offer_codes),
     ]);
     let key = match idempotency::begin(&mut tx, tenant_id, "attempts", headers, &hash).await? {
         Begin::Replay {
@@ -586,8 +594,50 @@ pub async fn start_attempt(
         return Err(crate::risk::blocked(s, tenant_id, actor, rule, detail).await);
     }
 
+    // What the payer used (never a card number), then the offers that apply: the attempt is for the discounted amount.
+    let token_brand: Option<String> = match b.card_token_id.as_deref() {
+        Some(t) => {
+            sqlx::query_scalar("SELECT brand FROM card_tokens WHERE id = $1 AND revoked_at IS NULL")
+                .bind(t)
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten()
+        }
+        None => None,
+    };
+    let instrument = crate::instrument::build(
+        b.instrument.as_ref(),
+        b.vpa.as_deref(),
+        token_brand.as_deref(),
+    )?;
+    let offer_codes = crate::offers::clean_codes(b.offer_codes.as_ref());
+    let segment = crate::offers::segment(&mut tx, customer_id.as_deref(), Some(intent_id)).await?;
+    let offer_facts = crate::offers::AttemptFacts {
+        intent_id,
+        amount_minor,
+        currency: currency.code(),
+        method: method.as_str(),
+        instrument: &instrument,
+        customer_id: customer_id.as_deref(),
+        segment,
+        codes: &offer_codes,
+    };
+    let offer_eval = crate::offers::plan_for_attempt(&mut tx, &offer_facts).await?;
+    // From here on `amount_minor` is what the payer is asked for.
+    let amount_minor = offer_eval.net_minor;
+
     let routing = registry::routing(&mut tx, tenant_id).await?;
     let mut candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
+    let rule_ctx = crate::rulebuilder::RuleCtx {
+        method,
+        amount_minor,
+        currency: currency.code(),
+        card_network: instrument.card_network.as_deref(),
+        segment,
+        at: Utc::now(),
+    };
+    let selection =
+        crate::rulebuilder::select(&mut tx, intent_id, &rule_ctx, &routing.rules).await?;
     // Success-rate signal and circuit breaker for this method, and what already failed this very payment.
     // The live-attempt check above has run: everything on this intent is terminal, so a failover can never
     // sit beside an unresolved first attempt.
@@ -601,9 +651,11 @@ pub async fn start_attempt(
     let upi_intent =
         method == Method::Upi && b.vpa.is_none() && b.upi_flow.as_deref() == Some("intent");
     let mut decision;
+    let mut fell_back;
     let mut attempts_at_routing = 0;
     loop {
-        decision = router::choose(
+        (decision, fell_back) = crate::rulebuilder::choose_with(
+            &selection,
             &router::Request {
                 method,
                 amount_minor,
@@ -615,7 +667,6 @@ pub async fn start_attempt(
                 avoid: avoid.clone(),
             },
             &candidates,
-            &routing.rules,
         )
         .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
         // A probe of a degraded provider needs the one probe slot; if another payment took it, route without.
@@ -662,7 +713,7 @@ pub async fn start_attempt(
 
     let attempt_id = new_id("att");
     sqlx::query(
-        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)",
+        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route, instrument) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)",
     )
     .bind(&attempt_id)
     .bind(tenant_id)
@@ -671,8 +722,32 @@ pub async fn start_attempt(
     .bind(method.as_str())
     .bind(amount_minor)
     .bind(currency.code())
-    .bind(serde_json::to_value(&decision).unwrap())
+    .bind(crate::rulebuilder::route_json(
+        &decision,
+        &selection,
+        fell_back,
+        (!offer_eval.applied.is_empty()).then(|| offer_eval.summary()),
+    ))
+    .bind(instrument.to_json())
     .execute(&mut *tx)
+    .await?;
+    crate::offers::reserve(
+        &mut tx,
+        tenant_id,
+        actor,
+        &attempt_id,
+        &offer_facts,
+        &offer_eval,
+    )
+    .await?;
+    crate::rulebuilder::record_assignment(
+        &mut tx,
+        tenant_id,
+        &selection,
+        fell_back,
+        &attempt_id,
+        intent_id,
+    )
     .await?;
     sqlx::query(
         "UPDATE payment_intents SET status = 'processing', updated_at = now() WHERE id = $1",
@@ -687,7 +762,7 @@ pub async fn start_attempt(
         actor,
         "payment_attempt.created",
         Some(&attempt_id),
-        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id, "failover_from": decision.failover_from, "probe": decision.probe }),
+        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id, "failover_from": decision.failover_from, "probe": decision.probe, "rule_set_version": selection.version, "experiment": selection.experiment, "discount_minor": offer_eval.discount_minor, "gross_minor": offer_eval.gross_minor }),
     )
     .await?;
     // Customer details some providers require.
@@ -1214,12 +1289,14 @@ pub async fn apply_provider_state(
                 conn, tenant_id, attempt_id, &intent_id, &provider, amount, currency,
             )
             .await?;
+            crate::offers::redeemed(conn, tenant_id, attempt_id).await?;
         }
         Attempt::Authorized => {
             sqlx::query("UPDATE payment_intents SET status = 'processing', updated_at = now() WHERE id = $1").bind(&intent_id).execute(&mut *conn).await?;
             tenant::emit(conn, tenant_id, "payment.authorized", payload).await?;
         }
         Attempt::Failed => {
+            crate::offers::release(conn, tenant_id, attempt_id).await?;
             sqlx::query(
                 "UPDATE payment_intents SET status = 'requires_payment_method', updated_at = now()
                  WHERE id = $1 AND status = 'processing' AND NOT EXISTS (SELECT 1 FROM payment_attempts WHERE intent_id = $1 AND status IN ('created', 'pending', 'authorized', 'unknown', 'captured'))",

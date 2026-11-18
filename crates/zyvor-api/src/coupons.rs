@@ -24,7 +24,7 @@ pub struct Price {
     pub total: i64,
 }
 
-fn half_up(n: i64, bp: i64) -> i64 {
+pub(crate) fn half_up(n: i64, bp: i64) -> i64 {
     ((n as i128 * bp as i128 + 5_000) / 10_000) as i64
 }
 

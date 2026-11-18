@@ -366,6 +366,47 @@ class Tests(unittest.TestCase):
             Zyvor("k", opener=refuse).update_routing_health_settings(failover_enabled=False)
         self.assertEqual((cm.exception.status, cm.exception.code), (403, "forbidden"))
 
+    def test_offers_routing_rules_experiments_and_alert_methods(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None))
+            return FakeRes(b'{"ok":true}')
+        z = Zyvor("k", opener=opener)
+        rows = [
+            ("z.create_offer(name='UPI 10%', kind='percent', value=1000)", "POST", "/v1/offers", {"name": "UPI 10%", "kind": "percent", "value": 1000}),
+            ("z.list_offers(status='active')", "GET", "/v1/offers?status=active", None),
+            ("z.get_offer('ofx_1')", "GET", "/v1/offers/ofx_1", None),
+            ("z.update_offer('ofx_1', status='paused')", "PATCH", "/v1/offers/ofx_1", {"status": "paused"}),
+            ("z.preview_offers(amount_minor=1000, method='upi')", "POST", "/v1/offers/preview", {"amount_minor": 1000, "method": "upi"}),
+            ("z.offer_refund_preview('pi_1', 450)", "POST", "/v1/offers/refund_preview", {"intent_id": "pi_1", "amount_minor": 450}),
+            ("z.offer_redemptions('ofx_1', status='redeemed')", "GET", "/v1/offers/ofx_1/redemptions?status=redeemed", None),
+            ("z.intent_offers('pi_1')", "GET", "/v1/payment_intents/pi_1/offers", None),
+            ("z.validate_routing_rules([])", "POST", "/v1/routing/rule_sets/validate", {"rules": []}),
+            ("z.create_routing_rule_set([], note='n', activate=True)", "POST", "/v1/routing/rule_sets", {"rules": [], "activate": True, "note": "n"}),
+            ("z.list_routing_rule_sets()", "GET", "/v1/routing/rule_sets", None),
+            ("z.get_routing_rule_set(2)", "GET", "/v1/routing/rule_sets/2", None),
+            ("z.activate_routing_rule_set(2)", "POST", "/v1/routing/rule_sets/2/activate", {}),
+            ("z.rollback_routing_rule_set()", "POST", "/v1/routing/rule_sets/rollback", {}),
+            ("z.deactivate_routing_rule_set()", "POST", "/v1/routing/rule_sets/deactivate", {}),
+            ("z.routing_dry_run(method='card', amount_minor=500)", "POST", "/v1/routing/dry_run", {"method": "card", "amount_minor": 500}),
+            ("z.start_routing_experiment('e', 2, 10, min_sample=50)", "POST", "/v1/routing/experiments", {"name": "e", "variant_version": 2, "variant_percent": 10, "min_sample": 50}),
+            ("z.list_routing_experiments()", "GET", "/v1/routing/experiments", None),
+            ("z.routing_experiment_results('rex_1')", "GET", "/v1/routing/experiments/rex_1", None),
+            ("z.stop_routing_experiment('rex_1')", "POST", "/v1/routing/experiments/rex_1/stop", {}),
+            ("z.evaluate_routing_experiment('rex_1')", "POST", "/v1/routing/experiments/rex_1/evaluate", {}),
+            ("z.list_routing_alerts(status='open')", "GET", "/v1/routing/alerts?status=open", None),
+            ("z.get_routing_alert('pal_1')", "GET", "/v1/routing/alerts/pal_1", None),
+            ("z.acknowledge_routing_alert('pal_1')", "POST", "/v1/routing/alerts/pal_1/ack", {}),
+            ("z.routing_alert_settings()", "GET", "/v1/routing/alerts/settings", None),
+            ("z.update_routing_alert_settings(min_samples=10)", "PUT", "/v1/routing/alerts/settings", {"min_samples": 10}),
+            ("z.check_routing_alerts()", "POST", "/v1/routing/alerts/evaluate", {}),
+            ("z.create_attempt('pi_1', 'card', instrument={'card_network': 'visa'}, offer_codes=['DIWALI'], idempotency_key='k')", "POST", "/v1/payment_intents/pi_1/attempts", {"method": "card", "instrument": {"card_network": "visa"}, "offer_codes": ["DIWALI"]}),
+        ]
+        for call, verb, url, body in rows:
+            seen.clear()
+            eval(call, {"z": z})
+            self.assertEqual(seen[0], (verb, url, body), call)
+
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []
         z = Zyvor("k", opener=lambda req, timeout=None: (seen.append(json.loads(req.data)), FakeRes(b"{}"))[1])

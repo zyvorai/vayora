@@ -274,3 +274,69 @@ describe("fee checks, bank statements and routing health", () => {
     expect((f.mock.calls as unknown as [string][]).map((c) => c[0].replace("http://localhost:8080", ""))).toEqual(["/v1/recon/ageing", "/v1/fee_rules", "/v1/fee_checks/summary", "/v1/fee_checks/run", "/v1/bank_statements/lines?status=unmatched", "/v1/routing/health?method=upi"]);
   });
 });
+
+describe("offers, routing rules, experiments and downtime alerts", () => {
+  it("calls the right verb, path and body", async () => {
+    const f = vi.fn(async () => json(200, { ok: true }));
+    const c = client(f);
+    await c.offers.create({ name: "UPI 10%", kind: "percent", value: 1000, methods: ["upi"] });
+    await c.offers.list({ status: "active" });
+    await c.offers.get("ofx_1");
+    await c.offers.update("ofx_1", { status: "paused" });
+    await c.offers.preview({ amount_minor: 100000, method: "upi" });
+    await c.offers.refundPreview({ intentId: "pi_1", amountMinor: 4500 });
+    await c.offers.redemptions("ofx_1", { status: "redeemed" });
+    await c.offers.forIntent("pi_1");
+    await c.routingRules.validate([{ when: {}, then: { prefer: ["razorpay"] } }]);
+    await c.routingRules.create({ rules: [], note: "n", activate: true });
+    await c.routingRules.list();
+    await c.routingRules.get(2);
+    await c.routingRules.activate(2);
+    await c.routingRules.rollback();
+    await c.routingRules.deactivate();
+    await c.routingRules.dryRun({ method: "card", amount_minor: 50000 });
+    await c.routingExperiments.start({ name: "e", variantVersion: 2, variantPercent: 10, minSample: 50 });
+    await c.routingExperiments.list();
+    await c.routingExperiments.results("rex_1");
+    await c.routingExperiments.stop("rex_1");
+    await c.routingExperiments.evaluate("rex_1");
+    await c.routingAlerts.list({ status: "open" });
+    await c.routingAlerts.get("pal_1");
+    await c.routingAlerts.acknowledge("pal_1");
+    await c.routingAlerts.settings();
+    await c.routingAlerts.updateSettings({ min_samples: 10 });
+    await c.routingAlerts.evaluate();
+    await c.intents.attempt("pi_1", { method: "card", instrument: { card_network: "visa" }, offerCodes: ["DIWALI"], idempotencyKey: "k" });
+    const seen = (f.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]);
+    expect(seen).toEqual([
+      ["POST", "/v1/offers", { name: "UPI 10%", kind: "percent", value: 1000, methods: ["upi"] }],
+      ["GET", "/v1/offers?status=active", undefined],
+      ["GET", "/v1/offers/ofx_1", undefined],
+      ["PATCH", "/v1/offers/ofx_1", { status: "paused" }],
+      ["POST", "/v1/offers/preview", { amount_minor: 100000, method: "upi" }],
+      ["POST", "/v1/offers/refund_preview", { intent_id: "pi_1", amount_minor: 4500 }],
+      ["GET", "/v1/offers/ofx_1/redemptions?status=redeemed", undefined],
+      ["GET", "/v1/payment_intents/pi_1/offers", undefined],
+      ["POST", "/v1/routing/rule_sets/validate", { rules: [{ when: {}, then: { prefer: ["razorpay"] } }] }],
+      ["POST", "/v1/routing/rule_sets", { rules: [], note: "n", activate: true }],
+      ["GET", "/v1/routing/rule_sets", undefined],
+      ["GET", "/v1/routing/rule_sets/2", undefined],
+      ["POST", "/v1/routing/rule_sets/2/activate", {}],
+      ["POST", "/v1/routing/rule_sets/rollback", {}],
+      ["POST", "/v1/routing/rule_sets/deactivate", {}],
+      ["POST", "/v1/routing/dry_run", { method: "card", amount_minor: 50000 }],
+      ["POST", "/v1/routing/experiments", { name: "e", variant_version: 2, variant_percent: 10, min_sample: 50 }],
+      ["GET", "/v1/routing/experiments", undefined],
+      ["GET", "/v1/routing/experiments/rex_1", undefined],
+      ["POST", "/v1/routing/experiments/rex_1/stop", {}],
+      ["POST", "/v1/routing/experiments/rex_1/evaluate", {}],
+      ["GET", "/v1/routing/alerts?status=open", undefined],
+      ["GET", "/v1/routing/alerts/pal_1", undefined],
+      ["POST", "/v1/routing/alerts/pal_1/ack", {}],
+      ["GET", "/v1/routing/alerts/settings", undefined],
+      ["PUT", "/v1/routing/alerts/settings", { min_samples: 10 }],
+      ["POST", "/v1/routing/alerts/evaluate", {}],
+      ["POST", "/v1/payment_intents/pi_1/attempts", { method: "card", instrument: { card_network: "visa" }, offer_codes: ["DIWALI"] }],
+    ]);
+  });
+});
