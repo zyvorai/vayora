@@ -793,6 +793,12 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
+    "config": "Any",
+    "providers": "Any",
+    "recent_changes": "List[Any]",
+})
+
 GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
     "data": "List[Any]",
 })

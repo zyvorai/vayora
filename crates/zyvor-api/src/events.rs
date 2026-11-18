@@ -26,6 +26,14 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "The provider's answer is unknown; no new attempt can start until it resolves.",
     ),
     (
+        "provider.degraded",
+        "A provider's recent failure rate crossed your threshold for a payment method; new payments skip it until it recovers.",
+    ),
+    (
+        "provider.recovered",
+        "A degraded provider recovered (a probe payment succeeded or its failure rate fell); it takes new payments again.",
+    ),
+    (
         "mandate.created",
         "A UPI AutoPay mandate was created and is waiting for the payer to approve it.",
     ),

@@ -587,23 +587,56 @@ pub async fn start_attempt(
     }
 
     let routing = registry::routing(&mut tx, tenant_id).await?;
-    let candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
-    let decision = router::choose(
-        &router::Request {
-            method,
-            amount_minor,
-            currency,
-            allowed,
-            // Only when the checkout asked for the QR / intent flow; a UPI payment through a hosted
-            // checkout (no typed UPI ID) keeps working as before.
-            upi_intent: method == Method::Upi
-                && b.vpa.is_none()
-                && b.upi_flow.as_deref() == Some("intent"),
-        },
-        &candidates,
-        &routing.rules,
-    )
-    .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
+    let mut candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
+    // Success-rate signal and circuit breaker for this method, and what already failed this very payment.
+    // The live-attempt check above has run: everything on this intent is terminal, so a failover can never
+    // sit beside an unresolved first attempt.
+    let health_cfg = crate::health::load_config(&mut tx, tenant_id).await?;
+    crate::health::attach_signals(&mut tx, tenant_id, &health_cfg, method, &mut candidates).await?;
+    let avoid = if health_cfg.failover_enabled {
+        crate::health::failed_here(&mut tx, intent_id).await?
+    } else {
+        Vec::new()
+    };
+    let upi_intent =
+        method == Method::Upi && b.vpa.is_none() && b.upi_flow.as_deref() == Some("intent");
+    let mut decision;
+    let mut attempts_at_routing = 0;
+    loop {
+        decision = router::choose(
+            &router::Request {
+                method,
+                amount_minor,
+                currency,
+                allowed: allowed.clone(),
+                // Only when the checkout asked for the QR / intent flow; a UPI payment through a hosted
+                // checkout (no typed UPI ID) keeps working as before.
+                upi_intent,
+                avoid: avoid.clone(),
+            },
+            &candidates,
+            &routing.rules,
+        )
+        .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
+        // A probe of a degraded provider needs the one probe slot; if another payment took it, route without.
+        let Some(p) = decision.probe.clone() else {
+            break;
+        };
+        if crate::health::claim_probe(&mut tx, tenant_id, &p, method, &health_cfg).await? {
+            break;
+        }
+        attempts_at_routing += 1;
+        if attempts_at_routing > candidates.len() {
+            return Err(ApiError::internal());
+        }
+        if let Some(sig) = candidates
+            .iter_mut()
+            .find(|c| c.provider == p)
+            .and_then(|c| c.signal.as_mut())
+        {
+            sig.breaker = zyvor_providers::router::Breaker::Degraded;
+        }
+    }
     let provider = registry::load(s, &mut tx, tenant_id, env, &decision.provider).await?;
 
     // Network token charge: load ref inside the txn; never accept PAN/CVV on this path.
@@ -654,7 +687,7 @@ pub async fn start_attempt(
         actor,
         "payment_attempt.created",
         Some(&attempt_id),
-        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id }),
+        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id, "failover_from": decision.failover_from, "probe": decision.probe }),
     )
     .await?;
     // Customer details some providers require.
@@ -740,6 +773,8 @@ pub async fn start_attempt(
                 &Incoming {
                     status: Attempt::Failed,
                     failure_reason: Some(why),
+                    // nothing was created at the provider: safe to try another one
+                    failure_class: Some("provider_rejected"),
                     ..Incoming::default()
                 },
                 "api",
@@ -977,6 +1012,9 @@ pub struct Incoming {
     pub failure_reason: Option<String>,
     pub amount_minor: Option<i64>,
     pub raw: Option<Value>,
+    /// For a failure: `declined`, `provider_rejected` or `cancelled` (see `health`). Left out, a failure is
+    /// `declined`, or `cancelled` when it came from a cancel.
+    pub failure_class: Option<&'static str>,
 }
 
 pub fn incoming(st: &PaymentState) -> Incoming {
@@ -991,6 +1029,7 @@ pub fn incoming(st: &PaymentState) -> Incoming {
         failure_reason: st.failure_reason.clone(),
         amount_minor: None,
         raw: Some(st.raw.clone()),
+        failure_class: None,
     }
 }
 
@@ -1086,13 +1125,19 @@ pub async fn apply_provider_state(
     sqlx::query(
         "UPDATE payment_attempts SET status = $2, provider_payment_ref = COALESCE($3, provider_payment_ref),
                 failure_reason = CASE WHEN $2 = 'failed' OR $2 = 'unknown' THEN COALESCE($4, failure_reason) ELSE NULL END,
-                raw = raw || COALESCE($5, '{}'::jsonb), updated_at = now() WHERE id = $1",
+                raw = raw || COALESCE($5, '{}'::jsonb),
+                failure_class = CASE WHEN $2 = 'failed' THEN $6 ELSE NULL END, updated_at = now() WHERE id = $1",
     )
     .bind(attempt_id)
     .bind(inc.status.as_str())
     .bind(&inc.provider_payment_ref)
     .bind(&inc.failure_reason)
     .bind(inc.raw.as_ref().map(|r| json!({ source: r })))
+    .bind(inc.failure_class.unwrap_or(if source == "cancel" {
+        "cancelled"
+    } else {
+        "declined"
+    }))
     .execute(&mut *conn)
     .await?;
 

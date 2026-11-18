@@ -42,6 +42,9 @@ struct Inner {
     settled: std::collections::BTreeSet<String>,
     /// One-shot misbehaviour per operation, e.g. "cashfree.pay" -> "hang_after_accept".
     behaviours: BTreeMap<String, String>,
+    /// Sticky outage per provider ("razorpay" / "cashfree"): `reject` (HTTP 400, nothing created: a definitive
+    /// answer), `unavailable` (HTTP 503: outcome unknown to the caller) or `hang` (no answer: a timeout).
+    outages: BTreeMap<String, String>,
     charges: BTreeMap<String, i64>,
     /// calls received by the Secure ID (verification) endpoints, by path
     kyc_calls: BTreeMap<String, u64>,
@@ -59,6 +62,10 @@ impl Mock {
         g.seq += 1;
         format!("{prefix}{:014}", g.seq)
     }
+    /// The sticky outage mode for a provider, if one is set.
+    fn outage(&self, provider: &str) -> Option<String> {
+        self.inner.lock().unwrap().outages.get(provider).cloned()
+    }
     fn take_behaviour(&self, op: &str) -> Option<String> {
         self.inner.lock().unwrap().behaviours.remove(op)
     }
@@ -70,6 +77,27 @@ fn err(code: StatusCode, msg: &str) -> (StatusCode, Json<Value>) {
         code,
         Json(json!({ "error": { "description": msg }, "message": msg })),
     )
+}
+/// Apply a switched-on outage to a create-order call. `Ok` means carry on normally.
+async fn check_outage(m: &Mock, provider: &str) -> Result<(), (StatusCode, Json<Value>)> {
+    match m.outage(provider).as_deref() {
+        Some("reject") => Err(err(
+            StatusCode::BAD_REQUEST,
+            "simulated outage: request refused",
+        )),
+        Some("unavailable") => Err(err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "simulated outage: service unavailable",
+        )),
+        Some("hang") => {
+            hang().await;
+            Err(err(
+                StatusCode::GATEWAY_TIMEOUT,
+                "simulated outage: timeout",
+            ))
+        }
+        _ => Ok(()),
+    }
 }
 async fn hang() {
     tokio::time::sleep(Duration::from_secs(30)).await;
@@ -105,6 +133,7 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/pg/settlement/recon", post(settlement_recon_cf))
         // ---- control ----
         .route("/_sim/behaviour", post(sim_behaviour))
+        .route("/_sim/outage", post(sim_outage))
         .route("/_sim/razorpay/pay", post(sim_rz_pay))
         .route("/_sim/razorpay/refund_event", post(sim_rz_refund_event))
         .route("/_sim/cashfree/pay", post(sim_cf_pay))
@@ -126,6 +155,7 @@ pub async fn spawn(cfg: MockConfig) -> String {
 // =============== Razorpay ===============
 
 async fn rz_create_order(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    check_outage(&m, "razorpay").await?;
     let amount = b["amount"]
         .as_i64()
         .filter(|a| *a >= 100)
@@ -390,6 +420,7 @@ fn cf_amount(v: &Value) -> i64 {
 }
 
 async fn cf_create_order(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    check_outage(&m, "cashfree").await?;
     let order_id = b["order_id"]
         .as_str()
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "order_id is required"))?
@@ -700,6 +731,32 @@ async fn sim_behaviour(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     Ok(Json(json!({ "ok": true })))
 }
 
+/// Switch a provider's outage on or off: `{"provider": "razorpay", "mode": "reject" | "unavailable" | "hang" | "off"}`.
+/// Sticky until switched off, unlike `behaviour`, which is one-shot.
+async fn sim_outage(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let provider = b["provider"].as_str().unwrap_or_default().to_string();
+    let mode = b["mode"].as_str().unwrap_or("off");
+    if !matches!(provider.as_str(), "razorpay" | "cashfree") {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "provider must be razorpay or cashfree",
+        ));
+    }
+    if !matches!(mode, "reject" | "unavailable" | "hang" | "off") {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "mode must be reject, unavailable, hang or off",
+        ));
+    }
+    let mut g = m.inner.lock().unwrap();
+    if mode == "off" {
+        g.outages.remove(&provider);
+    } else {
+        g.outages.insert(provider, mode.to_string());
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// How many times money was actually taken, per provider and per order.
 async fn sim_stats(State(m): State<Mock>) -> Resp {
     let g = m.inner.lock().unwrap();
@@ -718,6 +775,8 @@ async fn sim_stats(State(m): State<Mock>) -> Resp {
         "cashfree_successful_payments_by_order": cf_orders,
         "cashfree_payments": g.cf_payments.len(),
         "razorpay_payments": g.rz_payments.len(),
+        "razorpay_orders": g.rz_orders.len(),
+        "cashfree_orders": g.cf_orders.len(),
     })))
 }
 

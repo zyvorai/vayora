@@ -789,6 +789,12 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRoutingHealthResponse {
+  config: unknown;
+  providers: unknown;
+  recent_changes: unknown[];
+}
+
 export interface GetSavedViewsResponse {
   data: unknown[];
 }

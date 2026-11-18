@@ -4,6 +4,15 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 18 November 2026 — Success-rate routing, circuit breaker and failover (simulators only)
+**Routing**
+- Per-tenant rolling success rate per provider and method, from stored attempts, ignored below a minimum sample; rules can set `prefer_success_rate`.
+- Circuit breaker per provider and method: degraded providers are skipped for new payments, one probe payment after a cool-down, automatic recovery; `provider.degraded` / `provider.recovered` audit entries and webhook events.
+- Failover: after a definitive failure (provider refused or declined) the next attempt may use another provider; never after an unknown outcome, which still blocks any new attempt until the provider is asked.
+- Every routing decision now records each provider's signal and why it was skipped or chosen.
+- API: `GET /v1/routing/health`, `GET|PUT /v1/routing/health/settings`. Migration 0076. Mock provider: sticky `POST /_sim/outage`.
+- Tested against simulators only; defaults not tuned on real traffic. See [docs/zyvor/ROUTING.md](docs/zyvor/ROUTING.md).
+
 ## 7 November 2026 — Android parity follow-through
 **More iOS test-mode extras on Android**
 - Pay: Receive QR (`vayora://request` open amount), category memory on settle, open-amount typing on review.

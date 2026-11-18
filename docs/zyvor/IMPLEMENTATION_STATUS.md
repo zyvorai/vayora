@@ -25,6 +25,20 @@ Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkou
 
 **Limits.** Cashfree issues a QR / intent in sandbox (opt-in per account). Razorpay has the same opt-in adapter path (docs + local mock only; not sandbox-verified). Desktop, Android and iOS behaviour is not tested on physical devices, and the iOS flow in particular must follow the partner's documented behaviour. BHIM, PhonePe and Google Pay interoperability is not verified: that requires partner UAT on real devices. Wording says "any UPI app" and does not use BHIM branding until the current NPCI brand guidance is checked.
 
+## Delivered in this slice: success-rate routing, circuit breaker and failover (level 1)
+| Behaviour | Evidence |
+|---|---|
+| A rolling success-rate signal per tenant, provider and method, derived from stored attempts, ignored below a minimum sample | `better_success_rate_beats_a_cheaper_provider_only_with_enough_data_and_margin`, `a_rule_can_prefer_the_better_success_rate_but_only_on_enough_data` |
+| A failing provider is degraded, skipped for new payments, probed once after a cool-down and recovers; each change is audited and emitted | `a_failing_provider_is_degraded_skipped_probed_and_recovers_with_an_audit_trail` |
+| Failover to another provider only after a definitive failure; never after a timeout or unknown outcome; cancellations do not count | `a_definitive_failure_fails_over_but_cancel_and_timeout_never_do` |
+| An unknown attempt is settled by asking the provider, and only a "failed" answer opens failover; a "captured" answer blocks any second attempt | `an_unknown_attempt_is_settled_by_asking_the_provider_and_only_then_can_another_provider_be_used` |
+| Replaying an idempotency key returns the same attempt; two simultaneous attempts create one | the first test above, `two_simultaneous_attempts_on_one_payment_create_exactly_one` |
+| Thresholds per tenant, validated, scoped, audited; state isolated by row-level security | `thresholds_are_per_tenant_validated_scoped_and_audited`, `health_state_and_thresholds_stay_inside_their_tenant` |
+
+**Limits.** Simulators and the local provider mock only (`/_sim/outage`); no real provider was used and the default
+thresholds are not tuned on real traffic. Payer declines count as failures. Transitions are recorded when a payment is
+routed (no background sweeper). No console screen. Details in [ROUTING.md](ROUTING.md).
+
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.
 

@@ -809,6 +809,12 @@ type GetRefundsResponse struct {
 	HasMore bool        `json:"has_more"`
 }
 
+type GetRoutingHealthResponse struct {
+	Config        any   `json:"config"`
+	Providers     any   `json:"providers"`
+	RecentChanges []any `json:"recent_changes"`
+}
+
 type GetSavedViewsResponse struct {
 	Data []any `json:"data"`
 }

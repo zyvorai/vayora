@@ -7580,6 +7580,69 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/NewProviderAccount'
+  /v1/routing/health:
+    get:
+      summary: Read provider health - per provider and method the recent success rate, circuit-breaker state (healthy, degraded,
+        probe_due), thresholds and recent degrade and recovery events. Read-only; transitions are recorded when a payment
+        is routed
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config: {}
+                  providers: {}
+                  recent_changes:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/routing/health/settings:
+    get:
+      summary: Get or update this business's provider-health thresholds (window, minimum sample, degrade and recover failure
+        percent, cool-down, circuit breaker and failover switches). Change needs the admin scope
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Change provider-health thresholds; fields not sent keep their value
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsIn'
 components:
   securitySchemes:
     bearer:
@@ -7603,6 +7666,25 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    RoutingHealthConfig:
+      type: object
+      properties:
+        breaker_enabled:
+          type: boolean
+        failover_enabled:
+          type: boolean
+        window_attempts:
+          type: integer
+        window_minutes:
+          type: integer
+        min_samples:
+          type: integer
+        degrade_failure_pct:
+          type: integer
+        recover_failure_pct:
+          type: integer
+        cooldown_seconds:
+          type: integer
     Error:
       type: object
       properties:
@@ -8561,6 +8643,38 @@ components:
         weeks:
           type: integer
           format: int64
+    SettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        breaker_enabled:
+          type: boolean
+        failover_enabled:
+          type: boolean
+        window_attempts:
+          type: integer
+          format: int32
+        window_minutes:
+          type: integer
+          format: int32
+        min_samples:
+          type: integer
+          format: int32
+        degrade_failure_pct:
+          type: integer
+          format: int32
+        recover_failure_pct:
+          type: integer
+          format: int32
+        cooldown_seconds:
+          type: integer
+          format: int32
+    HealthQuery:
+      type: object
+      x-generated: true
+      properties:
+        method:
+          type: string
     PeriodQuery:
       type: object
       x-generated: true

@@ -29,6 +29,7 @@ pub mod error;
 pub mod events;
 pub mod fx;
 pub mod gst;
+pub mod health;
 pub mod idempotency;
 pub mod insights;
 pub mod installments;
@@ -549,6 +550,11 @@ pub fn app(state: AppState) -> Router {
             post(reminders::create_draft),
         )
         .route("/settings", get(get_settings).post(put_settings))
+        .route("/routing/health", get(health::get_health))
+        .route(
+            "/routing/health/settings",
+            get(health::get_settings).put(health::put_settings),
+        )
         .route("/test_data/reset", post(testdata::reset))
         .route(
             "/settings/logo",

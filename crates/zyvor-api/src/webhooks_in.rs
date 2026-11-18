@@ -104,6 +104,7 @@ pub async fn receive(
                         failure_reason: ev.failure_reason.clone(),
                         amount_minor: ev.amount_minor,
                         raw: Some(ev.raw.clone()),
+                        failure_class: None,
                     };
                     format!(
                         "{:?}",
