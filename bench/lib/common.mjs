@@ -53,7 +53,29 @@ export const round = (x, d = 1) => (x === null || x === undefined ? x : Math.rou
 export const rate = (n, d) => (d === 0 ? null : round((100 * n) / d, 1));
 
 // ---- HTTP against the Zyvor API ----
-export async function call(key, method, path, body, { idem, timeoutMs = 60000 } = {}) {
+// The API limits requests per client address (300/s sustained for authenticated calls, no environment switch for it).
+// Everything here comes from 127.0.0.1, so the load generator paces itself below that limit instead of changing the
+// product: a token bucket of 250 requests/s (burst 600), and a wait-and-retry if the API still answers 429.
+const bucket = { tokens: 600, last: performance.now() };
+async function pace() {
+  for (;;) {
+    const t = performance.now();
+    bucket.tokens = Math.min(600, bucket.tokens + ((t - bucket.last) / 1000) * 250);
+    bucket.last = t;
+    if (bucket.tokens >= 1) { bucket.tokens -= 1; return; }
+    await sleep(4);
+  }
+}
+export async function call(key, method, path, body, opts = {}) {
+  for (let i = 0; i < 8; i++) {
+    await pace();
+    const r = await callOnce(key, method, path, body, opts);
+    if (r.status !== 429) return r;
+    await sleep(1100);
+  }
+  throw new Error(`${method} ${path}: still rate limited after retries`);
+}
+async function callOnce(key, method, path, body, { idem, timeoutMs = 60000 } = {}) {
   const headers = { "content-type": "application/json" };
   if (key) headers.authorization = `Bearer ${key}`;
   if (idem) headers["idempotency-key"] = idem;
