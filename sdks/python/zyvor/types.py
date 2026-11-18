@@ -353,6 +353,27 @@ GetCollectionsPromisesResponse = TypedDict("GetCollectionsPromisesResponse", {
     "data": "List[Any]",
 })
 
+GetCommissionRulesByIdResponse = TypedDict("GetCommissionRulesByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "vendor_id": "Optional[str]",
+    "payment_link_id": "Optional[str]",
+    "event_ref": "Any",
+    "currency": "str",
+    "basis_points": "Any",
+    "flat_minor": "int",
+    "min_commission_minor": "int",
+    "cap_minor": "int",
+    "effective_from": "Any",
+    "effective_to": "Any",
+    "status": "str",
+    "scope": "Any",
+})
+
+GetCommissionRulesResponse = TypedDict("GetCommissionRulesResponse", {
+    "data": "Any",
+})
+
 GetConsoleBranchesResponse = TypedDict("GetConsoleBranchesResponse", {
     "data": "List[GetConsoleBranchesResponseDataItem]",
 })
@@ -1110,6 +1131,14 @@ GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
     "data": "List[Any]",
 })
 
+GetPayoutBatchesResponse = TypedDict("GetPayoutBatchesResponse", {
+    "data": "Any",
+})
+
+GetPayoutSchedulesResponse = TypedDict("GetPayoutSchedulesResponse", {
+    "data": "List[Any]",
+})
+
 GetPayoutsByIdResponse = TypedDict("GetPayoutsByIdResponse", {
     "id": "str",
     "vendor_id": "Optional[str]",
@@ -1535,6 +1564,10 @@ GetVendorsByIdDetailsResponse = TypedDict("GetVendorsByIdDetailsResponse", {
     "details": "Any",
 })
 
+GetVendorsByIdDocumentsResponse = TypedDict("GetVendorsByIdDocumentsResponse", {
+    "data": "List[Any]",
+})
+
 GetVendorsResponse = TypedDict("GetVendorsResponse", {
     "data": "List[Any]",
 })
@@ -1806,6 +1839,54 @@ PostCollectionsDunningRunResponse = TypedDict("PostCollectionsDunningRunResponse
 PostCollectionsPromisesByIdCancelResponse = TypedDict("PostCollectionsPromisesByIdCancelResponse", {
     "id": "str",
     "status": "str",
+})
+
+PostCommissionRulesByIdRetireResponse = TypedDict("PostCommissionRulesByIdRetireResponse", {
+    "id": "str",
+    "name": "str",
+    "vendor_id": "Optional[str]",
+    "payment_link_id": "Optional[str]",
+    "event_ref": "Any",
+    "currency": "str",
+    "basis_points": "Any",
+    "flat_minor": "int",
+    "min_commission_minor": "int",
+    "cap_minor": "int",
+    "effective_from": "Any",
+    "effective_to": "Any",
+    "status": "str",
+    "scope": "Any",
+})
+
+PostCommissionRulesPreviewResponse = TypedDict("PostCommissionRulesPreviewResponse", {
+    "ok": "bool",
+    "problems": "Any",
+    "on": "Any",
+    "currency": "str",
+    "amount_minor": "int",
+    "parties": "Any",
+    "vendors_total_minor": "int",
+    "commission_total_minor": "int",
+    "refund_minor": "int",
+    "merchant_keeps_after_refund_minor": "int",
+    "rounding": "str",
+})
+
+PostCommissionRulesResponse = TypedDict("PostCommissionRulesResponse", {
+    "id": "str",
+    "name": "str",
+    "vendor_id": "Optional[str]",
+    "payment_link_id": "Optional[str]",
+    "event_ref": "Any",
+    "currency": "str",
+    "basis_points": "Any",
+    "flat_minor": "int",
+    "min_commission_minor": "int",
+    "cap_minor": "int",
+    "effective_from": "Any",
+    "effective_to": "Any",
+    "status": "str",
+    "scope": "Any",
 })
 
 PostConsoleAuthenticateResponse = TypedDict("PostConsoleAuthenticateResponse", {
@@ -2586,6 +2667,46 @@ PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "existing": "Any",
 })
 
+PostPayoutBatchesByIdApproveResponse = TypedDict("PostPayoutBatchesByIdApproveResponse", {
+    "error": "Any",
+})
+
+PostPayoutBatchesByIdCancelResponse = TypedDict("PostPayoutBatchesByIdCancelResponse", {
+    "batch_id": "Optional[str]",
+})
+
+PostPayoutBatchesByIdRejectResponse = TypedDict("PostPayoutBatchesByIdRejectResponse", {
+    "batch_id": "Optional[str]",
+})
+
+PostPayoutBatchesByIdResolveResponse = TypedDict("PostPayoutBatchesByIdResolveResponse", {
+    "action": "Any",
+    "attempted": "int",
+    "outcomes": "Any",
+})
+
+PostPayoutBatchesByIdRetryResponse = TypedDict("PostPayoutBatchesByIdRetryResponse", {
+    "action": "Any",
+    "attempted": "int",
+    "outcomes": "Any",
+})
+
+PostPayoutBatchesByIdSendResponse = TypedDict("PostPayoutBatchesByIdSendResponse", {
+    "action": "Any",
+    "attempted": "int",
+    "outcomes": "Any",
+})
+
+PostPayoutSchedulesRunResponse = TypedDict("PostPayoutSchedulesRunResponse", {
+    "date": "Any",
+    "due": "int",
+    "batch_id": "Optional[str]",
+    "proposed_items": "Any",
+    "total_minor": "int",
+    "auto_approved": "Any",
+    "schedules": "Any",
+})
+
 PostPayoutsBulkResponse = TypedDict("PostPayoutsBulkResponse", {
     "count": "int",
     "already_existed": "Any",
@@ -3067,6 +3188,31 @@ PostUsersResponse = TypedDict("PostUsersResponse", {
     "id": "str",
     "email": "str",
     "role": "str",
+})
+
+PostVendorsByIdActivateResponse = TypedDict("PostVendorsByIdActivateResponse", {
+    "from": "Any",
+    "reason": "Any",
+})
+
+PostVendorsByIdDocumentsResponse = TypedDict("PostVendorsByIdDocumentsResponse", {
+    "id": "str",
+    "vendor_id": "str",
+    "kind": "str",
+    "filename": "Any",
+    "content_type": "Any",
+    "size_bytes": "int",
+    "sha256": "Any",
+})
+
+PostVendorsByIdReactivateResponse = TypedDict("PostVendorsByIdReactivateResponse", {
+    "from": "Any",
+    "reason": "Any",
+})
+
+PostVendorsByIdSuspendResponse = TypedDict("PostVendorsByIdSuspendResponse", {
+    "from": "Any",
+    "reason": "Any",
 })
 
 PostVendorsResponse = TypedDict("PostVendorsResponse", {

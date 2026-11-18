@@ -349,6 +349,27 @@ export interface GetCollectionsPromisesResponse {
   data: unknown[];
 }
 
+export interface GetCommissionRulesByIdResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
+}
+
+export interface GetCommissionRulesResponse {
+  data: unknown;
+}
+
 export interface GetConsoleBranchesResponse {
   data: GetConsoleBranchesResponseDataItem[];
 }
@@ -1106,6 +1127,14 @@ export interface GetPaymentLinksResponse {
   data: unknown[];
 }
 
+export interface GetPayoutBatchesResponse {
+  data: unknown;
+}
+
+export interface GetPayoutSchedulesResponse {
+  data: unknown[];
+}
+
 export interface GetPayoutsByIdResponse {
   id: string;
   vendor_id: string | null;
@@ -1531,6 +1560,10 @@ export interface GetVendorsByIdDetailsResponse {
   details: unknown;
 }
 
+export interface GetVendorsByIdDocumentsResponse {
+  data: unknown[];
+}
+
 export interface GetVendorsResponse {
   data: unknown[];
 }
@@ -1802,6 +1835,54 @@ export interface PostCollectionsDunningRunResponse {
 export interface PostCollectionsPromisesByIdCancelResponse {
   id: string;
   status: string;
+}
+
+export interface PostCommissionRulesByIdRetireResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
+}
+
+export interface PostCommissionRulesPreviewResponse {
+  ok: boolean;
+  problems: unknown;
+  on: unknown;
+  currency: string;
+  amount_minor: number;
+  parties: unknown;
+  vendors_total_minor: number;
+  commission_total_minor: number;
+  refund_minor: number;
+  merchant_keeps_after_refund_minor: number;
+  rounding: string;
+}
+
+export interface PostCommissionRulesResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
 }
 
 export interface PostConsoleAuthenticateResponse {
@@ -2582,6 +2663,46 @@ export interface PostPaymentLinksResponse {
   existing: unknown;
 }
 
+export interface PostPayoutBatchesByIdApproveResponse {
+  error: unknown;
+}
+
+export interface PostPayoutBatchesByIdCancelResponse {
+  batch_id: string | null;
+}
+
+export interface PostPayoutBatchesByIdRejectResponse {
+  batch_id: string | null;
+}
+
+export interface PostPayoutBatchesByIdResolveResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutBatchesByIdRetryResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutBatchesByIdSendResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutSchedulesRunResponse {
+  date: unknown;
+  due: number;
+  batch_id: string | null;
+  proposed_items: unknown;
+  total_minor: number;
+  auto_approved: unknown;
+  schedules: unknown;
+}
+
 export interface PostPayoutsBulkResponse {
   count: number;
   already_existed: unknown;
@@ -3063,6 +3184,31 @@ export interface PostUsersResponse {
   id: string;
   email: string;
   role: string;
+}
+
+export interface PostVendorsByIdActivateResponse {
+  from: unknown;
+  reason: unknown;
+}
+
+export interface PostVendorsByIdDocumentsResponse {
+  id: string;
+  vendor_id: string;
+  kind: string;
+  filename: unknown;
+  content_type: unknown;
+  size_bytes: number;
+  sha256: unknown;
+}
+
+export interface PostVendorsByIdReactivateResponse {
+  from: unknown;
+  reason: unknown;
+}
+
+export interface PostVendorsByIdSuspendResponse {
+  from: unknown;
+  reason: unknown;
 }
 
 export interface PostVendorsResponse {

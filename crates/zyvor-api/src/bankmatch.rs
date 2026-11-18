@@ -125,7 +125,7 @@ impl LineKeys {
 }
 
 /// SQL for "the reference as the bank gave it": the column, else the old `utr` when it is a real reference.
-const REF_EXPR: &str = "COALESCE(l.reference, CASE WHEN l.utr IS NULL OR l.utr ~ '^(csv|mt|camt|st):' THEN NULL ELSE l.utr END)";
+pub(crate) const REF_EXPR: &str = "COALESCE(l.reference, CASE WHEN l.utr IS NULL OR l.utr ~ '^(csv|mt|camt|st):' THEN NULL ELSE l.utr END)";
 /// `l` has no confirmed match, by the new table or by the older link.
 const UNMATCHED: &str = "l.matched_settlement_id IS NULL AND NOT EXISTS (SELECT 1 FROM bank_line_matches m WHERE m.bank_line_id = l.id AND m.status = 'confirmed')";
 

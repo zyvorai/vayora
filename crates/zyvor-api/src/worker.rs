@@ -137,6 +137,17 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         if let Err(e) = crate::ticketing::run_worker(s, &tid, &env).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "ticketing jobs failed");
         }
+        // 3b4. payout schedules that are due become proposed batches (never paid without approval unless the tenant's
+        // policy says so), and payouts whose rail outcome is unknown are asked about. Not for a business whose live
+        // mode was taken away.
+        if !crate::platform::live_frozen(&s.pool, &tid).await? {
+            if let Err(e) = crate::payout_schedules::run_due(s, &tid).await {
+                tracing::warn!(tenant = %tid, error = ?e.message, "payout schedules failed");
+            }
+            if let Err(e) = crate::payout_batches::sweep(s, &tid).await {
+                tracing::warn!(tenant = %tid, error = ?e.message, "payout batch sweep failed");
+            }
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;

@@ -210,6 +210,7 @@ pub fn split_by_bp(total: i64, shares: &[(String, i64)]) -> Vec<crate::splits::S
             (amount > 0).then(|| crate::splits::SplitIn {
                 vendor_id: vendor.clone(),
                 amount_minor: amount,
+                ..Default::default()
             })
         })
         .collect()
@@ -771,14 +772,24 @@ async fn check_shares(conn: &mut PgConnection, shares: &[ShareIn]) -> Result<Val
         ));
     }
     for s in shares {
-        let ok: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM vendors WHERE id = $1 AND archived_at IS NULL)",
-        )
-        .bind(&s.vendor_id)
-        .fetch_one(&mut *conn)
-        .await?;
-        if !ok {
-            return Err(ApiError::not_found("vendor"));
+        let status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM vendors WHERE id = $1 AND archived_at IS NULL")
+                .bind(&s.vendor_id)
+                .fetch_optional(&mut *conn)
+                .await?;
+        match status.as_deref() {
+            None => return Err(ApiError::not_found("vendor")),
+            // orders would fail at payment time otherwise: only an active vendor can be given a share
+            Some("active") => {}
+            Some(st) => {
+                return Err(ApiError::conflict(
+                    "vendor_not_active",
+                    format!(
+                        "vendor {} is {st}; only an active vendor can be given a share",
+                        s.vendor_id
+                    ),
+                ));
+            }
         }
     }
     Ok(json!(

@@ -7189,6 +7189,1017 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/BulkPayouts'
+  /v1/vendors/invite:
+    post:
+      summary: 'Invite a vendor to onboard (a record only: nothing is sent to them)'
+      tags:
+      - payouts
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Invite'
+  /v1/vendors/{id}:
+    get:
+      summary: 'Get a vendor: workflow status, bank check, payout settings'
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/vendors/{id}/profile:
+    put:
+      summary: Record the details the vendor gave (invited to details submitted)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorProfileIn'
+  /v1/vendors/{id}/bank_account:
+    post:
+      summary: Add the vendor's bank account or UPI id; runs the automatic bank check when a provider is configured
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorBankIn'
+  /v1/vendors/{id}/verify:
+    post:
+      summary: Verify the bank account as a person other than the one who added it
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorVerifyIn'
+  /v1/vendors/{id}/activate:
+    post:
+      summary: Activate a verified vendor so it can be given shares and paid
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  reason: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/vendors/{id}/suspend:
+    post:
+      summary: 'Suspend a vendor: no new shares and no payouts until reactivated'
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  reason: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorSuspendIn'
+  /v1/vendors/{id}/reactivate:
+    post:
+      summary: Reactivate a suspended vendor
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  reason: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/vendors/{id}/payout_settings:
+    put:
+      summary: Set a vendor's hold days, minimum payout and default commission rule
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorSettingsIn'
+  /v1/vendors/{id}/documents:
+    post:
+      summary: Upload an optional document for a vendor (PDF, PNG or JPEG, kept encrypted)
+      tags:
+      - payouts
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  vendor_id:
+                    type: string
+                  kind:
+                    type: string
+                  filename: {}
+                  content_type: {}
+                  size_bytes:
+                    type: integer
+                  sha256: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorDocIn'
+    get:
+      summary: List a vendor's documents
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/vendors/{id}/documents/{doc}/file:
+    get:
+      summary: Download a vendor document (audited)
+      tags:
+      - payouts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: doc
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/commission_rules:
+    post:
+      summary: Create a commission rule (percentage and/or flat, with floor, cap and effective dates)
+      tags:
+      - commission
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  payment_link_id:
+                    type:
+                    - string
+                    - 'null'
+                  event_ref: {}
+                  currency:
+                    type: string
+                  basis_points: {}
+                  flat_minor:
+                    type: integer
+                  min_commission_minor:
+                    type: integer
+                  cap_minor:
+                    type: integer
+                  effective_from: {}
+                  effective_to: {}
+                  status:
+                    type: string
+                  scope: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCommissionRule'
+    get:
+      summary: List commission rules
+      tags:
+      - commission
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: vendor_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/commission_rules/preview:
+    post:
+      summary: Preview exactly what each party would get on a sample payment, and after a refund
+      tags:
+      - commission
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  problems: {}
+                  'on': {}
+                  currency:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+                  parties: {}
+                  vendors_total_minor:
+                    type: integer
+                  commission_total_minor:
+                    type: integer
+                  refund_minor:
+                    type: integer
+                  merchant_keeps_after_refund_minor:
+                    type: integer
+                  rounding:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommissionPreviewIn'
+  /v1/commission_rules/{id}:
+    get:
+      summary: Get a commission rule
+      tags:
+      - commission
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  payment_link_id:
+                    type:
+                    - string
+                    - 'null'
+                  event_ref: {}
+                  currency:
+                    type: string
+                  basis_points: {}
+                  flat_minor:
+                    type: integer
+                  min_commission_minor:
+                    type: integer
+                  cap_minor:
+                    type: integer
+                  effective_from: {}
+                  effective_to: {}
+                  status:
+                    type: string
+                  scope: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/commission_rules/{id}/retire:
+    post:
+      summary: Retire a commission rule (shares already recorded keep their commission)
+      tags:
+      - commission
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  payment_link_id:
+                    type:
+                    - string
+                    - 'null'
+                  event_ref: {}
+                  currency:
+                    type: string
+                  basis_points: {}
+                  flat_minor:
+                    type: integer
+                  min_commission_minor:
+                    type: integer
+                  cap_minor:
+                    type: integer
+                  effective_from: {}
+                  effective_to: {}
+                  status:
+                    type: string
+                  scope: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_policy:
+    get:
+      summary: Get the payout limits and the scheduled auto-approve switch
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Replace the payout limits and the scheduled auto-approve switch (admin)
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutPolicy'
+  /v1/payout_batches:
+    post:
+      summary: Propose a payout batch from a CSV or a list; all or nothing, with line-level errors
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewBatch'
+    get:
+      summary: List payout batches
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/payout_batches/preview:
+    post:
+      summary: Check a payout batch without storing anything
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewBatch'
+  /v1/payout_batches/from_balances:
+    post:
+      summary: Propose a batch paying each vendor what they are owed, past hold days and minimums
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FromBalances'
+  /v1/payout_batches/{id}:
+    get:
+      summary: Get a payout batch with each item, its status and the bank debit that matched it
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_batches/{id}/approve:
+    post:
+      summary: Approve a batch (another person), optionally leaving items out
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveIn'
+  /v1/payout_batches/{id}/reject:
+    post:
+      summary: Reject a waiting batch (another person)
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionIn'
+  /v1/payout_batches/{id}/cancel:
+    post:
+      summary: Withdraw a batch that has not been approved
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionIn'
+  /v1/payout_batches/{id}/items/{item}/exclude:
+    post:
+      summary: Leave one item out of a batch that is waiting for approval
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: item
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionIn'
+  /v1/payout_batches/{id}/send:
+    post:
+      summary: Send the approved items to the payout rail (acquire mode); safe to repeat
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: {}
+                  attempted:
+                    type: integer
+                  outcomes:
+                    type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_batches/{id}/retry:
+    post:
+      summary: Retry failed items with the same payout id; never touches an unknown outcome
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: {}
+                  attempted:
+                    type: integer
+                  outcomes:
+                    type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryIn'
+  /v1/payout_batches/{id}/resolve:
+    post:
+      summary: Ask the rail about items whose outcome is unknown; sends nothing
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: {}
+                  attempted:
+                    type: integer
+                  outcomes:
+                    type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_batches/{id}/report.csv:
+    get:
+      summary: 'Batch report as CSV: one line per item with status, bank reference and matched bank debit'
+      tags:
+      - payout_batches
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_schedules:
+    post:
+      summary: Create a payout schedule for a vendor (weekly, monthly or threshold)
+      tags:
+      - payout_schedules
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewSchedule'
+    get:
+      summary: List payout schedules
+      tags:
+      - payout_schedules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: vendor_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/payout_schedules/run:
+    post:
+      summary: Propose batches for the schedules due today (what the worker does each cycle)
+      tags:
+      - payout_schedules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: {}
+                  due:
+                    type: integer
+                  batch_id:
+                    type:
+                    - string
+                    - 'null'
+                  proposed_items: {}
+                  total_minor:
+                    type: integer
+                  auto_approved: {}
+                  schedules: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payout_schedules/{id}:
+    get:
+      summary: Get a payout schedule
+      tags:
+      - payout_schedules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_schedules/{id}/pause:
+    post:
+      summary: Pause a payout schedule
+      tags:
+      - payout_schedules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_schedules/{id}/resume:
+    post:
+      summary: Resume a payout schedule from today
+      tags:
+      - payout_schedules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/coupons:
     post:
       summary: Create a coupon (percent or flat) redeemable on fixed-amount payment links
@@ -12140,6 +13151,490 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    Vendor:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        external_ref:
+          type: string
+        status:
+          type: string
+          enum:
+          - invited
+          - details_submitted
+          - bank_added
+          - verified
+          - active
+          - suspended
+        archived:
+          type: boolean
+        legal_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        bank:
+          type: object
+          properties:
+            holder_name:
+              type: string
+            ifsc:
+              type: string
+            account_last4:
+              type: string
+            vpa:
+              type: string
+            added_by:
+              type: string
+            added_at:
+              type: string
+              format: date-time
+            check:
+              type: object
+            verified_by:
+              type: string
+            verified_at:
+              type: string
+              format: date-time
+            name_override_reason:
+              type: string
+        workflow:
+          type: object
+          properties:
+            invited_by:
+              type: string
+            invited_at:
+              type: string
+              format: date-time
+            details_submitted_at:
+              type: string
+              format: date-time
+            activated_at:
+              type: string
+              format: date-time
+            suspended_at:
+              type: string
+              format: date-time
+            suspended_reason:
+              type: string
+        payout_settings:
+          type: object
+          properties:
+            hold_days:
+              type: integer
+            min_payout_minor:
+              type: integer
+              format: int64
+            default_rule_id:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+    VendorDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        vendor_id:
+          type: string
+        kind:
+          type: string
+        filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        uploaded_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CommissionRule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        vendor_id:
+          type: string
+        payment_link_id:
+          type: string
+        event_ref:
+          type: string
+        currency:
+          type: string
+        basis_points:
+          type: integer
+        flat_minor:
+          type: integer
+          format: int64
+        min_commission_minor:
+          type: integer
+          format: int64
+        cap_minor:
+          type: integer
+          format: int64
+        effective_from:
+          type: string
+          format: date
+        effective_to:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - active
+          - retired
+        scope:
+          type: string
+          enum:
+          - scoped
+          - shared
+    CommissionPreview:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        problems:
+          type: array
+          items:
+            type: string
+        'on':
+          type: string
+          format: date
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        parties:
+          type: array
+          items:
+            type: object
+            properties:
+              vendor_id:
+                type: string
+              gross_minor:
+                type: integer
+                format: int64
+              commission_minor:
+                type: integer
+                format: int64
+              vendor_share_minor:
+                type: integer
+                format: int64
+              rule:
+                type: object
+              reversed_on_refund_minor:
+                type: integer
+                format: int64
+              vendor_keeps_after_refund_minor:
+                type: integer
+                format: int64
+        vendors_total_minor:
+          type: integer
+          format: int64
+        commission_total_minor:
+          type: integer
+          format: int64
+        merchant_keeps_minor:
+          type: integer
+          format: int64
+        refund_minor:
+          type: integer
+          format: int64
+        merchant_keeps_after_refund_minor:
+          type: integer
+          format: int64
+        rounding:
+          type: string
+    PayoutBatchItem:
+      type: object
+      properties:
+        id:
+          type: string
+        line:
+          type: integer
+        vendor_id:
+          type: string
+        vendor_name:
+          type: string
+        payout_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        purpose:
+          type: string
+        reference:
+          type: string
+        schedule_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending_approval
+          - approved
+          - sending
+          - failed
+          - unknown
+          - paid
+          - rejected
+          - canceled
+          - excluded
+        excluded:
+          type: boolean
+        excluded_reason:
+          type: string
+        attempts:
+          type: integer
+        last_error:
+          type: string
+        rail_ref:
+          type: string
+        bank_ref:
+          type: string
+        requested_by:
+          type: string
+        approved_by:
+          type: string
+        bank_match:
+          type: object
+          properties:
+            status:
+              type: string
+            rule:
+              type: string
+            bank_line_id:
+              type: integer
+              format: int64
+            posted_on:
+              type: string
+              format: date
+            amount_minor:
+              type: integer
+              format: int64
+            narration:
+              type: string
+            reference:
+              type: string
+    PayoutBatch:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        batch_ref:
+          type: string
+        source:
+          type: string
+          enum:
+          - csv
+          - items
+          - balances
+          - schedule
+        status:
+          type: string
+          enum:
+          - pending_approval
+          - approved
+          - processing
+          - attention
+          - completed
+          - rejected
+          - canceled
+        decision:
+          type: string
+        currency:
+          type: string
+        from_balance:
+          type: boolean
+        rail:
+          type: string
+        item_count:
+          type: integer
+        total_minor:
+          type: integer
+          format: int64
+        paid_minor:
+          type: integer
+          format: int64
+        file_name:
+          type: string
+        note:
+          type: string
+        created_by:
+          type: string
+        approved_by:
+          type: string
+        approved_at:
+          type: string
+          format: date-time
+        decision_note:
+          type: string
+        auto_approved:
+          type: boolean
+        fingerprint:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        items_by_status:
+          type: object
+        bank_reconciliation:
+          type: object
+          properties:
+            paid_items:
+              type: integer
+            matched_items:
+              type: integer
+            matched_minor:
+              type: integer
+              format: int64
+            suggested_items:
+              type: integer
+            unmatched_items:
+              type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayoutBatchItem'
+        warnings:
+          type: array
+          items:
+            type: object
+        skipped:
+          type: array
+          items:
+            type: object
+        run:
+          type: object
+          properties:
+            action:
+              type: string
+            attempted:
+              type: integer
+            outcomes:
+              type: object
+    PayoutBatchPreview:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: object
+        errors_total:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: object
+        currency:
+          type: string
+        item_count:
+          type: integer
+        total_minor:
+          type: integer
+          format: int64
+        fingerprint:
+          type: string
+        duplicate_of:
+          type: string
+        needs_approval:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+        skipped:
+          type: array
+          items:
+            type: object
+        stored:
+          type: boolean
+    PayoutSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+        vendor_id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - weekly
+          - monthly
+          - threshold
+        day_of_week:
+          type: integer
+        day_of_month:
+          type: integer
+        threshold_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        active:
+          type: boolean
+        next_run_on:
+          type: string
+          format: date
+        last_run_on:
+          type: string
+          format: date
+        last_batch_id:
+          type: string
+        last_outcome:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PayoutScheduleRun:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        due:
+          type: integer
+        batch_id:
+          type: string
+        proposed_items:
+          type: integer
+        total_minor:
+          type: integer
+          format: int64
+        auto_approved:
+          type: boolean
+        schedules:
+          type: array
+          items:
+            type: object
+            properties:
+              schedule_id:
+                type: string
+              vendor_id:
+                type: string
+              outcome:
+                type: string
     TicketEvent:
       type: object
       properties:
@@ -12605,6 +14100,88 @@ components:
       - instalments
       - first_due_date
       - number_prefix
+    VendorVerifyIn:
+      type: object
+      x-generated: true
+      properties:
+        override_reason:
+          type: string
+    VendorSuspendIn:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+      required:
+      - reason
+    VendorSettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        hold_days:
+          type: integer
+          format: int32
+        min_payout_minor:
+          type: integer
+          format: int64
+        default_rule_id:
+          type: string
+    VendorProfileIn:
+      type: object
+      x-generated: true
+      properties:
+        legal_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+      required:
+      - legal_name
+    VendorDocIn:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: string
+        filename:
+          type: string
+        data_base64:
+          type: string
+      required:
+      - kind
+      - filename
+      - data_base64
+    VendorBankIn:
+      type: object
+      x-generated: true
+      properties:
+        holder_name:
+          type: string
+        ifsc:
+          type: string
+        account_number:
+          type: string
+        vpa:
+          type: string
+      required:
+      - holder_name
+    Invite:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        external_ref:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      required:
+      - name
     UploadIn:
       type: object
       x-generated: true
@@ -13607,6 +15184,146 @@ components:
             $ref: '#/components/schemas/NewPayout'
       required:
       - payouts
+    PayoutScheduleListQuery:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+    NewSchedule:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+        kind:
+          type: string
+        day_of_week:
+          type: integer
+          format: int32
+        day_of_month:
+          type: integer
+          format: int32
+        threshold_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+      required:
+      - vendor_id
+      - kind
+    RetryIn:
+      type: object
+      x-generated: true
+      properties:
+        item_ids:
+          type: array
+          items:
+            type: string
+    PayoutPolicy:
+      type: object
+      x-generated: true
+      properties:
+        max_payout_minor:
+          type: integer
+          format: int64
+        max_batch_total_minor:
+          type: integer
+          format: int64
+        max_batch_items:
+          type: integer
+          format: int64
+        max_vendor_per_24h_minor:
+          type: integer
+          format: int64
+        auto_approve_scheduled_under_minor:
+          type: integer
+          format: int64
+    PayoutBatchListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+    NewBatch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        batch_ref:
+          type: string
+        csv:
+          type: string
+        filename:
+          type: string
+        delimiter:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemIn'
+        default_purpose:
+          type: string
+        from_balance:
+          type: boolean
+        rail:
+          type: string
+        note:
+          type: string
+    ItemIn:
+      type: object
+      x-generated: true
+      properties:
+        vendor:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        purpose:
+          type: string
+        reference:
+          type: string
+      required:
+      - vendor
+      - amount_minor
+    FromBalances:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        batch_ref:
+          type: string
+        vendor_ids:
+          type: array
+          items:
+            type: string
+        default_purpose:
+          type: string
+        rail:
+          type: string
+        note:
+          type: string
+        dry_run:
+          type: boolean
+    DecisionIn:
+      type: object
+      x-generated: true
+      properties:
+        note:
+          type: string
+    ApproveIn:
+      type: object
+      x-generated: true
+      properties:
+        exclude:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
     SimulateEvent:
       type: object
       x-generated: true
@@ -14412,6 +16129,104 @@ components:
       required:
       - username
       - password
+    NewCommissionRule:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        vendor_id:
+          type: string
+        payment_link_id:
+          type: string
+        event_ref:
+          type: string
+        currency:
+          type: string
+        basis_points:
+          type: integer
+          format: int64
+        flat_minor:
+          type: integer
+          format: int64
+        min_commission_minor:
+          type: integer
+          format: int64
+        cap_minor:
+          type: integer
+          format: int64
+        effective_from:
+          type: string
+          format: date
+        effective_to:
+          type: string
+          format: date
+      required:
+      - name
+      - effective_from
+    CommissionRuleListQuery:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+        status:
+          type: string
+    CommissionPreviewIn:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        payment_link_id:
+          type: string
+        event_ref:
+          type: string
+        'on':
+          type: string
+          format: date
+        splits:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewSplit'
+        refund_minor:
+          type: integer
+          format: int64
+      required:
+      - amount_minor
+      - splits
+    PreviewSplit:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+        gross_minor:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/Terms'
+      required:
+      - vendor_id
+    Terms:
+      type: object
+      x-generated: true
+      properties:
+        basis_points:
+          type: integer
+          format: int64
+        flat_minor:
+          type: integer
+          format: int64
+        min_commission_minor:
+          type: integer
+          format: int64
+        cap_minor:
+          type: integer
+          format: int64
     NewReminder:
       type: object
       x-generated: true

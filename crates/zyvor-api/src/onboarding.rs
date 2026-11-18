@@ -36,7 +36,7 @@ const MAX_PAID_CHECKS_PER_DAY: i64 = 12;
 
 /// Count `calls` paid provider calls for this business, or say there is no room left today. Free providers
 /// (the simulator) are never counted.
-async fn paid_checks_allowed(
+pub(crate) async fn paid_checks_allowed(
     s: &AppState,
     tenant_id: &str,
     k: &kyc::Kyc,
@@ -64,7 +64,7 @@ async fn paid_checks_allowed(
     Ok(true)
 }
 
-fn capped() -> kyc::Check {
+pub(crate) fn capped() -> kyc::Check {
     kyc::Check {
         outcome: kyc::Outcome::Inconclusive,
         detail: "too many automatic checks for this business today; a person will review this"

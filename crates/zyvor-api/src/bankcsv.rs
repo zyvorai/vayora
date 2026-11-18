@@ -265,7 +265,7 @@ pub struct Problem {
     pub message: String,
 }
 
-fn problem(line: usize, column: Option<&str>, message: impl Into<String>) -> Problem {
+pub(crate) fn problem(line: usize, column: Option<&str>, message: impl Into<String>) -> Problem {
     Problem {
         line,
         column: column.map(str::to_string),

@@ -57,6 +57,8 @@ const TABLES: &[&str] = &[
     "installment_plans",
     "subscriptions",
     "mandates",
+    "payout_batch_items",
+    "payout_batches",
     "payouts",
     "customers",
 ];
