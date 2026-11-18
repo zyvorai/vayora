@@ -11,6 +11,14 @@ const HELP = `zyvor <command>   (env: ZYVOR_API_KEY, ZYVOR_API_URL, ZYVOR_ACTOR)
   refunds failed
   settlements explain <settlement_id>
   cases list [--status open]
+  recon ageing
+  fee-rules list
+  fee-checks summary
+  fee-checks findings [--status open]
+  fee-checks run [--since YYYY-MM-DD]
+  bank lines [--status unmatched]
+  bank rematch
+  routing health [--method upi]
   webhooks outbox [--status pending]
   webhooks replay <event_id>
   webhooks verify --secret S --header H --body-file F
@@ -62,6 +70,14 @@ export async function run(argv: string[], env: Record<string, string | undefined
     else if (key === "refunds-failed") show(await z.refunds.list({ status: "failed" }));
     else if (key === "settlements-explain") out((await z.settlements.explain(pos[0])).narrative);
     else if (key === "cases-list") show(await z.cases.list({ status: f.status ?? "open" }));
+    else if (key === "recon-ageing") show(await z.cases.ageing());
+    else if (key === "fee-rules-list") show(await z.feeRules.list());
+    else if (key === "fee-checks-summary") show(await z.feeChecks.summary());
+    else if (key === "fee-checks-findings") show(await z.feeChecks.findings({ status: f.status }));
+    else if (key === "fee-checks-run") show(await z.feeChecks.run({ since: f.since }));
+    else if (key === "bank-lines") show(await z.bankStatements.lines({ status: f.status as "unmatched" | "suggested" | "matched" | undefined }));
+    else if (key === "bank-rematch") show(await z.bankStatements.rematch());
+    else if (key === "routing-health") show(await z.routing.health(f.method));
     else if (key === "webhooks-outbox") show(await z.webhooks.outbox(f.status));
     else if (key === "webhooks-replay") show(await z.webhooks.replay(pos[0]));
     else {

@@ -12,7 +12,7 @@ use zyvor_providers::{
     custom::Custom,
     phonepe::PhonePe,
     razorpay::Razorpay,
-    router::{Candidate, Fee, Health, Rule},
+    router::{Candidate, Fee, Rule},
     sponsor_upi::SponsorUpi,
 };
 
@@ -163,25 +163,11 @@ pub async fn candidates(
     let mut out = Vec::new();
     for (provider, enabled) in accounts {
         let p = load(state, conn, tenant_id, env, &provider).await?;
-        // Health from the last 50 attempts; any attempt stuck in `unknown` counts against the provider.
-        let (attempts, failures, unresolved): (i64, i64, i64) = sqlx::query_as(
-            "SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'failed'), COUNT(*) FILTER (WHERE status = 'unknown')
-             FROM (SELECT status FROM payment_attempts WHERE tenant_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 50) r",
-        )
-        .bind(tenant_id)
-        .bind(&provider)
-        .fetch_one(&mut *conn)
-        .await?;
         out.push(Candidate {
             fees: routing.fees.get(&provider).cloned().unwrap_or_default(),
             caps: p.capabilities(),
             signal: None,
             enabled,
-            health: Health {
-                recent_attempts: attempts as u32,
-                recent_failures: failures as u32,
-                unresolved: unresolved as u32,
-            },
             provider,
         });
     }

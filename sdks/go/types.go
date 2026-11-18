@@ -877,9 +877,10 @@ type GetRefundsResponse struct {
 }
 
 type GetRoutingHealthResponse struct {
-	Config        any   `json:"config"`
-	Providers     any   `json:"providers"`
-	RecentChanges []any `json:"recent_changes"`
+	Config            any    `json:"config"`
+	RoutingHealthRule string `json:"routing_health_rule"`
+	Providers         any    `json:"providers"`
+	RecentChanges     []any  `json:"recent_changes"`
 }
 
 type GetSavedViewsResponse struct {

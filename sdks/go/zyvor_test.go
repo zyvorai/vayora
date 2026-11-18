@@ -499,3 +499,76 @@ func TestEmailLogoGoesUpAsRawBytes(t *testing.T) {
 		t.Fatalf("remove: %v %s", err, gotMethod)
 	}
 }
+
+func TestFeeCheckBankStatementAndRoutingHealthMethods(t *testing.T) {
+	type seen struct {
+		method, uri string
+		body        map[string]any
+	}
+	var got seen
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = seen{method: r.Method, uri: r.URL.RequestURI()}
+		_ = json.NewDecoder(r.Body).Decode(&got.body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := New("k", srv.URL)
+	rows := []struct {
+		name string
+		call func() (map[string]any, error)
+		verb string
+		uri  string
+		body map[string]any
+	}{
+		{"ListFeeRules", func() (map[string]any, error) { return c.ListFeeRules() }, "GET", "/v1/fee_rules", nil},
+		{"CreateFeeRule", func() (map[string]any, error) {
+			return c.CreateFeeRule("razorpay", "upi", 200, "2026-04-01", map[string]any{"gst_bps": 1800})
+		}, "POST", "/v1/fee_rules", map[string]any{"provider": "razorpay", "method": "upi", "bps": float64(200), "effective_from": "2026-04-01", "gst_bps": float64(1800)}},
+		{"DeleteFeeRule", func() (map[string]any, error) { return c.DeleteFeeRule("rule_1") }, "DELETE", "/v1/fee_rules/rule_1", nil},
+		{"FeeCheckSettings", func() (map[string]any, error) { return c.FeeCheckSettings() }, "GET", "/v1/fee_checks/settings", nil},
+		{"UpdateFeeCheckSettings", func() (map[string]any, error) {
+			return c.UpdateFeeCheckSettings(map[string]any{"tolerance_minor": 100})
+		}, "POST", "/v1/fee_checks/settings", map[string]any{"tolerance_minor": float64(100)}},
+		{"FeeCheckSummary", func() (map[string]any, error) { return c.FeeCheckSummary() }, "GET", "/v1/fee_checks/summary", nil},
+		{"ListFeeFindings", func() (map[string]any, error) {
+			return c.ListFeeFindings(map[string]any{"status": "open", "provider": "razorpay", "method": "", "limit": 5})
+		}, "GET", "/v1/fee_checks/findings?limit=5&provider=razorpay&status=open", nil},
+		{"RunFeeCheck", func() (map[string]any, error) { return c.RunFeeCheck(map[string]any{"since": "2026-04-01"}) }, "POST", "/v1/fee_checks/run", map[string]any{"since": "2026-04-01"}},
+		{"SettlementFeeCheck", func() (map[string]any, error) { return c.SettlementFeeCheck("set_1") }, "GET", "/v1/settlements/set_1/fee_check", nil},
+		{"RecheckSettlementFee", func() (map[string]any, error) { return c.RecheckSettlementFee("set_1") }, "POST", "/v1/settlements/set_1/fee_check", map[string]any{}},
+		{"PreviewBankStatement", func() (map[string]any, error) {
+			return c.PreviewBankStatement("a,b", map[string]any{"layout": "generic"})
+		}, "POST", "/v1/bank_statements/preview", map[string]any{"csv": "a,b", "layout": "generic"}},
+		{"ImportBankCsv", func() (map[string]any, error) { return c.ImportBankCsv("a,b") }, "POST", "/v1/bank_statements/import_csv", map[string]any{"csv": "a,b"}},
+		{"BankStatementLayouts", func() (map[string]any, error) { return c.BankStatementLayouts() }, "GET", "/v1/bank_statements/layouts", nil},
+		{"ListBankImports", func() (map[string]any, error) { return c.ListBankImports() }, "GET", "/v1/bank_statements/imports", nil},
+		{"ListBankLines", func() (map[string]any, error) {
+			return c.ListBankLines(map[string]any{"status": "unmatched", "from": "2026-04-01", "import_id": 3})
+		}, "GET", "/v1/bank_statements/lines?from=2026-04-01&import_id=3&status=unmatched", nil},
+		{"GetBankLine", func() (map[string]any, error) { return c.GetBankLine(7) }, "GET", "/v1/bank_statements/lines/7", nil},
+		{"RematchBank", func() (map[string]any, error) { return c.RematchBank() }, "POST", "/v1/bank_statements/rematch", map[string]any{}},
+		{"ConfirmBankMatch", func() (map[string]any, error) { return c.ConfirmBankMatch(9, "ok") }, "POST", "/v1/bank_statements/matches/9/confirm", map[string]any{"note": "ok"}},
+		{"RejectBankMatch", func() (map[string]any, error) { return c.RejectBankMatch(9, "") }, "POST", "/v1/bank_statements/matches/9/reject", map[string]any{}},
+		{"ReconAgeing", func() (map[string]any, error) { return c.ReconAgeing() }, "GET", "/v1/recon/ageing", nil},
+		{"RoutingHealth", func() (map[string]any, error) { return c.RoutingHealth("upi") }, "GET", "/v1/routing/health?method=upi", nil},
+		{"RoutingHealthSettings", func() (map[string]any, error) { return c.RoutingHealthSettings() }, "GET", "/v1/routing/health/settings", nil},
+		{"UpdateRoutingHealthSettings", func() (map[string]any, error) {
+			return c.UpdateRoutingHealthSettings(map[string]any{"min_samples": 20})
+		}, "PUT", "/v1/routing/health/settings", map[string]any{"min_samples": float64(20)}},
+	}
+	for _, r := range rows {
+		got = seen{}
+		if _, err := r.call(); err != nil {
+			t.Fatalf("%s: %v", r.name, err)
+		}
+		if got.method != r.verb || got.uri != r.uri {
+			t.Fatalf("%s: got %s %s, want %s %s", r.name, got.method, got.uri, r.verb, r.uri)
+		}
+		if r.verb == "GET" || r.verb == "DELETE" {
+			continue
+		}
+		if fmt.Sprint(got.body) != fmt.Sprint(r.body) {
+			t.Fatalf("%s: body %v, want %v", r.name, got.body, r.body)
+		}
+	}
+}
