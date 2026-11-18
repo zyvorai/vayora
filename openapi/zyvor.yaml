@@ -11911,14 +11911,9 @@ components:
           type: string
         label:
           type: string
-        credentials:
-          description: 'Per provider. razorpay: key_id, key_secret. cashfree: client_id, client_secret. custom and sponsor_upi:
-            api_key. phonepe: merchant_id, salt_key. payu: key, salt, and optionally merchant_secret (only its settlement
-            report API needs it). sim: none'
+        credentials: {}
         webhook_secret:
           type: string
-          description: The secret the provider signs callbacks with. PayU signs with the salt held in the credentials, so any
-            non-empty value is accepted for payu
         base_url:
           type: string
       required:
