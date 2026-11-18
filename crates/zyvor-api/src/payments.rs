@@ -533,6 +533,23 @@ pub(crate) async fn start_attempt_with(
             format!("intent is {status}"),
         ));
     }
+    // an event ticket tier can limit the payment methods its order may use
+    let only: Option<Vec<String>> = sqlx::query_scalar::<_, Option<Value>>(
+        "SELECT metadata->'allowed_methods' FROM payment_intents WHERE id = $1",
+    )
+    .bind(intent_id)
+    .fetch_one(&mut *tx)
+    .await?
+    .and_then(|v| serde_json::from_value(v).ok());
+    if only
+        .as_ref()
+        .is_some_and(|m| !m.iter().any(|x| x == method.as_str()))
+    {
+        return Err(ApiError::invalid(
+            "method_not_allowed",
+            "this payment cannot be made with that method",
+        ));
+    }
 
     // merchant-chosen risk limits
     let rules = crate::risk::load(&mut tx).await?;
@@ -1395,6 +1412,8 @@ async fn on_captured(
         external_ref.as_deref(),
     )
     .await?;
+    // an event ticket order paid by this intent gets its tickets, once
+    crate::ticketing::on_payment_captured(conn, tenant_id, intent_id).await?;
     Ok(())
 }
 

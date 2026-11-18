@@ -10,6 +10,7 @@ use zyvor_providers::{
     Method, Provider,
     cashfree::Cashfree,
     custom::Custom,
+    payu::PayU,
     phonepe::PhonePe,
     razorpay::Razorpay,
     router::{Candidate, Fee, Rule},
@@ -113,6 +114,15 @@ pub async fn load(
             s("salt_key"),
             state.provider_timeout,
         )),
+        "payu" => {
+            // With no base_url, PayU's own hosts for this environment (they differ for payment, server calls and
+            // reports). A base_url points every call at one address: a simulator.
+            let payu = match &base_url {
+                Some(b) => PayU::new(b.clone(), s("key"), s("salt"), state.provider_timeout),
+                None => PayU::hosted(env == "live", s("key"), s("salt"), state.provider_timeout),
+            };
+            Arc::new(payu.with_merchant_secret(s("merchant_secret")))
+        }
         other => {
             return Err(ApiError::internal())
                 .inspect_err(|_| tracing::error!(other, "unknown provider"));

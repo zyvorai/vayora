@@ -92,6 +92,13 @@ async fn session_body(
     let routing = registry::routing(&mut tx, tenant_id).await?;
     let candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
     let ccy: zyvor_core::Currency = currency.parse().map_err(|_| ApiError::internal())?;
+    let only: Option<Vec<String>> = sqlx::query_scalar::<_, Option<Value>>(
+        "SELECT metadata->'allowed_methods' FROM payment_intents WHERE id = $1",
+    )
+    .bind(intent_id)
+    .fetch_one(&mut *tx)
+    .await?
+    .and_then(|v| serde_json::from_value(v).ok());
     let mut methods: Vec<&str> = [
         Method::Upi,
         Method::Card,
@@ -107,6 +114,7 @@ async fn session_body(
         })
     })
     .map(Method::as_str)
+    .filter(|m| only.as_ref().is_none_or(|o| o.iter().any(|x| x == m)))
     .collect();
     methods.sort_unstable();
     let upi_flow = if candidates.iter().any(|c| {
