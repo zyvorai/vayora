@@ -34,6 +34,15 @@ export interface DebitRow {
   created_at: string;
 }
 
+export interface DeleteCashLagRulesByIdResponse {
+  deleted: boolean;
+}
+
+export interface DeleteExportsAccountMappingsByIdResponse {
+  deleted: boolean;
+  ledger_account: string;
+}
+
 export interface DeleteFeeRulesByIdResponse {
   id: string;
   deleted: boolean;
@@ -77,6 +86,19 @@ export interface GetAcquireKycResponse {
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
+}
+
+export interface GetAnalyticsRefundsResponse {
+  from: string;
+  to: string;
+  bucket: string;
+  currency: string;
+  series: unknown[];
+  totals: unknown;
+  time_to_refund: unknown;
+  sla: unknown;
+  leakage: unknown;
+  note: string;
 }
 
 export interface GetApiKeysResponse {
@@ -165,6 +187,57 @@ export interface GetBranchesResponseDataItem {
 
 export interface GetCardTokensResponse {
   tokens: unknown[];
+}
+
+export interface GetCashDashboardResponse {
+  as_of: string;
+  currency: string;
+  matched_window_days: number;
+  by_provider: unknown[];
+  totals: unknown;
+  payouts_pending: unknown;
+  paid_payouts_without_bank_debit_match: unknown;
+  note: string;
+}
+
+export interface GetCashForecastResponse {
+  as_of: string;
+  currency: string;
+  horizon_days: number;
+  days: GetCashForecastResponseDaysItem[];
+  overdue: unknown;
+  expected_after_horizon_minor: number;
+  expected_without_range_minor: number;
+  not_forecast: unknown[];
+  basis: unknown[];
+  note: string;
+}
+
+export interface GetCashForecastResponseDaysItem {
+  date: string;
+  expected_minor: number;
+  cumulative_low_minor: number;
+  cumulative_expected_minor: number;
+  cumulative_high_minor: number;
+}
+
+export interface GetCashLagResponse {
+  as_of: string;
+  lookback_days: number;
+  min_samples: number;
+  data: unknown[];
+  tenant_rules: unknown[];
+  note: string;
+}
+
+export interface GetCashLagRulesResponse {
+  data: unknown[];
+}
+
+export interface GetCashSettingsResponse {
+  min_samples: number;
+  alert_grace_days: number;
+  refund_sla_hours: number;
 }
 
 export interface GetCheckoutByTenantIdByIntentIdEventsResponse {
@@ -433,6 +506,32 @@ export interface GetEventsCatalogueResponseDataItem {
 export interface GetEventsResponse {
   data: unknown[];
   has_more: boolean;
+}
+
+export interface GetExportsAccountMappingsResponse {
+  defaults: unknown[];
+  overrides: unknown[];
+  effective: unknown[];
+  unmapped_code: string;
+  note: string;
+}
+
+export interface GetExportsGstSummaryResponse {
+  from: string;
+  to: string;
+  rows: unknown[];
+  net: unknown;
+  note: string;
+}
+
+export interface GetExportsJournalResponse {
+  from: string;
+  to: string;
+  currency: string;
+  vouchers: unknown[];
+  totals: unknown;
+  unmapped_accounts: string[];
+  next_cursor: string | null;
 }
 
 export interface GetFeeChecksFindingsResponse {
@@ -1318,8 +1417,28 @@ export interface PostCardTokensResponse {
   exp_year: unknown;
 }
 
+export interface PostCashAlertsScanResponse {
+  pending_cases_opened: number;
+  late_cases_opened: number;
+  case_kinds: string[];
+}
+
 export interface PostCashEntriesResponse {
   id: string;
+}
+
+export interface PostCashLagRulesResponse {
+  id: string;
+  provider: string;
+  method: string;
+  expected_lag_days: number;
+  note: string;
+}
+
+export interface PostCashSettingsResponse {
+  min_samples: number;
+  alert_grace_days: number;
+  refund_sla_hours: number;
 }
 
 export interface PostCheckoutByTenantIdByIntentIdAttemptsResponse {
@@ -1620,6 +1739,13 @@ export interface PostEventsByIdTiersResponse {
 export interface PostEventsResponse {
   vendor_id: string | null;
   share_bp: unknown;
+}
+
+export interface PostExportsAccountMappingsResponse {
+  id: number;
+  ledger_account: string;
+  code: string;
+  name: string;
 }
 
 export interface PostFeeChecksRunResponse {

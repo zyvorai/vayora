@@ -171,6 +171,10 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "A payout was recorded as paid, with its bank reference.",
     ),
     (
+        "settlement.delayed",
+        "Captured payments are still unsettled, or a settlement arrived, later than the provider's own observed range or the lag you set; a reconciliation case was opened.",
+    ),
+    (
         "ticket_order.paid",
         "An event ticket order was paid and its tickets were issued.",
     ),

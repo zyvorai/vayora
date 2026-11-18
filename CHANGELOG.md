@@ -5,6 +5,19 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Cash visibility, refund analytics and accounting exports (simulators only)
+**Cash visibility**
+- `GET /v1/cash/dashboard`: by provider, money captured but not settled, settled but not matched to a bank credit, matched, refunds pending and payouts pending.
+- Observed settlement lag per provider and method (median, p10/p90, min and max) shown only with enough samples (default 10, configurable); otherwise "not enough data". `GET /v1/cash/lag`, tenant-stated expected lags (`/v1/cash/lag_rules`) and settings (`/v1/cash/settings`).
+- `GET /v1/cash/forecast`: expected credits per day for the next 1-30 days with a low/expected/high range; overdue and not-forecast payments are reported, not guessed. No provider SLA is built in.
+- Delay alerts (`POST /v1/cash/alerts/scan`, also run by the worker): a `settlement_delayed` or `settlement_late` case and one `settlement.delayed` event per subject when a settlement is later than the provider's own observed range or the lag you stated. Idempotent.
+**Refund analytics**
+- `GET /v1/analytics/refunds`: refund rate over time (day or week), time to refund, refunds past the SLA (default 48 hours), leakage (refunds where your fee rule says the fee should come back but it did not; duplicate refund requests blocked, counted from now on). Aggregates only.
+**Accounting exports**
+- `GET /v1/exports/journal`: paged, deterministic, audited journal for a date range as generic CSV, Tally-style CSV, Tally XML or JSON; every voucher balances; per-tenant account codes (`/v1/exports/account_mappings`). Imported provider settlements appear as built settlement and fee vouchers because the ledger does not post them.
+- `GET /v1/exports/gst_summary`: sales and credit notes by supply type and rate, with net.
+- New scopes `cash:read`, `cash:write`, `exports:read`, `exports:write` (finance role has all four, the read-only role `cash:read`). Migration 0085 (additive). OpenAPI and generated SDK types updated; no new SDK methods. See [CASH_VISIBILITY.md](docs/zyvor/CASH_VISIBILITY.md) and [EXPORTS.md](docs/zyvor/EXPORTS.md).
+- Tested against simulators and hand-built synthetic histories only. The Tally layout follows Tally's public sample but was never run against Tally.
 ## 18 November 2026 — Events and ticketing (simulators only)
 - **Events** with ticket tiers (price in paise, quantity cap, per-order maximum, sale window, early-bird price and window, optional per-tier payment methods), a registration form (text, email, phone, select, checkbox; required, length limits) and optional vendor shares. Draft, on sale, closed, cancelled.
 - **Seats never oversold:** held and sold counters on the event and each tier change only under the event row lock, with a database check that held + sold never passes capacity. An unpaid order holds its seats for a configurable time; the worker releases it (not while a payment is authorised or unknown), gives its coupon use back and cancels its intent. A payment that arrives after the release takes free seats back or is queued for a refund with a reconciliation case.
