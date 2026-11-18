@@ -10,8 +10,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARGS=("$@")
 BASE="${BENCH_CI_OUT:-$ROOT/bench/results/ci-$(date +%Y%m%d-%H%M%S)}"
-"$ROOT/bench/run.sh" --out "$BASE/run1" "${ARGS[@]}" >/dev/null
-"$ROOT/bench/run.sh" --out "$BASE/run2" "${ARGS[@]}" >/dev/null
+"$ROOT/bench/run.sh" --out "$BASE/run1" ${ARGS[@]+"${ARGS[@]}"} >/dev/null
+"$ROOT/bench/run.sh" --out "$BASE/run2" ${ARGS[@]+"${ARGS[@]}"} >/dev/null
 node "$ROOT/bench/check-repro.mjs" "$BASE/run1/results.json" "$BASE/run2/results.json"
 node - "$BASE/run1/results.json" <<'JS'
 const r = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));
