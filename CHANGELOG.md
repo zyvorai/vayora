@@ -13,6 +13,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - Every `route.considered` entry and `route.explanation` carry a plain-language sentence ("Chosen because it has the lowest estimated fee ..."). The reason `only eligible provider` is no longer shown when another provider was set aside; it names what was skipped.
 - Migration 0079 (widens the allowed `failure_class` values; additive). OpenAPI and generated SDK types updated. See [docs/zyvor/ROUTING.md](docs/zyvor/ROUTING.md).
 
+## 18 November 2026 — SDK methods for fee checks, bank statements and routing health
+- Node, Python and Go SDKs gain typed methods for fee rules, fee checks (settings, summary, findings, run, per-settlement check), bank statements (preview, layouts, imports, lines, rematch, match confirm and reject), reconciliation ageing and routing health with its settings. CSV import and preview accept the layout options. The Node CLI gains matching read commands. Tested with mocked HTTP only; no server change.
+
 ## 18 November 2026 — Success-rate routing, circuit breaker and failover (simulators only)
 **Routing**
 - Per-tenant rolling success rate per provider and method, from stored attempts, ignored below a minimum sample; rules can set `prefer_success_rate`.

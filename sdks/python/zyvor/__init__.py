@@ -55,6 +55,11 @@ class Zyvor:
             payload = json.loads(e.read() or b"{}").get("error", {})
             raise ZyvorError(e.code, payload.get("code", "unknown"), payload.get("message", e.reason)) from None
 
+    @staticmethod
+    def _qs(params: dict) -> str:
+        q = urllib.parse.urlencode(sorted((k, v) for k, v in params.items() if v not in (None, "")))
+        return "?" + q if q else ""
+
     def create_intent(self, amount_minor: int, currency: str = "INR", idempotency_key: Optional[str] = None, **extra) -> dict:
         if not isinstance(amount_minor, int) or isinstance(amount_minor, bool) or amount_minor <= 0:
             raise ValueError("amount_minor must be a positive integer (paise)")
@@ -150,9 +155,9 @@ class Zyvor:
         """GSTR-1 preparation totals for `period` (YYYY-MM). Zyvor does not file the return."""
         return self._req("GET", f"/v1/gst/gstr1?period={urllib.parse.quote(period)}")
 
-    def import_bank_csv(self, csv: str) -> dict:
-        """Import a bank statement CSV for reconciliation."""
-        return self._req("POST", "/v1/bank_statements/import_csv", {"csv": csv})
+    def import_bank_csv(self, csv: str, **options) -> dict:
+        """Import a bank statement CSV for reconciliation. Options: filename, layout, mapping, date_format, delimiter (see bank_statement_layouts)."""
+        return self._req("POST", "/v1/bank_statements/import_csv", {"csv": csv, **options})
 
     def import_bank_mt940(self, text: str) -> dict:
         """Import a SWIFT MT940 bank statement."""
@@ -820,6 +825,100 @@ class Zyvor:
     def update_settings(self, patch: dict) -> types.PostSettingsResponse:
         """Change organisation settings; send only the fields to change (see GET /v1/settings for the shape)."""
         return self._req("POST", "/v1/settings", patch)
+
+
+    # ---- fee checks: compare the fee a provider deducted with the rate in your own contract ----
+    def list_fee_rules(self) -> types.GetFeeRulesResponse:
+        """Fee rules (rates you entered from your own contract)."""
+        return self._req("GET", "/v1/fee_rules")
+
+    def create_fee_rule(self, provider: str, method: str, bps: int, effective_from: str, **extra) -> types.PostFeeRulesResponse:
+        """Add a rule: bps = percentage in basis points (200 = 2%). Optional: flat_minor, cap_minor, gst_bps, refund_returns_fee, note. effective_from is YYYY-MM-DD."""
+        return self._req("POST", "/v1/fee_rules", {"provider": provider, "method": method, "bps": bps, "effective_from": effective_from, **extra})
+
+    def delete_fee_rule(self, rule_id: str) -> types.DeleteFeeRulesByIdResponse:
+        """Remove a rule; findings already recorded keep the rule they were checked against."""
+        return self._req("DELETE", f"/v1/fee_rules/{rule_id}")
+
+    def fee_check_settings(self) -> types.GetFeeChecksSettingsResponse:
+        """The fee check tolerance (paise) and who owns new findings."""
+        return self._req("GET", "/v1/fee_checks/settings")
+
+    def update_fee_check_settings(self, tolerance_minor: Optional[int] = None, owner: Optional[str] = None) -> types.GetFeeChecksSummaryResponse:
+        """Set the tolerance in paise and/or the owner of new findings; fields left out keep their value."""
+        body = {k: v for k, v in {"tolerance_minor": tolerance_minor, "owner": owner}.items() if v is not None}
+        return self._req("POST", "/v1/fee_checks/settings", body)
+
+    def fee_check_summary(self) -> types.GetFeeChecksSummaryResponse:
+        """Open fee findings, total variance, by provider and method."""
+        return self._req("GET", "/v1/fee_checks/summary")
+
+    def list_fee_findings(self, *, status: Optional[str] = None, provider: Optional[str] = None, method: Optional[str] = None, limit: Optional[int] = None) -> types.GetFeeChecksFindingsResponse:
+        """Payments whose deducted fee differs from your rule."""
+        return self._req("GET", "/v1/fee_checks/findings" + self._qs({"status": status, "provider": provider, "method": method, "limit": limit}))
+
+    def run_fee_check(self, since: Optional[str] = None, limit: Optional[int] = None) -> types.GetSettlementsByIdFeeCheckResponse:
+        """Re-check settlements against the current rules (since is YYYY-MM-DD)."""
+        body = {k: v for k, v in {"since": since, "limit": limit}.items() if v is not None}
+        return self._req("POST", "/v1/fee_checks/run", body)
+
+    def settlement_fee_check(self, settlement_id: str) -> types.GetSettlementsByIdFeeCheckResponse:
+        """What the fee check says about one settlement. Writes nothing."""
+        return self._req("GET", f"/v1/settlements/{settlement_id}/fee_check")
+
+    def recheck_settlement_fee(self, settlement_id: str) -> types.PostSettlementsByIdFeeCheckResponse:
+        """Re-check one settlement and record the finding."""
+        return self._req("POST", f"/v1/settlements/{settlement_id}/fee_check", {})
+
+    # ---- bank statements and reconciliation ----
+    def preview_bank_statement(self, csv: str, **options) -> types.PostBankStatementsPreviewResponse:
+        """Dry run: line-level problems, totals and duplicates; stores nothing. Options as for import_bank_csv."""
+        return self._req("POST", "/v1/bank_statements/preview", {"csv": csv, **options})
+
+    def bank_statement_layouts(self) -> types.GetBankStatementsLayoutsResponse:
+        """Supported statement layouts, date and amount formats."""
+        return self._req("GET", "/v1/bank_statements/layouts")
+
+    def list_bank_imports(self) -> types.GetBankStatementsImportsResponse:
+        """Imported bank statement files."""
+        return self._req("GET", "/v1/bank_statements/imports")
+
+    def list_bank_lines(self, *, status: Optional[str] = None, direction: Optional[str] = None, from_date: Optional[str] = None, to_date: Optional[str] = None, import_id: Optional[int] = None, limit: Optional[int] = None) -> types.GetBankStatementsLinesResponse:
+        """Statement lines with their match status (unmatched, suggested, matched). from_date/to_date are YYYY-MM-DD."""
+        return self._req("GET", "/v1/bank_statements/lines" + self._qs({"status": status, "direction": direction, "from": from_date, "to": to_date, "import_id": import_id, "limit": limit}))
+
+    def get_bank_line(self, line_id: int) -> dict:
+        """One statement line with every match it has had and its cases."""
+        return self._req("GET", f"/v1/bank_statements/lines/{line_id}")
+
+    def rematch_bank(self) -> types.PostBankStatementsRematchResponse:
+        """Look again at every unmatched settlement and bank line."""
+        return self._req("POST", "/v1/bank_statements/rematch", {})
+
+    def confirm_bank_match(self, match_id: int, note: Optional[str] = None) -> types.PostBankStatementsMatchesByIdConfirmResponse:
+        """A person accepts a suggested match."""
+        return self._req("POST", f"/v1/bank_statements/matches/{match_id}/confirm", {"note": note} if note else {})
+
+    def reject_bank_match(self, match_id: int, note: Optional[str] = None) -> types.PostBankStatementsMatchesByIdRejectResponse:
+        """Reject a suggested match; it is not suggested again."""
+        return self._req("POST", f"/v1/bank_statements/matches/{match_id}/reject", {"note": note} if note else {})
+
+    def recon_ageing(self) -> types.GetReconAgeingResponse:
+        """Open reconciliation cases by age and kind."""
+        return self._req("GET", "/v1/recon/ageing")
+
+    # ---- routing health ----
+    def routing_health(self, method: Optional[str] = None) -> types.GetRoutingHealthResponse:
+        """Per provider and method: recent success rate, circuit-breaker state, thresholds and recent events. Read only."""
+        return self._req("GET", "/v1/routing/health" + self._qs({"method": method}))
+
+    def routing_health_settings(self) -> dict:
+        """The provider-health thresholds."""
+        return self._req("GET", "/v1/routing/health/settings")
+
+    def update_routing_health_settings(self, **fields) -> dict:
+        """Change thresholds (admin scope); fields left out keep their value: breaker_enabled, failover_enabled, window_attempts, window_minutes, min_samples, degrade_failure_pct, recover_failure_pct, cooldown_seconds."""
+        return self._req("PUT", "/v1/routing/health/settings", fields)
 
 
 def verify_webhook(secret: str, header: str, raw_body: bytes, tolerance_seconds: int = 300, now: Optional[int] = None) -> bool:
