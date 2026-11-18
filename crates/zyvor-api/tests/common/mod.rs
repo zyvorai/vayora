@@ -208,6 +208,23 @@ impl T {
             .unwrap();
         String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
     }
+    /// The plain-text body of a GET made with an API key (CSV exports).
+    pub async fn text_authed(&self, t: &Tenant, path: &str) -> String {
+        let res = self
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {}", t.key))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "GET {path} -> {}", res.status());
+        String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
+    }
     /// A public (no API key) call that must succeed.
     pub async fn ok_public(&self, method: &str, path: &str, body: Value) -> Value {
         let (s, b) = self.public(method, path, None, body).await;

@@ -1546,6 +1546,27 @@ pub async fn rekey_all(
                     .bind(&id).bind(&next[0]).bind(&next[1]).execute(&mut *tx).await?;
             }
         }
+        // the keys that sign event tickets and order links
+        let qr: Vec<(String, Vec<u8>)> =
+            sqlx::query_as("SELECT id, qr_secret_enc FROM ticket_events")
+                .fetch_all(&mut *tx)
+                .await?;
+        for (id, blob) in qr {
+            if !crypto.needs_rekey(&blob) {
+                current += 1;
+            } else if let Some(n) = crypto.rekey(&blob) {
+                done += 1;
+                if !dry_run {
+                    sqlx::query("UPDATE ticket_events SET qr_secret_enc = $2 WHERE id = $1")
+                        .bind(&id)
+                        .bind(n)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            } else {
+                bad += 1;
+            }
+        }
         let hook: Option<Option<Vec<u8>>> = sqlx::query_scalar(
             "SELECT outbound_webhook_secret_enc FROM tenant_settings WHERE tenant_id = $1",
         )

@@ -3,7 +3,11 @@ export default {
   agentRules: false,
   // The browser talks to this origin only; the checkout API is proxied. No CORS, no API URL in the page.
   async rewrites() {
-    return [{ source: "/api/zyvor/:path*", destination: `${api}/v1/checkout/:path*` }];
+    return [
+      { source: "/api/zyvor/:path*", destination: `${api}/v1/checkout/:path*` },
+      // event pages: the public event, order and ticket endpoints
+      { source: "/api/zyvor-events/:path*", destination: `${api}/v1/public/events/:path*` },
+    ];
   },
   async headers() {
     return [{ source: "/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "X-Content-Type-Options", value: "nosniff" }, { key: "X-Frame-Options", value: "DENY" }] }];
