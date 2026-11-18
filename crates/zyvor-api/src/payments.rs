@@ -1411,6 +1411,9 @@ async fn on_captured(
         refresh_invoice_status(conn, inv).await?;
     }
     tenant::emit(conn, tenant_id, "payment.captured", json!({ "intent_id": intent_id, "attempt_id": attempt_id, "provider": provider, "amount_minor": amount, "currency": currency, "invoice_id": invoice_id, "external_ref": external_ref })).await?;
+    // storefront orders and donations ride on ordinary intents; mark theirs paid in the same transaction
+    crate::storefront::on_captured(conn, tenant_id, intent_id).await?;
+    crate::donations::on_captured(conn, tenant_id, intent_id).await?;
     queue_receipt(
         conn,
         tenant_id,

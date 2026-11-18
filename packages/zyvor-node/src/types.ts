@@ -440,6 +440,111 @@ export interface GetDisputesResponseDataItem {
   evidence_count: number;
 }
 
+export interface GetDonateByTenantIdByCampaignIdResponse {
+  merchant: string | null;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  currency: string;
+  recurring_enabled: unknown;
+}
+
+export interface GetDonationsCampaignsByIdSummaryResponse {
+  campaign_id: string;
+  paid_count: number;
+  paid_minor: number;
+  refunded_minor: number;
+  net_minor: number;
+  pending_count: number;
+  goal_minor: number | null;
+  recurring_pledges: number;
+}
+
+export interface GetDonationsCampaignsResponse {
+  data: unknown;
+}
+
+export interface GetDonationsResponse {
+  data: GetDonationsResponseDataItem[];
+}
+
+export interface GetDonationsResponseDataItem {
+  id: string;
+  campaign_id: string | null;
+  intent_id: string | null;
+  amount_minor: number;
+  status: string;
+  donor: unknown;
+  anonymous: unknown;
+  receipt_no: unknown;
+  created_at: string | null;
+  paid_at: string | null;
+  refunded_minor: number;
+}
+
+export interface GetDuesByKindGroupsResponse {
+  data: GetDuesByKindGroupsResponseDataItem[];
+}
+
+export interface GetDuesByKindGroupsResponseDataItem {
+  id: string;
+  name: string;
+  members: number;
+  heads_total_minor: number;
+}
+
+export interface GetDuesByKindHeadsResponse {
+  data: GetDuesByKindHeadsResponseDataItem[];
+}
+
+export interface GetDuesByKindHeadsResponseDataItem {
+  id: string;
+  group_id: string;
+  name: string;
+  amount_minor: number;
+}
+
+export interface GetDuesByKindMembersResponse {
+  data: GetDuesByKindMembersResponseDataItem[];
+}
+
+export interface GetDuesByKindMembersResponseDataItem {
+  id: string;
+  group_id: string | null;
+  group: unknown;
+  member_ref: unknown;
+  name: string;
+  active: unknown;
+  payer: GetDuesByKindMembersResponseDataItemPayerItem[];
+}
+
+export interface GetDuesByKindMembersResponseDataItemPayerItem {
+  name: string;
+  email: string;
+  phone: string | null;
+}
+
+export interface GetDuesByKindReportCsvResponse {
+  kind: string;
+  as_of: string | null;
+  totals: unknown;
+  data: unknown;
+}
+
+export interface GetDuesByKindReportResponse {
+  kind: string;
+  as_of: string | null;
+  totals: unknown;
+  data: unknown;
+}
+
+export interface GetDuesByKindSettingsResponse {
+  kind: string;
+  receipt_note: string;
+}
+
 export interface GetEscrowProofResponse {
   escrow_available_net: number;
   open_payables_net: number;
@@ -1377,6 +1482,21 @@ export interface GetSettlementsResponse {
   data: unknown[];
 }
 
+export interface GetStorefrontItemsResponse {
+  data: unknown;
+}
+
+export interface GetStorefrontOrdersByIdResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
+export interface GetStorefrontOrdersResponse {
+  data: unknown;
+}
+
 export interface GetSubscriptionsResponse {
   data: GetSubscriptionsResponseDataItem[];
 }
@@ -1463,6 +1583,20 @@ export interface PatchCustomersByIdResponse {
   pincode: string | null;
 }
 
+export interface PatchDonationsCampaignsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  goal_minor: number;
+  receipt_fields: unknown;
+  recurring_enabled: unknown;
+  status: string;
+  created_at: string | null;
+}
+
 export interface PatchPlansByIdResponse {
   id: string;
   name: string;
@@ -1472,6 +1606,17 @@ export interface PatchPlansByIdResponse {
   included_units: unknown;
   included_per_seat: unknown;
   subscribers_kept_on_old_price: unknown;
+}
+
+export interface PatchStorefrontItemsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  price_minor: number;
+  image_id: string | null;
+  stock: unknown;
+  active: unknown;
+  position: unknown;
 }
 
 export interface PostApiKeysByIdRevokeResponse {
@@ -1769,6 +1914,72 @@ export interface PostDisputesResponse {
   id: string;
   status: string;
   amount_minor: number;
+}
+
+export interface PostDonateByTenantIdByCampaignIdStartResponse {
+  donation_id: string | null;
+  intent_id: string | null;
+  client_secret: string;
+  amount_minor: number;
+  currency: string;
+  path: string;
+}
+
+export interface PostDonationsCampaignsByIdPledgesResponse {
+  id: string;
+  customer_id: string | null;
+  mandate: unknown;
+}
+
+export interface PostDonationsCampaignsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  goal_minor: number;
+  receipt_fields: unknown;
+  recurring_enabled: unknown;
+  status: string;
+  created_at: string | null;
+}
+
+export interface PostDuesByKindAssignResponse {
+  created: unknown;
+  already_assigned: unknown;
+  skipped_no_payer: unknown;
+  skipped_no_fee_heads: unknown;
+}
+
+export interface PostDuesByKindGroupsResponse {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export interface PostDuesByKindHeadsResponse {
+  id: string;
+  group_id: string;
+  name: string;
+  amount_minor: number;
+}
+
+export interface PostDuesByKindMembersImportResponse {
+  saved: boolean;
+  rows: number;
+  problems: unknown;
+}
+
+export interface PostDuesByKindMembersResponse {
+  id: string;
+  created: unknown;
+}
+
+export interface PostDuesByKindRemindersResponse {
+  queued: unknown;
+  skipped_no_email: unknown;
+  skipped_already_sent_today: unknown;
 }
 
 export interface PostEventsByIdCancelResponse {
@@ -2746,6 +2957,49 @@ export interface PostSimPayResponse {
   status: string;
 }
 
+export interface PostStoreBySlugOrdersResponse {
+  order_id: string | null;
+  code: string;
+  intent_id: string | null;
+  client_secret: string;
+  amount_minor: number;
+  currency: string;
+  tenant_id: string | null;
+  path: string;
+  hold_minutes: unknown;
+}
+
+export interface PostStorefrontImagesResponse {
+  id: string;
+  content_type: unknown;
+  size_bytes: number;
+}
+
+export interface PostStorefrontItemsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  price_minor: number;
+  image_id: string | null;
+  stock: unknown;
+  active: unknown;
+  position: unknown;
+}
+
+export interface PostStorefrontOrdersByIdCancelResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
+export interface PostStorefrontOrdersByIdFulfillResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
 export interface PostSubscriptionsByIdCancelResponse {
   id: string;
   status: string;
@@ -2823,6 +3077,11 @@ export interface PostWebhooksByProviderByTenantIdResponse {
 export interface PutAcquireKycResponse {
   organisation_id: string | null;
   acquire_kyc_status: string;
+}
+
+export interface PutDuesByKindSettingsResponse {
+  kind: string;
+  receipt_note: unknown;
 }
 
 export interface PutEventsByIdFormFieldsResponse {

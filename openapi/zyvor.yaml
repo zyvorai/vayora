@@ -10713,6 +10713,1410 @@ paths:
           type: integer
           format: int64
         x-generated: true
+  /v1/storefront:
+    get:
+      summary: Get this business's seller page
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Create or update the seller page (the slug is set once)
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorefrontIn'
+  /v1/storefront/images:
+    post:
+      summary: 'Upload an image for the seller page (the body is the image: PNG, JPEG, GIF or WebP, up to 200 KB)'
+      tags:
+      - storefront
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  content_type: {}
+                  size_bytes:
+                    type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+  /v1/storefront/items:
+    get:
+      summary: List the seller page's items
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Add an item to the seller page
+      tags:
+      - storefront
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  price_minor:
+                    type: integer
+                  image_id:
+                    type:
+                    - string
+                    - 'null'
+                  stock: {}
+                  active: {}
+                  position: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreItemIn'
+  /v1/storefront/items/{id}:
+    patch:
+      summary: Change an item (price, text, image, stock or active flag)
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  price_minor:
+                    type: integer
+                  image_id:
+                    type:
+                    - string
+                    - 'null'
+                  stock: {}
+                  active: {}
+                  position: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreItemPatch'
+  /v1/storefront/orders:
+    get:
+      summary: List the seller page's orders
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - pending
+          - paid
+          - fulfilled
+          - cancelled
+          - expired
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+  /v1/storefront/orders/{id}:
+    get:
+      summary: Get an order with its items, buyer and refund totals
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  unit_minor:
+                    type: integer
+                  quantity:
+                    type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/storefront/orders/{id}/fulfill:
+    post:
+      summary: Mark a paid order fulfilled
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  unit_minor:
+                    type: integer
+                  quantity:
+                    type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/storefront/orders/{id}/cancel:
+    post:
+      summary: Cancel an order that is waiting for payment and put its stock back
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  unit_minor:
+                    type: integer
+                  quantity:
+                    type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/storefront/orders/{id}/refund:
+    post:
+      summary: Refund a paid order through the ordinary refund flow (optionally restocking)
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreRefundIn'
+  /v1/store/{slug}:
+    get:
+      summary: 'The public seller page: title, description and active items'
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/store/{slug}/images/{id}:
+    get:
+      summary: A public image of a published seller page
+      tags:
+      - storefront
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/store/{slug}/orders:
+    post:
+      summary: 'Place an order on a seller page: takes the stock and opens the buyer''s payment intent'
+      tags:
+      - storefront
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type:
+                    - string
+                    - 'null'
+                  code:
+                    type: string
+                  intent_id:
+                    type:
+                    - string
+                    - 'null'
+                  client_secret:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+                  currency:
+                    type: string
+                  tenant_id:
+                    type:
+                    - string
+                    - 'null'
+                  path:
+                    type: string
+                  hold_minutes: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicOrderIn'
+  /v1/dues/{kind}/groups:
+    get:
+      summary: List classes (school) or blocks (society) with member counts
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        members:
+                          type: integer
+                          format: int64
+                        heads_total_minor:
+                          type: integer
+                          format: int64
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+    post:
+      summary: Create a class or block
+      tags:
+      - dues
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  kind:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesNameIn'
+  /v1/dues/{kind}/heads:
+    get:
+      summary: List fee heads or dues
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        group_id:
+                          type: string
+                        name:
+                          type: string
+                        amount_minor:
+                          type: integer
+                          format: int64
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+    post:
+      summary: Create a fee head or due for a group
+      tags:
+      - dues
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  group_id:
+                    type: string
+                  name:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesHeadIn'
+  /v1/dues/{kind}/members:
+    get:
+      summary: List students or residents with their payer
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        group_id:
+                          type:
+                          - string
+                          - 'null'
+                        group: {}
+                        member_ref: {}
+                        name:
+                          type: string
+                        active: {}
+                        payer:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              email:
+                                type: string
+                              phone:
+                                type:
+                                - string
+                                - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+    post:
+      summary: Add a student or resident, or update the one with this reference
+      tags:
+      - dues
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  created: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesMemberIn'
+  /v1/dues/{kind}/members.csv:
+    get:
+      summary: Export members as CSV (formula-safe)
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+  /v1/dues/{kind}/members/import:
+    post:
+      summary: Import members from CSV, all or nothing (dry_run to check only)
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved:
+                    type: boolean
+                  rows:
+                    type: integer
+                  problems: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesImportIn'
+  /v1/dues/{kind}/assign:
+    post:
+      summary: Turn fee heads into invoices (one, or an instalment plan) for a group or some members
+      tags:
+      - dues
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: {}
+                  already_assigned: {}
+                  skipped_no_payer: {}
+                  skipped_no_fee_heads: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesAssignIn'
+  /v1/dues/{kind}/report:
+    get:
+      summary: Per-member billed, paid, due and overdue
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  totals: {}
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: label
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - due
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+  /v1/dues/{kind}/report.csv:
+    get:
+      summary: The paid and due report as CSV
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  totals: {}
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: label
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+  /v1/dues/{kind}/reminders:
+    post:
+      summary: Email payers of instalments that are due soon or overdue, once per invoice per day
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queued: {}
+                  skipped_no_email: {}
+                  skipped_already_sent_today: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesRemindIn'
+  /v1/dues/{kind}/invoices/{invoice_id}/receipt.pdf:
+    get:
+      summary: A PDF receipt for what has been received on one instalment
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/dues/{kind}/settings:
+    get:
+      summary: Get the receipt wording for a template
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  receipt_note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+    put:
+      summary: Set the receipt wording (printed as typed)
+      tags:
+      - dues
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind:
+                    type: string
+                  receipt_note: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - school
+          - society
+        description: school or society
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuesSettingsIn'
+  /v1/donations/campaigns:
+    get:
+      summary: List donation campaigns
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create a donation campaign
+      tags:
+      - donations
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  suggested_minor:
+                    type: integer
+                  min_minor:
+                    type: integer
+                  max_minor:
+                    type: integer
+                  goal_minor:
+                    type: integer
+                  receipt_fields: {}
+                  recurring_enabled: {}
+                  status:
+                    type: string
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DonationCampaignIn'
+  /v1/donations/campaigns/{id}:
+    patch:
+      summary: Change a campaign (amounts, receipt wording, recurring option, status)
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  suggested_minor:
+                    type: integer
+                  min_minor:
+                    type: integer
+                  max_minor:
+                    type: integer
+                  goal_minor:
+                    type: integer
+                  receipt_fields: {}
+                  recurring_enabled: {}
+                  status:
+                    type: string
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DonationCampaignPatch'
+  /v1/donations/campaigns/{id}/summary:
+    get:
+      summary: Paid, refunded and pending totals for a campaign
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign_id:
+                    type: string
+                  paid_count:
+                    type: integer
+                    format: int64
+                  paid_minor:
+                    type: integer
+                    format: int64
+                  refunded_minor:
+                    type: integer
+                    format: int64
+                  net_minor:
+                    type: integer
+                  pending_count:
+                    type: integer
+                    format: int64
+                  goal_minor:
+                    type:
+                    - integer
+                    - 'null'
+                    format: int64
+                  recurring_pledges:
+                    type: integer
+                    format: int64
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/donations/campaigns/{id}/pledges:
+    post:
+      summary: 'Add a recurring donor: creates a customer and a UPI AutoPay mandate the donor approves'
+      tags:
+      - donations
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  customer_id:
+                    type:
+                    - string
+                    - 'null'
+                  mandate: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DonationPledgeIn'
+  /v1/donations:
+    get:
+      summary: List donations
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        campaign_id:
+                          type:
+                          - string
+                          - 'null'
+                        intent_id:
+                          type:
+                          - string
+                          - 'null'
+                        amount_minor:
+                          type: integer
+                        status:
+                          type: string
+                        donor: {}
+                        anonymous: {}
+                        receipt_no: {}
+                        created_at:
+                          type:
+                          - string
+                          - 'null'
+                        paid_at:
+                          type:
+                          - string
+                          - 'null'
+                        refunded_minor:
+                          type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: campaign_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - pending
+          - paid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+  /v1/donations.csv:
+    get:
+      summary: Paid donations as CSV for the books (not a tax statement)
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: campaign_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/donations/{id}/receipt.pdf:
+    get:
+      summary: A PDF receipt for a paid donation that has a donor name
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/donate/{tenant_id}/{campaign_id}:
+    get:
+      summary: The public details of an active campaign
+      tags:
+      - donations
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant:
+                    type:
+                    - string
+                    - 'null'
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  suggested_minor:
+                    type: integer
+                  min_minor:
+                    type: integer
+                  max_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  recurring_enabled: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/donate/{tenant_id}/{campaign_id}/start:
+    post:
+      summary: 'Start a donation: records it and opens the donor''s payment intent'
+      tags:
+      - donations
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  donation_id:
+                    type:
+                    - string
+                    - 'null'
+                  intent_id:
+                    type:
+                    - string
+                    - 'null'
+                  client_secret:
+                    type: string
+                  amount_minor:
+                    type: integer
+                    format: int64
+                  currency:
+                    type: string
+                  path:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DonationStartIn'
 components:
   securitySchemes:
     bearer:
@@ -11071,6 +12475,136 @@ components:
           type:
           - string
           - 'null'
+    DuesSettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        receipt_note:
+          type: string
+      required:
+      - receipt_note
+    DuesReportQuery:
+      type: object
+      x-generated: true
+      properties:
+        group_id:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    DuesRemindIn:
+      type: object
+      x-generated: true
+      properties:
+        group_id:
+          type: string
+        label:
+          type: string
+        days_before:
+          type: integer
+          format: int64
+    DuesNameIn:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+      required:
+      - name
+    DuesMemberIn:
+      type: object
+      x-generated: true
+      properties:
+        group:
+          type: string
+        name:
+          type: string
+        member_ref:
+          type: string
+        payer_customer_id:
+          type: string
+        payer_name:
+          type: string
+        payer_email:
+          type: string
+        payer_phone:
+          type: string
+      required:
+      - group
+      - name
+      - member_ref
+    DuesImportIn:
+      type: object
+      x-generated: true
+      properties:
+        csv:
+          type: string
+        dry_run:
+          type: boolean
+      required:
+      - csv
+    DuesHeadIn:
+      type: object
+      x-generated: true
+      properties:
+        group_id:
+          type: string
+        name:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+      required:
+      - group_id
+      - name
+      - amount_minor
+    DuesGroupQuery:
+      type: object
+      x-generated: true
+      properties:
+        group_id:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    DuesAssignIn:
+      type: object
+      x-generated: true
+      properties:
+        label:
+          type: string
+        group_id:
+          type: string
+        member_ids:
+          type: array
+          items:
+            type: string
+        head_ids:
+          type: array
+          items:
+            type: string
+        instalments:
+          type: integer
+          format: int32
+        first_due_date:
+          type: string
+          format: date
+        every_unit:
+          type: string
+        every:
+          type: integer
+          format: int32
+        number_prefix:
+          type: string
+      required:
+      - label
+      - instalments
+      - first_due_date
+      - number_prefix
     UploadIn:
       type: object
       x-generated: true
@@ -11386,6 +12920,124 @@ components:
       properties:
         ai:
           type: boolean
+    StorefrontIn:
+      type: object
+      x-generated: true
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        logo_image_id:
+          type: string
+        noindex:
+          type: boolean
+        published:
+          type: boolean
+      required:
+      - title
+    StoreRefundIn:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        restock:
+          type: boolean
+    StoreOrderQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    StoreItemPatch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price_minor:
+          type: integer
+          format: int64
+        image_id:
+          type: string
+        stock:
+          type: integer
+          format: int64
+        stock_delta:
+          type: integer
+          format: int64
+        active:
+          type: boolean
+        position:
+          type: integer
+          format: int32
+    StoreItemIn:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price_minor:
+          type: integer
+          format: int64
+        image_id:
+          type: string
+        stock:
+          type: integer
+          format: int64
+        active:
+          type: boolean
+        position:
+          type: integer
+          format: int32
+      required:
+      - name
+      - price_minor
+    PublicOrderIn:
+      type: object
+      x-generated: true
+      properties:
+        buyer_name:
+          type: string
+        buyer_phone:
+          type: string
+        buyer_email:
+          type: string
+        delivery_note:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreLineIn'
+      required:
+      - buyer_name
+      - buyer_phone
+      - items
+    StoreLineIn:
+      type: object
+      x-generated: true
+      properties:
+        item_id:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+      required:
+      - item_id
+      - quantity
     SimPayPay:
       type: object
       x-generated: true
@@ -12507,6 +14159,129 @@ components:
           type: string
         format:
           type: string
+    DonationStartIn:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        donor_name:
+          type: string
+        donor_email:
+          type: string
+        donor_phone:
+          type: string
+        anonymous:
+          type: boolean
+      required:
+      - amount_minor
+    DonationPledgeIn:
+      type: object
+      x-generated: true
+      properties:
+        donor_name:
+          type: string
+        donor_email:
+          type: string
+        donor_phone:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        frequency:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        provider:
+          type: string
+      required:
+      - donor_name
+      - donor_phone
+      - amount_minor
+      - frequency
+      - end_date
+    DonationListQuery:
+      type: object
+      x-generated: true
+      properties:
+        campaign_id:
+          type: string
+        status:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    DonationCampaignPatch:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        suggested_minor:
+          type: array
+          items:
+            type: integer
+            format: int64
+        min_minor:
+          type: integer
+          format: int64
+        max_minor:
+          type: integer
+          format: int64
+        goal_minor:
+          type: integer
+          format: int64
+        receipt_fields:
+          $ref: '#/components/schemas/DonationReceiptFields'
+        recurring_enabled:
+          type: boolean
+        status:
+          type: string
+    DonationReceiptFields:
+      type: object
+      x-generated: true
+      properties:
+        registration_text:
+          type: string
+        exemption_text:
+          type: string
+        receipt_note:
+          type: string
+    DonationCampaignIn:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        suggested_minor:
+          type: array
+          items:
+            type: integer
+            format: int64
+        min_minor:
+          type: integer
+          format: int64
+        max_minor:
+          type: integer
+          format: int64
+        goal_minor:
+          type: integer
+          format: int64
+        receipt_fields:
+          $ref: '#/components/schemas/DonationReceiptFields'
+        recurring_enabled:
+          type: boolean
+      required:
+      - name
     DisputesResolve:
       type: object
       x-generated: true

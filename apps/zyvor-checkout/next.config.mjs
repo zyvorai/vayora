@@ -7,6 +7,7 @@ export default {
       { source: "/api/zyvor/:path*", destination: `${api}/v1/checkout/:path*` },
       // event pages: the public event, order and ticket endpoints
       { source: "/api/zyvor-events/:path*", destination: `${api}/v1/public/events/:path*` },
+      { source: "/api/store/:path*", destination: `${api}/v1/store/:path*` },
     ];
   },
   async headers() {

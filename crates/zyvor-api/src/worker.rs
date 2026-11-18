@@ -169,6 +169,16 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         if let Err(e) = crate::softretry::sweep(s, &tid).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "soft retry sweep failed");
         }
+        // 3h. seller pages: give back the stock of unpaid orders whose hold has lapsed
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::storefront::release_lapsed(&mut tx, None).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "storefront stock release failed")
+                }
+            }
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

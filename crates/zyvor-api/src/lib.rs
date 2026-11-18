@@ -27,6 +27,7 @@ pub mod crypto;
 pub mod disputes;
 pub mod docfacts;
 pub mod docread;
+pub mod donations;
 pub mod error;
 pub mod events;
 pub mod exports;
@@ -70,6 +71,7 @@ pub mod sim_pay;
 pub mod sms;
 pub mod softretry;
 pub mod state_machine;
+pub mod storefront;
 pub mod suggestions;
 pub mod telemetry;
 pub mod tenant;
@@ -79,6 +81,7 @@ pub mod ticketing;
 pub mod timeline;
 pub mod unsubscribe;
 pub mod uploads;
+pub mod verticals;
 pub mod webhooks_in;
 pub mod worker;
 
@@ -860,6 +863,95 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/public/events/{tenant_id}/orders/{order_id}/tickets/{ticket_id}/qr.svg",
             get(ticket_orders::ticket_qr),
+        )
+        // hosted seller page: the seller's side, then the public page a visitor opens
+        .route(
+            "/storefront",
+            get(storefront::get_storefront).put(storefront::put_storefront),
+        )
+        .route(
+            "/storefront/images",
+            post(storefront::upload_image).layer(axum::extract::DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
+            "/storefront/items",
+            post(storefront::create_item).get(storefront::list_items),
+        )
+        .route(
+            "/storefront/items/{id}",
+            axum::routing::patch(storefront::patch_item),
+        )
+        .route("/storefront/orders", get(storefront::list_orders))
+        .route("/storefront/orders/{id}", get(storefront::get_order))
+        .route(
+            "/storefront/orders/{id}/fulfill",
+            post(storefront::fulfill_order),
+        )
+        .route(
+            "/storefront/orders/{id}/cancel",
+            post(storefront::cancel_order),
+        )
+        .route(
+            "/storefront/orders/{id}/refund",
+            post(storefront::refund_order),
+        )
+        .route("/store/{slug}", get(storefront::public_page))
+        .route("/store/{slug}/images/{id}", get(storefront::public_image))
+        .route("/store/{slug}/orders", post(storefront::public_order))
+        // school fees and society dues (one engine; {kind} is school or society)
+        .route(
+            "/dues/{kind}/groups",
+            post(verticals::create_group).get(verticals::list_groups),
+        )
+        .route(
+            "/dues/{kind}/heads",
+            post(verticals::create_head).get(verticals::list_heads),
+        )
+        .route(
+            "/dues/{kind}/members",
+            post(verticals::upsert).get(verticals::list_members),
+        )
+        .route("/dues/{kind}/members.csv", get(verticals::export_members))
+        .route(
+            "/dues/{kind}/members/import",
+            post(verticals::import_members),
+        )
+        .route("/dues/{kind}/assign", post(verticals::assign))
+        .route("/dues/{kind}/report", get(verticals::get_report))
+        .route("/dues/{kind}/report.csv", get(verticals::report_csv))
+        .route("/dues/{kind}/reminders", post(verticals::send_reminders))
+        .route(
+            "/dues/{kind}/invoices/{invoice_id}/receipt.pdf",
+            get(verticals::receipt_pdf),
+        )
+        .route(
+            "/dues/{kind}/settings",
+            get(verticals::get_settings).put(verticals::put_settings),
+        )
+        // donations
+        .route(
+            "/donations/campaigns",
+            post(donations::create_campaign).get(donations::list_campaigns),
+        )
+        .route(
+            "/donations/campaigns/{id}",
+            axum::routing::patch(donations::patch_campaign),
+        )
+        .route("/donations/campaigns/{id}/summary", get(donations::summary))
+        .route(
+            "/donations/campaigns/{id}/pledges",
+            post(donations::create_pledge),
+        )
+        .route("/donations", get(donations::list_donations))
+        .route("/donations.csv", get(donations::export_csv))
+        .route("/donations/{id}/receipt.pdf", get(donations::receipt_pdf))
+        .route(
+            "/donate/{tenant_id}/{campaign_id}",
+            get(donations::public_campaign),
+        )
+        .route(
+            "/donate/{tenant_id}/{campaign_id}/start",
+            post(donations::start),
         )
         // counters and branch summaries
         .route(

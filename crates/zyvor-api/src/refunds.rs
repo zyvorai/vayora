@@ -58,10 +58,10 @@ pub async fn fetch_refund(conn: &mut PgConnection, id: &str) -> Result<RefundRow
 #[derive(Deserialize, Default)]
 pub struct CreateRefund {
     /// Omit to refund whatever is still refundable.
-    amount_minor: Option<i64>,
-    reason: Option<String>,
+    pub(crate) amount_minor: Option<i64>,
+    pub(crate) reason: Option<String>,
     /// The business record behind the refund, e.g. a pharmacy return id.
-    external_ref: Option<String>,
+    pub(crate) external_ref: Option<String>,
 }
 
 /// Count a refund request that was stopped as a duplicate (never blocks the request if the write fails).
