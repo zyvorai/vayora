@@ -69,3 +69,28 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .brandlogo { display: block; margin: 0 auto 10px; max-height: 40px; max-width: 160px; object-fit: contain; }
 .note { white-space: pre-line; background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: .9375rem; margin: 0 0 16px; text-align: left; color: var(--fg); }
 @media (prefers-color-scheme: light) { .card.branded { --accent: var(--brand); } .card.branded .pay { color: var(--brand-on); } }
+/* event pages: tiers, stepper, tickets */
+.evt-title { font-size: 1.625rem; letter-spacing: -.02em; text-align: center; margin: 6px 0 4px; }
+.evt-h { font-size: 1.0625rem; margin: 22px 0 10px; }
+.evt-about { color: var(--muted); white-space: pre-line; margin: 0 0 8px; }
+.tiers, .tickets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.tier { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 14px; border: 1.5px solid var(--line); border-radius: 16px; align-items: center; }
+.tier.off { opacity: .6; }
+.tier-main { display: grid; gap: 2px; }
+.tier-d { color: var(--muted); font-size: .8125rem; }
+.tier-price { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; display: grid; }
+.stepper { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.stepper button { width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--fg); font: inherit; font-size: 1.25rem; cursor: pointer; }
+.stepper button[disabled] { opacity: .35; cursor: default; }
+.stepper button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.stepper output { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pill { display: inline-block; width: max-content; padding: 2px 10px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); }
+.pill.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok-text); }
+.evt select { width: 100%; min-height: 52px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; padding: 0 14px; }
+.evt select[aria-invalid="true"], .evt input[aria-invalid="true"] { border-color: var(--bad); }
+.check { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+.check input { width: 22px; height: 22px; }
+.ticket { display: grid; justify-items: center; gap: 6px; padding: 16px; border: 1.5px solid var(--line); border-radius: 18px; text-align: center; }
+.ticket.off { opacity: .55; }
+.ticket .qr { margin: 4px auto; }
+.ticket .code { font-variant-numeric: tabular-nums; letter-spacing: .08em; font-weight: 600; margin: 0; }

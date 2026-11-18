@@ -133,6 +133,10 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
         if let Err(e) = crate::link_stats::purge_tenant(&s.pool, &tid).await {
             tracing::warn!(tenant = %tid, error = %e, "link visitor hash cleanup failed");
         }
+        // 3b3. ticketing: release unpaid orders whose hold ran out, send queued bulk refunds, email tickets
+        if let Err(e) = crate::ticketing::run_worker(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "ticketing jobs failed");
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
@@ -150,6 +154,20 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
             Err(e) => {
                 tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
             }
+        }
+        // 3f. settlement delay alerts: later than the provider's own observed range or the lag the merchant set
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::cash::scan_alerts(&mut tx, &tid, 14).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "settlement delay scan failed")
+                }
+            }
+        }
+        // 3g. soft retry: failures nobody has handled yet go to another provider (off unless the business turned it on)
+        if let Err(e) = crate::softretry::sweep(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "soft retry sweep failed");
         }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;

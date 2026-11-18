@@ -35,6 +35,7 @@ const TABLES: &[&str] = &[
     "bank_statement_imports",
     "settlements",
     "disputes",
+    "refund_blocks",
     "refunds",
     "payment_attempts",
     "mandate_debits",

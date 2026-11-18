@@ -174,6 +174,7 @@ impl Provider for Cashfree {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        check_request(&self.capabilities(), req)?;
         let body = json!({
             "order_id": req.attempt_id,
             "order_amount": rupees(req.amount_minor, req.currency),

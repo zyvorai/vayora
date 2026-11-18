@@ -10,6 +10,7 @@ use zyvor_providers::{
     Method, Provider,
     cashfree::Cashfree,
     custom::Custom,
+    payu::PayU,
     phonepe::PhonePe,
     razorpay::Razorpay,
     router::{Candidate, Fee, Rule},
@@ -113,6 +114,15 @@ pub async fn load(
             s("salt_key"),
             state.provider_timeout,
         )),
+        "payu" => {
+            // With no base_url, PayU's own hosts for this environment (they differ for payment, server calls and
+            // reports). A base_url points every call at one address: a simulator.
+            let payu = match &base_url {
+                Some(b) => PayU::new(b.clone(), s("key"), s("salt"), state.provider_timeout),
+                None => PayU::hosted(env == "live", s("key"), s("salt"), state.provider_timeout),
+            };
+            Arc::new(payu.with_merchant_secret(s("merchant_secret")))
+        }
         other => {
             return Err(ApiError::internal())
                 .inspect_err(|_| tracing::error!(other, "unknown provider"));
@@ -142,18 +152,16 @@ pub async fn candidates(
     env: &str,
     routing: &Routing,
 ) -> Result<Vec<Candidate>, ApiError> {
-    // every new payment (API, payment link, checkout) starts here: none for a business whose live mode was taken away
-    if env == "live" && crate::platform::live_frozen(&state.pool, tenant_id).await? {
+    // every new payment (API, payment link, checkout) starts here: none for a business whose live mode was taken away.
+    // Both checks use the caller's own connection: asking the pool for a second one while this one is held (as these
+    // used to) can exhaust the pool when many requests for the same payment are waiting on its row lock.
+    if env == "live" && crate::platform::live_frozen(&mut *conn, tenant_id).await? {
         return Err(ApiError::conflict(
             "live_access_revoked",
             "this business cannot take new payments: Zyvor has taken live mode away",
         ));
     }
-    {
-        let mut gate = crate::tenant::begin(&state.pool, tenant_id).await?;
-        crate::money_mode::acquire_live_allowed(&mut gate, tenant_id).await?;
-        gate.rollback().await?;
-    }
+    crate::money_mode::acquire_live_allowed(&mut *conn, tenant_id).await?;
     let accounts: Vec<(String, bool)> = sqlx::query_as(
         "SELECT provider, enabled FROM provider_accounts WHERE tenant_id = $1 ORDER BY provider",
     )
@@ -167,6 +175,7 @@ pub async fn candidates(
             fees: routing.fees.get(&provider).cloned().unwrap_or_default(),
             caps: p.capabilities(),
             signal: None,
+            cost: None,
             enabled,
             provider,
         });

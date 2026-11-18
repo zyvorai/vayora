@@ -1,4 +1,4 @@
-export type Phase = "choose_method" | "awaiting_payment" | "confirming" | "paid" | "failed";
+export type Phase = "choose_method" | "awaiting_payment" | "confirming" | "trying_another_way" | "paid" | "failed";
 
 /** The business's look for a payment link: only what the server judged safe and readable; checked again here. */
 export interface Brand {
@@ -28,6 +28,8 @@ export interface Session {
   upi_flow?: "intent" | "collect";
   /** Present when the payment was made through a payment link. */
   link?: LinkBlock | null;
+  /** True when the attempt shown is a second try on another provider after the first one failed definitively. */
+  retried_on_another_provider?: boolean;
   attempt: { id: string; method: string; status: string; failure_reason: string | null; action: { type: string; [k: string]: unknown } | null } | null;
 }
 
@@ -63,7 +65,7 @@ export const METHOD_LABEL: Record<string, string> = { upi: "UPI", card: "Card", 
 
 /** How long to wait between status checks for each phase (ms). */
 export function pollDelay(phase: Phase): number | null {
-  return phase === "awaiting_payment" ? 2000 : phase === "confirming" ? 4000 : null;
+  return phase === "awaiting_payment" || phase === "trying_another_way" ? 2000 : phase === "confirming" ? 4000 : null;
 }
 
 /** A short code the payer can quote to support. Derived from the payment's id; it grants no access. */

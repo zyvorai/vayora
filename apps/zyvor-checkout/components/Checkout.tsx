@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { LangPicker, useI18n } from "@/components/useI18n";
 import { METHOD_KEY, VPA, cardProps, failureKey, money, pollDelay, safeHttps, supportLink, supportRef, type Session } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
+import { evt } from "@/lib/events-i18n";
 
 type Method = Session["methods"][number];
 
@@ -42,7 +43,11 @@ function Help({ t, intent }: { t: (k: Key, v?: Record<string, string>) => string
 
 export function Checkout({ tenant, intent }: { tenant: string; intent: string }) {
   const { lang, setLang, t } = useI18n();
-  const secret = useSearchParams().get("s") ?? "";
+  const params = useSearchParams();
+  const secret = params.get("s") ?? "";
+  // set when this payment is for an event ticket order: after paying, the buyer goes on to their tickets
+  const eventOrder = params.get("eo");
+  const eventToken = params.get("et");
   const base = `/api/zyvor/${tenant}/${intent}`;
   const [session, setSession] = useState<Session | null>(null);
   const [gone, setGone] = useState(false);
@@ -54,6 +59,13 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
   const [retrying, setRetrying] = useState(false);
   const [waited, setWaited] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // keep the secret for this tab so the order page can offer "Pay now" if the buyer comes back before paying
+    try {
+      if (eventOrder && secret) sessionStorage.setItem(`zyvor:evt-pay:${eventOrder}`, secret);
+    } catch {}
+  }, [eventOrder, secret]);
 
   const load = useCallback(async () => {
     try {
@@ -201,6 +213,22 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
           {session.link?.thank_you && <p className="note">{session.link.thank_you}</p>}
           {session.link?.partial && session.link.partial.balance_minor > 0 && <p>{t("partialMore", { left: money(session.link.partial.balance_minor, session.currency) })}</p>}
           {returnUrl && <a className="pay" href={returnUrl} rel="noopener noreferrer">{session.merchant ? t("returnTo", { merchant: session.merchant }) : t("returnToPlain")}</a>}
+          {eventOrder && eventToken && <a className="pay" href={`/events/${tenant}/orders/${eventOrder}?t=${encodeURIComponent(eventToken)}`}>{evt(lang, "viewTickets")}</a>}
+        </div>
+        <Help t={t} intent={intent} />
+      </div>
+    );
+  }
+  if (session.phase === "trying_another_way") {
+    // A definite failure that the merchant's settings answer with another provider. No second payment exists until
+    // the first has failed, and the payer is never asked to pay twice.
+    return (
+      <div {...card}>
+        {head}
+        <div className="state" role="status" aria-live="polite">
+          <div className="spin" />
+          <h2 tabIndex={-1} data-announce>{t("retryTitle")}</h2>
+          <p>{t("retryBody")}</p>
         </div>
         <Help t={t} intent={intent} />
       </div>
