@@ -129,5 +129,5 @@ failover only changes which provider a retry uses, but turn both off in the sett
 
 ## What is not done
 
-No console screen yet (API only). No background sweeper for degrade/recover. No per-provider threshold overrides (one
+The console has a **Routing health** page (success rate or "not enough data", saved and current state, recent changes, and limits that only an admin can change); it was looked at in a browser against a stand-in API with made-up data, not against a running Zyvor API. No background sweeper for degrade/recover. No per-provider threshold overrides (one
 set per tenant). No cross-tenant or platform-wide signal. Nothing verified against a real provider's behaviour.

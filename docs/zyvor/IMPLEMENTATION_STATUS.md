@@ -37,7 +37,7 @@ Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkou
 
 **Limits.** Simulators and the local provider mock only (`/_sim/outage`); no real provider was used and the default
 thresholds are not tuned on real traffic. Payer declines count as failures. Transitions are recorded when a payment is
-routed (no background sweeper). No console screen. Details in [ROUTING.md](ROUTING.md).
+routed (no background sweeper). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
 
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.

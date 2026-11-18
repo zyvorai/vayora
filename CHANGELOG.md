@@ -5,6 +5,12 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Console pages for fee checks, bank statements and routing health
+- **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
+- **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.
+- **Routing health** (`/routing`): recent success rate (or "not enough data" under the minimum), saved versus current state in plain words, recent set-aside and recovery events, and the limits (admin only to change).
+- Writes need a finance role (limits: admin); viewers can read. Console only, no API change. Checked in a browser against a stand-in API with made-up data; not against a running Zyvor API or a real bank file.
+
 ## 18 November 2026 — Success-rate routing, circuit breaker and failover (simulators only)
 **Routing**
 - Per-tenant rolling success rate per provider and method, from stored attempts, ignored below a minimum sample; rules can set `prefer_success_rate`.
