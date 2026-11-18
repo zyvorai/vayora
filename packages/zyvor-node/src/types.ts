@@ -54,6 +54,21 @@ export interface DeletePlatformRotaDaysOffByIdResponse {
   deleted: boolean;
 }
 
+export interface DeleteRiskListsByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
+export interface DeleteRiskPinTiersByPinPrefixResponse {
+  pin_prefix: string;
+  deleted: boolean;
+}
+
+export interface DeleteRiskRulesByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
 export interface DeleteSavedViewsByIdResponse {
   ok: boolean;
 }
@@ -196,6 +211,20 @@ export interface GetCheckoutLinksByTenantIdByTokenResponse {
   open_amount: boolean;
   min_amount_minor: number | null;
   max_amount_minor: number | null;
+  amount_mode: string;
+  suggested_amount_minor: number | null;
+  amount_rule: string;
+}
+
+export interface GetCheckoutPayoutLinksByTenantIdByTokenResponse {
+  merchant: string | null;
+  amount_minor: number;
+  currency: string;
+  purpose: unknown;
+  status: string;
+  expires_at: string | null;
+  name_required: unknown;
+  methods: unknown;
 }
 
 export interface GetClosingsResponse {
@@ -459,6 +488,22 @@ export interface GetInstallmentPlansByIdResponse {
   invoices: unknown[];
 }
 
+export interface GetInstrumentChecksResponse {
+  data: GetInstrumentChecksResponseDataItem[];
+}
+
+export interface GetInstrumentChecksResponseDataItem {
+  attempt_id: string;
+  intent_id: string;
+  link_id: string | null;
+  result: string;
+  payer_bank: string | null;
+  payer_vpa_handle: string | null;
+  refund_id: string | null;
+  detail: string;
+  checked_at: unknown;
+}
+
 export interface GetInvoicesByIdEinvoiceResponse {
   draft: boolean;
   note: string;
@@ -694,8 +739,61 @@ export interface GetPaymentIntentsResponse {
   has_more: boolean;
 }
 
-export interface GetPaymentLinksResponse {
+export interface GetPaymentLinksByIdLifecycleResponse {
+  id: string;
+  status: string;
+  recorded_status: string | null;
+  payable: unknown;
+  paid_minor: number;
+  payments: unknown;
+  checkouts_started: unknown;
+  allowed_next: unknown;
+  history: GetPaymentLinksByIdLifecycleResponseHistoryItem[];
+}
+
+export interface GetPaymentLinksByIdLifecycleResponseHistoryItem {
+  from: string | null;
+  to: string;
+  reason: string;
+  at: string;
+}
+
+export interface GetPaymentLinksLifecycleResponse {
   data: unknown[];
+  precedence: unknown;
+  note: string;
+}
+
+export interface GetPaymentLinksResponse {
+  data: GetPaymentLinksResponseDataItem[];
+}
+
+export interface GetPaymentLinksResponseDataItem {
+  id: string;
+  status: string;
+  lifecycle_status: string;
+  payable: boolean;
+  paid_minor: number;
+  amount_mode: string;
+}
+
+export interface GetPayoutLinksByIdResponse {
+  id: string;
+  amount_minor: number;
+  currency: string;
+  purpose: unknown;
+  external_ref: string | null;
+  status: string;
+  expires_at: string | null;
+  failed_attempts: unknown;
+  payout_id: string | null;
+  payout_status: unknown;
+  created_by: unknown;
+  created_at: string | null;
+}
+
+export interface GetPayoutLinksResponse {
+  data: unknown;
 }
 
 export interface GetPayoutsByIdResponse {
@@ -856,9 +954,75 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRiskDecisionsResponse {
+  data: GetRiskDecisionsResponseDataItem[];
+}
+
+export interface GetRiskDecisionsResponseDataItem {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  action: string;
+  score: number | null;
+  fired: unknown;
+  created_at: unknown;
+}
+
+export interface GetRiskListsResponse {
+  data: GetRiskListsResponseDataItem[];
+}
+
+export interface GetRiskListsResponseDataItem {
+  id: string;
+  list: string;
+  dimension: string;
+  label: string;
+  created_by: string;
+  expires_at: unknown;
+  created_at: unknown;
+}
+
+export interface GetRiskPinTiersResponse {
+  data: GetRiskPinTiersResponseDataItem[];
+}
+
+export interface GetRiskPinTiersResponseDataItem {
+  pin_prefix: string;
+  tier: string;
+}
+
+export interface GetRiskReviewQueueResponse {
+  data: GetRiskReviewQueueResponseDataItem[];
+}
+
+export interface GetRiskReviewQueueResponseDataItem {
+  case_id: string;
+  kind: string;
+  status: string;
+  subject_type: string;
+  subject_id: string;
+  explanation: string;
+  assignee: string | null;
+  created_at: unknown;
+}
+
+export interface GetRiskRulesResponse {
+  data: GetRiskRulesResponseDataItem[];
+}
+
+export interface GetRiskRulesResponseDataItem {
+  id: string;
+  name: string;
+  kind: string;
+  params: unknown;
+  action: string;
+  enabled: boolean;
+  created_at: unknown;
+}
+
 export interface GetRoutingHealthResponse {
   config: unknown;
-  routing_health_rule: string;
+  routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
 }
@@ -986,6 +1150,37 @@ export interface GetVendorsByIdDetailsResponse {
 
 export interface GetVendorsResponse {
   data: unknown[];
+}
+
+export interface GetVerificationsByIdResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  created_at: string | null;
+}
+
+export interface GetVerificationsResponse {
+  data: GetVerificationsResponseDataItem[];
+}
+
+export interface GetVerificationsResponseDataItem {
+  id: string;
+  kind: string;
+  subject: string;
+  ifsc: string | null;
+  outcome: string;
+  name_match: string;
+  provider: string;
+  simulated: boolean;
+  created_by: string;
+  created_at: unknown;
 }
 
 export interface IntentRow {
@@ -1174,6 +1369,15 @@ export interface PostCheckoutLinksByTenantIdByTokenStartResponse {
   amount_minor: number;
   currency: string;
   path: string;
+}
+
+export interface PostCheckoutPayoutLinksByTenantIdByTokenClaimResponse {
+  status: string;
+  payout_status: unknown;
+  amount_minor: number;
+  currency: string;
+  simulated: unknown;
+  message: string | null;
 }
 
 export interface PostClosingsByIdSignoffResponse {
@@ -1758,6 +1962,7 @@ export interface PostPaymentIntentsResponse {
 export interface PostPaymentLinksByIdCancelResponse {
   id: string;
   status: string;
+  lifecycle_status: string;
 }
 
 export interface PostPaymentLinksByIdSendResponse {
@@ -1772,6 +1977,21 @@ export interface PostPaymentLinksResponse {
   path: string;
   max_uses: number | null;
   expires_at: string | null;
+  amount_mode: string;
+  lifecycle_status: string;
+}
+
+export interface PostPayoutLinksByIdCancelResponse {
+  id: string;
+  status: string;
+}
+
+export interface PostPayoutLinksResponse {
+  id: string;
+  existing: boolean;
+  token: unknown;
+  expires_at: string | null;
+  note: string;
 }
 
 export interface PostPayoutsBulkResponse {
@@ -2007,6 +2227,41 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostRiskEvaluateResponse {
+  dry_run: boolean;
+  decision: unknown;
+}
+
+export interface PostRiskListsResponse {
+  id: string;
+  list: string;
+  dimension: unknown;
+  label: boolean;
+  expires_at: unknown;
+}
+
+export interface PostRiskOrderScoreResponse {
+  score: unknown;
+  band: unknown;
+  action: unknown;
+  advice: unknown;
+  contributions: unknown;
+  review_at: string | null;
+  decline_at: string | null;
+  formula: unknown;
+  pin_tier: string | null;
+  case_id: string | null;
+}
+
+export interface PostRiskRulesResponse {
+  id: string;
+  name: string;
+  kind: string;
+  params: unknown;
+  action: unknown;
+  enabled: boolean;
+}
+
 export interface PostSavedViewsResponse {
   id: string;
   name: string;
@@ -2204,6 +2459,36 @@ export interface PostVendorsResponse {
   name: string;
 }
 
+export interface PostVerifyBankAccountResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  reused: unknown;
+  note: string | null;
+}
+
+export interface PostVerifyVpaResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  reused: unknown;
+  note: string | null;
+}
+
 export interface PostWebhooksByProviderByTenantIdResponse {
   status: string;
 }
@@ -2219,6 +2504,16 @@ export interface PutMoneyModeResponse {
 
 export interface PutOnboardingResponse {
   status: string;
+}
+
+export interface PutPaymentIntentsByIdInstrumentRulesResponse {
+  id: string;
+  instrument_rules: unknown;
+}
+
+export interface PutPaymentLinksByIdInstrumentRulesResponse {
+  id: string;
+  instrument_rules: unknown;
 }
 
 export interface PutPlatformMeResponse {
@@ -2244,6 +2539,11 @@ export interface PutProviderAccountsByProviderResponse {
   provider: string;
   enabled: boolean;
   replaced: unknown;
+}
+
+export interface PutRiskPinTiersResponse {
+  pin_prefix: unknown;
+  tier: string;
 }
 
 export interface RefundRow {

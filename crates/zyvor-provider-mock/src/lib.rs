@@ -426,6 +426,8 @@ async fn sim_rz_pay(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
             .ok_or_else(|| err(StatusCode::NOT_FOUND, "order not found"))?;
         let p = json!({ "id": id, "entity": "payment", "order_id": order_id, "amount": order["amount"], "currency": order["currency"], "status": outcome,
             "method": b["method"].as_str().unwrap_or("upi"), "captured": outcome == "captured",
+            // who paid, when the test says so: Razorpay's payment entity carries `vpa` (UPI) and `bank` (net banking)
+            "vpa": b["vpa"].clone(), "bank": b["bank"].clone(),
             // a UPI/card payment that went through carries the bank's reference, as Razorpay's `acquirer_data.rrn`
             "acquirer_data": if outcome == "failed" { json!({}) } else { json!({ "rrn": mock_rrn(&id) }) },
             "error_description": if outcome == "failed" { json!("Payment failed at bank") } else { Value::Null } });

@@ -174,6 +174,43 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "settlement_batch.released",
         "An acquire-mode settlement batch was released to the merchant bank via the payout rail.",
     ),
+    (
+        "payment_link.created",
+        "A payment link was created (lifecycle status `created`).",
+    ),
+    (
+        "payment_link.activated",
+        "The first payer opened a checkout on a payment link (status `active`).",
+    ),
+    (
+        "payment_link.partially_paid",
+        "A payment link has received some of what it expects, not all of it.",
+    ),
+    (
+        "payment_link.paid",
+        "A payment link has received everything it expects.",
+    ),
+    (
+        "payment_link.expired",
+        "A payment link passed its expiry without being paid in full.",
+    ),
+    ("payment_link.cancelled", "A payment link was cancelled."),
+    (
+        "payment_link.failed",
+        "Every checkout started on a payment link failed and none are left to try.",
+    ),
+    (
+        "payment.instrument_refused",
+        "A payment arrived from a payer bank or UPI handle your instrument rule does not allow; it is being refunded.",
+    ),
+    (
+        "risk.review_required",
+        "A risk rule asked for a person to review a payment or an order; a case was opened.",
+    ),
+    (
+        "payout_link.claimed",
+        "A recipient entered verified details on a payout link; a payout was requested.",
+    ),
 ];
 
 pub fn known(ty: &str) -> bool {

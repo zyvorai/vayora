@@ -5,6 +5,19 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Link rules, verification primitives, risk rules engine, payout links (simulators and mocks only)
+**Payment links**
+- Amount modes: `exact`, `minimum`, `up_to`, `pay_what_you_want` (bounds, suggested amount), enforced on the server when the payer starts a checkout; the public link details add `amount_mode`, `suggested_amount_minor` and `amount_rule`. Links made before this read as before.
+- A normalised lifecycle (`created`, `active`, `partially_paid`, `paid`, `expired`, `cancelled`, `failed`) computed from the link and its payments, a closed transition table, recorded history, seven `payment_link.*` events, `GET /v1/payment_links/lifecycle` and `GET /v1/payment_links/{id}/lifecycle`. The older `status` field is unchanged.
+- Payer-instrument rules (allowed payer banks and UPI handles) on a link or payment. A payment from another instrument is refunded after capture; where the provider does not report who paid, the check says `unverifiable` and the payment is kept. Razorpay and Cashfree readings were checked against mocks only.
+**Verification and risk**
+- `POST /v1/verify/vpa` and `/v1/verify/bank_account` (penny drop) through the KYC abstraction, labelled `simulated` for the simulator, a conservative name comparison (`match` / `review` / `mismatch`), results stored masked, rate limited. Live mode refuses the simulator.
+- Risk rules engine: velocity rules per customer, device token, phone, email, IP, card or VPA, amount rules, allow/block lists, `review` (opens a case, payment goes ahead) or `decline`, explainable decisions, a dry run, signals kept only as keyed hashes for seven days.
+- COD order risk score with a documented formula (`order-risk-v1`) from pin-code tier, order value, repeat customer and prior refusals, and a review case per order reference.
+**Payout links**
+- A fixed-amount, single-use, expiring link lets a recipient enter bank or UPI details; they are verified (penny drop, name must match) and then a payout is requested through the existing flow with the link's creator as requester, so a second person still approves.
+- Migration 0087. New scopes `verify:write`, `risk:read`, `risk:write`. OpenAPI and SDK types regenerated (the generator gained response overrides for the four wrapped payment-link operations). See [PAYMENT_LINK_RULES.md](docs/zyvor/PAYMENT_LINK_RULES.md), [RISK_ENGINE.md](docs/zyvor/RISK_ENGINE.md), [PAYOUT_LINKS.md](docs/zyvor/PAYOUT_LINKS.md). The checkout page shows the amount rule (a floor, a cap or both, in six languages) and prefills a suggested amount. Not built: refusing a disallowed instrument before payment, a Cashfree UPI id check, console pages, a recipient page for payout links (API only), hand-written SDK methods.
+
 ## 18 November 2026 — Console pages for fee checks, bank statements and routing health
 - **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
 - **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.

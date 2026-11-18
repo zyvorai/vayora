@@ -4,7 +4,7 @@ import { LangPicker, useI18n } from "@/components/useI18n";
 import { money } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
 
-type Info = { merchant: string | null; description: string | null; open_amount?: boolean; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
+type Info = { merchant: string | null; description: string | null; open_amount?: boolean; amount_mode?: "exact" | "minimum" | "up_to" | "pay_what_you_want"; suggested_amount_minor?: number | null; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" };
 
 const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid" };
 
@@ -26,7 +26,11 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   useEffect(() => {
     fetch(base)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(setInfo)
+      .then((j: Info) => {
+        setInfo(j);
+        // the amount the merchant suggests, as a starting point the payer can change
+        if (j.open_amount && j.suggested_amount_minor) setTyped((j.suggested_amount_minor / 100).toFixed(2));
+      })
       .catch(() => setMissing(true));
   }, [base]);
 
@@ -51,6 +55,9 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   const lo = info?.min_amount_minor ?? 1;
   const hi = info?.max_amount_minor ?? 1_000_000_000_000;
   const amountOk = Number.isFinite(chosenMinor) && chosenMinor >= lo && chosenMinor <= hi;
+  /** The rule for what may be paid, in the payer's language: a floor, a cap, both, or nothing to say. */
+  const hasLo = info?.min_amount_minor != null, hasHi = info?.max_amount_minor != null;
+  const rule = !info ? null : hasLo && hasHi ? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) }) : hasLo ? t("amountMin", { min: money(lo, info.currency) }) : hasHi ? t("amountMax", { max: money(hi, info.currency) }) : null;
 
   async function start() {
     setBusy(true);
@@ -93,8 +100,8 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
           {info.open_amount && (
             <>
               <label className="f" htmlFor="amt">{t("enterAmount")}</label>
-              <input id="amt" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" />
-              {typed && !amountOk && <p className="err" role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) })}</p>}
+              <input id="amt" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" aria-describedby={rule ? "amt-rule" : undefined} />
+              {rule && <p id="amt-rule" className={typed && !amountOk ? "err" : "desc"} role="status" style={{ margin: "6px 2px 0", textAlign: "left" }}>{rule}</p>}
             </>
           )}
           {!info.open_amount && <label className="f" htmlFor="coupon">{t("couponCode")}</label>}

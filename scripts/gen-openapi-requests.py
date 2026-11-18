@@ -269,6 +269,40 @@ OVERRIDES = {
     ("post", "/v1/payment_intents/{id}/refunds"): ("201", _ref("RefundRow")),
     ("post", "/v1/mandates"): ("201", _ref("MandateRow")),
     ("post", "/v1/mandates/{id}/debits"): ("201", _ref("DebitRow")),
+    # wrappers that call the original handler and add fields (link_amount.rs, link_lifecycle.rs)
+    ("post", "/v1/payment_links"): (
+        "201",
+        {"type": "object", "properties": {
+            "id": {"type": "string"}, "token": {}, "currency": {"type": "string"}, "path": {"type": "string"},
+            "max_uses": {"type": ["integer", "null"], "format": "int32"},
+            "expires_at": {"type": ["string", "null"], "format": "date-time"},
+            "amount_mode": {"type": "string", "enum": ["exact", "minimum", "up_to", "pay_what_you_want"]},
+            "lifecycle_status": {"type": "string", "enum": ["created", "active", "partially_paid", "paid", "expired", "cancelled", "failed"]}}},
+    ),
+    ("get", "/v1/payment_links"): (
+        "200",
+        {"type": "object", "properties": {"data": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "string"}, "status": {"type": "string"},
+            "lifecycle_status": {"type": "string"}, "payable": {"type": "boolean"}, "paid_minor": {"type": "integer"},
+            "amount_mode": {"type": "string"}}}}}},
+    ),
+    ("post", "/v1/payment_links/{id}/cancel"): (
+        "200",
+        {"type": "object", "properties": {"id": {"type": "string"}, "status": {"type": "string"}, "lifecycle_status": {"type": "string"}}},
+    ),
+    ("get", "/v1/checkout/links/{tenant_id}/{token}"): (
+        "200",
+        {"type": "object", "properties": {
+            "merchant": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]},
+            "amount_minor": {"type": "integer"}, "discount_minor": {"type": "integer"}, "fee_minor": {"type": "integer"},
+            "total_minor": {"type": "integer"}, "coupon_applied": {}, "currency": {"type": "string"}, "status": {"type": "string"},
+            "open_amount": {"type": "boolean"},
+            "min_amount_minor": {"type": ["integer", "null"], "format": "int64"},
+            "max_amount_minor": {"type": ["integer", "null"], "format": "int64"},
+            "amount_mode": {"type": "string", "enum": ["exact", "minimum", "up_to", "pay_what_you_want"]},
+            "suggested_amount_minor": {"type": ["integer", "null"], "format": "int64"},
+            "amount_rule": {"type": "string"}}},
+    ),
 }
 # Not JSON: (status, media type, a note on the body)
 NOT_JSON = {

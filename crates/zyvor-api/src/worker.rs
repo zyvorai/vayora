@@ -114,6 +114,17 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3b3. payment link lifecycle changes, payer-instrument rules (refund anything from a disallowed instrument),
+        // and the risk engine's signal retention
+        if let Err(e) = crate::link_lifecycle::sweep_tenant(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "payment link lifecycle sweep failed");
+        }
+        if let Err(e) = crate::instrument::sweep_tenant(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "payer instrument sweep failed");
+        }
+        if let Err(e) = crate::risk_engine::sweep_tenant(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "risk signal cleanup failed");
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
