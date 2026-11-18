@@ -173,17 +173,17 @@ async fn pick_provider(
 
 #[derive(Deserialize)]
 pub struct NewMandate {
-    customer_id: String,
+    pub(crate) customer_id: String,
     /// The most any single debit may take, in minor units (paise).
-    max_amount_minor: i64,
-    frequency: String,
+    pub(crate) max_amount_minor: i64,
+    pub(crate) frequency: String,
     /// Defaults to today (India time).
-    start_date: Option<NaiveDate>,
-    end_date: NaiveDate,
+    pub(crate) start_date: Option<NaiveDate>,
+    pub(crate) end_date: NaiveDate,
     /// `INR` only: UPI.
-    currency: Option<String>,
-    provider: Option<String>,
-    external_ref: Option<String>,
+    pub(crate) currency: Option<String>,
+    pub(crate) provider: Option<String>,
+    pub(crate) external_ref: Option<String>,
 }
 
 pub async fn create_mandate(

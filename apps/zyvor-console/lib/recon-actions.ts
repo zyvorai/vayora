@@ -5,6 +5,7 @@ import { currentSession } from "@/lib/auth";
 import { feeRuleBody, feeRunBody, feeSettingsBody, runSentence, type FeeRun } from "@/lib/feecheck";
 import { importSentence, problemsOf, statementBody, type ImportDone, type Preview, type Problem } from "@/lib/bankrecon";
 import { healthSettingsBody } from "@/lib/routehealth";
+import { automationBody } from "@/lib/routeauto";
 import { rest } from "@/lib/rest";
 import { allows, type Role } from "@/lib/session";
 
@@ -149,4 +150,27 @@ export async function saveRoutingSettings(_: FormState, f: FormData): Promise<Fo
   if (!r.ok) return { error: r.message };
   revalidatePath("/routing");
   return { ok: "Saved." };
+}
+
+export async function saveRoutingAutomation(_: FormState, f: FormData): Promise<FormState> {
+  const s = await allowed("admin");
+  if (!s) return { error: "Only an admin can change routing automation." };
+  const p = automationBody(f);
+  if (!p.ok) return { error: p.error };
+  const r = await (await rest(s.u)).put("/v1/routing/automation", p.body);
+  if (!r.ok) return { error: r.message };
+  revalidatePath("/routing");
+  return { ok: "Saved." };
+}
+
+/** The kill switch: `pause` stops every routing automation at once, `resume` lets each switch act again. */
+export async function setRoutingKillSwitch(_: FormState, f: FormData): Promise<FormState> {
+  const s = await allowed("admin");
+  if (!s) return { error: "Only an admin can use the kill switch." };
+  const resume = f.get("action") === "resume";
+  const reason = String(f.get("reason") ?? "").trim().slice(0, 500);
+  const r = await (await rest(s.u)).post(resume ? "/v1/routing/automation/resume" : "/v1/routing/automation/pause", resume ? {} : reason ? { reason } : {});
+  if (!r.ok) return { error: r.message };
+  revalidatePath("/routing");
+  return { ok: resume ? "Routing automation can act again." : "Paused. No routing automation is acting." };
 }

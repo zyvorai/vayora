@@ -337,6 +337,7 @@ impl Provider for SimProvider {
     }
 
     async fn initiate(&self, req: &CreatePayment) -> Result<Initiated, ProviderError> {
+        check_request(&self.capabilities(), req)?;
         // Network-token card charge (stub vault): capture server-side; never accepts PAN.
         if req.method == Method::Card
             && let Some(nref) = req.network_token_ref.as_deref().filter(|s| !s.is_empty())

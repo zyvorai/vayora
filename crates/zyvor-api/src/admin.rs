@@ -259,11 +259,13 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
         "cashfree" => &["client_id", "client_secret"],
         "custom" | "sponsor_upi" => &["api_key"],
         "phonepe" => &["merchant_id", "salt_key"],
+        // `merchant_secret` is optional: only PayU's settlement report API needs it.
+        "payu" => &["key", "salt"],
         "sim" => &[],
         _ => {
             return Err(ApiError::invalid(
                 "unknown_provider",
-                "provider must be razorpay, cashfree, custom, sponsor_upi, phonepe or sim",
+                "provider must be razorpay, cashfree, custom, sponsor_upi, phonepe, payu or sim",
             ));
         }
     };
@@ -306,6 +308,16 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
         return Err(ApiError::invalid(
             "wrong_mode_credentials",
             "api.cashfree.com is Cashfree's production address; use sandbox.cashfree.com in a test environment",
+        ));
+    }
+    if let Some(u) = b.base_url.as_deref()
+        && b.provider == "payu"
+        && auth.env == "test"
+        && (u.contains("://secure.payu.in") || u.contains("://info.payu.in"))
+    {
+        return Err(ApiError::invalid(
+            "wrong_mode_credentials",
+            "secure.payu.in and info.payu.in are PayU's production addresses; use test.payu.in in a test environment",
         ));
     }
     if auth.env == "live" && b.provider == "sim" {
@@ -1329,7 +1341,7 @@ pub async fn export(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
         ),
         (
             "payment_attempts",
-            "SELECT to_jsonb(t) - 'raw' FROM payment_attempts t ORDER BY id",
+            "SELECT to_jsonb(t) - 'raw' - 'retry_input' FROM payment_attempts t ORDER BY id",
         ),
         ("refunds", "SELECT to_jsonb(t) FROM refunds t ORDER BY id"),
         (
@@ -1532,6 +1544,27 @@ pub async fn rekey_all(
             if !dry_run && (next[0].is_some() || next[1].is_some()) {
                 sqlx::query("UPDATE provider_accounts SET credentials_enc = COALESCE($2, credentials_enc), webhook_secret_enc = COALESCE($3, webhook_secret_enc) WHERE id = $1")
                     .bind(&id).bind(&next[0]).bind(&next[1]).execute(&mut *tx).await?;
+            }
+        }
+        // the keys that sign event tickets and order links
+        let qr: Vec<(String, Vec<u8>)> =
+            sqlx::query_as("SELECT id, qr_secret_enc FROM ticket_events")
+                .fetch_all(&mut *tx)
+                .await?;
+        for (id, blob) in qr {
+            if !crypto.needs_rekey(&blob) {
+                current += 1;
+            } else if let Some(n) = crypto.rekey(&blob) {
+                done += 1;
+                if !dry_run {
+                    sqlx::query("UPDATE ticket_events SET qr_secret_enc = $2 WHERE id = $1")
+                        .bind(&id)
+                        .bind(n)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+            } else {
+                bad += 1;
             }
         }
         let hook: Option<Option<Vec<u8>>> = sqlx::query_scalar(

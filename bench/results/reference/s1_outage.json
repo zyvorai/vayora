@@ -1,0 +1,487 @@
+{
+  "description": "Success during outage/brown-out, baseline (pinned to one provider) vs Vayora routing",
+  "payments_per_cell": 40,
+  "healthy_warmup_payments": 20,
+  "cells": [
+    {
+      "mode": "reject",
+      "fail_pct": 0,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 19,
+          "p95": 411,
+          "max": 1384
+        },
+        "window_seconds": 4.4,
+        "primary_breaker_state_at_end": "healthy"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 9,
+          "p95": 12,
+          "max": 16
+        },
+        "window_seconds": 0.4,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "reject",
+      "fail_pct": 30,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 13,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 55,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 9,
+          "p95": 17,
+          "max": 23
+        },
+        "window_seconds": 0.4,
+        "primary_breaker_state_at_end": "healthy"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 10,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 10,
+        "attempts_total": 50,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": 11,
+        "latency_ms": {
+          "p50": 7,
+          "p95": 11,
+          "max": 11
+        },
+        "window_seconds": 0.3,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "reject",
+      "fail_pct": 60,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 32,
+        "success_rate_pct": 80,
+        "ended_failed": 8,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 26,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 78,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 11,
+          "p95": 17,
+          "max": 17
+        },
+        "window_seconds": 0.5,
+        "primary_breaker_state_at_end": "healthy"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 25,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 25,
+        "attempts_total": 65,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": 21,
+        "latency_ms": {
+          "p50": 11,
+          "p95": 21,
+          "max": 29
+        },
+        "window_seconds": 0.5,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "reject",
+      "fail_pct": 100,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 0,
+        "success_rate_pct": 0,
+        "ended_failed": 40,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 40,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 120,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 11,
+          "p95": 17,
+          "max": 18
+        },
+        "window_seconds": 0.5,
+        "primary_breaker_state_at_end": "degraded"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 20,
+        "payments_with_an_unknown_first_outcome": 0,
+        "captured_via_alternate_provider": 40,
+        "attempts_total": 60,
+        "payments_until_first_one_routed_away_from_primary": 21,
+        "ms_until_first_one_routed_away_from_primary": 193,
+        "ms_until_first_capture_on_alternate": 9,
+        "latency_ms": {
+          "p50": 9,
+          "p95": 10,
+          "max": 12
+        },
+        "window_seconds": 0.4,
+        "primary_breaker_state_at_end": "degraded"
+      }
+    },
+    {
+      "mode": "unavailable",
+      "fail_pct": 30,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 37,
+        "success_rate_pct": 92.5,
+        "ended_failed": 3,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 14,
+        "payments_with_an_unknown_first_outcome": 14,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 58,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 10,
+          "p95": 24,
+          "max": 25
+        },
+        "window_seconds": 0.5,
+        "primary_breaker_state_at_end": "healthy"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 12,
+        "payments_with_an_unknown_first_outcome": 12,
+        "captured_via_alternate_provider": 12,
+        "attempts_total": 52,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": 20,
+        "latency_ms": {
+          "p50": 9,
+          "p95": 18,
+          "max": 18
+        },
+        "window_seconds": 0.4,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "unavailable",
+      "fail_pct": 100,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 0,
+        "success_rate_pct": 0,
+        "ended_failed": 40,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 40,
+        "payments_with_an_unknown_first_outcome": 40,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 120,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 21,
+          "p95": 26,
+          "max": 27
+        },
+        "window_seconds": 0.8,
+        "primary_breaker_state_at_end": "degraded"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 20,
+        "payments_with_an_unknown_first_outcome": 20,
+        "captured_via_alternate_provider": 40,
+        "attempts_total": 60,
+        "payments_until_first_one_routed_away_from_primary": 21,
+        "ms_until_first_one_routed_away_from_primary": 348,
+        "ms_until_first_capture_on_alternate": 12,
+        "latency_ms": {
+          "p50": 13,
+          "p95": 24,
+          "max": 24
+        },
+        "window_seconds": 0.6,
+        "primary_breaker_state_at_end": "degraded"
+      }
+    },
+    {
+      "mode": "unavailable",
+      "fail_pct": 100,
+      "lookup_available": false,
+      "baseline": {
+        "payments": 40,
+        "captured": 0,
+        "success_rate_pct": 0,
+        "ended_failed": 0,
+        "ended_unknown": 40,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 40,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 9,
+          "p95": 11,
+          "max": 11
+        },
+        "window_seconds": 0.3,
+        "primary_breaker_state_at_end": "degraded"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 39,
+        "success_rate_pct": 97.5,
+        "ended_failed": 0,
+        "ended_unknown": 1,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 1,
+        "captured_via_alternate_provider": 39,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": 2,
+        "ms_until_first_one_routed_away_from_primary": 18,
+        "ms_until_first_capture_on_alternate": 18,
+        "latency_ms": {
+          "p50": 13,
+          "p95": 16,
+          "max": 17
+        },
+        "window_seconds": 0.5,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "hang",
+      "fail_pct": 30,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 14,
+        "payments_with_an_unknown_first_outcome": 14,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 57,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 39,
+          "p95": 2030,
+          "max": 2048
+        },
+        "window_seconds": 19.8,
+        "primary_breaker_state_at_end": "healthy"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 12,
+        "payments_with_an_unknown_first_outcome": 12,
+        "captured_via_alternate_provider": 12,
+        "attempts_total": 52,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": 1039,
+        "latency_ms": {
+          "p50": 14,
+          "p95": 1037,
+          "max": 1090
+        },
+        "window_seconds": 12.8,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    },
+    {
+      "mode": "hang",
+      "fail_pct": 100,
+      "lookup_available": true,
+      "baseline": {
+        "payments": 40,
+        "captured": 0,
+        "success_rate_pct": 0,
+        "ended_failed": 40,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 40,
+        "payments_with_an_unknown_first_outcome": 40,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 120,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 3055,
+          "p95": 3663,
+          "max": 10012
+        },
+        "window_seconds": 130.8,
+        "primary_breaker_state_at_end": "degraded"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 40,
+        "success_rate_pct": 100,
+        "ended_failed": 0,
+        "ended_unknown": 0,
+        "payments_needing_a_retry": 20,
+        "payments_with_an_unknown_first_outcome": 20,
+        "captured_via_alternate_provider": 40,
+        "attempts_total": 60,
+        "payments_until_first_one_routed_away_from_primary": 21,
+        "ms_until_first_one_routed_away_from_primary": 21981,
+        "ms_until_first_capture_on_alternate": 1027,
+        "latency_ms": {
+          "p50": 1017,
+          "p95": 1322,
+          "max": 1974
+        },
+        "window_seconds": 22.1,
+        "primary_breaker_state_at_end": "degraded"
+      }
+    },
+    {
+      "mode": "hang",
+      "fail_pct": 100,
+      "lookup_available": false,
+      "baseline": {
+        "payments": 40,
+        "captured": 0,
+        "success_rate_pct": 0,
+        "ended_failed": 0,
+        "ended_unknown": 40,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 40,
+        "captured_via_alternate_provider": 0,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_one_routed_away_from_primary": null,
+        "ms_until_first_capture_on_alternate": null,
+        "latency_ms": {
+          "p50": 1014,
+          "p95": 1018,
+          "max": 1021
+        },
+        "window_seconds": 40.6,
+        "primary_breaker_state_at_end": "degraded"
+      },
+      "vayora": {
+        "payments": 40,
+        "captured": 39,
+        "success_rate_pct": 97.5,
+        "ended_failed": 0,
+        "ended_unknown": 1,
+        "payments_needing_a_retry": 0,
+        "payments_with_an_unknown_first_outcome": 1,
+        "captured_via_alternate_provider": 39,
+        "attempts_total": 40,
+        "payments_until_first_one_routed_away_from_primary": 2,
+        "ms_until_first_one_routed_away_from_primary": 1021,
+        "ms_until_first_capture_on_alternate": 1021,
+        "latency_ms": {
+          "p50": 4,
+          "p95": 14,
+          "max": 1007
+        },
+        "window_seconds": 1.2,
+        "primary_breaker_state_at_end": "healthy"
+      }
+    }
+  ],
+  "double_charge_audit_over_this_scenario": {
+    "intents_with_attempts": 1200,
+    "intents_paid_at_provider": 987,
+    "intents_with_more_than_one_captured_attempt_in_platform": 0,
+    "intents_paid_more_than_once_at_provider": 0,
+    "intents_paid_at_provider_but_no_captured_attempt_in_platform": 0
+  },
+  "requests_that_were_rate_limited_and_retried": 0,
+  "seed": 20261118,
+  "wall_seconds": 254.5
+}

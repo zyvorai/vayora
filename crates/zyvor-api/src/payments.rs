@@ -380,6 +380,38 @@ pub struct CreateAttempt {
     pub card_token_id: Option<String>,
 }
 
+/// When the business listed `return_url_origins`, a return address must be on one of them (empty list: any address that
+/// passed the address check). Shared by payments and payment links.
+pub async fn check_return_origin(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    url: &str,
+) -> Result<(), ApiError> {
+    let origins: Value = sqlx::query_scalar(
+        "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *conn)
+    .await?
+    .unwrap_or(json!([]));
+    if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| ApiError::invalid("invalid_return_url", "not a valid URL"))?;
+        let host = parsed.host_str().unwrap_or("");
+        let origin = match parsed.port() {
+            Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
+            None => format!("{}://{host}", parsed.scheme()),
+        };
+        if !list.iter().any(|o| o.as_str() == Some(origin.as_str())) {
+            return Err(ApiError::invalid(
+                "return_url_not_allowed",
+                "return_url origin is not on this tenant's allowlist",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn valid_vpa(v: &str) -> bool {
     v.split_once('@').is_some_and(|(h, p)| {
         (2..=64).contains(&h.len())
@@ -411,6 +443,10 @@ pub async fn create_attempt(
 }
 
 /// Shared by the authenticated API and the public checkout. Persists the attempt before calling the provider.
+///
+/// When the business turned soft retry on and this attempt ended in a definitive provider-side failure, the next
+/// attempt on another provider is started here, after the response for this one is complete (see `softretry`).
+/// The response is always the attempt that was asked for.
 pub async fn start_attempt(
     s: &AppState,
     tenant_id: &str,
@@ -420,6 +456,27 @@ pub async fn start_attempt(
     headers: &HeaderMap,
     b: CreateAttempt,
 ) -> Result<Response, ApiError> {
+    let (res, failed) =
+        start_attempt_with(s, tenant_id, env, actor, intent_id, headers, b, None).await?;
+    if failed.is_some() {
+        crate::softretry::run(s, tenant_id, intent_id).await;
+    }
+    Ok(res)
+}
+
+/// Creates one attempt. Returns the response and, when a NEW attempt was created and has already failed, its id.
+/// `soft` is set only by a soft retry (`softretry`): it adds the guards that must hold under the intent's row lock.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start_attempt_with(
+    s: &AppState,
+    tenant_id: &str,
+    env: &str,
+    actor: &str,
+    intent_id: &str,
+    headers: &HeaderMap,
+    b: CreateAttempt,
+    soft: Option<&crate::softretry::Ctx>,
+) -> Result<(Response, Option<String>), ApiError> {
     let method: Method = b
         .method
         .parse()
@@ -450,29 +507,7 @@ pub async fn start_attempt(
         ));
     }
     if let Some(u) = &b.return_url {
-        let origins: Value = sqlx::query_scalar(
-            "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
-        )
-        .bind(tenant_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .unwrap_or(json!([]));
-        if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
-            let parsed = reqwest::Url::parse(u)
-                .map_err(|_| ApiError::invalid("invalid_return_url", "not a valid URL"))?;
-            let host = parsed.host_str().unwrap_or("");
-            let origin = match parsed.port() {
-                Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
-                None => format!("{}://{host}", parsed.scheme()),
-            };
-            let ok = list.iter().any(|o| o.as_str() == Some(origin.as_str()));
-            if !ok {
-                return Err(ApiError::invalid(
-                    "return_url_not_allowed",
-                    "return_url origin is not on this tenant's allowlist",
-                ));
-            }
-        }
+        check_return_origin(&mut tx, tenant_id, u).await?;
     }
     let hash = fingerprint(&[
         intent_id,
@@ -493,7 +528,7 @@ pub async fn start_attempt(
                 Some(id) => serde_json::to_value(fetch_attempt(&mut tx, &id).await?).unwrap(),
                 None => body.unwrap_or(Value::Null),
             };
-            return Ok(replay_response(status, body));
+            return Ok((replay_response(status, body), None));
         }
         Begin::Proceed(k) => k,
     };
@@ -529,6 +564,23 @@ pub async fn start_attempt(
         return Err(ApiError::conflict(
             "intent_not_payable",
             format!("intent is {status}"),
+        ));
+    }
+    // an event ticket tier can limit the payment methods its order may use
+    let only: Option<Vec<String>> = sqlx::query_scalar::<_, Option<Value>>(
+        "SELECT metadata->'allowed_methods' FROM payment_intents WHERE id = $1",
+    )
+    .bind(intent_id)
+    .fetch_one(&mut *tx)
+    .await?
+    .and_then(|v| serde_json::from_value(v).ok());
+    if only
+        .as_ref()
+        .is_some_and(|m| !m.iter().any(|x| x == method.as_str()))
+    {
+        return Err(ApiError::invalid(
+            "method_not_allowed",
+            "this payment cannot be made with that method",
         ));
     }
 
@@ -611,36 +663,80 @@ pub async fn start_attempt(
 
     let routing = registry::routing(&mut tx, tenant_id).await?;
     let mut candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
+    // Routing automation: the kill switch, cost-aware routing, shadow mode and soft retry are all per business.
+    let auto = crate::routing_auto::load(&mut tx, tenant_id).await?;
     // Success-rate signal and circuit breaker for this method, and what already failed this very payment.
     // The live-attempt check above has run: everything on this intent is terminal, so a failover can never
-    // sit beside an unresolved first attempt.
+    // sit beside an unresolved first attempt. With the kill switch on, health is read but never applied.
     let health_cfg = crate::health::load_config(&mut tx, tenant_id).await?;
-    crate::health::attach_signals(&mut tx, tenant_id, &health_cfg, method, &mut candidates).await?;
-    let avoid = if health_cfg.failover_enabled {
+    crate::health::attach_signals(
+        &mut tx,
+        tenant_id,
+        &health_cfg,
+        auto.paused,
+        method,
+        &mut candidates,
+    )
+    .await?;
+    let cost_policy = auto.cost_policy();
+    if cost_policy.is_some() || auto.shadow_active() {
+        crate::routing_auto::attach_costs(
+            &mut tx,
+            tenant_id,
+            &auto,
+            &routing,
+            method,
+            amount_minor,
+            &mut candidates,
+        )
+        .await?;
+    }
+    // A soft retry is decided under the intent's row lock, on the same facts the routing below uses.
+    let soft_guard = match soft {
+        Some(ctx) => {
+            Some(crate::softretry::guard(&mut tx, tenant_id, intent_id, ctx, &auto, method).await?)
+        }
+        None => None,
+    };
+    let avoid = if let Some(g) = &soft_guard {
+        // every provider already used for this payment, and a degraded one is never a retry target
+        for c in candidates.iter_mut() {
+            if let Some(sig) = c.signal.as_mut()
+                && sig.breaker == zyvor_providers::router::Breaker::ProbeDue
+            {
+                sig.breaker = zyvor_providers::router::Breaker::Degraded;
+            }
+        }
+        g.tried
+            .iter()
+            .map(|p| router::Avoid {
+                provider: p.clone(),
+                reason: "already used for this payment".into(),
+            })
+            .collect()
+    } else if health_cfg.failover_enabled && !auto.paused {
         crate::health::failed_here(&mut tx, intent_id).await?
     } else {
         Vec::new()
     };
     let upi_intent =
         method == Method::Upi && b.vpa.is_none() && b.upi_flow.as_deref() == Some("intent");
+    let route_request = router::Request {
+        method,
+        amount_minor,
+        currency,
+        allowed: allowed.clone(),
+        // Only when the checkout asked for the QR / intent flow; a UPI payment through a hosted
+        // checkout (no typed UPI ID) keeps working as before.
+        upi_intent,
+        avoid: avoid.clone(),
+        cost: cost_policy,
+    };
     let mut decision;
     let mut attempts_at_routing = 0;
     loop {
-        decision = router::choose(
-            &router::Request {
-                method,
-                amount_minor,
-                currency,
-                allowed: allowed.clone(),
-                // Only when the checkout asked for the QR / intent flow; a UPI payment through a hosted
-                // checkout (no typed UPI ID) keeps working as before.
-                upi_intent,
-                avoid: avoid.clone(),
-            },
-            &candidates,
-            &routing.rules,
-        )
-        .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
+        decision = router::choose(&route_request, &candidates, &routing.rules)
+            .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
         // A probe of a degraded provider needs the one probe slot; if another payment took it, route without.
         let Some(p) = decision.probe.clone() else {
             break;
@@ -659,6 +755,9 @@ pub async fn start_attempt(
         {
             sig.breaker = zyvor_providers::router::Breaker::Degraded;
         }
+    }
+    if let Some(g) = &soft_guard {
+        crate::softretry::check_alternate(g, &decision, &candidates)?;
     }
     let provider = registry::load(s, &mut tx, tenant_id, env, &decision.provider).await?;
 
@@ -684,8 +783,16 @@ pub async fn start_attempt(
     };
 
     let attempt_id = new_id("att");
+    let mut route_json = serde_json::to_value(&decision).unwrap();
+    if let Some(g) = &soft_guard {
+        route_json["soft_retry"] = g.describe(&decision.provider);
+    }
+    // What a later soft retry needs to repeat this request elsewhere; only kept while soft retry is on, and never
+    // for a stored card token (the token belongs to one provider).
+    let retry_input = (auto.soft_retry_active() && b.card_token_id.is_none())
+        .then(|| json!({ "vpa": b.vpa, "return_url": b.return_url, "upi_flow": b.upi_flow }));
     sqlx::query(
-        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)",
+        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route, retry_input) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)",
     )
     .bind(&attempt_id)
     .bind(tenant_id)
@@ -694,9 +801,36 @@ pub async fn start_attempt(
     .bind(method.as_str())
     .bind(amount_minor)
     .bind(currency.code())
-    .bind(serde_json::to_value(&decision).unwrap())
+    .bind(route_json)
+    .bind(retry_input)
     .execute(&mut *tx)
     .await?;
+    if auto.shadow_active() {
+        // What the candidate policy would have done, next to what was applied. Never changes routing.
+        crate::routing_auto::record_shadow(
+            &mut tx,
+            tenant_id,
+            intent_id,
+            &attempt_id,
+            &auto,
+            &routing,
+            &route_request,
+            &decision,
+            &candidates,
+        )
+        .await;
+    }
+    if let Some(g) = &soft_guard {
+        crate::softretry::record_started(
+            &mut tx,
+            tenant_id,
+            intent_id,
+            &attempt_id,
+            g,
+            &decision.provider,
+        )
+        .await?;
+    }
     sqlx::query(
         "UPDATE payment_intents SET status = 'processing', updated_at = now() WHERE id = $1",
     )
@@ -808,7 +942,8 @@ pub async fn start_attempt(
     let row = fetch_attempt(&mut tx, &attempt_id).await?;
     let res = key.finish(&mut tx, StatusCode::CREATED, &row).await?;
     tx.commit().await?;
-    Ok(res)
+    let failed = (row.status == "failed").then_some(attempt_id);
+    Ok((res, failed))
 }
 
 pub async fn get_attempt(
@@ -855,6 +990,10 @@ pub async fn refresh_attempt_internal(
             .await?;
             let row = fetch_attempt(&mut tx, attempt_id).await?;
             tx.commit().await?;
+            if row.status == "failed" {
+                // the provider has now said "failed": a soft retry may start the next attempt elsewhere
+                crate::softretry::run(s, tenant_id, &row.intent_id).await;
+            }
             Ok(row)
         }
         Err(e) => {
@@ -1295,6 +1434,9 @@ async fn on_captured(
         refresh_invoice_status(conn, inv).await?;
     }
     tenant::emit(conn, tenant_id, "payment.captured", json!({ "intent_id": intent_id, "attempt_id": attempt_id, "provider": provider, "amount_minor": amount, "currency": currency, "invoice_id": invoice_id, "external_ref": external_ref })).await?;
+    // storefront orders and donations ride on ordinary intents; mark theirs paid in the same transaction
+    crate::storefront::on_captured(conn, tenant_id, intent_id).await?;
+    crate::donations::on_captured(conn, tenant_id, intent_id).await?;
     queue_receipt(
         conn,
         tenant_id,
@@ -1306,6 +1448,8 @@ async fn on_captured(
         external_ref.as_deref(),
     )
     .await?;
+    // an event ticket order paid by this intent gets its tickets, once
+    crate::ticketing::on_payment_captured(conn, tenant_id, intent_id).await?;
     Ok(())
 }
 

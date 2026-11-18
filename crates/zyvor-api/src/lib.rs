@@ -14,6 +14,7 @@ pub mod bankmatch;
 pub mod billing;
 pub mod cards;
 pub mod cases;
+pub mod cash;
 pub mod checkout;
 pub mod clientenv;
 pub mod clock;
@@ -27,8 +28,10 @@ pub mod crypto;
 pub mod disputes;
 pub mod docfacts;
 pub mod docread;
+pub mod donations;
 pub mod error;
 pub mod events;
+pub mod exports;
 pub mod fee_check;
 pub mod fx;
 pub mod gst;
@@ -38,6 +41,8 @@ pub mod insights;
 pub mod installments;
 pub mod kyc;
 pub mod kyc_cashfree;
+pub mod link_bulk;
+pub mod link_stats;
 pub mod logo;
 pub mod mail;
 pub mod mandates;
@@ -53,26 +58,34 @@ pub mod pdf;
 pub mod platform;
 pub mod recon;
 pub mod redact;
+pub mod refund_stats;
 pub mod refunds;
 pub mod registry;
 pub mod reminders;
 pub mod reqlog;
 pub mod rota;
+pub mod routing_auto;
 pub mod saved_views;
 pub mod settle;
 pub mod signup;
 pub mod sim_circle;
 pub mod sim_mandate;
 pub mod sim_pay;
+pub mod sms;
+pub mod softretry;
 pub mod state_machine;
+pub mod storefront;
 pub mod suggestions;
 pub mod telemetry;
 pub mod tenant;
 pub mod testdata;
+pub mod ticket_orders;
+pub mod ticketing;
 pub mod timeline;
 pub mod unsubscribe;
 pub mod uploads;
 pub mod vendors;
+pub mod verticals;
 pub mod webhooks_in;
 pub mod worker;
 
@@ -149,6 +162,8 @@ pub struct AppState {
     /// Replaces the payout rail (`ZYVOR_PAYOUT_RAIL_URL` or the simulator) for every payout sent. For tests that
     /// need a rail that fails, hangs or counts its calls; always `None` in the binaries.
     pub payout_rail: Option<Arc<dyn zyvor_settle::PayoutRail>>,
+    /// Outbound SMS (`ZYVOR_SMS_MODE`: off, sandbox or hook); off by default. See `sms`.
+    pub sms: sms::Mode,
 }
 
 pub use crypto::Crypto;
@@ -188,6 +203,7 @@ impl AppState {
             review_timezone: None,
             review_auto_assign: false,
             payout_rail: None,
+            sms: sms::Mode::Off,
         }
     }
 
@@ -195,6 +211,7 @@ impl AppState {
     /// (`ZYVOR_CHECKOUT_PUBLIC_URL`) and the unsubscribe link (`ZYVOR_PUBLIC_API_URL` with `ZYVOR_UNSUBSCRIBE_SECRET`).
     /// Both the API and the worker call this, since the worker is what sends the mail and raises the invoices.
     pub fn mail_links_from_env(&mut self) {
+        self.sms = sms::Mode::from_env();
         self.checkout_public_url = std::env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
             .ok()
             .filter(|u| u.starts_with("http"));
@@ -412,6 +429,35 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/settlements/{id}/fee_check",
             get(fee_check::get_check).post(fee_check::recheck),
+        )
+        // cash visibility: money in transit, settlement lag, forecast and delay alerts
+        .route("/cash/dashboard", get(cash::dashboard))
+        .route("/cash/lag", get(cash::lag))
+        .route("/cash/forecast", get(cash::forecast_endpoint))
+        .route("/cash/alerts/scan", post(cash::scan))
+        .route(
+            "/cash/settings",
+            get(cash::get_settings).post(cash::set_settings),
+        )
+        .route(
+            "/cash/lag_rules",
+            post(cash::create_lag_rule).get(cash::list_lag_rules),
+        )
+        .route(
+            "/cash/lag_rules/{id}",
+            axum::routing::delete(cash::delete_lag_rule),
+        )
+        .route("/analytics/refunds", get(refund_stats::analytics))
+        // accounting exports
+        .route("/exports/journal", get(exports::journal))
+        .route("/exports/gst_summary", get(exports::gst_summary))
+        .route(
+            "/exports/account_mappings",
+            post(exports::set_mapping).get(exports::list_mappings),
+        )
+        .route(
+            "/exports/account_mappings/{id}",
+            axum::routing::delete(exports::delete_mapping),
         )
         // administration
         .route("/api_keys", post(create_key).get(list_keys))
@@ -678,6 +724,15 @@ pub fn app(state: AppState) -> Router {
             "/routing/health/settings",
             get(health::get_settings).put(health::put_settings),
         )
+        // routing automation: shadow mode, soft retry, cost-aware routing, one kill switch, the provider scorecard
+        .route(
+            "/routing/automation",
+            get(routing_auto::get_automation).put(routing_auto::put_automation),
+        )
+        .route("/routing/automation/pause", post(routing_auto::pause))
+        .route("/routing/automation/resume", post(routing_auto::resume))
+        .route("/routing/shadow/report", get(routing_auto::shadow_report))
+        .route("/routing/scorecard", get(routing_auto::scorecard))
         .route("/test_data/reset", post(testdata::reset))
         .route(
             "/settings/logo",
@@ -832,6 +887,158 @@ pub fn app(state: AppState) -> Router {
             post(coupons::create_coupon).get(coupons::list_coupons),
         )
         .route("/coupons/{id}/deactivate", post(coupons::deactivate_coupon))
+        // events and ticketing (organiser side)
+        .route(
+            "/events",
+            post(ticketing::create_event).get(ticketing::list_events),
+        )
+        .route(
+            "/events/{id}",
+            get(ticketing::get_event).put(ticketing::edit_event),
+        )
+        .route("/events/{id}/status", post(ticketing::set_status))
+        .route("/events/{id}/tiers", post(ticketing::add_tier))
+        .route("/events/{id}/tiers/{tier_id}", put(ticketing::edit_tier))
+        .route(
+            "/events/{id}/tiers/{tier_id}/archive",
+            post(ticketing::archive_tier),
+        )
+        .route("/events/{id}/form_fields", put(ticketing::put_form_fields))
+        .route("/events/{id}/orders", get(ticketing::list_orders))
+        .route("/events/{id}/orders/{order_id}", get(ticketing::get_order))
+        .route(
+            "/events/{id}/orders/{order_id}/cancel",
+            post(ticketing::cancel_order),
+        )
+        .route("/events/{id}/cancel", post(ticketing::cancel_event))
+        .route("/events/{id}/attendees", get(ticketing::list_attendees))
+        .route("/events/{id}/attendees.csv", get(ticketing::attendees_csv))
+        .route("/events/{id}/checkin", post(ticketing::checkin))
+        .route("/events/{id}/checkin/sync", post(ticketing::checkin_sync))
+        .route(
+            "/events/{id}/checkin/export",
+            get(ticketing::checkin_export),
+        )
+        .route("/events/{id}/checkin/stats", get(ticketing::checkin_stats))
+        .route("/events/{id}/refund_report", get(ticketing::refund_report))
+        .route(
+            "/events/{id}/refund_batches/{batch_id}",
+            get(ticketing::get_batch),
+        )
+        .route(
+            "/events/{id}/refund_batches/{batch_id}/process",
+            post(ticketing::process_batch),
+        )
+        // events and ticketing (public: event page, order, ticket)
+        .route(
+            "/public/events/{tenant_id}/{event_id}",
+            get(ticket_orders::event_page),
+        )
+        .route(
+            "/public/events/{tenant_id}/{event_id}/orders",
+            post(ticket_orders::create_order),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}",
+            get(ticket_orders::order_page),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}/cancel",
+            post(ticket_orders::buyer_cancel),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}/tickets/{ticket_id}/qr.svg",
+            get(ticket_orders::ticket_qr),
+        )
+        // hosted seller page: the seller's side, then the public page a visitor opens
+        .route(
+            "/storefront",
+            get(storefront::get_storefront).put(storefront::put_storefront),
+        )
+        .route(
+            "/storefront/images",
+            post(storefront::upload_image).layer(axum::extract::DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
+            "/storefront/items",
+            post(storefront::create_item).get(storefront::list_items),
+        )
+        .route(
+            "/storefront/items/{id}",
+            axum::routing::patch(storefront::patch_item),
+        )
+        .route("/storefront/orders", get(storefront::list_orders))
+        .route("/storefront/orders/{id}", get(storefront::get_order))
+        .route(
+            "/storefront/orders/{id}/fulfill",
+            post(storefront::fulfill_order),
+        )
+        .route(
+            "/storefront/orders/{id}/cancel",
+            post(storefront::cancel_order),
+        )
+        .route(
+            "/storefront/orders/{id}/refund",
+            post(storefront::refund_order),
+        )
+        .route("/store/{slug}", get(storefront::public_page))
+        .route("/store/{slug}/images/{id}", get(storefront::public_image))
+        .route("/store/{slug}/orders", post(storefront::public_order))
+        // school fees and society dues (one engine; {kind} is school or society)
+        .route(
+            "/dues/{kind}/groups",
+            post(verticals::create_group).get(verticals::list_groups),
+        )
+        .route(
+            "/dues/{kind}/heads",
+            post(verticals::create_head).get(verticals::list_heads),
+        )
+        .route(
+            "/dues/{kind}/members",
+            post(verticals::upsert).get(verticals::list_members),
+        )
+        .route("/dues/{kind}/members.csv", get(verticals::export_members))
+        .route(
+            "/dues/{kind}/members/import",
+            post(verticals::import_members),
+        )
+        .route("/dues/{kind}/assign", post(verticals::assign))
+        .route("/dues/{kind}/report", get(verticals::get_report))
+        .route("/dues/{kind}/report.csv", get(verticals::report_csv))
+        .route("/dues/{kind}/reminders", post(verticals::send_reminders))
+        .route(
+            "/dues/{kind}/invoices/{invoice_id}/receipt.pdf",
+            get(verticals::receipt_pdf),
+        )
+        .route(
+            "/dues/{kind}/settings",
+            get(verticals::get_settings).put(verticals::put_settings),
+        )
+        // donations
+        .route(
+            "/donations/campaigns",
+            post(donations::create_campaign).get(donations::list_campaigns),
+        )
+        .route(
+            "/donations/campaigns/{id}",
+            axum::routing::patch(donations::patch_campaign),
+        )
+        .route("/donations/campaigns/{id}/summary", get(donations::summary))
+        .route(
+            "/donations/campaigns/{id}/pledges",
+            post(donations::create_pledge),
+        )
+        .route("/donations", get(donations::list_donations))
+        .route("/donations.csv", get(donations::export_csv))
+        .route("/donations/{id}/receipt.pdf", get(donations::receipt_pdf))
+        .route(
+            "/donate/{tenant_id}/{campaign_id}",
+            get(donations::public_campaign),
+        )
+        .route(
+            "/donate/{tenant_id}/{campaign_id}/start",
+            post(donations::start),
+        )
         // counters and branch summaries
         .route(
             "/counters",
@@ -895,6 +1102,21 @@ pub fn app(state: AppState) -> Router {
             post(payment_links::cancel_link),
         )
         .route("/payment_links/{id}/send", post(payment_links::send_link))
+        .route(
+            "/payment_links/{id}/send_sms",
+            post(payment_links::send_link_sms),
+        )
+        .route("/payment_links/{id}/share", get(payment_links::share_link))
+        .route(
+            "/payment_links/{id}/analytics",
+            get(link_stats::link_analytics),
+        )
+        .route("/payment_links/analytics", get(link_stats::summary))
+        .route("/payment_links/bulk", post(link_bulk::bulk_create))
+        .route(
+            "/payment_links/imports/{id}/export.csv",
+            get(link_bulk::export_import),
+        )
         .route(
             "/checkout/links/{tenant_id}/{token}",
             get(payment_links::link_info),

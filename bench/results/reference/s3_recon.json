@@ -1,0 +1,670 @@
+{
+  "description": "Reconciliation on synthetic statements with injected errors (simulator, made-up data)",
+  "settlements_per_layout": 60,
+  "totals": {
+    "layouts_tested": 8,
+    "layouts_that_failed_to_import": 0,
+    "credit_lines_with_a_true_settlement": 467,
+    "confirmed_correct": 311,
+    "auto_confirmed_wrong": 0,
+    "suggested_including_truth": 156,
+    "suggested_not_including_truth": 0,
+    "unmatched_but_a_true_settlement_exists": 0,
+    "unrelated_credits_with_a_suggestion": 41,
+    "unrelated_credits_unmatched": 112,
+    "match_rate_pct_confirmed_correct_of_lines_with_truth": 66.6,
+    "match_rate_pct_when_the_reference_is_present_and_readable": 100,
+    "resolved_or_suggested_pct": 100,
+    "reference_bearing_lines_in_scope": 342,
+    "missing_credits_injected": 45,
+    "missing_credits_flagged": 45,
+    "short_credits_injected": 41,
+    "amount_mismatch_cases_opened": 41,
+    "reupload_added_rows_total": 0,
+    "by_category": {
+      "near_miss_reference": {
+        "lines": 48,
+        "unmatched_correctly": 48
+      },
+      "unrelated_credit": {
+        "lines": 64,
+        "unmatched_correctly": 64
+      },
+      "degraded_reference": {
+        "lines": 45,
+        "confirmed_correct": 10,
+        "suggested_incl_truth": 35
+      },
+      "exact_ref_column": {
+        "lines": 126,
+        "confirmed_correct": 126
+      },
+      "ref_in_narration": {
+        "lines": 134,
+        "confirmed_correct": 134
+      },
+      "duplicated_row": {
+        "lines": 41,
+        "suggested_incl_truth": 41
+      },
+      "duplicate_of_a_real_credit": {
+        "lines": 41,
+        "suggested_no_truth_exists": 41
+      },
+      "no_reference_exact_amount": {
+        "lines": 48,
+        "suggested_incl_truth": 48
+      },
+      "short_credit": {
+        "lines": 41,
+        "confirmed_correct": 41
+      },
+      "twin_no_reference": {
+        "lines": 32,
+        "suggested_incl_truth": 32
+      }
+    }
+  },
+  "layouts": [
+    {
+      "layout": "hdfc",
+      "rows_in_file": 78,
+      "lines_parsed": 78,
+      "credits": 71,
+      "credit_lines_with_a_true_settlement": 54,
+      "confirmed_correct": 37,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 17,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 3,
+      "by_category": {
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "degraded_reference": {
+          "lines": 8,
+          "confirmed_correct": 2,
+          "suggested_incl_truth": 6
+        },
+        "exact_ref_column": {
+          "lines": 23,
+          "confirmed_correct": 23
+        },
+        "ref_in_narration": {
+          "lines": 11,
+          "confirmed_correct": 11
+        },
+        "duplicated_row": {
+          "lines": 3,
+          "suggested_incl_truth": 3
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 3,
+          "suggested_no_truth_exists": 3
+        },
+        "no_reference_exact_amount": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "short_credit": {
+          "lines": 1,
+          "confirmed_correct": 1
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 10,
+      "missing_credit_flagged": 10,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 1,
+      "amount_mismatch_cases": 1,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 78
+      },
+      "reupload_overlapping_half": {
+        "rows": 39,
+        "added": 0,
+        "duplicates": 39
+      },
+      "matched_lines_after_reuploads": 37,
+      "matched_lines_before_reuploads": 37
+    },
+    {
+      "layout": "icici",
+      "rows_in_file": 86,
+      "lines_parsed": 86,
+      "credits": 79,
+      "credit_lines_with_a_true_settlement": 58,
+      "confirmed_correct": 36,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 22,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 7,
+      "by_category": {
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "ref_in_narration": {
+          "lines": 15,
+          "confirmed_correct": 15
+        },
+        "exact_ref_column": {
+          "lines": 16,
+          "confirmed_correct": 16
+        },
+        "short_credit": {
+          "lines": 5,
+          "confirmed_correct": 5
+        },
+        "no_reference_exact_amount": {
+          "lines": 7,
+          "suggested_incl_truth": 7
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 7,
+          "suggested_no_truth_exists": 7
+        },
+        "duplicated_row": {
+          "lines": 7,
+          "suggested_incl_truth": 7
+        },
+        "degraded_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 6,
+      "missing_credit_flagged": 6,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 5,
+      "amount_mismatch_cases": 5,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 86
+      },
+      "reupload_overlapping_half": {
+        "rows": 43,
+        "added": 0,
+        "duplicates": 43
+      },
+      "matched_lines_after_reuploads": 36,
+      "matched_lines_before_reuploads": 36
+    },
+    {
+      "layout": "sbi",
+      "rows_in_file": 85,
+      "lines_parsed": 85,
+      "credits": 78,
+      "credit_lines_with_a_true_settlement": 59,
+      "confirmed_correct": 36,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 23,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 5,
+      "by_category": {
+        "ref_in_narration": {
+          "lines": 17,
+          "confirmed_correct": 17
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 5,
+          "suggested_no_truth_exists": 5
+        },
+        "duplicated_row": {
+          "lines": 5,
+          "suggested_incl_truth": 5
+        },
+        "no_reference_exact_amount": {
+          "lines": 12,
+          "suggested_incl_truth": 12
+        },
+        "short_credit": {
+          "lines": 8,
+          "confirmed_correct": 8
+        },
+        "degraded_reference": {
+          "lines": 3,
+          "confirmed_correct": 1,
+          "suggested_incl_truth": 2
+        },
+        "exact_ref_column": {
+          "lines": 10,
+          "confirmed_correct": 10
+        },
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 5,
+      "missing_credit_flagged": 5,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 8,
+      "amount_mismatch_cases": 8,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 85
+      },
+      "reupload_overlapping_half": {
+        "rows": 43,
+        "added": 0,
+        "duplicates": 43
+      },
+      "matched_lines_after_reuploads": 36,
+      "matched_lines_before_reuploads": 36
+    },
+    {
+      "layout": "axis",
+      "rows_in_file": 79,
+      "lines_parsed": 79,
+      "credits": 72,
+      "credit_lines_with_a_true_settlement": 54,
+      "confirmed_correct": 37,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 17,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 4,
+      "by_category": {
+        "no_reference_exact_amount": {
+          "lines": 5,
+          "suggested_incl_truth": 5
+        },
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "degraded_reference": {
+          "lines": 6,
+          "suggested_incl_truth": 4,
+          "confirmed_correct": 2
+        },
+        "duplicated_row": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "ref_in_narration": {
+          "lines": 15,
+          "confirmed_correct": 15
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 4,
+          "suggested_no_truth_exists": 4
+        },
+        "exact_ref_column": {
+          "lines": 16,
+          "confirmed_correct": 16
+        },
+        "short_credit": {
+          "lines": 4,
+          "confirmed_correct": 4
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 10,
+      "missing_credit_flagged": 10,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 4,
+      "amount_mismatch_cases": 4,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 79
+      },
+      "reupload_overlapping_half": {
+        "rows": 40,
+        "added": 0,
+        "duplicates": 40
+      },
+      "matched_lines_after_reuploads": 37,
+      "matched_lines_before_reuploads": 37
+    },
+    {
+      "layout": "kotak",
+      "rows_in_file": 84,
+      "lines_parsed": 84,
+      "credits": 77,
+      "credit_lines_with_a_true_settlement": 59,
+      "confirmed_correct": 41,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 18,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 4,
+      "by_category": {
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "short_credit": {
+          "lines": 5,
+          "confirmed_correct": 5
+        },
+        "ref_in_narration": {
+          "lines": 16,
+          "confirmed_correct": 16
+        },
+        "exact_ref_column": {
+          "lines": 19,
+          "confirmed_correct": 19
+        },
+        "no_reference_exact_amount": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "degraded_reference": {
+          "lines": 7,
+          "suggested_incl_truth": 6,
+          "confirmed_correct": 1
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 4,
+          "suggested_no_truth_exists": 4
+        },
+        "duplicated_row": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 5,
+      "missing_credit_flagged": 5,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 5,
+      "amount_mismatch_cases": 5,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 84
+      },
+      "reupload_overlapping_half": {
+        "rows": 42,
+        "added": 0,
+        "duplicates": 42
+      },
+      "matched_lines_after_reuploads": 41,
+      "matched_lines_before_reuploads": 41
+    },
+    {
+      "layout": "generic_split",
+      "rows_in_file": 87,
+      "lines_parsed": 87,
+      "credits": 80,
+      "credit_lines_with_a_true_settlement": 61,
+      "confirmed_correct": 44,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 17,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 5,
+      "by_category": {
+        "ref_in_narration": {
+          "lines": 26,
+          "confirmed_correct": 26
+        },
+        "exact_ref_column": {
+          "lines": 13,
+          "confirmed_correct": 13
+        },
+        "no_reference_exact_amount": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "duplicated_row": {
+          "lines": 5,
+          "suggested_incl_truth": 5
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 5,
+          "suggested_no_truth_exists": 5
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "short_credit": {
+          "lines": 5,
+          "confirmed_correct": 5
+        },
+        "degraded_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 3,
+      "missing_credit_flagged": 3,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 5,
+      "amount_mismatch_cases": 5,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 87
+      },
+      "reupload_overlapping_half": {
+        "rows": 44,
+        "added": 0,
+        "duplicates": 44
+      },
+      "matched_lines_after_reuploads": 44,
+      "matched_lines_before_reuploads": 44
+    },
+    {
+      "layout": "generic_signed",
+      "rows_in_file": 90,
+      "lines_parsed": 90,
+      "credits": 83,
+      "credit_lines_with_a_true_settlement": 60,
+      "confirmed_correct": 38,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 22,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 9,
+      "by_category": {
+        "exact_ref_column": {
+          "lines": 13,
+          "confirmed_correct": 13
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 9,
+          "suggested_no_truth_exists": 9
+        },
+        "duplicated_row": {
+          "lines": 9,
+          "suggested_incl_truth": 9
+        },
+        "ref_in_narration": {
+          "lines": 15,
+          "confirmed_correct": 15
+        },
+        "short_credit": {
+          "lines": 7,
+          "confirmed_correct": 7
+        },
+        "degraded_reference": {
+          "lines": 6,
+          "confirmed_correct": 3,
+          "suggested_incl_truth": 3
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "no_reference_exact_amount": {
+          "lines": 6,
+          "suggested_incl_truth": 6
+        },
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 4,
+      "missing_credit_flagged": 4,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 7,
+      "amount_mismatch_cases": 7,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 90
+      },
+      "reupload_overlapping_half": {
+        "rows": 45,
+        "added": 0,
+        "duplicates": 45
+      },
+      "matched_lines_after_reuploads": 38,
+      "matched_lines_before_reuploads": 38
+    },
+    {
+      "layout": "generic_drcr",
+      "rows_in_file": 87,
+      "lines_parsed": 87,
+      "credits": 80,
+      "credit_lines_with_a_true_settlement": 62,
+      "confirmed_correct": 42,
+      "confirmed_wrong": 0,
+      "suggested_including_truth": 20,
+      "suggested_not_including_truth": 0,
+      "unmatched_but_a_true_settlement_exists": 0,
+      "unrelated_credits_unmatched": 14,
+      "unrelated_credits_with_a_suggestion": 4,
+      "by_category": {
+        "unrelated_credit": {
+          "lines": 8,
+          "unmatched_correctly": 8
+        },
+        "no_reference_exact_amount": {
+          "lines": 6,
+          "suggested_incl_truth": 6
+        },
+        "ref_in_narration": {
+          "lines": 19,
+          "confirmed_correct": 19
+        },
+        "short_credit": {
+          "lines": 6,
+          "confirmed_correct": 6
+        },
+        "degraded_reference": {
+          "lines": 7,
+          "suggested_incl_truth": 6,
+          "confirmed_correct": 1
+        },
+        "exact_ref_column": {
+          "lines": 16,
+          "confirmed_correct": 16
+        },
+        "near_miss_reference": {
+          "lines": 6,
+          "unmatched_correctly": 6
+        },
+        "duplicated_row": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        },
+        "duplicate_of_a_real_credit": {
+          "lines": 4,
+          "suggested_no_truth_exists": 4
+        },
+        "twin_no_reference": {
+          "lines": 4,
+          "suggested_incl_truth": 4
+        }
+      },
+      "wrong_detail": [],
+      "settlements": 64,
+      "settlements_truly_without_credit": 2,
+      "missing_credit_flagged": 2,
+      "settlements_flagged_no_credit_although_a_credit_is_confirmed": 0,
+      "short_credits_injected": 6,
+      "amount_mismatch_cases": 6,
+      "reupload_same_file": {
+        "added": 0,
+        "duplicates": 87
+      },
+      "reupload_overlapping_half": {
+        "rows": 44,
+        "added": 0,
+        "duplicates": 44
+      },
+      "matched_lines_after_reuploads": 42,
+      "matched_lines_before_reuploads": 42
+    }
+  ],
+  "seed": 20261118,
+  "wall_seconds": 2.2
+}

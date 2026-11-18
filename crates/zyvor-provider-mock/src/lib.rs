@@ -1,4 +1,4 @@
-//! A local stand-in for the Razorpay and Cashfree HTTP APIs plus control endpoints under `/_sim/*`.
+//! A local stand-in for the Razorpay, Cashfree and PayU HTTP APIs plus control endpoints under `/_sim/*`.
 //! Everything here is SIMULATED: shapes follow the providers' public docs, but behaviour is ours.
 //! Control endpoints return signed webhook deliveries instead of pushing them, so tests decide
 //! when (and how many times, and in what order) the platform receives them.
@@ -45,9 +45,37 @@ struct Inner {
     /// Sticky outage per provider ("razorpay" / "cashfree"): `reject` (HTTP 400, nothing created: a definitive
     /// answer), `unavailable` (HTTP 503: outcome unknown to the caller) or `hang` (no answer: a timeout).
     outages: BTreeMap<String, String>,
+    /// Optional partial failure for a sticky outage: provider -> (percent of create-order calls the outage applies
+    /// to, seed, calls seen so far). Absent means every call (a full outage).
+    outage_partial: BTreeMap<String, (u8, u64, u64)>,
     charges: BTreeMap<String, i64>,
     /// calls received by the Secure ID (verification) endpoints, by path
     kyc_calls: BTreeMap<String, u64>,
+    payu: PayuState,
+}
+
+/// What the PayU simulation keeps. The credentials are obviously fake and can be changed with
+/// `POST /_sim/payu/credentials`; nothing here is, or looks like, a live secret.
+struct PayuState {
+    key: String,
+    salt: String,
+    merchant_secret: String,
+    /// by our transaction id
+    txns: BTreeMap<String, Value>,
+    /// by the merchant's refund token
+    refunds: BTreeMap<String, Value>,
+}
+
+impl Default for PayuState {
+    fn default() -> Self {
+        Self {
+            key: "payu_test_key".into(),
+            salt: "payu_test_salt".into(),
+            merchant_secret: "payu_test_merchant_secret".into(),
+            txns: Default::default(),
+            refunds: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -62,13 +90,33 @@ impl Mock {
         g.seq += 1;
         format!("{prefix}{:014}", g.seq)
     }
-    /// The sticky outage mode for a provider, if one is set.
+    /// The sticky outage mode for a provider, if one is set and applies to THIS call. A partial outage
+    /// (`fail_pct` below 100) applies to a fixed, seed-determined subset of the calls, so a run can be repeated.
     fn outage(&self, provider: &str) -> Option<String> {
-        self.inner.lock().unwrap().outages.get(provider).cloned()
+        let mut g = self.inner.lock().unwrap();
+        let mode = g.outages.get(provider).cloned()?;
+        if let Some((pct, seed, seen)) = g.outage_partial.get_mut(provider) {
+            let hit = partial_hit(*seed, *seen, *pct);
+            *seen += 1;
+            if !hit {
+                return None;
+            }
+        }
+        Some(mode)
     }
     fn take_behaviour(&self, op: &str) -> Option<String> {
         self.inner.lock().unwrap().behaviours.remove(op)
     }
+}
+
+/// Whether call number `n` falls in the failing `pct` percent: a splitmix64 hash of (seed, n), so the same seed gives the
+/// same pattern on every run and the long-run share converges on `pct`.
+fn partial_hit(seed: u64, n: u64, pct: u8) -> bool {
+    let mut z = seed.wrapping_add(n.wrapping_add(1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z % 100) < u64::from(pct)
 }
 
 /// A twelve-digit made-up bank reference, stable per payment id.
@@ -139,12 +187,21 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/pg/orders/{id}/refunds", post(cf_refund))
         .route("/pg/orders/{id}/refunds/{rid}", get(cf_get_refund))
         .route("/pg/settlement/recon", post(settlement_recon_cf))
+        // ---- payu ----
+        .route("/_payment", post(payu_payment))
+        .route("/merchant/postservice.php", post(payu_postservice))
+        .route("/settlement/range", get(payu_settlement_range))
+        .route("/_sim/payu/credentials", post(sim_payu_credentials))
+        .route("/_sim/payu/pay", post(sim_payu_pay))
+        .route("/_sim/payu/refund_complete", post(sim_payu_refund_complete))
+        .route("/_sim/payu/settle", post(sim_payu_settle))
         // ---- control ----
         .route("/_sim/behaviour", post(sim_behaviour))
         .route("/_sim/outage", post(sim_outage))
         .route("/_sim/razorpay/pay", post(sim_rz_pay))
         .route("/_sim/razorpay/refund_event", post(sim_rz_refund_event))
         .route("/_sim/cashfree/pay", post(sim_cf_pay))
+        .route("/_sim/cashfree/refund_event", post(sim_cf_refund_event))
         .route("/_sim/{provider}/settle", post(sim_settle))
         .route("/_sim/stats", get(sim_stats))
         .with_state(m)
@@ -620,6 +677,25 @@ async fn sim_cf_pay(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     Ok(Json(json!({ "payment": pay, "webhook": hook })))
 }
 
+/// Deliver Cashfree's refund-status webhook for a refund we created. `refund_id` is ours.
+async fn sim_cf_refund_event(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let rid = b["refund_id"].as_str().unwrap_or_default().to_string();
+    let r = m
+        .inner
+        .lock()
+        .unwrap()
+        .cf_refunds
+        .get(&rid)
+        .cloned()
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "refund not found"))?;
+    let hook = cf_delivery(
+        &m,
+        "REFUND_STATUS_WEBHOOK",
+        json!({ "refund": r, "order": { "order_id": r["order_id"] } }),
+    );
+    Ok(Json(json!({ "refund": r, "webhook": hook })))
+}
+
 // =============== settlements (shared) ===============
 
 /// Settle everything captured/refunded and not yet settled for `provider`.
@@ -748,7 +824,9 @@ async fn sim_behaviour(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
 }
 
 /// Switch a provider's outage on or off: `{"provider": "razorpay", "mode": "reject" | "unavailable" | "hang" | "off"}`.
-/// Sticky until switched off, unlike `behaviour`, which is one-shot.
+/// Sticky until switched off, unlike `behaviour`, which is one-shot. Optional `fail_pct` (0 to 100, default 100) makes it
+/// a brown-out: only that percentage of create-order calls fail (which ones is fixed by `seed`, default 0); the rest
+/// are served normally. Without `fail_pct` every call fails, as before.
 async fn sim_outage(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
     let provider = b["provider"].as_str().unwrap_or_default().to_string();
     let mode = b["mode"].as_str().unwrap_or("off");
@@ -764,10 +842,24 @@ async fn sim_outage(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
             "mode must be reject, unavailable, hang or off",
         ));
     }
+    let pct = match b.get("fail_pct") {
+        None | Some(Value::Null) => 100,
+        Some(v) => v.as_u64().filter(|p| *p <= 100).ok_or_else(|| {
+            err(
+                StatusCode::BAD_REQUEST,
+                "fail_pct must be a whole number from 0 to 100",
+            )
+        })? as u8,
+    };
+    let seed = b["seed"].as_u64().unwrap_or(0);
     let mut g = m.inner.lock().unwrap();
+    g.outage_partial.remove(&provider);
     if mode == "off" {
         g.outages.remove(&provider);
     } else {
+        if pct < 100 {
+            g.outage_partial.insert(provider.clone(), (pct, seed, 0));
+        }
         g.outages.insert(provider, mode.to_string());
     }
     Ok(Json(json!({ "ok": true })))
@@ -785,8 +877,19 @@ async fn sim_stats(State(m): State<Mock>) -> Resp {
                 .or_default() += 1;
             a
         });
+    // money actually taken per Razorpay order (a captured payment each), so a test can tell a double charge from one
+    let rz_orders: BTreeMap<String, usize> = g
+        .rz_payments
+        .values()
+        .filter(|p| p["status"] == "captured")
+        .fold(BTreeMap::new(), |mut a, p| {
+            *a.entry(p["order_id"].as_str().unwrap_or_default().to_string())
+                .or_default() += 1;
+            a
+        });
     Ok(Json(json!({
         "charges": g.charges,
+        "razorpay_captured_payments_by_order": rz_orders,
         "kyc_calls": g.kyc_calls,
         "cashfree_successful_payments_by_order": cf_orders,
         "cashfree_payments": g.cf_payments.len(),
@@ -997,4 +1100,642 @@ async fn kyc_gstin(
             json!({ "reference_id": 19, "GSTIN": g, "legal_name_of_business": "KIRAN TRADERS PRIVATE LIMITED", "trade_name_of_business": "KIRAN TRADERS", "gst_in_status": status, "taxpayer_type": "Regular", "valid": true, "message": "GSTIN Exists" }),
         ),
     )
+}
+
+// =============== PayU ===============
+//
+// Built from PayU's public documentation (docs.payu.in), the same pages the adapter was built from, so the two can
+// agree with each other and still both be wrong about PayU. It is a SIMULATION, not PayU's sandbox. Hosted checkout
+// (`/_payment`), Verify Payment and the refund commands (`/merchant/postservice.php`), the Settlement Detail Range
+// report (`/settlement/range`) and the payment webhook (returned by `/_sim/payu/pay` for the test to deliver).
+
+fn sha512_hex(parts: &[&str]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha512::digest(parts.join("|").as_bytes()))
+}
+
+/// A decimal-rupee string ("499.00") from paise, and back, both without floats.
+fn payu_dec(minor: i64) -> String {
+    format!("{}.{:02}", minor / 100, minor % 100)
+}
+fn payu_minor(s: &str) -> Option<i64> {
+    let (w, f) = s.split_once('.').unwrap_or((s, ""));
+    let f = format!("{f:0<2}");
+    Some(w.parse::<i64>().ok()? * 100 + f.get(..2)?.parse::<i64>().ok()?)
+}
+
+type Form = axum::Form<BTreeMap<String, String>>;
+
+/// The payer's browser posts the checkout form. The hash is checked as PayU does; a good one starts the transaction.
+async fn payu_payment(State(m): State<Mock>, axum::Form(f): Form) -> Resp {
+    let mut g = m.inner.lock().unwrap();
+    let p = &mut g.payu;
+    let v = |k: &str| f.get(k).map(String::as_str).unwrap_or("");
+    for required in [
+        "key",
+        "txnid",
+        "amount",
+        "productinfo",
+        "firstname",
+        "email",
+        "phone",
+        "surl",
+        "furl",
+        "hash",
+    ] {
+        if v(required).is_empty() {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                &format!("{required} is mandatory"),
+            ));
+        }
+    }
+    let want = sha512_hex(&[
+        v("key"),
+        v("txnid"),
+        v("amount"),
+        v("productinfo"),
+        v("firstname"),
+        v("email"),
+        v("udf1"),
+        v("udf2"),
+        v("udf3"),
+        v("udf4"),
+        v("udf5"),
+        "",
+        "",
+        "",
+        "",
+        "",
+        &p.salt,
+    ]);
+    if v("key") != p.key || want != v("hash") {
+        return Err(err(StatusCode::BAD_REQUEST, "invalid hash"));
+    }
+    if v("txnid").len() > 25 {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "txnid is longer than 25 characters",
+        ));
+    }
+    if payu_minor(v("amount")).is_none_or(|a| a < 100) {
+        return Err(err(StatusCode::BAD_REQUEST, "amount must be at least 1.00"));
+    }
+    let txnid = v("txnid").to_string();
+    if p.txns
+        .get(&txnid)
+        .is_some_and(|t| t["unmappedstatus"] == "captured")
+    {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "this transaction was already processed successfully",
+        ));
+    }
+    let t = json!({
+        "txnid": txnid, "amount": v("amount"), "key": v("key"), "productinfo": v("productinfo"),
+        "firstname": v("firstname"), "email": v("email"), "phone": v("phone"),
+        "udf1": v("udf1"), "udf2": v("udf2"), "udf3": v("udf3"), "udf4": v("udf4"), "udf5": v("udf5"),
+        "status": "pending", "unmappedstatus": "initiated", "mihpayid": Value::Null,
+    });
+    p.txns.insert(txnid, t.clone());
+    Ok(Json(json!({ "txnid": t["txnid"], "status": "initiated" })))
+}
+
+fn payu_auth(
+    f: &BTreeMap<String, String>,
+    salt: &str,
+    key: &str,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let v = |k: &str| f.get(k).map(String::as_str).unwrap_or("");
+    let want = sha512_hex(&[key, v("command"), v("var1"), salt]);
+    if v("key") != key || v("hash") != want {
+        return Err((
+            StatusCode::OK,
+            Json(json!({ "status": 0, "msg": "Invalid hash", "transaction_details": {} })),
+        ));
+    }
+    Ok(())
+}
+
+/// Verify Payment, the refund command and Check Action Status, as the documentation describes them.
+async fn payu_postservice(State(m): State<Mock>, axum::Form(f): Form) -> Resp {
+    let mut g = m.inner.lock().unwrap();
+    let (key, salt) = (g.payu.key.clone(), g.payu.salt.clone());
+    payu_auth(&f, &salt, &key)?;
+    let v = |k: &str| f.get(k).map(String::as_str).unwrap_or("").to_string();
+    match v("command").as_str() {
+        "verify_payment" => {
+            let mut details = serde_json::Map::new();
+            let mut found = 0;
+            let ids: Vec<String> = v("var1").split('|').map(str::to_string).collect();
+            for id in &ids {
+                match g.payu.txns.get(id) {
+                    Some(t) if !t["mihpayid"].is_null() || t["unmappedstatus"] != "initiated" => {
+                        found += 1;
+                        details.insert(id.clone(), t.clone());
+                    }
+                    // a transaction the payer has not reached is "Not Found", as the documentation shows
+                    _ => {
+                        details.insert(
+                            id.clone(),
+                            json!({ "mihpayid": "Not Found", "status": "Not Found" }),
+                        );
+                    }
+                }
+            }
+            Ok(Json(json!({
+                "status": if found == ids.len() { 1 } else { 0 },
+                "msg": format!("{found} out of {} Transactions Fetched Successfully", ids.len()),
+                "transaction_details": details,
+            })))
+        }
+        "cancel_refund_transaction" => {
+            let (payu_id, token, amount) = (v("var1"), v("var2"), v("var3"));
+            let fail = |msg: &str| Ok(Json(json!({ "status": 0, "msg": msg })));
+            if token.is_empty() {
+                return fail("token is empty");
+            }
+            if amount.is_empty() {
+                return fail("amount is empty");
+            }
+            if token.len() > 23 {
+                return fail("token is longer than 23 characters");
+            }
+            if g.payu.refunds.contains_key(&token) {
+                return fail("token already used or request pending");
+            }
+            let Some(txn) = g
+                .payu
+                .txns
+                .values()
+                .find(|t| t["mihpayid"] == payu_id.as_str())
+                .cloned()
+            else {
+                return fail("transaction not exists");
+            };
+            let paid = payu_minor(txn["amount"].as_str().unwrap_or("0")).unwrap_or(0);
+            let want = payu_minor(&amount).unwrap_or(0);
+            let done: i64 = g
+                .payu
+                .refunds
+                .values()
+                .filter(|r| r["mihpayid"] == payu_id.as_str())
+                .filter_map(|r| payu_minor(r["amt"].as_str()?))
+                .sum();
+            if txn["unmappedstatus"] != "captured" || want <= 0 || done + want > paid {
+                return fail("Refund request failed");
+            }
+            let request_id = format!("{}", 100_000_000 + g.payu.refunds.len() as u64 + 1);
+            let r = json!({
+                "action": "refund", "status": "QUEUED", "token": token, "amt": amount,
+                "mihpayid": payu_id, "request_id": request_id, "mode": "UPI",
+                "bank_ref_num": Value::Null, "refund_mode": "Back to Source",
+            });
+            g.payu.refunds.insert(token, r);
+            Ok(Json(json!({
+                "status": 1, "msg": "Refund Request Queued", "request_id": request_id,
+                "bank_ref_num": Value::Null, "mihpayid": payu_id,
+            })))
+        }
+        "check_action_status" => {
+            let payu_id = v("var1");
+            let mut actions = serde_json::Map::new();
+            if let Some(t) = g
+                .payu
+                .txns
+                .values()
+                .find(|t| t["mihpayid"] == payu_id.as_str())
+            {
+                actions.insert("1".into(), json!({ "action": "capture", "status": "SUCCESS", "amt": t["amount"], "mihpayid": payu_id, "request_id": "1" }));
+            }
+            for r in g
+                .payu
+                .refunds
+                .values()
+                .filter(|r| r["mihpayid"] == payu_id.as_str())
+            {
+                actions.insert(
+                    r["request_id"].as_str().unwrap_or("").to_string(),
+                    r.clone(),
+                );
+            }
+            if actions.is_empty() {
+                return Ok(Json(json!({
+                    "status": 0, "msg": "0 out of 1 Transactions Fetched Successfully",
+                    "transaction_details": { payu_id: "No action status found" },
+                })));
+            }
+            Ok(Json(json!({
+                "status": 1, "msg": "1 out of 1 Transactions Fetched Successfully",
+                "transaction_details": { payu_id: actions },
+            })))
+        }
+        other => Ok(Json(
+            json!({ "status": 0, "msg": format!("unknown command {other}") }),
+        )),
+    }
+}
+
+fn payu_webhook_body(salt: &str, t: &Value) -> String {
+    let g = |k: &str| t[k].as_str().unwrap_or("");
+    let hash = sha512_hex(&[
+        salt,
+        g("status"),
+        "",
+        "",
+        "",
+        "",
+        "",
+        g("udf5"),
+        g("udf4"),
+        g("udf3"),
+        g("udf2"),
+        g("udf1"),
+        g("email"),
+        g("firstname"),
+        g("productinfo"),
+        g("amount"),
+        g("txnid"),
+        g("key"),
+    ]);
+    let mut s = form_urlencoded::Serializer::new(String::new());
+    for (k, v) in [
+        ("mihpayid", g("mihpayid")),
+        ("mode", "UPI"),
+        ("status", g("status")),
+        ("key", g("key")),
+        ("txnid", g("txnid")),
+        ("amount", g("amount")),
+        ("productinfo", g("productinfo")),
+        ("firstname", g("firstname")),
+        ("email", g("email")),
+        ("phone", g("phone")),
+        ("udf1", g("udf1")),
+        ("udf2", g("udf2")),
+        ("udf3", g("udf3")),
+        ("udf4", g("udf4")),
+        ("udf5", g("udf5")),
+        ("unmappedstatus", g("unmappedstatus")),
+        ("bank_ref_num", g("bank_ref_num")),
+        ("error", g("error")),
+        ("error_Message", g("error_Message")),
+        ("PG_TYPE", "UPI-PG"),
+        ("hash", &hash),
+    ] {
+        s.append_pair(k, v);
+    }
+    s.finish()
+}
+
+/// The payer finishes (or abandons) the hosted page. `outcome`: captured | failed | auth. Returns the form-encoded
+/// webhook PayU would POST, with its reverse hash, for the test to deliver (or tamper with, or repeat).
+async fn sim_payu_pay(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let txnid = b["txnid"].as_str().unwrap_or_default().to_string();
+    let outcome = b["outcome"].as_str().unwrap_or("captured");
+    let mut g = m.inner.lock().unwrap();
+    let n = g.payu.txns.len();
+    let salt = g.payu.salt.clone();
+    let t = g
+        .payu
+        .txns
+        .get_mut(&txnid)
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "transaction not found"))?;
+    if t["mihpayid"].is_null() {
+        t["mihpayid"] = json!(format!("{}", 403_993_715_000_000_000u64 + n as u64 + 1));
+    }
+    let mihpayid = t["mihpayid"].as_str().unwrap_or("").to_string();
+    match outcome {
+        "captured" | "auth" => {
+            t["status"] = json!("success");
+            t["unmappedstatus"] = json!(outcome);
+            t["bank_ref_num"] = json!(mock_rrn(&mihpayid));
+            t["error"] = json!("E000");
+            t["error_Message"] = json!("NO ERROR");
+        }
+        _ => {
+            t["status"] = json!("failure");
+            t["unmappedstatus"] = json!("failed");
+            t["error"] = json!("E308");
+            t["error_Message"] = json!("Bank denied the transaction");
+        }
+    }
+    let t = t.clone();
+    if outcome == "captured" {
+        *g.charges.entry("payu".into()).or_default() += 1;
+    }
+    let body = payu_webhook_body(&salt, &t);
+    Ok(Json(json!({
+        "payment": t,
+        "webhook": { "headers": { "content-type": "application/x-www-form-urlencoded" }, "body": body },
+    })))
+}
+
+/// PayU finishes a queued refund. `outcome`: success | failure.
+async fn sim_payu_refund_complete(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let id = b["request_id"].as_str().unwrap_or_default();
+    let mut g = m.inner.lock().unwrap();
+    let r = g
+        .payu
+        .refunds
+        .values_mut()
+        .find(|r| r["request_id"] == id)
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "refund not found"))?;
+    let ok = b["outcome"].as_str().unwrap_or("success") == "success";
+    r["status"] = json!(if ok { "success" } else { "failure" });
+    if ok {
+        r["bank_ref_num"] = json!(mock_rrn(id));
+    }
+    Ok(Json(r.clone()))
+}
+
+async fn sim_payu_credentials(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let mut g = m.inner.lock().unwrap();
+    let p = &mut g.payu;
+    if let Some(v) = b["key"].as_str() {
+        p.key = v.to_string();
+    }
+    if let Some(v) = b["salt"].as_str() {
+        p.salt = v.to_string();
+    }
+    if let Some(v) = b["merchant_secret"].as_str() {
+        p.merchant_secret = v.to_string();
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Settle everything captured or refunded and not yet settled, in the shape of PayU's Settlement Detail Range report.
+/// Body as for the other providers: `fee_bps`, `tax_bps` (on the fee), `adjustment_minor` (signed).
+async fn sim_payu_settle(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
+    let (fee_bps, tax_bps) = (
+        b["fee_bps"].as_i64().unwrap_or(200),
+        b["tax_bps"].as_i64().unwrap_or(1800),
+    );
+    let mut g = m.inner.lock().unwrap();
+    let sid = format!(
+        "1212729820250826{:04}",
+        g.settlements.get("payu").map_or(0, Vec::len) + 1
+    );
+    let (mut gross, mut net_total, mut txns, mut refunds_total) = (0i64, 0i64, Vec::new(), 0i64);
+    let pays: Vec<Value> = g
+        .payu
+        .txns
+        .values()
+        .filter(|t| t["unmappedstatus"] == "captured")
+        .cloned()
+        .collect();
+    for t in pays {
+        let id = format!("payu:{}", t["txnid"].as_str().unwrap_or(""));
+        if g.settled.contains(&id) {
+            continue;
+        }
+        let amt = payu_minor(t["amount"].as_str().unwrap_or("0")).unwrap_or(0);
+        let fee = (amt * fee_bps + 5_000) / 10_000;
+        let tax = (fee * tax_bps + 5_000) / 10_000;
+        gross += amt;
+        net_total += amt - fee - tax;
+        txns.push(json!({
+            "action": "capture", "payuId": t["mihpayid"], "requestId": "1", "transactionAmount": format!("{}0", payu_dec(amt)),
+            "merchantServiceFee": format!("{}00", payu_dec(fee)), "merchantServiceTax": format!("{}00", payu_dec(tax)),
+            "merchantNetAmount": payu_dec(amt - fee - tax), "merchantTransactionId": t["txnid"], "mode": "UPI",
+            "paymentStatus": "captured", "transactionCurrency": "INR", "settlementCurrency": "INR",
+        }));
+        g.settled.insert(id);
+    }
+    let rfs: Vec<Value> = g
+        .payu
+        .refunds
+        .values()
+        .filter(|r| r["status"] == "success")
+        .cloned()
+        .collect();
+    for r in rfs {
+        let id = format!("payu:refund:{}", r["token"].as_str().unwrap_or(""));
+        if g.settled.contains(&id) {
+            continue;
+        }
+        let amt = payu_minor(r["amt"].as_str().unwrap_or("0")).unwrap_or(0);
+        refunds_total += amt;
+        net_total -= amt;
+        txns.push(json!({
+            "action": "refund", "payuId": r["mihpayid"], "requestId": r["request_id"],
+            "transactionAmount": payu_dec(amt), "merchantNetAmount": "", "mode": "UPI",
+            "paymentStatus": "refund",
+        }));
+        g.settled.insert(id);
+    }
+    let adjustment = b["adjustment_minor"].as_i64().unwrap_or(0);
+    if adjustment != 0 {
+        net_total += adjustment;
+        txns.push(json!({
+            "action": if adjustment < 0 { "ADJ_debit" } else { "ADJ_credit" }, "payuId": format!("ADJ_{sid}"),
+            "requestId": "", "transactionAmount": payu_dec(adjustment.abs()), "merchantNetAmount": "", "mode": "debit",
+        }));
+    }
+    let row = json!({
+        "settlementId": sid, "settlementCompletedDate": format!("{} 02:51:22.000000", chrono::Utc::now().date_naive()),
+        "settlementAmount": payu_dec(net_total), "merchantId": 12127298, "utrNumber": format!("UTRPAYU{sid}"),
+        "transactionAmount": payu_dec(gross), "adjustmentAmount": payu_dec(adjustment),
+        "refundAmount": payu_dec(refunds_total), "transaction": txns,
+    });
+    let utr = row["utrNumber"].clone();
+    g.settlements.entry("payu".into()).or_default().push(row);
+    Ok(Json(json!({ "settlement_id": sid, "utr": utr })))
+}
+
+/// The settlement report. The `Authorization` header is checked against the merchant secret the way the
+/// documentation describes: `sha512("" + "|" + Date + "|" + secret)`.
+async fn payu_settlement_range(
+    State(m): State<Mock>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<BTreeMap<String, String>>,
+) -> Resp {
+    let g = m.inner.lock().unwrap();
+    let h = |n: &str| {
+        headers
+            .get(n)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let want = sha512_hex(&["", &h("date"), &g.payu.merchant_secret]);
+    let auth_ok = h("authorization").contains(&format!("signature=\"{want}\""))
+        && h("authorization").contains(&format!("username=\"{}\"", g.payu.key));
+    let unauthorized = || {
+        Ok(Json(
+            json!({ "status": 1, "message": "Unauthorized: Invalid signature", "result": null }),
+        ))
+    };
+    if !auth_ok {
+        return unauthorized();
+    }
+    let rows = g.settlements.get("payu").cloned().unwrap_or_default();
+    if rows.is_empty() {
+        return Ok(Json(
+            json!({ "status": 1, "message": "No data found", "result": "No data found" }),
+        ));
+    }
+    let size: usize = q
+        .get("pageSize")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
+    let page: usize = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
+    let data: Vec<Value> = rows
+        .iter()
+        .skip((page - 1) * size)
+        .take(size)
+        .cloned()
+        .collect();
+    Ok(Json(json!({
+        "status": 0,
+        "result": { "page": page, "size": data.len(), "totalCount": rows.len(), "data": data },
+    })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_hit_is_repeatable_and_close_to_the_requested_share() {
+        for pct in [0u8, 30, 60, 100] {
+            let a: Vec<bool> = (0..2000).map(|n| partial_hit(42, n, pct)).collect();
+            let b: Vec<bool> = (0..2000).map(|n| partial_hit(42, n, pct)).collect();
+            assert_eq!(a, b, "same seed, same pattern");
+            let hits = a.iter().filter(|x| **x).count() as f64 / 2000.0 * 100.0;
+            assert!((hits - f64::from(pct)).abs() < 3.0, "{pct}% gave {hits}%");
+        }
+        let other: Vec<bool> = (0..200).map(|n| partial_hit(43, n, 50)).collect();
+        let base: Vec<bool> = (0..200).map(|n| partial_hit(42, n, 50)).collect();
+        assert_ne!(other, base, "a different seed gives a different pattern");
+    }
+
+    async fn post(c: &reqwest::Client, url: &str, body: Value) -> (u16, Value) {
+        let r = c.post(url).json(&body).send().await.unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+
+    fn cfg() -> MockConfig {
+        MockConfig {
+            razorpay_webhook_secret: "x".into(),
+            cashfree_webhook_secret: "y".into(),
+        }
+    }
+
+    async fn failures(c: &reqwest::Client, base: &str, n: usize) -> Vec<bool> {
+        let mut out = Vec::new();
+        for _ in 0..n {
+            let (s, _) = post(
+                c,
+                &format!("{base}/v1/orders"),
+                json!({ "amount": 1000, "currency": "INR" }),
+            )
+            .await;
+            out.push(s != 200);
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_brown_out_fails_only_a_share_of_calls_the_same_way_every_time_and_off_clears_it() {
+        let c = reqwest::Client::new();
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            let base = spawn(cfg()).await;
+            let (s, _) = post(
+                &c,
+                &format!("{base}/_sim/outage"),
+                json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 30, "seed": 7 }),
+            )
+            .await;
+            assert_eq!(s, 200);
+            runs.push(failures(&c, &base, 200).await);
+        }
+        assert_eq!(runs[0], runs[1], "a seeded brown-out repeats exactly");
+        let failed = runs[0].iter().filter(|f| **f).count();
+        assert!(
+            (46..=74).contains(&failed),
+            "about 30% of 200, got {failed}"
+        );
+
+        let base = spawn(cfg()).await;
+        // no fail_pct: a full outage, as before
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject" }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| *f));
+        // fail_pct 0 serves everything; off clears it
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 0 }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| !*f));
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "off" }),
+        )
+        .await;
+        assert!(failures(&c, &base, 20).await.iter().all(|f| !*f));
+        // a bad percentage is refused
+        let (s, _) = post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 101 }),
+        )
+        .await;
+        assert_eq!(s, 400);
+        // stats count money taken per order, per provider
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "off" }),
+        )
+        .await;
+        let (_, o) = post(
+            &c,
+            &format!("{base}/v1/orders"),
+            json!({ "amount": 1000, "currency": "INR" }),
+        )
+        .await;
+        let oid = o["id"].as_str().unwrap().to_string();
+        for _ in 0..2 {
+            post(
+                &c,
+                &format!("{base}/_sim/razorpay/pay"),
+                json!({ "order_id": oid, "outcome": "captured" }),
+            )
+            .await;
+        }
+        let stats: Value = c
+            .get(format!("{base}/_sim/stats"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            stats["razorpay_captured_payments_by_order"][oid.as_str()],
+            2
+        );
+        // the other provider is unaffected
+        post(
+            &c,
+            &format!("{base}/_sim/outage"),
+            json!({ "provider": "razorpay", "mode": "reject", "fail_pct": 100 }),
+        )
+        .await;
+        let (s, _) = post(
+            &c,
+            &format!("{base}/pg/orders"),
+            json!({ "order_id": "o1", "order_amount": 10.0, "order_currency": "INR" }),
+        )
+        .await;
+        assert_eq!(s, 200);
+    }
 }

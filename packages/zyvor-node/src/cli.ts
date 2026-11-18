@@ -19,6 +19,8 @@ const HELP = `zyvor <command>   (env: ZYVOR_API_KEY, ZYVOR_API_URL, ZYVOR_ACTOR)
   bank lines [--status unmatched]
   bank rematch
   routing health [--method upi]
+  routing scorecard [--days 7] [--method upi]
+  routing shadow [--days 7] [--method upi]
   webhooks outbox [--status pending]
   webhooks replay <event_id>
   webhooks verify --secret S --header H --body-file F
@@ -78,6 +80,8 @@ export async function run(argv: string[], env: Record<string, string | undefined
     else if (key === "bank-lines") show(await z.bankStatements.lines({ status: f.status as "unmatched" | "suggested" | "matched" | undefined }));
     else if (key === "bank-rematch") show(await z.bankStatements.rematch());
     else if (key === "routing-health") show(await z.routing.health(f.method));
+    else if (key === "routing-scorecard") show(await z.routing.scorecard({ days: f.days ? Number(f.days) : undefined, method: f.method }));
+    else if (key === "routing-shadow") show(await z.routing.shadowReport({ days: f.days ? Number(f.days) : undefined, method: f.method }));
     else if (key === "webhooks-outbox") show(await z.webhooks.outbox(f.status));
     else if (key === "webhooks-replay") show(await z.webhooks.replay(pos[0]));
     else {

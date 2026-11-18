@@ -38,6 +38,15 @@ DebitRow = TypedDict("DebitRow", {
     "created_at": "str",
 })
 
+DeleteCashLagRulesByIdResponse = TypedDict("DeleteCashLagRulesByIdResponse", {
+    "deleted": "bool",
+})
+
+DeleteExportsAccountMappingsByIdResponse = TypedDict("DeleteExportsAccountMappingsByIdResponse", {
+    "deleted": "bool",
+    "ledger_account": "Optional[str]",
+})
+
 DeleteFeeRulesByIdResponse = TypedDict("DeleteFeeRulesByIdResponse", {
     "id": "str",
     "deleted": "bool",
@@ -81,6 +90,45 @@ GetAcquireKycResponse = TypedDict("GetAcquireKycResponse", {
 GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
     "by_provider_method": "List[Any]",
     "suggestions": "Any",
+})
+
+GetAnalyticsRefundsResponse = TypedDict("GetAnalyticsRefundsResponse", {
+    "from": "Any",
+    "to": "Any",
+    "bucket": "Any",
+    "currency": "str",
+    "series": "List[GetAnalyticsRefundsResponseSeriesItem]",
+    "totals": "Any",
+    "time_to_refund": "Any",
+    "sla": "List[GetAnalyticsRefundsResponseSlaItem]",
+    "leakage": "List[GetAnalyticsRefundsResponseLeakageItem]",
+    "note": "str",
+})
+
+GetAnalyticsRefundsResponseLeakageItem = TypedDict("GetAnalyticsRefundsResponseLeakageItem", {
+    "provider": "str",
+    "method": "str",
+    "lines": "int",
+    "settlements": "int",
+    "amount_minor": "int",
+})
+
+GetAnalyticsRefundsResponseSeriesItem = TypedDict("GetAnalyticsRefundsResponseSeriesItem", {
+    "starts": "str",
+    "captured_count": "Any",
+    "captured_minor": "int",
+    "refunds_requested_count": "Any",
+    "refunds_requested_minor": "int",
+    "refunds_processed_count": "Any",
+    "refunds_processed_minor": "int",
+    "refund_rate_bps": "Any",
+})
+
+GetAnalyticsRefundsResponseSlaItem = TypedDict("GetAnalyticsRefundsResponseSlaItem", {
+    "status": "str",
+    "count": "int",
+    "amount_minor": "int",
+    "oldest_hours": "Any",
 })
 
 GetApiKeysResponse = TypedDict("GetApiKeysResponse", {
@@ -171,6 +219,86 @@ GetCardTokensResponse = TypedDict("GetCardTokensResponse", {
     "tokens": "List[Any]",
 })
 
+GetCashDashboardResponse = TypedDict("GetCashDashboardResponse", {
+    "as_of": "Optional[str]",
+    "currency": "str",
+    "matched_window_days": "Any",
+    "by_provider": "Any",
+    "totals": "Any",
+    "payouts_pending": "List[GetCashDashboardResponsePayoutsPendingItem]",
+    "paid_payouts_without_bank_debit_match": "Any",
+    "note": "str",
+})
+
+GetCashDashboardResponsePayoutsPendingItem = TypedDict("GetCashDashboardResponsePayoutsPendingItem", {
+    "status": "str",
+    "count": "int",
+    "amount_minor": "int",
+})
+
+GetCashForecastResponse = TypedDict("GetCashForecastResponse", {
+    "as_of": "Optional[str]",
+    "currency": "str",
+    "horizon_days": "Any",
+    "days": "List[GetCashForecastResponseDaysItem]",
+    "overdue": "Any",
+    "expected_after_horizon_minor": "int",
+    "expected_without_range_minor": "int",
+    "not_forecast": "List[GetCashForecastResponseNotForecastItem]",
+    "basis": "List[Any]",
+    "note": "str",
+})
+
+GetCashForecastResponseDaysItem = TypedDict("GetCashForecastResponseDaysItem", {
+    "date": "Any",
+    "expected_minor": "int",
+    "cumulative_low_minor": "int",
+    "cumulative_expected_minor": "int",
+    "cumulative_high_minor": "int",
+})
+
+GetCashForecastResponseNotForecastItem = TypedDict("GetCashForecastResponseNotForecastItem", {
+    "provider": "str",
+    "method": "Any",
+    "payments": "Any",
+    "amount_minor": "int",
+    "status": "str",
+})
+
+GetCashLagResponse = TypedDict("GetCashLagResponse", {
+    "as_of": "Optional[str]",
+    "lookback_days": "Any",
+    "min_samples": "Any",
+    "data": "List[Any]",
+    "tenant_rules": "List[GetCashLagResponseTenantRulesItem]",
+    "note": "str",
+})
+
+GetCashLagResponseTenantRulesItem = TypedDict("GetCashLagResponseTenantRulesItem", {
+    "provider": "str",
+    "method": "Any",
+    "expected_lag_days": "Any",
+})
+
+GetCashLagRulesResponse = TypedDict("GetCashLagRulesResponse", {
+    "data": "List[GetCashLagRulesResponseDataItem]",
+})
+
+GetCashLagRulesResponseDataItem = TypedDict("GetCashLagRulesResponseDataItem", {
+    "id": "str",
+    "provider": "str",
+    "method": "str",
+    "expected_lag_days": "int",
+    "note": "str",
+    "created_by": "str",
+})
+
+GetCashSettingsResponse = TypedDict("GetCashSettingsResponse", {
+    "min_samples": "Any",
+    "alert_grace_days": "Any",
+    "refund_sla_hours": "Any",
+})
+
 GetCheckoutByTenantIdByIntentIdEventsResponse = TypedDict("GetCheckoutByTenantIdByIntentIdEventsResponse", {
     "id": "str",
     "method": "Any",
@@ -197,9 +325,13 @@ GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantI
     "coupon_applied": "Any",
     "currency": "str",
     "status": "str",
-    "open_amount": "bool",
-    "min_amount_minor": "Optional[int]",
-    "max_amount_minor": "Optional[int]",
+    "open_amount": "Any",
+    "min_amount_minor": "int",
+    "max_amount_minor": "int",
+    "message": "Optional[str]",
+    "brand": "Any",
+    "allowed_methods": "Any",
+    "partial": "Any",
 })
 
 GetClosingsResponse = TypedDict("GetClosingsResponse", {
@@ -333,10 +465,222 @@ GetDisputesResponseDataItem = TypedDict("GetDisputesResponseDataItem", {
     "evidence_count": "int",
 })
 
+GetDonateByTenantIdByCampaignIdResponse = TypedDict("GetDonateByTenantIdByCampaignIdResponse", {
+    "merchant": "Optional[str]",
+    "name": "str",
+    "description": "Optional[str]",
+    "suggested_minor": "int",
+    "min_minor": "int",
+    "max_minor": "int",
+    "currency": "str",
+    "recurring_enabled": "Any",
+})
+
+GetDonationsCampaignsByIdSummaryResponse = TypedDict("GetDonationsCampaignsByIdSummaryResponse", {
+    "campaign_id": "str",
+    "paid_count": "int",
+    "paid_minor": "int",
+    "refunded_minor": "int",
+    "net_minor": "int",
+    "pending_count": "int",
+    "goal_minor": "Optional[int]",
+    "recurring_pledges": "int",
+})
+
+GetDonationsCampaignsResponse = TypedDict("GetDonationsCampaignsResponse", {
+    "data": "Any",
+})
+
+GetDonationsResponse = TypedDict("GetDonationsResponse", {
+    "data": "List[GetDonationsResponseDataItem]",
+})
+
+GetDonationsResponseDataItem = TypedDict("GetDonationsResponseDataItem", {
+    "id": "str",
+    "campaign_id": "Optional[str]",
+    "intent_id": "Optional[str]",
+    "amount_minor": "int",
+    "status": "str",
+    "donor": "Any",
+    "anonymous": "Any",
+    "receipt_no": "Any",
+    "created_at": "Optional[str]",
+    "paid_at": "Optional[str]",
+    "refunded_minor": "int",
+})
+
+GetDuesByKindGroupsResponse = TypedDict("GetDuesByKindGroupsResponse", {
+    "data": "List[GetDuesByKindGroupsResponseDataItem]",
+})
+
+GetDuesByKindGroupsResponseDataItem = TypedDict("GetDuesByKindGroupsResponseDataItem", {
+    "id": "str",
+    "name": "str",
+    "members": "int",
+    "heads_total_minor": "int",
+})
+
+GetDuesByKindHeadsResponse = TypedDict("GetDuesByKindHeadsResponse", {
+    "data": "List[GetDuesByKindHeadsResponseDataItem]",
+})
+
+GetDuesByKindHeadsResponseDataItem = TypedDict("GetDuesByKindHeadsResponseDataItem", {
+    "id": "str",
+    "group_id": "str",
+    "name": "str",
+    "amount_minor": "int",
+})
+
+GetDuesByKindMembersResponse = TypedDict("GetDuesByKindMembersResponse", {
+    "data": "List[GetDuesByKindMembersResponseDataItem]",
+})
+
+GetDuesByKindMembersResponseDataItem = TypedDict("GetDuesByKindMembersResponseDataItem", {
+    "id": "str",
+    "group_id": "Optional[str]",
+    "group": "Any",
+    "member_ref": "Any",
+    "name": "str",
+    "active": "Any",
+    "payer": "List[GetDuesByKindMembersResponseDataItemPayerItem]",
+})
+
+GetDuesByKindMembersResponseDataItemPayerItem = TypedDict("GetDuesByKindMembersResponseDataItemPayerItem", {
+    "name": "str",
+    "email": "str",
+    "phone": "Optional[str]",
+})
+
+GetDuesByKindReportCsvResponse = TypedDict("GetDuesByKindReportCsvResponse", {
+    "kind": "str",
+    "as_of": "Optional[str]",
+    "totals": "Any",
+    "data": "Any",
+})
+
+GetDuesByKindReportResponse = TypedDict("GetDuesByKindReportResponse", {
+    "kind": "str",
+    "as_of": "Optional[str]",
+    "totals": "Any",
+    "data": "Any",
+})
+
+GetDuesByKindSettingsResponse = TypedDict("GetDuesByKindSettingsResponse", {
+    "kind": "str",
+    "receipt_note": "str",
+})
+
 GetEscrowProofResponse = TypedDict("GetEscrowProofResponse", {
     "escrow_available_net": "int",
     "open_payables_net": "int",
     "balanced": "Any",
+})
+
+GetEventsByIdAttendeesResponse = TypedDict("GetEventsByIdAttendeesResponse", {
+    "data": "List[Any]",
+    "has_more": "bool",
+})
+
+GetEventsByIdCheckinExportResponse = TypedDict("GetEventsByIdCheckinExportResponse", {
+    "event": "Any",
+    "generated_at": "Optional[str]",
+    "count": "int",
+    "tickets": "List[Any]",
+})
+
+GetEventsByIdCheckinStatsResponse = TypedDict("GetEventsByIdCheckinStatsResponse", {
+    "checked_in": "Any",
+    "expected": "Any",
+    "refunded": "Any",
+    "void": "Any",
+    "recent_duplicates": "List[GetEventsByIdCheckinStatsResponseRecentDuplicatesItem]",
+})
+
+GetEventsByIdCheckinStatsResponseRecentDuplicatesItem = TypedDict("GetEventsByIdCheckinStatsResponseRecentDuplicatesItem", {
+    "code": "str",
+    "scanned_by": "str",
+    "scanned_at": "str",
+})
+
+GetEventsByIdOrdersByOrderIdResponse = TypedDict("GetEventsByIdOrdersByOrderIdResponse", {
+    "id": "str",
+    "code": "str",
+    "status": "str",
+    "tier_id": "Optional[str]",
+})
+
+GetEventsByIdOrdersResponse = TypedDict("GetEventsByIdOrdersResponse", {
+    "data": "Any",
+    "has_more": "bool",
+})
+
+GetEventsByIdRefundBatchesByBatchIdResponse = TypedDict("GetEventsByIdRefundBatchesByBatchIdResponse", {
+    "id": "str",
+    "event_id": "Optional[str]",
+    "kind": "str",
+    "reason": "Any",
+    "requested_by": "Any",
+    "created_at": "Optional[str]",
+    "orders": "Any",
+    "queued": "Any",
+    "requested": "Any",
+    "errors": "Any",
+    "refunds_by_status": "Any",
+    "amount_minor_by_status": "Any",
+    "finished": "Any",
+    "needs_attention": "Any",
+})
+
+GetEventsByIdRefundReportResponse = TypedDict("GetEventsByIdRefundReportResponse", {
+    "event_id": "str",
+    "currency": "str",
+    "orders_to_refund": "int",
+    "amount_minor": "int",
+    "processed": "Any",
+    "in_progress": "Any",
+    "awaiting_approval": "Any",
+    "failed_or_rejected": "Any",
+    "not_yet_sent": "Any",
+    "errors": "Any",
+    "batches": "Any",
+    "items": "List[GetEventsByIdRefundReportResponseItemsItem]",
+})
+
+GetEventsByIdRefundReportResponseItemsItem = TypedDict("GetEventsByIdRefundReportResponseItemsItem", {
+    "order_id": "str",
+    "buyer_name": "str",
+    "buyer_email": "str",
+    "amount_minor": "int",
+    "state": "str",
+    "refund_id": "Optional[str]",
+    "refund_status": "Optional[str]",
+    "error": "Optional[str]",
+    "failure_reason": "Optional[str]",
+})
+
+GetEventsByIdResponse = TypedDict("GetEventsByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
 })
 
 GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
@@ -346,6 +690,40 @@ GetEventsCatalogueResponse = TypedDict("GetEventsCatalogueResponse", {
 GetEventsCatalogueResponseDataItem = TypedDict("GetEventsCatalogueResponseDataItem", {
     "type": "Any",
     "description": "Optional[str]",
+})
+
+GetEventsResponse = TypedDict("GetEventsResponse", {
+    "data": "List[Any]",
+    "has_more": "bool",
+})
+
+GetExportsAccountMappingsResponse = TypedDict("GetExportsAccountMappingsResponse", {
+    "defaults": "List[GetExportsAccountMappingsResponseDefaultsItem]",
+    "overrides": "List[GetExportsAccountMappingsResponseOverridesItem]",
+    "effective": "List[GetExportsAccountMappingsResponseEffectiveItem]",
+    "unmapped_code": "Any",
+    "note": "str",
+})
+
+GetExportsAccountMappingsResponseDefaultsItem = TypedDict("GetExportsAccountMappingsResponseDefaultsItem", {
+    "ledger_account": "Any",
+    "code": "str",
+    "name": "str",
+})
+
+GetExportsAccountMappingsResponseEffectiveItem = TypedDict("GetExportsAccountMappingsResponseEffectiveItem", {
+    "ledger_account": "Any",
+    "code": "str",
+    "name": "str",
+    "mapped": "Any",
+})
+
+GetExportsAccountMappingsResponseOverridesItem = TypedDict("GetExportsAccountMappingsResponseOverridesItem", {
+    "id": "int",
+    "ledger_account": "str",
+    "code": "str",
+    "name": "str",
+    "updated_by": "str",
 })
 
 GetFeeChecksFindingsResponse = TypedDict("GetFeeChecksFindingsResponse", {
@@ -719,6 +1097,36 @@ GetPaymentIntentsResponse = TypedDict("GetPaymentIntentsResponse", {
     "has_more": "bool",
 })
 
+GetPaymentLinksAnalyticsResponse = TypedDict("GetPaymentLinksAnalyticsResponse", {
+    "from": "Any",
+    "to": "Any",
+    "totals": "Any",
+    "daily": "Any",
+    "funnel": "Any",
+    "notes": "Any",
+})
+
+GetPaymentLinksByIdAnalyticsResponse = TypedDict("GetPaymentLinksByIdAnalyticsResponse", {
+    "from": "Any",
+    "to": "Any",
+    "totals": "Any",
+    "daily": "Any",
+    "funnel": "Any",
+    "notes": "Any",
+})
+
+GetPaymentLinksByIdShareResponse = TypedDict("GetPaymentLinksByIdShareResponse", {
+    "id": "str",
+    "url": "Any",
+    "text": "Any",
+    "sms_text": "Any",
+    "email_subject": "Any",
+    "qr_path": "str",
+    "can_email": "Any",
+    "can_sms": "Any",
+    "sms_mode": "Any",
+})
+
 GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
     "data": "List[Any]",
 })
@@ -845,6 +1253,67 @@ GetProviderAccountsResponse = TypedDict("GetProviderAccountsResponse", {
     "data": "Any",
 })
 
+GetPublicEventsByTenantIdByEventIdResponse = TypedDict("GetPublicEventsByTenantIdByEventIdResponse", {
+    "id": "str",
+    "merchant": "Any",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "on_sale": "Any",
+    "hold_minutes": "Any",
+    "tiers": "List[Any]",
+    "form_fields": "List[GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem]",
+})
+
+GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem = TypedDict("GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem", {
+    "key": "str",
+    "label": "Any",
+    "kind": "str",
+    "required": "Any",
+    "options": "Any",
+    "min_len": "Any",
+    "max_len": "Any",
+})
+
+GetPublicEventsByTenantIdOrdersByOrderIdResponse = TypedDict("GetPublicEventsByTenantIdOrdersByOrderIdResponse", {
+    "order_id": "Optional[str]",
+    "status": "str",
+    "merchant": "Any",
+    "event": "Any",
+    "buyer": "Any",
+    "quantity": "int",
+    "subtotal_minor": "int",
+    "discount_minor": "int",
+    "total_minor": "int",
+    "currency": "str",
+    "intent_id": "Optional[str]",
+    "hold_expires_at": "Optional[str]",
+    "paid_at": "Optional[str]",
+    "lines": "List[GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem]",
+    "tickets": "List[GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem]",
+})
+
+GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem = TypedDict("GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem", {
+    "tier": "str",
+    "quantity": "int",
+    "unit_price_minor": "int",
+})
+
+GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem = TypedDict("GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem", {
+    "id": "str",
+    "code": "str",
+    "status": "str",
+    "tier": "str",
+    "checked_in_at": "Optional[str]",
+    "qr_payload": "Any",
+    "qr_path": "str",
+})
+
 GetReconAgeingResponse = TypedDict("GetReconAgeingResponse", {
     "bucket_days": "Any",
     "open": "Any",
@@ -889,11 +1358,74 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRoutingAutomationResponse = TypedDict("GetRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
-    "routing_health_rule": "str",
+    "automation_paused": "Any",
+    "routing_health_rule": "Any",
     "providers": "Any",
     "recent_changes": "List[Any]",
+})
+
+GetRoutingScorecardResponse = TypedDict("GetRoutingScorecardResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "success_rate_rule": "str",
+    "median_rule": "str",
+    "scorecard": "Any",
+})
+
+GetRoutingShadowReportResponse = TypedDict("GetRoutingShadowReportResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "shadow": "Any",
+    "decisions": "int",
+    "agreed": "int",
+    "differed": "Any",
+    "no_route_in_shadow": "int",
+    "agreement_rate_bps": "Any",
+    "differences": "List[GetRoutingShadowReportResponseDifferencesItem]",
+    "outcome_by_provider": "List[GetRoutingShadowReportResponseOutcomeByProviderItem]",
+    "recent_differences": "List[GetRoutingShadowReportResponseRecentDifferencesItem]",
+    "limits": "str",
+})
+
+GetRoutingShadowReportResponseDifferencesItem = TypedDict("GetRoutingShadowReportResponseDifferencesItem", {
+    "method": "str",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "decisions": "int",
+    "fee_comparable": "int",
+    "estimated_fee_difference_minor": "int",
+})
+
+GetRoutingShadowReportResponseOutcomeByProviderItem = TypedDict("GetRoutingShadowReportResponseOutcomeByProviderItem", {
+    "provider": "str",
+    "method": "str",
+    "payments_sent": "int",
+    "succeeded": "int",
+    "provider_failures": "int",
+    "payer_declines": "int",
+    "unresolved": "int",
+    "of_which_shadow_would_have_chosen_another": "int",
+})
+
+GetRoutingShadowReportResponseRecentDifferencesItem = TypedDict("GetRoutingShadowReportResponseRecentDifferencesItem", {
+    "attempt_id": "str",
+    "method": "str",
+    "amount_minor": "int",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "applied_explanation": "Optional[str]",
+    "shadow_explanation": "Optional[str]",
+    "applied_fee_minor": "Optional[int]",
+    "shadow_fee_minor": "Optional[int]",
+    "attempt_status": "str",
+    "at": "str",
 })
 
 GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
@@ -981,6 +1513,21 @@ GetSettlementsByIdFeeCheckResponse = TypedDict("GetSettlementsByIdFeeCheckRespon
 
 GetSettlementsResponse = TypedDict("GetSettlementsResponse", {
     "data": "List[Any]",
+})
+
+GetStorefrontItemsResponse = TypedDict("GetStorefrontItemsResponse", {
+    "data": "Any",
+})
+
+GetStorefrontOrdersByIdResponse = TypedDict("GetStorefrontOrdersByIdResponse", {
+    "item_id": "Optional[str]",
+    "name": "str",
+    "unit_minor": "int",
+    "quantity": "int",
+})
+
+GetStorefrontOrdersResponse = TypedDict("GetStorefrontOrdersResponse", {
+    "data": "Any",
 })
 
 GetSubscriptionsResponse = TypedDict("GetSubscriptionsResponse", {
@@ -1073,6 +1620,20 @@ PatchCustomersByIdResponse = TypedDict("PatchCustomersByIdResponse", {
     "pincode": "Optional[str]",
 })
 
+PatchDonationsCampaignsByIdResponse = TypedDict("PatchDonationsCampaignsByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "suggested_minor": "int",
+    "min_minor": "int",
+    "max_minor": "int",
+    "goal_minor": "int",
+    "receipt_fields": "Any",
+    "recurring_enabled": "Any",
+    "status": "str",
+    "created_at": "Optional[str]",
+})
+
 PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
     "id": "str",
     "name": "str",
@@ -1082,6 +1643,17 @@ PatchPlansByIdResponse = TypedDict("PatchPlansByIdResponse", {
     "included_units": "Any",
     "included_per_seat": "Any",
     "subscribers_kept_on_old_price": "Any",
+})
+
+PatchStorefrontItemsByIdResponse = TypedDict("PatchStorefrontItemsByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "price_minor": "int",
+    "image_id": "Optional[str]",
+    "stock": "Any",
+    "active": "Any",
+    "position": "Any",
 })
 
 PostApiKeysByIdRevokeResponse = TypedDict("PostApiKeysByIdRevokeResponse", {
@@ -1182,8 +1754,28 @@ PostCardTokensResponse = TypedDict("PostCardTokensResponse", {
     "exp_year": "Any",
 })
 
+PostCashAlertsScanResponse = TypedDict("PostCashAlertsScanResponse", {
+    "pending_cases_opened": "Any",
+    "late_cases_opened": "Any",
+    "case_kinds": "Any",
+})
+
 PostCashEntriesResponse = TypedDict("PostCashEntriesResponse", {
     "id": "str",
+})
+
+PostCashLagRulesResponse = TypedDict("PostCashLagRulesResponse", {
+    "id": "str",
+    "provider": "str",
+    "method": "Any",
+    "expected_lag_days": "int",
+    "note": "Optional[str]",
+})
+
+PostCashSettingsResponse = TypedDict("PostCashSettingsResponse", {
+    "min_samples": "Any",
+    "alert_grace_days": "Any",
+    "refund_sla_hours": "Any",
 })
 
 PostCheckoutByTenantIdByIntentIdAttemptsResponse = TypedDict("PostCheckoutByTenantIdByIntentIdAttemptsResponse", {
@@ -1407,6 +1999,204 @@ PostDisputesResponse = TypedDict("PostDisputesResponse", {
     "id": "str",
     "status": "str",
     "amount_minor": "int",
+})
+
+PostDonateByTenantIdByCampaignIdStartResponse = TypedDict("PostDonateByTenantIdByCampaignIdStartResponse", {
+    "donation_id": "Optional[str]",
+    "intent_id": "Optional[str]",
+    "client_secret": "str",
+    "amount_minor": "int",
+    "currency": "str",
+    "path": "str",
+})
+
+PostDonationsCampaignsByIdPledgesResponse = TypedDict("PostDonationsCampaignsByIdPledgesResponse", {
+    "id": "str",
+    "customer_id": "Optional[str]",
+    "mandate": "Any",
+})
+
+PostDonationsCampaignsResponse = TypedDict("PostDonationsCampaignsResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "suggested_minor": "int",
+    "min_minor": "int",
+    "max_minor": "int",
+    "goal_minor": "int",
+    "receipt_fields": "Any",
+    "recurring_enabled": "Any",
+    "status": "str",
+    "created_at": "Optional[str]",
+})
+
+PostDuesByKindAssignResponse = TypedDict("PostDuesByKindAssignResponse", {
+    "created": "Any",
+    "already_assigned": "Any",
+    "skipped_no_payer": "Any",
+    "skipped_no_fee_heads": "Any",
+})
+
+PostDuesByKindGroupsResponse = TypedDict("PostDuesByKindGroupsResponse", {
+    "id": "str",
+    "name": "str",
+    "kind": "str",
+})
+
+PostDuesByKindHeadsResponse = TypedDict("PostDuesByKindHeadsResponse", {
+    "id": "str",
+    "group_id": "str",
+    "name": "str",
+    "amount_minor": "int",
+})
+
+PostDuesByKindMembersImportResponse = TypedDict("PostDuesByKindMembersImportResponse", {
+    "saved": "bool",
+    "rows": "int",
+    "problems": "Any",
+})
+
+PostDuesByKindMembersResponse = TypedDict("PostDuesByKindMembersResponse", {
+    "id": "str",
+    "created": "Any",
+})
+
+PostDuesByKindRemindersResponse = TypedDict("PostDuesByKindRemindersResponse", {
+    "queued": "Any",
+    "skipped_no_email": "Any",
+    "skipped_already_sent_today": "Any",
+})
+
+PostEventsByIdCancelResponse = TypedDict("PostEventsByIdCancelResponse", {
+    "event_id": "str",
+    "status": "str",
+    "already_cancelled": "bool",
+    "refund_batch": "Any",
+})
+
+PostEventsByIdCheckinResponse = TypedDict("PostEventsByIdCheckinResponse", {
+    "result": "Any",
+    "valid": "bool",
+    "code": "str",
+    "manual_entry": "Any",
+    "ticket": "Any",
+    "checked_in_at": "Optional[str]",
+    "checked_in_by": "Any",
+    "message": "Optional[str]",
+})
+
+PostEventsByIdCheckinSyncResponse = TypedDict("PostEventsByIdCheckinSyncResponse", {
+    "counts": "Any",
+    "results": "Any",
+})
+
+PostEventsByIdOrdersByOrderIdCancelResponse = TypedDict("PostEventsByIdOrdersByOrderIdCancelResponse", {
+    "order": "Any",
+    "refund_batch": "Any",
+})
+
+PostEventsByIdRefundBatchesByBatchIdProcessResponse = TypedDict("PostEventsByIdRefundBatchesByBatchIdProcessResponse", {
+    "id": "str",
+    "event_id": "Optional[str]",
+    "kind": "str",
+    "reason": "Any",
+    "requested_by": "Any",
+    "created_at": "Optional[str]",
+    "orders": "Any",
+    "queued": "Any",
+    "requested": "Any",
+    "errors": "Any",
+    "refunds_by_status": "Any",
+    "amount_minor_by_status": "Any",
+    "finished": "Any",
+    "needs_attention": "Any",
+})
+
+PostEventsByIdStatusResponse = TypedDict("PostEventsByIdStatusResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
+PostEventsByIdTiersByTierIdArchiveResponse = TypedDict("PostEventsByIdTiersByTierIdArchiveResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
+PostEventsByIdTiersResponse = TypedDict("PostEventsByIdTiersResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
+PostEventsResponse = TypedDict("PostEventsResponse", {
+    "vendor_id": "Optional[str]",
+    "share_bp": "Any",
+})
+
+PostExportsAccountMappingsResponse = TypedDict("PostExportsAccountMappingsResponse", {
+    "id": "int",
+    "ledger_account": "str",
+    "code": "str",
+    "name": "str",
 })
 
 PostFeeChecksRunResponse = TypedDict("PostFeeChecksRunResponse", {
@@ -1840,6 +2630,17 @@ PostPaymentIntentsResponse = TypedDict("PostPaymentIntentsResponse", {
     "client_secret": "str",
 })
 
+PostPaymentLinksBulkResponse = TypedDict("PostPaymentLinksBulkResponse", {
+    "import_id": "Optional[str]",
+    "repeat": "bool",
+    "dry_run": "bool",
+    "rows": "int",
+    "created": "Any",
+    "existing": "Any",
+    "links": "Any",
+    "export_path": "str",
+})
+
 PostPaymentLinksByIdCancelResponse = TypedDict("PostPaymentLinksByIdCancelResponse", {
     "id": "str",
     "status": "str",
@@ -1850,6 +2651,12 @@ PostPaymentLinksByIdSendResponse = TypedDict("PostPaymentLinksByIdSendResponse",
     "queued": "bool",
 })
 
+PostPaymentLinksByIdSendSmsResponse = TypedDict("PostPaymentLinksByIdSendSmsResponse", {
+    "id": "str",
+    "queued": "bool",
+    "mode": "Any",
+})
+
 PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "id": "str",
     "token": "Any",
@@ -1857,6 +2664,7 @@ PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "path": "str",
     "max_uses": "Optional[int]",
     "expires_at": "Optional[str]",
+    "existing": "Any",
 })
 
 PostPayoutBatchesByIdApproveResponse = TypedDict("PostPayoutBatchesByIdApproveResponse", {
@@ -2047,6 +2855,11 @@ PostProviderAccountsResponse = TypedDict("PostProviderAccountsResponse", {
     "webhook_url": "str",
 })
 
+PostPublicEventsByTenantIdOrdersByOrderIdCancelResponse = TypedDict("PostPublicEventsByTenantIdOrdersByOrderIdCancelResponse", {
+    "order_id": "Optional[str]",
+    "status": "str",
+})
+
 PostReconCasesByIdAssignResponse = TypedDict("PostReconCasesByIdAssignResponse", {
     "id": "str",
     "status": "str",
@@ -2130,6 +2943,16 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "failure_reason": "Optional[str]",
     "created_at": "str",
     "updated_at": "str",
+})
+
+PostRoutingAutomationPauseResponse = TypedDict("PostRoutingAutomationPauseResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
+PostRoutingAutomationResumeResponse = TypedDict("PostRoutingAutomationResumeResponse", {
+    "settings": "Any",
+    "effective": "Any",
 })
 
 PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
@@ -2259,6 +3082,49 @@ PostSimPayResponse = TypedDict("PostSimPayResponse", {
     "status": "str",
 })
 
+PostStoreBySlugOrdersResponse = TypedDict("PostStoreBySlugOrdersResponse", {
+    "order_id": "Optional[str]",
+    "code": "str",
+    "intent_id": "Optional[str]",
+    "client_secret": "str",
+    "amount_minor": "int",
+    "currency": "str",
+    "tenant_id": "Optional[str]",
+    "path": "str",
+    "hold_minutes": "Any",
+})
+
+PostStorefrontImagesResponse = TypedDict("PostStorefrontImagesResponse", {
+    "id": "str",
+    "content_type": "Any",
+    "size_bytes": "int",
+})
+
+PostStorefrontItemsResponse = TypedDict("PostStorefrontItemsResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "price_minor": "int",
+    "image_id": "Optional[str]",
+    "stock": "Any",
+    "active": "Any",
+    "position": "Any",
+})
+
+PostStorefrontOrdersByIdCancelResponse = TypedDict("PostStorefrontOrdersByIdCancelResponse", {
+    "item_id": "Optional[str]",
+    "name": "str",
+    "unit_minor": "int",
+    "quantity": "int",
+})
+
+PostStorefrontOrdersByIdFulfillResponse = TypedDict("PostStorefrontOrdersByIdFulfillResponse", {
+    "item_id": "Optional[str]",
+    "name": "str",
+    "unit_minor": "int",
+    "quantity": "int",
+})
+
 PostSubscriptionsByIdCancelResponse = TypedDict("PostSubscriptionsByIdCancelResponse", {
     "id": "str",
     "status": "str",
@@ -2363,6 +3229,86 @@ PutAcquireKycResponse = TypedDict("PutAcquireKycResponse", {
     "acquire_kyc_status": "str",
 })
 
+PutDuesByKindSettingsResponse = TypedDict("PutDuesByKindSettingsResponse", {
+    "kind": "str",
+    "receipt_note": "Any",
+})
+
+PutEventsByIdFormFieldsResponse = TypedDict("PutEventsByIdFormFieldsResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
+PutEventsByIdResponse = TypedDict("PutEventsByIdResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
+PutEventsByIdTiersByTierIdResponse = TypedDict("PutEventsByIdTiersByTierIdResponse", {
+    "id": "str",
+    "name": "str",
+    "description": "Optional[str]",
+    "mode": "Any",
+    "venue": "Any",
+    "online_url": "Any",
+    "starts_at": "Optional[str]",
+    "ends_at": "Optional[str]",
+    "status": "str",
+    "currency": "str",
+    "capacity": "Any",
+    "hold_minutes": "Any",
+    "seats_held": "Any",
+    "seats_sold": "Any",
+    "seats_available": "Any",
+    "splits": "Any",
+    "created_at": "Optional[str]",
+    "cancelled_at": "Optional[str]",
+    "tiers": "Any",
+    "form_fields": "Any",
+    "tickets": "Any",
+    "orders": "Any",
+})
+
 PutMoneyModeResponse = TypedDict("PutMoneyModeResponse", {
     "money_mode": "Any",
 })
@@ -2394,6 +3340,11 @@ PutProviderAccountsByProviderResponse = TypedDict("PutProviderAccountsByProvider
     "provider": "str",
     "enabled": "bool",
     "replaced": "Any",
+})
+
+PutRoutingAutomationResponse = TypedDict("PutRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
 })
 
 RefundRow = TypedDict("RefundRow", {

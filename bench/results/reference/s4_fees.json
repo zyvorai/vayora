@@ -1,0 +1,90 @@
+{
+  "description": "Fee-variance detection on injected over/under deductions (simulator; invented rates)",
+  "rules_used": {
+    "razorpay": {
+      "method": "upi",
+      "bps": 175,
+      "flat_minor": 0,
+      "cap_minor": null,
+      "gst_bps": 1800
+    },
+    "cashfree": {
+      "method": "upi",
+      "bps": 150,
+      "flat_minor": 300,
+      "cap_minor": 12000,
+      "gst_bps": 1800
+    }
+  },
+  "payments": 200,
+  "payments_with_an_injected_deduction_error": 49,
+  "injected_magnitudes_paise": [
+    1,
+    2,
+    3,
+    5,
+    10,
+    25,
+    118,
+    500,
+    2000
+  ],
+  "results": [
+    {
+      "tolerance_minor": 0,
+      "payments": 200,
+      "should_flag": 49,
+      "true_positives": 49,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "true_negatives": 151,
+      "precision_pct": 100,
+      "recall_pct": 100,
+      "over_deductions_found": "25 of 25",
+      "under_deductions_found": "24 of 24",
+      "direction_reported_wrongly": 0,
+      "lines_where_platform_expected_fee_differs_from_the_benchmarks_own_calculation": 0,
+      "open_findings_reported_by_summary": 49,
+      "missed": [],
+      "false_alarms": []
+    },
+    {
+      "tolerance_minor": 2,
+      "payments": 200,
+      "should_flag": 42,
+      "true_positives": 42,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "true_negatives": 158,
+      "precision_pct": 100,
+      "recall_pct": 100,
+      "over_deductions_found": "22 of 22",
+      "under_deductions_found": "20 of 20",
+      "direction_reported_wrongly": 0,
+      "lines_where_platform_expected_fee_differs_from_the_benchmarks_own_calculation": 0,
+      "open_findings_reported_by_summary": 42,
+      "missed": [],
+      "false_alarms": []
+    },
+    {
+      "tolerance_minor": 10,
+      "payments": 200,
+      "should_flag": 25,
+      "true_positives": 25,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "true_negatives": 175,
+      "precision_pct": 100,
+      "recall_pct": 100,
+      "over_deductions_found": "10 of 10",
+      "under_deductions_found": "15 of 15",
+      "direction_reported_wrongly": 0,
+      "lines_where_platform_expected_fee_differs_from_the_benchmarks_own_calculation": 0,
+      "open_findings_reported_by_summary": 25,
+      "missed": [],
+      "false_alarms": []
+    }
+  ],
+  "seed": 20261118,
+  "wall_seconds": 1
+}

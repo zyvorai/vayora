@@ -51,6 +51,43 @@ pub fn due_dates(first: NaiveDate, n: i32, unit: &str, every: u32) -> Option<Vec
         .collect()
 }
 
+/// What `insert_plan` writes: one plan row and one invoice per instalment, already split and dated.
+pub(crate) struct PlanRows<'a> {
+    pub customer_id: &'a str,
+    pub name: &'a str,
+    pub total_minor: i64,
+    pub currency: &'a str,
+    pub instalments: i32,
+    pub external_ref: Option<&'a str>,
+    pub number_prefix: &'a str,
+    pub amounts: &'a [i64],
+    pub dates: &'a [NaiveDate],
+}
+
+/// Write a plan and its invoices inside the caller's transaction (the caller has checked the customer is theirs).
+/// Returns the plan id and the invoice ids in instalment order.
+pub(crate) async fn insert_plan(
+    tx: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    actor: &str,
+    p: &PlanRows<'_>,
+) -> Result<(String, Vec<String>), ApiError> {
+    let id = new_id("ipl");
+    sqlx::query("INSERT INTO installment_plans (id, tenant_id, customer_id, name, total_minor, currency, instalments, external_ref, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+        .bind(&id).bind(tenant_id).bind(p.customer_id).bind(p.name).bind(p.total_minor).bind(p.currency).bind(p.instalments).bind(p.external_ref).bind(actor)
+        .execute(&mut *tx).await?;
+    let mut invoices = Vec::new();
+    for (i, (amount, due)) in p.amounts.iter().zip(p.dates).enumerate() {
+        let inv = new_id("inv");
+        sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, installment_plan_id, installment_no, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+            .bind(&inv).bind(tenant_id).bind(p.customer_id).bind(format!("{}-{}", p.number_prefix, i + 1)).bind(p.currency)
+            .bind(amount).bind(due).bind(&id).bind(i as i32 + 1).bind(format!("{id}:{}", i + 1))
+            .execute(&mut *tx).await?;
+        invoices.push(inv);
+    }
+    Ok((id, invoices))
+}
+
 async fn plan_json(tx: &mut sqlx::PgConnection, id: &str) -> Result<Value, ApiError> {
     let head: Option<(String, String, i64, String, i32, Option<String>)> = sqlx::query_as("SELECT customer_id, name, total_minor, currency, instalments, external_ref FROM installment_plans WHERE id = $1")
         .bind(id)
@@ -123,16 +160,23 @@ pub async fn create_plan(
     if !known {
         return Err(ApiError::not_found("customer"));
     }
-    let id = new_id("ipl");
-    sqlx::query("INSERT INTO installment_plans (id, tenant_id, customer_id, name, total_minor, currency, instalments, external_ref, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(&id).bind(&auth.tenant_id).bind(&b.customer_id).bind(b.name.trim()).bind(b.total_minor).bind(ccy.code()).bind(b.instalments).bind(&b.external_ref).bind(&auth.actor)
-        .execute(&mut *tx).await?;
-    for (i, (amount, due)) in amounts.iter().zip(&dates).enumerate() {
-        sqlx::query("INSERT INTO invoices (id, tenant_id, customer_id, number, currency, amount_minor, due_date, installment_plan_id, installment_no, external_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
-            .bind(new_id("inv")).bind(&auth.tenant_id).bind(&b.customer_id).bind(format!("{}-{}", b.number_prefix.trim(), i + 1)).bind(ccy.code())
-            .bind(amount).bind(due).bind(&id).bind(i as i32 + 1).bind(format!("{id}:{}", i + 1))
-            .execute(&mut *tx).await?;
-    }
+    let (id, _) = insert_plan(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        &PlanRows {
+            customer_id: &b.customer_id,
+            name: b.name.trim(),
+            total_minor: b.total_minor,
+            currency: ccy.code(),
+            instalments: b.instalments,
+            external_ref: b.external_ref.as_deref(),
+            number_prefix: b.number_prefix.trim(),
+            amounts: &amounts,
+            dates: &dates,
+        },
+    )
+    .await?;
     tenant::audit(
         &mut tx,
         &auth.tenant_id,

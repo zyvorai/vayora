@@ -617,6 +617,16 @@ fn grouping_ok(int_part: &str) -> bool {
     western || indian
 }
 
+/// An amount in rupees as people type it ("1,250.50", "₹ 499"), as whole paise. No sign, no Dr/Cr, at most two
+/// decimals, grouping only the Indian or western way. For files that are not bank statements.
+pub(crate) fn parse_rupees(s: &str) -> Result<i64, String> {
+    match parse_amount(s)? {
+        Some(a) if !a.negative && a.credit.is_none() && a.minor > 0 => Ok(a.minor),
+        Some(_) => Err(format!("`{}` must be a positive amount", s.trim())),
+        None => Err("the amount is empty".into()),
+    }
+}
+
 fn parse_amount(s: &str) -> Result<Option<Amt>, String> {
     let mut t = s.trim().to_string();
     if t.is_empty() || t == "-" {
