@@ -9,13 +9,14 @@ STACK_PIDS=()
 STACK_DB=""
 STACK_ROLE=""
 STACK_OWNER_URL=""
+STACK_OWN_TMP=""
 
 stack_up() {
   local bin="$1"
   local user="${BENCH_PG_USER:-$(id -un)}" host="${BENCH_PG_HOST:-127.0.0.1}" port="${BENCH_PG_PORT:-5432}"
   local api_port="${BENCH_API_PORT:-18080}" mock_port="${BENCH_MOCK_PORT:-19090}"
-  local tmp="${BENCH_TMP:-$(mktemp -d "${TMPDIR:-/tmp}/vayora-bench.XXXXXX")}"
-  mkdir -p "$tmp"
+  local tmp
+  if [ -n "${BENCH_TMP:-}" ]; then tmp="$BENCH_TMP"; mkdir -p "$tmp"; else tmp="$(mktemp -d "${TMPDIR:-/tmp}/vayora-bench.XXXXXX")"; STACK_OWN_TMP="$tmp"; fi
   STACK_TMP="$tmp"
   STACK_DB="vayora_bench_$$_$RANDOM"
   STACK_ROLE="bench_app_$$"
@@ -74,4 +75,5 @@ stack_down() {
     psql "$admin_url" -X -q -c "DROP ROLE IF EXISTS \"$STACK_ROLE\"" >/dev/null 2>&1 || true
     STACK_DB=""
   fi
+  if [ -n "$STACK_OWN_TMP" ]; then rm -rf "$STACK_OWN_TMP"; STACK_OWN_TMP=""; fi
 }

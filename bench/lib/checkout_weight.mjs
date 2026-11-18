@@ -5,7 +5,7 @@
 //      a throttled-network profile. Skipped (and said so) when no Chrome is available.
 // Usage: node checkout_weight.mjs <checkout_base_url> <out.json>
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newTenant, setRoutingFees, ok, writeJson, sleep, round } from "./common.mjs";
@@ -100,6 +100,8 @@ async function measureInBrowser(chrome, profile) {
     };
   } finally {
     proc.kill();
+    await sleep(300);
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
