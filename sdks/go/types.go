@@ -147,6 +147,21 @@ type GetAuditEventsVerifyResponse struct {
 	Reason       any  `json:"reason"`
 }
 
+type GetBankStatementsImportsResponse struct {
+	Data []any `json:"data"`
+}
+
+type GetBankStatementsLayoutsResponse struct {
+	Name        string `json:"name"`
+	About       any    `json:"about"`
+	Mapping     any    `json:"mapping"`
+	DateFormats any    `json:"date_formats"`
+}
+
+type GetBankStatementsLinesResponse struct {
+	Data []any `json:"data"`
+}
+
 type GetBranchesByIdSummaryResponse struct {
 	Branch any   `json:"branch"`
 	From   any   `json:"from"`
@@ -773,6 +788,14 @@ type GetProviderAccountsResponse struct {
 	Data any `json:"data"`
 }
 
+type GetReconAgeingResponse struct {
+	BucketDays any `json:"bucket_days"`
+	Open       any `json:"open"`
+	Unassigned any `json:"unassigned"`
+	OldestDays any `json:"oldest_days"`
+	ByKind     any `json:"by_kind"`
+}
+
 type GetReconCasesByIdSuggestionsResponse struct {
 	CaseID    string   `json:"case_id"`
 	Kind      string   `json:"kind"`
@@ -861,19 +884,21 @@ type GetSettlementBatchesResponse struct {
 }
 
 type GetSettlementsByIdExplainResponse struct {
-	Settlement          any   `json:"settlement"`
-	Payments            []any `json:"payments"`
-	Refunds             []any `json:"refunds"`
-	Adjustments         []any `json:"adjustments"`
-	Fees                any   `json:"fees"`
-	Arithmetic          any   `json:"arithmetic"`
-	ExpectedMinor       int64 `json:"expected_minor"`
-	ReceivedMinor       int64 `json:"received_minor"`
-	DifferenceMinor     int64 `json:"difference_minor"`
-	DifferenceBreakdown any   `json:"difference_breakdown"`
-	BankMatch           any   `json:"bank_match"`
-	Cases               []any `json:"cases"`
-	Narrative           bool  `json:"narrative"`
+	Settlement           any   `json:"settlement"`
+	Payments             []any `json:"payments"`
+	Refunds              []any `json:"refunds"`
+	Adjustments          []any `json:"adjustments"`
+	Fees                 any   `json:"fees"`
+	Arithmetic           any   `json:"arithmetic"`
+	ExpectedMinor        int64 `json:"expected_minor"`
+	ReceivedMinor        int64 `json:"received_minor"`
+	DifferenceMinor      int64 `json:"difference_minor"`
+	DifferenceBreakdown  any   `json:"difference_breakdown"`
+	BankMatch            any   `json:"bank_match"`
+	BankDifference       any   `json:"bank_difference"`
+	SuggestedBankMatches any   `json:"suggested_bank_matches"`
+	Cases                []any `json:"cases"`
+	Narrative            bool  `json:"narrative"`
 }
 
 type GetSettlementsResponse struct {
@@ -1008,7 +1033,49 @@ type PostAuditEventsSealResponse struct {
 
 type PostBankStatementsImportResponse struct {
 	Added                int64 `json:"added"`
+	Duplicates           any   `json:"duplicates"`
+	Rows                 any   `json:"rows"`
 	SettlementsRechecked int64 `json:"settlements_rechecked"`
+	Matched              any   `json:"matched"`
+	CasesOpened          any   `json:"cases_opened"`
+}
+
+type PostBankStatementsMatchesByIdConfirmResponse struct {
+	ID          string  `json:"id"`
+	Status      string  `json:"status"`
+	BankLineID  *string `json:"bank_line_id"`
+	SubjectType any     `json:"subject_type"`
+	SubjectID   *string `json:"subject_id"`
+	Rule        any     `json:"rule"`
+	DecidedBy   any     `json:"decided_by"`
+}
+
+type PostBankStatementsMatchesByIdRejectResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type PostBankStatementsPreviewResponse struct {
+	Ok                bool   `json:"ok"`
+	Layout            any    `json:"layout"`
+	HeaderLine        any    `json:"header_line"`
+	Rows              int64  `json:"rows"`
+	NewRows           any    `json:"new_rows"`
+	DuplicateRows     int64  `json:"duplicate_rows"`
+	Credits           any    `json:"credits"`
+	Debits            any    `json:"debits"`
+	PeriodFrom        any    `json:"period_from"`
+	PeriodTo          any    `json:"period_to"`
+	AlreadyImportedAs *int64 `json:"already_imported_as"`
+	Errors            any    `json:"errors"`
+	Warnings          any    `json:"warnings"`
+	Sample            []any  `json:"sample"`
+}
+
+type PostBankStatementsRematchResponse struct {
+	SettlementsRechecked int64 `json:"settlements_rechecked"`
+	Matched              any   `json:"matched"`
+	CasesOpened          any   `json:"cases_opened"`
 }
 
 type PostBillingRunResponse struct {
@@ -1796,7 +1863,9 @@ type PostReconCasesByIdResolveResponse struct {
 }
 
 type PostReconScanResponse struct {
-	NewCases int64 `json:"new_cases"`
+	NewCases                     int64 `json:"new_cases"`
+	SettlementsWithoutBankCredit any   `json:"settlements_without_bank_credit"`
+	PayoutsWithoutBankDebit      any   `json:"payouts_without_bank_debit"`
 }
 
 type PostRefundsByIdApproveResponse struct {
@@ -1905,23 +1974,29 @@ type PostSettlementBatchesResponse struct {
 
 type PostSettlementsByIdSimulateBankResponse struct {
 	Added                int64 `json:"added"`
+	Duplicates           any   `json:"duplicates"`
+	Rows                 any   `json:"rows"`
 	SettlementsRechecked int64 `json:"settlements_rechecked"`
+	Matched              any   `json:"matched"`
+	CasesOpened          any   `json:"cases_opened"`
 }
 
 type PostSettlementsImportResponse struct {
-	Settlement          any   `json:"settlement"`
-	Payments            []any `json:"payments"`
-	Refunds             []any `json:"refunds"`
-	Adjustments         []any `json:"adjustments"`
-	Fees                any   `json:"fees"`
-	Arithmetic          any   `json:"arithmetic"`
-	ExpectedMinor       int64 `json:"expected_minor"`
-	ReceivedMinor       int64 `json:"received_minor"`
-	DifferenceMinor     int64 `json:"difference_minor"`
-	DifferenceBreakdown any   `json:"difference_breakdown"`
-	BankMatch           any   `json:"bank_match"`
-	Cases               []any `json:"cases"`
-	Narrative           bool  `json:"narrative"`
+	Settlement           any   `json:"settlement"`
+	Payments             []any `json:"payments"`
+	Refunds              []any `json:"refunds"`
+	Adjustments          []any `json:"adjustments"`
+	Fees                 any   `json:"fees"`
+	Arithmetic           any   `json:"arithmetic"`
+	ExpectedMinor        int64 `json:"expected_minor"`
+	ReceivedMinor        int64 `json:"received_minor"`
+	DifferenceMinor      int64 `json:"difference_minor"`
+	DifferenceBreakdown  any   `json:"difference_breakdown"`
+	BankMatch            any   `json:"bank_match"`
+	BankDifference       any   `json:"bank_difference"`
+	SuggestedBankMatches any   `json:"suggested_bank_matches"`
+	Cases                []any `json:"cases"`
+	Narrative            bool  `json:"narrative"`
 }
 
 type PostSettlementsSyncResponse struct {

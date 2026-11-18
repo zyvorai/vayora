@@ -131,6 +131,21 @@ GetAuditEventsVerifyResponse = TypedDict("GetAuditEventsVerifyResponse", {
     "reason": "Any",
 })
 
+GetBankStatementsImportsResponse = TypedDict("GetBankStatementsImportsResponse", {
+    "data": "List[Any]",
+})
+
+GetBankStatementsLayoutsResponse = TypedDict("GetBankStatementsLayoutsResponse", {
+    "name": "str",
+    "about": "Any",
+    "mapping": "Any",
+    "date_formats": "Any",
+})
+
+GetBankStatementsLinesResponse = TypedDict("GetBankStatementsLinesResponse", {
+    "data": "List[Any]",
+})
+
 GetBranchesByIdSummaryResponse = TypedDict("GetBranchesByIdSummaryResponse", {
     "branch": "Any",
     "from": "Any",
@@ -757,6 +772,14 @@ GetProviderAccountsResponse = TypedDict("GetProviderAccountsResponse", {
     "data": "Any",
 })
 
+GetReconAgeingResponse = TypedDict("GetReconAgeingResponse", {
+    "bucket_days": "Any",
+    "open": "Any",
+    "unassigned": "Any",
+    "oldest_days": "Any",
+    "by_kind": "Any",
+})
+
 GetReconCasesByIdSuggestionsResponse = TypedDict("GetReconCasesByIdSuggestionsResponse", {
     "case_id": "str",
     "kind": "str",
@@ -856,6 +879,8 @@ GetSettlementsByIdExplainResponse = TypedDict("GetSettlementsByIdExplainResponse
     "difference_minor": "int",
     "difference_breakdown": "Any",
     "bank_match": "Any",
+    "bank_difference": "Any",
+    "suggested_bank_matches": "Any",
     "cases": "List[Any]",
     "narrative": "bool",
 })
@@ -992,7 +1017,49 @@ PostAuditEventsSealResponse = TypedDict("PostAuditEventsSealResponse", {
 
 PostBankStatementsImportResponse = TypedDict("PostBankStatementsImportResponse", {
     "added": "int",
+    "duplicates": "Any",
+    "rows": "Any",
     "settlements_rechecked": "int",
+    "matched": "Any",
+    "cases_opened": "Any",
+})
+
+PostBankStatementsMatchesByIdConfirmResponse = TypedDict("PostBankStatementsMatchesByIdConfirmResponse", {
+    "id": "str",
+    "status": "str",
+    "bank_line_id": "Optional[str]",
+    "subject_type": "Any",
+    "subject_id": "Optional[str]",
+    "rule": "Any",
+    "decided_by": "Any",
+})
+
+PostBankStatementsMatchesByIdRejectResponse = TypedDict("PostBankStatementsMatchesByIdRejectResponse", {
+    "id": "str",
+    "status": "str",
+})
+
+PostBankStatementsPreviewResponse = TypedDict("PostBankStatementsPreviewResponse", {
+    "ok": "bool",
+    "layout": "Any",
+    "header_line": "Any",
+    "rows": "int",
+    "new_rows": "Any",
+    "duplicate_rows": "int",
+    "credits": "Any",
+    "debits": "Any",
+    "period_from": "Any",
+    "period_to": "Any",
+    "already_imported_as": "Optional[int]",
+    "errors": "Any",
+    "warnings": "Any",
+    "sample": "List[Any]",
+})
+
+PostBankStatementsRematchResponse = TypedDict("PostBankStatementsRematchResponse", {
+    "settlements_rechecked": "int",
+    "matched": "Any",
+    "cases_opened": "Any",
 })
 
 PostBillingRunResponse = TypedDict("PostBillingRunResponse", {
@@ -1781,6 +1848,8 @@ PostReconCasesByIdResolveResponse = TypedDict("PostReconCasesByIdResolveResponse
 
 PostReconScanResponse = TypedDict("PostReconScanResponse", {
     "new_cases": "int",
+    "settlements_without_bank_credit": "Any",
+    "payouts_without_bank_debit": "Any",
 })
 
 PostRefundsByIdApproveResponse = TypedDict("PostRefundsByIdApproveResponse", {
@@ -1889,7 +1958,11 @@ PostSettlementBatchesResponse = TypedDict("PostSettlementBatchesResponse", {
 
 PostSettlementsByIdSimulateBankResponse = TypedDict("PostSettlementsByIdSimulateBankResponse", {
     "added": "int",
+    "duplicates": "Any",
+    "rows": "Any",
     "settlements_rechecked": "int",
+    "matched": "Any",
+    "cases_opened": "Any",
 })
 
 PostSettlementsImportResponse = TypedDict("PostSettlementsImportResponse", {
@@ -1904,6 +1977,8 @@ PostSettlementsImportResponse = TypedDict("PostSettlementsImportResponse", {
     "difference_minor": "int",
     "difference_breakdown": "Any",
     "bank_match": "Any",
+    "bank_difference": "Any",
+    "suggested_bank_matches": "Any",
     "cases": "List[Any]",
     "narrative": "bool",
 })

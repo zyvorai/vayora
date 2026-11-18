@@ -1,0 +1,5 @@
+Transactions List - Synthetic Account
+S No.,Value Date,Transaction Date,Cheque Number,Transaction Remarks,Withdrawal Amount (INR ),Deposit Amount (INR ),Balance (INR )
+1,01/10/2026,01/10/2026,SYNTHA0001,NEFT CR-SYNTHA0001-ACME TRADERS,0.00,"2,500.00","12,500.00"
+2,02/10/2026,02/10/2026,,Bank charges,10.00,0.00,"12,490.00"
+3,03/10/2026,03/10/2026,SYNTHB0002,"NEFT CR-SYNTHB0002-RAZORPAY SOFTWARE, MUMBAI",0.00,"1,23,456.50","1,35,946.50"

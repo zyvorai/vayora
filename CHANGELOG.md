@@ -4,6 +4,16 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 18 November 2026 — Bank statement import and UTR/RRN matching
+**Simulators and synthetic statements only; nothing has run against a real bank export**
+- CSV import: named layouts (hdfc, icici, sbi, axis, kotak, generic) or your own column mapping, delimiter and date format; Indian and western amount grouping, Dr/Cr columns and suffixes; amounts as whole paise. All or nothing per file, every problem reported with its line, plus `POST /v1/bank_statements/preview` (dry run) and `GET /v1/bank_statements/layouts`.
+- Re-uploading a file, or an overlapping one, adds no duplicate lines (per-line fingerprint); every upload is recorded (`GET /v1/bank_statements/imports`).
+- Matching records its evidence (`bank_line_matches`): a UTR/RRN found as a whole token in the reference column or narration is confirmed; **amount and date alone is now only a suggestion** (it used to link automatically) that a person confirms or rejects (`/v1/bank_statements/matches/{id}/confirm|reject`). Debits match payouts and refunds, credits match payments by RRN.
+- Settlements with no bank credit and paid payouts with no bank debit become cases once a statement covers the period; cases carry `age_days` and `GET /v1/recon/ageing`; the unmatched-credit case closes when the line is matched.
+- Payments store the provider's bank reference (`payment_attempts.bank_reference`) when it is reported: simulator, local mock, and the fields Razorpay and Cashfree document.
+- Settlement explanation shows the matched bank line, the rule and key, suggestions, and the bank-versus-expected difference with its reasons.
+- Migration 0077 (additive). OpenAPI, SDK types and docs ([docs/zyvor/BANK_RECONCILIATION.md](docs/zyvor/BANK_RECONCILIATION.md)) updated.
+
 ## 7 November 2026 — Android parity follow-through
 **More iOS test-mode extras on Android**
 - Pay: Receive QR (`vayora://request` open amount), category memory on settle, open-amount typing on review.

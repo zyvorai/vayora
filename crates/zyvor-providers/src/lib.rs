@@ -280,6 +280,38 @@ pub struct SettlementRecord {
     pub items: Vec<SettlementItem>,
 }
 
+/// The bank-side reference (the RRN / UPI transaction reference) a provider reports for a payment, read from the
+/// payment object or webhook payload it sent. It is what shows up in the merchant's bank statement narration for a
+/// payment that reaches the account directly. `None` when the payload carries none: nothing is guessed.
+///
+/// Field names: Razorpay's payment entity has `acquirer_data.rrn` (and `acquirer_data.upi_transaction_id` for UPI);
+/// Cashfree's payment has `bank_reference`; the simulator sets `bank_reference` itself. Other adapters report none.
+/// These names come from the providers' public API references, not from a live account, so check them on first use.
+pub fn bank_reference(provider: &str, raw: &Value) -> Option<String> {
+    let text = |v: &Value| {
+        v.as_str()
+            .map(str::trim)
+            .filter(|s| s.len() >= 6 && s.len() <= 64)
+            .map(str::to_string)
+    };
+    match provider {
+        "razorpay" => {
+            let entity = if raw["payload"]["payment"]["entity"].is_object() {
+                &raw["payload"]["payment"]["entity"]
+            } else {
+                raw
+            };
+            text(&entity["acquirer_data"]["rrn"])
+                .or_else(|| text(&entity["acquirer_data"]["upi_transaction_id"]))
+        }
+        "cashfree" => {
+            text(&raw["data"]["payment"]["bank_reference"]).or_else(|| text(&raw["bank_reference"]))
+        }
+        "sim" => text(&raw["bank_reference"]),
+        _ => None,
+    }
+}
+
 pub type Headers = BTreeMap<String, String>;
 
 // ---- UPI AutoPay mandates -------------------------------------------------------------------------------
@@ -556,4 +588,56 @@ pub(crate) fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> Vec<u8> {
 
 pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
+}
+
+#[cfg(test)]
+mod bank_reference_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn reads_the_reference_each_provider_documents_and_nothing_else() {
+        let rz = json!({ "id": "pay_1", "acquirer_data": { "rrn": "404223241811" } });
+        assert_eq!(
+            bank_reference("razorpay", &rz).as_deref(),
+            Some("404223241811")
+        );
+        let hook = json!({ "payload": { "payment": { "entity": { "acquirer_data": { "upi_transaction_id": "UPI99887766" } } } } });
+        assert_eq!(
+            bank_reference("razorpay", &hook).as_deref(),
+            Some("UPI99887766")
+        );
+        let cf = json!({ "data": { "payment": { "bank_reference": "123456789012" } } });
+        assert_eq!(
+            bank_reference("cashfree", &cf).as_deref(),
+            Some("123456789012")
+        );
+        assert_eq!(
+            bank_reference("cashfree", &json!({ "bank_reference": "123456789012" })).as_deref(),
+            Some("123456789012")
+        );
+        // missing, too short, wrong type, another provider: nothing is invented
+        assert_eq!(bank_reference("razorpay", &json!({ "id": "pay_1" })), None);
+        assert_eq!(
+            bank_reference("razorpay", &json!({ "acquirer_data": { "rrn": "12" } })),
+            None
+        );
+        assert_eq!(
+            bank_reference("cashfree", &json!({ "bank_reference": 123456789012i64 })),
+            None
+        );
+        assert_eq!(
+            bank_reference("phonepe", &json!({ "bank_reference": "123456789012" })),
+            None
+        );
+    }
+
+    #[test]
+    fn the_simulator_reference_is_twelve_digits_and_stable() {
+        let a = sim::sim_rrn("att_1");
+        assert_eq!(a.len(), 12);
+        assert!(a.bytes().all(|b| b.is_ascii_digit()));
+        assert_eq!(a, sim::sim_rrn("att_1"));
+        assert_ne!(a, sim::sim_rrn("att_2"));
+    }
 }

@@ -284,54 +284,36 @@ pub async fn evaluate(
         }
     }
 
-    // 4. bank statement
-    let bank: Option<(i64, i64)> = match &utr {
-        Some(u) => sqlx::query_as("SELECT id, amount_minor FROM bank_statement_lines WHERE utr = $1 AND matched_settlement_id IS NULL").bind(u).fetch_optional(&mut *conn).await?,
-        None => None,
-    };
-    let bank = match bank {
-        Some(b) => Some(b),
-        None => {
-            sqlx::query_as(
-                "SELECT id, amount_minor FROM bank_statement_lines WHERE matched_settlement_id IS NULL AND amount_minor = $1 AND currency = $2 AND posted_on BETWEEN $3 - 3 AND $3 + 3 ORDER BY posted_on LIMIT 1",
-            )
-            .bind(net)
-            .bind(&ccy)
-            .bind(settled_on)
-            .fetch_optional(&mut *conn)
-            .await?
-        }
-    };
-    if let Some((line, bank_amount)) = bank {
-        sqlx::query("UPDATE bank_statement_lines SET matched_settlement_id = $2 WHERE id = $1")
-            .bind(line)
-            .bind(settlement_id)
-            .execute(&mut *conn)
-            .await?;
-        sqlx::query("UPDATE settlements SET bank_line_id = $2 WHERE id = $1")
-            .bind(settlement_id)
-            .bind(line)
-            .execute(&mut *conn)
-            .await?;
-        if bank_amount != net {
-            open_case(
-                conn,
-                tenant_id,
-                "bank_amount_mismatch",
-                "settlement",
-                settlement_id,
-                Some(net),
-                Some(bank_amount),
-                &format!(
-                    "{} says it paid {} but the bank statement shows {} for the same UTR.",
-                    crate::timeline::provider_title(&provider),
-                    money(net),
-                    money(bank_amount)
-                ),
-                detail.clone(),
-            )
-            .await?;
-        }
+    // 4. bank statement: a reference that matches exactly links the credit; amount and date alone only suggest
+    if let Some((_line, bank_amount)) = crate::bankmatch::match_settlement(
+        conn,
+        tenant_id,
+        settlement_id,
+        net,
+        settled_on,
+        &ccy,
+        utr.as_deref(),
+    )
+    .await?
+        && bank_amount != net
+    {
+        open_case(
+            conn,
+            tenant_id,
+            "bank_amount_mismatch",
+            "settlement",
+            settlement_id,
+            Some(net),
+            Some(bank_amount),
+            &format!(
+                "{} says it paid {} but the bank statement shows {} for the same UTR.",
+                crate::timeline::provider_title(&provider),
+                money(net),
+                money(bank_amount)
+            ),
+            detail.clone(),
+        )
+        .await?;
     }
 
     let open: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM recon_cases WHERE status <> 'resolved' AND detail->>'settlement_id' = $1").bind(settlement_id).fetch_one(&mut *conn).await?;
@@ -606,8 +588,8 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
         .fetch_one(&mut *conn)
         .await?;
 
-    let payments: Vec<Value> = sqlx::query_as::<_, (Option<String>, Option<String>, i64, Option<i64>, Option<String>, Option<String>, Option<String>)>(
-        "SELECT i.attempt_id, i.provider_ref, i.amount_minor, a.amount_minor, a.method, p.external_ref, p.invoice_id
+    let payments: Vec<Value> = sqlx::query_as::<_, (Option<String>, Option<String>, i64, Option<i64>, Option<String>, Option<String>, Option<String>, Option<String>)>(
+        "SELECT i.attempt_id, i.provider_ref, i.amount_minor, a.amount_minor, a.method, p.external_ref, p.invoice_id, a.bank_reference
          FROM settlement_items i LEFT JOIN payment_attempts a ON a.id = i.attempt_id LEFT JOIN payment_intents p ON p.id = a.intent_id
          WHERE i.settlement_id = $1 AND i.kind = 'payment' ORDER BY i.id",
     )
@@ -615,7 +597,7 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
     .fetch_all(&mut *conn)
     .await?
     .into_iter()
-    .map(|(att, pref, amt, ours, method, ext, inv)| json!({ "attempt_id": att, "provider_ref": pref, "settled_minor": amt, "recorded_minor": ours, "method": method, "external_ref": ext, "invoice_id": inv, "matched": att.is_some() }))
+    .map(|(att, pref, amt, ours, method, ext, inv, bref)| json!({ "attempt_id": att, "provider_ref": pref, "settled_minor": amt, "recorded_minor": ours, "method": method, "external_ref": ext, "invoice_id": inv, "bank_reference": bref, "matched": att.is_some() }))
     .collect();
     let refund_lines: Vec<Value> = sqlx::query_as::<_, (Option<String>, Option<String>, i64, Option<String>)>(
         "SELECT i.refund_id, i.provider_ref, i.amount_minor, r.external_ref FROM settlement_items i LEFT JOIN refunds r ON r.id = i.refund_id WHERE i.settlement_id = $1 AND i.kind = 'refund'",
@@ -640,10 +622,8 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
         .into_iter()
         .map(|(cid, kind, st, ex, asg)| json!({ "id": cid, "kind": kind, "status": st, "explanation": ex, "assignee": asg }))
         .collect();
-    let bank = match bank_line {
-        Some(b) => sqlx::query_as::<_, (NaiveDate, i64, String, Option<String>)>("SELECT posted_on, amount_minor, narration, utr FROM bank_statement_lines WHERE id = $1").bind(b).fetch_optional(&mut *conn).await?.map(|(on, a, n, u)| json!({ "posted_on": on, "amount_minor": a, "narration": n, "utr": u })),
-        None => None,
-    };
+    let bank = crate::bankmatch::bank_match_json(conn, id, bank_line).await?;
+    let suggested_bank = crate::bankmatch::suggested_for_settlement(conn, id).await?;
 
     // What we expected to receive: recorded payment value minus refunds minus configured fee estimate.
     let recorded: i64 = payments
@@ -705,11 +685,67 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
             if net < expected { "short" } else { "over" }
         );
     }
+    let bank_difference = bank.as_ref().map(|b| {
+        let bank_minor = b["amount_minor"].as_i64().unwrap_or(0);
+        // where the money went between what the payments were worth and what the bank received
+        let mut parts = vec![json!({ "reason": "payments in this settlement", "amount_minor": gross })];
+        if refunds != 0 {
+            parts.push(json!({ "reason": "refunds netted off by the provider", "amount_minor": -refunds }));
+        }
+        if fees != 0 {
+            parts.push(json!({ "reason": "provider fees and taxes", "amount_minor": -fees }));
+        }
+        if adj != 0 {
+            parts.push(json!({ "reason": "settlement adjustments", "amount_minor": adj }));
+        }
+        json!({
+            "bank_minor": bank_minor, "provider_net_minor": net, "expected_minor": expected,
+            "difference_from_expected_minor": bank_minor - expected,
+            "explained_by": breakdown,
+            "components": parts,
+            "unexplained_minor": bank_minor - net,
+            "note": if bank_minor == net {
+                "The bank received exactly what the provider says it paid; any gap from what we expected is the provider's fees, refunds and adjustments listed above."
+            } else {
+                "The bank received a different amount from what the provider says it paid. That gap is not explained by the provider's own figures, so it is a reconciliation case."
+            },
+        })
+    });
     narrative += &match &bank {
-        Some(b) => format!(
-            " The bank statement shows {} credited on {}.",
-            money(b["amount_minor"].as_i64().unwrap_or(0)),
-            b["posted_on"].as_str().unwrap_or("?")
+        Some(b) => {
+            let by = match b["rule"].as_str() {
+                Some("amount_date_window") => {
+                    " (matched on amount and date, confirmed by a person)".to_string()
+                }
+                Some(_) => b["key_matched"]
+                    .as_str()
+                    .map(|k| format!(" (matched on reference {k})"))
+                    .unwrap_or_default(),
+                None => String::new(),
+            };
+            let bank_minor = b["amount_minor"].as_i64().unwrap_or(0);
+            let gap = if bank_minor != net {
+                format!(
+                    " It is {} {} what the provider says it paid.",
+                    money((bank_minor - net).abs()),
+                    if bank_minor < net {
+                        "less than"
+                    } else {
+                        "more than"
+                    }
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                " The bank statement shows {} credited on {}{by}.{gap}",
+                money(bank_minor),
+                b["posted_on"].as_str().unwrap_or("?")
+            )
+        }
+        None if !suggested_bank.is_empty() => format!(
+            " No bank credit carries this settlement's reference, but {} credit(s) match on amount and date; a person has to confirm one.",
+            suggested_bank.len()
         ),
         None => " No matching bank credit has been found yet.".to_string(),
     };
@@ -726,7 +762,8 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
         "fees": { "observed_minor": fees, "configured_estimate_minor": est_fee, "effective_rate_bps": effective_bps },
         "arithmetic": { "gross_minor": gross, "refunds_minor": refunds, "fees_minor": fees, "adjustments_minor": adj, "net_minor": net, "balances": gross - refunds - fees + adj == net },
         "expected_minor": expected, "received_minor": net, "difference_minor": net - expected, "difference_breakdown": breakdown,
-        "bank_match": bank, "cases": cases, "narrative": narrative,
+        "bank_match": bank, "bank_difference": bank_difference, "suggested_bank_matches": suggested_bank,
+        "cases": cases, "narrative": narrative,
     }))
 }
 
@@ -739,6 +776,18 @@ pub struct BankLine {
     currency: Option<String>,
     pub(crate) narration: Option<String>,
     pub(crate) utr: Option<String>,
+    /// Set by the statement readers, never by the JSON API: the reference column, where in the file the line was,
+    /// and the stable fingerprint that keeps a re-imported or overlapping file from adding a transaction twice.
+    #[serde(skip)]
+    pub(crate) reference: Option<String>,
+    #[serde(skip)]
+    pub(crate) fingerprint: Option<String>,
+    #[serde(skip)]
+    pub(crate) line_no: Option<i32>,
+    #[serde(skip)]
+    pub(crate) value_date: Option<NaiveDate>,
+    #[serde(skip)]
+    pub(crate) balance_minor: Option<i64>,
 }
 
 impl BankLine {
@@ -749,6 +798,28 @@ impl BankLine {
             currency: None,
             narration: Some(narration),
             utr: Some(utr),
+            reference: None,
+            fingerprint: None,
+            line_no: None,
+            value_date: None,
+            balance_minor: None,
+        }
+    }
+
+    /// A line read from a statement file. Its `utr` is a stable unique id derived from the fingerprint (so two
+    /// different transactions that share a reference are both kept); the bank's own reference is `reference`.
+    pub fn from_statement(l: crate::bankcsv::ParsedLine) -> Self {
+        Self {
+            posted_on: l.posted_on,
+            amount_minor: l.amount_minor,
+            currency: None,
+            narration: Some(l.narration),
+            utr: Some(format!("st:{}", &l.fingerprint[..24])),
+            reference: l.reference,
+            fingerprint: Some(l.fingerprint),
+            line_no: i32::try_from(l.line_no).ok(),
+            value_date: l.value_date,
+            balance_minor: l.balance_minor,
         }
     }
 }
@@ -813,56 +884,137 @@ pub async fn simulate_bank(
     import_bank(State(s), auth, Json(ImportBank { lines: vec![line] })).await
 }
 
+/// What a statement file was, kept with the import record.
+pub struct ImportMeta {
+    pub source: String,
+    pub layout: String,
+    pub filename: Option<String>,
+    pub file_sha256: String,
+    pub credits_minor: i64,
+    pub debits_minor: i64,
+    pub period: Option<(NaiveDate, NaiveDate)>,
+}
+
+/// References the readers make up when a line has none; they identify a line, not a payment.
+fn synthetic_ref(u: &str) -> bool {
+    ["csv:", "mt:", "camt:", "st:"]
+        .iter()
+        .any(|p| u.starts_with(p))
+}
+
 pub async fn import_bank(
     State(s): State<AppState>,
     auth: Auth,
     Json(b): Json<ImportBank>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("recon:write")?;
+    let r = store_statement(&s, &auth, b.lines, None).await?;
+    Ok(Json(json!({
+        "added": r["added"], "duplicates": r["duplicates"], "rows": r["rows"],
+        "settlements_rechecked": r["settlements_rechecked"],
+        "matched": r["matched"], "cases_opened": r["cases_opened"],
+    })))
+}
+
+/// Store lines (skipping any already held), then match: re-evaluate settlements still waiting for a bank credit,
+/// match the lines that explain payments, payouts and refunds, and open a case for each credit nothing explains.
+/// One transaction: either everything in the file is stored and matched, or nothing is.
+pub async fn store_statement(
+    s: &AppState,
+    auth: &Auth,
+    lines: Vec<BankLine>,
+    meta: Option<ImportMeta>,
+) -> Result<Value, ApiError> {
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let mut added = 0;
-    for l in &b.lines {
-        added += sqlx::query("INSERT INTO bank_statement_lines (tenant_id, posted_on, amount_minor, currency, narration, utr) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (tenant_id, utr) DO NOTHING")
+    let import_id: Option<i64> = match &meta {
+        Some(m) => Some(
+            sqlx::query_scalar(
+                "INSERT INTO bank_statement_imports (tenant_id, source, layout, filename, file_sha256, rows_total, rows_added, rows_duplicate, credits_minor, debits_minor, period_from, period_to, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, $8, $9, $10, $11) RETURNING id",
+            )
+            .bind(&auth.tenant_id)
+            .bind(&m.source)
+            .bind(&m.layout)
+            .bind(&m.filename)
+            .bind(&m.file_sha256)
+            .bind(lines.len() as i32)
+            .bind(m.credits_minor)
+            .bind(m.debits_minor)
+            .bind(m.period.map(|p| p.0))
+            .bind(m.period.map(|p| p.1))
+            .bind(&auth.actor)
+            .fetch_one(&mut *tx)
+            .await?,
+        ),
+        None => None,
+    };
+    let mut added = 0i64;
+    for l in &lines {
+        let reference = l
+            .reference
+            .clone()
+            .or_else(|| l.utr.clone().filter(|u| !synthetic_ref(u)));
+        // the same transaction may already be here from before fingerprints, keyed by its reference
+        if l.fingerprint.is_some()
+            && let Some(r) = &reference
+        {
+            let held: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM bank_statement_lines WHERE utr = $1 AND posted_on = $2 AND amount_minor = $3)")
+                .bind(r)
+                .bind(l.posted_on)
+                .bind(l.amount_minor)
+                .fetch_one(&mut *tx)
+                .await?;
+            if held {
+                continue;
+            }
+        }
+        added += sqlx::query("INSERT INTO bank_statement_lines (tenant_id, posted_on, amount_minor, currency, narration, utr, reference, fingerprint, import_id, line_no, value_date, balance_minor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ON CONFLICT DO NOTHING")
             .bind(&auth.tenant_id)
             .bind(l.posted_on)
             .bind(l.amount_minor)
             .bind(l.currency.as_deref().unwrap_or("INR"))
             .bind(l.narration.as_deref().unwrap_or(""))
             .bind(&l.utr)
+            .bind(&reference)
+            .bind(&l.fingerprint)
+            .bind(import_id)
+            .bind(l.line_no)
+            .bind(l.value_date)
+            .bind(l.balance_minor)
             .execute(&mut *tx)
             .await?
-            .rows_affected();
+            .rows_affected() as i64;
     }
-    // Re-evaluate settlements still waiting for a bank credit, then flag credits nobody explains.
-    let waiting: Vec<String> =
-        sqlx::query_scalar("SELECT id FROM settlements WHERE bank_line_id IS NULL")
-            .fetch_all(&mut *tx)
-            .await?;
-    for id in &waiting {
-        evaluate(&mut tx, &auth.tenant_id, id).await?;
+    let duplicates = lines.len() as i64 - added;
+    if let Some(id) = import_id {
+        sqlx::query(
+            "UPDATE bank_statement_imports SET rows_added = $2, rows_duplicate = $3 WHERE id = $1",
+        )
+        .bind(id)
+        .bind(added as i32)
+        .bind(duplicates as i32)
+        .execute(&mut *tx)
+        .await?;
     }
-    let orphans: Vec<(i64, i64, NaiveDate, String)> = sqlx::query_as("SELECT id, amount_minor, posted_on, narration FROM bank_statement_lines WHERE matched_settlement_id IS NULL AND amount_minor > 0").fetch_all(&mut *tx).await?;
-    for (id, amount, on, narr) in orphans {
-        open_case(
+    let summary = crate::bankmatch::run(&mut tx, &auth.tenant_id).await?;
+    if let Some(m) = &meta {
+        tenant::audit(
             &mut tx,
             &auth.tenant_id,
-            "unmatched_bank_credit",
-            "bank_line",
-            &id.to_string(),
-            None,
-            Some(amount),
-            &format!(
-                "{} credited on {on} ({narr}) matches no provider settlement.",
-                money(amount)
-            ),
-            json!({}),
+            &auth.actor,
+            "bank_statement.imported",
+            import_id.map(|i| i.to_string()).as_deref(),
+            json!({ "source": m.source, "layout": m.layout, "filename": m.filename, "rows": lines.len(), "added": added, "duplicates": duplicates }),
         )
         .await?;
     }
     tx.commit().await?;
-    Ok(Json(
-        json!({ "added": added, "settlements_rechecked": waiting.len() }),
-    ))
+    Ok(json!({
+        "import_id": import_id, "rows": lines.len(), "added": added, "duplicates": duplicates,
+        "settlements_rechecked": summary.settlements_rechecked,
+        "matched": { "confirmed": summary.confirmed, "suggested": summary.suggested },
+        "cases_opened": summary.cases_opened,
+    }))
 }
 
 // ---------- cases ----------
@@ -881,8 +1033,9 @@ pub async fn list_cases(
 ) -> Result<Json<Value>, ApiError> {
     auth.require("recon:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let rows: Vec<(String, String, String, String, String, Option<i64>, Option<i64>, Option<i64>, String, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-        "SELECT id, kind, status, subject_type, subject_id, expected_minor, actual_minor, diff_minor, explanation, assignee, created_at FROM recon_cases
+    let rows: Vec<(String, String, String, String, String, Option<i64>, Option<i64>, Option<i64>, String, Option<String>, chrono::DateTime<chrono::Utc>, i64)> = sqlx::query_as(
+        "SELECT id, kind, status, subject_type, subject_id, expected_minor, actual_minor, diff_minor, explanation, assignee, created_at,
+                GREATEST(0, EXTRACT(day FROM (COALESCE(resolved_at, now()) - created_at)))::BIGINT FROM recon_cases
          WHERE ($1::text IS NULL OR status = $1) AND ($2::text IS NULL OR kind = $2) ORDER BY created_at DESC LIMIT $3",
     )
     .bind(&q.status)
@@ -890,7 +1043,7 @@ pub async fn list_cases(
     .bind(q.limit.unwrap_or(50).clamp(1, 200))
     .fetch_all(&mut *tx)
     .await?;
-    let data: Vec<Value> = rows.into_iter().map(|(id, kind, status, st, sid, e, a, d, ex, asg, at)| json!({ "id": id, "kind": kind, "status": status, "subject_type": st, "subject_id": sid, "expected_minor": e, "actual_minor": a, "diff_minor": d, "explanation": ex, "assignee": asg, "created_at": at })).collect();
+    let data: Vec<Value> = rows.into_iter().map(|(id, kind, status, st, sid, e, a, d, ex, asg, at, age)| json!({ "id": id, "kind": kind, "status": status, "subject_type": st, "subject_id": sid, "expected_minor": e, "actual_minor": a, "diff_minor": d, "explanation": ex, "assignee": asg, "created_at": at, "age_days": age })).collect();
     Ok(Json(json!({ "data": data })))
 }
 
@@ -976,8 +1129,12 @@ pub async fn scan(
         .unwrap_or(3);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let n = scan_missing(&mut tx, &auth.tenant_id, days).await?;
+    let (no_credit, no_debit) =
+        crate::bankmatch::scan_unbanked(&mut tx, &auth.tenant_id, days).await?;
     tx.commit().await?;
-    Ok(Json(json!({ "new_cases": n })))
+    Ok(Json(
+        json!({ "new_cases": n, "settlements_without_bank_credit": no_credit, "payouts_without_bank_debit": no_debit }),
+    ))
 }
 
 // ---------- measured cost ----------

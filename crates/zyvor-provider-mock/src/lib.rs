@@ -64,6 +64,14 @@ impl Mock {
     }
 }
 
+/// A twelve-digit made-up bank reference, stable per payment id.
+fn mock_rrn(id: &str) -> String {
+    let h = id.bytes().fold(1_469_598_103_934_665_603u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(1_099_511_628_211)
+    });
+    format!("{:012}", h % 1_000_000_000_000)
+}
+
 type Resp = Result<Json<Value>, (StatusCode, Json<Value>)>;
 fn err(code: StatusCode, msg: &str) -> (StatusCode, Json<Value>) {
     (
@@ -256,6 +264,9 @@ async fn rz_capture(State(m): State<Mock>, Path(id): Path<String>, Json(b): Json
     }
     p["status"] = json!("captured");
     p["captured"] = json!(true);
+    if p["acquirer_data"]["rrn"].is_null() {
+        p["acquirer_data"] = json!({ "rrn": mock_rrn(p["id"].as_str().unwrap_or("")) });
+    }
     let out = p.clone();
     *g.charges.entry("razorpay".into()).or_default() += 1;
     Ok(Json(out))
@@ -351,6 +362,8 @@ async fn sim_rz_pay(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
             .ok_or_else(|| err(StatusCode::NOT_FOUND, "order not found"))?;
         let p = json!({ "id": id, "entity": "payment", "order_id": order_id, "amount": order["amount"], "currency": order["currency"], "status": outcome,
             "method": b["method"].as_str().unwrap_or("upi"), "captured": outcome == "captured",
+            // a UPI/card payment that went through carries the bank's reference, as Razorpay's `acquirer_data.rrn`
+            "acquirer_data": if outcome == "failed" { json!({}) } else { json!({ "rrn": mock_rrn(&id) }) },
             "error_description": if outcome == "failed" { json!("Payment failed at bank") } else { Value::Null } });
         g.rz_payments.insert(id.clone(), p.clone());
         if outcome == "captured" {
@@ -551,6 +564,9 @@ async fn sim_cf_pay(State(m): State<Mock>, Json(b): Json<Value>) -> Resp {
         let key = existing.unwrap_or_else(|| format!("cfpay{:08}", g.cf_payments.len() + 1));
         let p = g.cf_payments.entry(key.clone()).or_insert_with(|| json!({ "cf_payment_id": key, "order_id": order_id, "payment_amount": o["order_amount"], "payment_method": { "upi": {} } }));
         p["payment_status"] = json!(outcome);
+        if outcome == "SUCCESS" {
+            p["bank_reference"] = json!(mock_rrn(&key));
+        }
         if outcome == "FAILED" {
             p["error_details"] = json!({ "error_description": "Payment declined by payer bank" });
         }
