@@ -5,6 +5,15 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Payment link upgrades (simulators only)
+- **Bulk creation**: `POST /v1/payment_links/bulk` reads a CSV strictly (every problem with its line and column), checks it with `dry_run`, creates all links or none, and is safe to send twice (each row's `reference`, or one derived from its contents, is the link's new per-business `external_ref`). `GET /v1/payment_links/imports/{id}/export.csv` lists the links with their addresses (spreadsheet formulas defused).
+- **Per link**: a note, a thank-you, a return address (checked against `return_url_origins`), the business's logo and colour (colour used only when readable), and allowed methods (enforced before any provider is called).
+- **Paying in parts**: `allow_partial` and `min_part_minor`; the link is paid only when captured parts add up (fixed links) or the invoice is settled (invoice links); 30-minute hold against concurrent payers; balance reminders by email and SMS, at most three.
+- **Analytics**: `GET /v1/payment_links/analytics` and `/{id}/analytics`, per day, with a funnel. Opened and started count a coarse visitor token once a day and ignore crawlers (estimates, limits documented); paid, failed and expired are read from the payments. No personal data in any counter; hashed tokens are deleted after two days.
+- **Sharing**: `GET /v1/payment_links/{id}/share` (plain, honest text), `POST /v1/payment_links/{id}/send_sms` and a provider-agnostic SMS hook (`ZYVOR_SMS_MODE`: off by default, `sandbox` logs only, `hook` posts to your URL). No SMS provider is built in.
+- **Checkout**: clearer expired / used / cancelled / paid / busy states, accessible amount errors, and new strings in six languages (the non-English ones are machine-assisted drafts).
+- Migration 0083 (additive; row-level security on every new table). OpenAPI and generated SDK types updated. See [docs/zyvor/PAYMENT_LINKS.md](docs/zyvor/PAYMENT_LINKS.md). Tested against simulators and a local stand-in SMS receiver; no console page yet.
+
 ## 18 November 2026 — Console pages for fee checks, bank statements and routing health
 - **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
 - **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.

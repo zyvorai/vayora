@@ -197,9 +197,13 @@ GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantI
     "coupon_applied": "Any",
     "currency": "str",
     "status": "str",
-    "open_amount": "bool",
-    "min_amount_minor": "Optional[int]",
-    "max_amount_minor": "Optional[int]",
+    "open_amount": "Any",
+    "min_amount_minor": "int",
+    "max_amount_minor": "int",
+    "message": "Optional[str]",
+    "brand": "Any",
+    "allowed_methods": "Any",
+    "partial": "Any",
 })
 
 GetClosingsResponse = TypedDict("GetClosingsResponse", {
@@ -698,6 +702,36 @@ GetPaymentIntentsResponse = TypedDict("GetPaymentIntentsResponse", {
     "has_more": "bool",
 })
 
+GetPaymentLinksAnalyticsResponse = TypedDict("GetPaymentLinksAnalyticsResponse", {
+    "from": "Any",
+    "to": "Any",
+    "totals": "Any",
+    "daily": "Any",
+    "funnel": "Any",
+    "notes": "Any",
+})
+
+GetPaymentLinksByIdAnalyticsResponse = TypedDict("GetPaymentLinksByIdAnalyticsResponse", {
+    "from": "Any",
+    "to": "Any",
+    "totals": "Any",
+    "daily": "Any",
+    "funnel": "Any",
+    "notes": "Any",
+})
+
+GetPaymentLinksByIdShareResponse = TypedDict("GetPaymentLinksByIdShareResponse", {
+    "id": "str",
+    "url": "Any",
+    "text": "Any",
+    "sms_text": "Any",
+    "email_subject": "Any",
+    "qr_path": "str",
+    "can_email": "Any",
+    "can_sms": "Any",
+    "sms_mode": "Any",
+})
+
 GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
     "data": "List[Any]",
 })
@@ -862,7 +896,7 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
 
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
-    "routing_health_rule": "str",
+    "routing_health_rule": "Any",
     "providers": "Any",
     "recent_changes": "List[Any]",
 })
@@ -1759,6 +1793,17 @@ PostPaymentIntentsResponse = TypedDict("PostPaymentIntentsResponse", {
     "client_secret": "str",
 })
 
+PostPaymentLinksBulkResponse = TypedDict("PostPaymentLinksBulkResponse", {
+    "import_id": "Optional[str]",
+    "repeat": "bool",
+    "dry_run": "bool",
+    "rows": "int",
+    "created": "Any",
+    "existing": "Any",
+    "links": "Any",
+    "export_path": "str",
+})
+
 PostPaymentLinksByIdCancelResponse = TypedDict("PostPaymentLinksByIdCancelResponse", {
     "id": "str",
     "status": "str",
@@ -1769,6 +1814,12 @@ PostPaymentLinksByIdSendResponse = TypedDict("PostPaymentLinksByIdSendResponse",
     "queued": "bool",
 })
 
+PostPaymentLinksByIdSendSmsResponse = TypedDict("PostPaymentLinksByIdSendSmsResponse", {
+    "id": "str",
+    "queued": "bool",
+    "mode": "Any",
+})
+
 PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "id": "str",
     "token": "Any",
@@ -1776,6 +1827,7 @@ PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "path": "str",
     "max_uses": "Optional[int]",
     "expires_at": "Optional[str]",
+    "existing": "Any",
 })
 
 PostPayoutsBulkResponse = TypedDict("PostPayoutsBulkResponse", {

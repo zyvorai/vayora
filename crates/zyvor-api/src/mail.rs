@@ -253,9 +253,9 @@ pub fn clean_logo_url(raw: &str) -> Option<String> {
     .then(|| r.to_string())
 }
 
-/// White or near-black, whichever reads better on `#rrggbb`.
-fn text_on(accent: &str) -> &'static str {
-    let c = |i: usize| f64::from(u8::from_str_radix(&accent[i..i + 2], 16).unwrap_or(0)) / 255.0;
+/// Relative luminance (WCAG) of `#rrggbb`.
+pub fn luminance(hex: &str) -> f64 {
+    let c = |i: usize| f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0)) / 255.0;
     let lin = |v: f64| {
         if v <= 0.03928 {
             v / 12.92
@@ -263,8 +263,27 @@ fn text_on(accent: &str) -> &'static str {
             ((v + 0.055) / 1.055).powf(2.4)
         }
     };
-    let l = 0.2126 * lin(c(1)) + 0.7152 * lin(c(3)) + 0.0722 * lin(c(5));
-    if l > 0.4 { "#1d1d1f" } else { "#ffffff" }
+    0.2126 * lin(c(1)) + 0.7152 * lin(c(3)) + 0.0722 * lin(c(5))
+}
+
+/// WCAG contrast ratio of two `#rrggbb` colours (1.0 to 21.0).
+pub fn contrast_ratio(a: &str, b: &str) -> f64 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// White or near-black, whichever reads better on `#rrggbb`.
+fn text_on(accent: &str) -> &'static str {
+    if luminance(accent) > 0.4 {
+        "#1d1d1f"
+    } else {
+        "#ffffff"
+    }
+}
+
+/// Text colour for a button filled with `#rrggbb`: the one that reads better.
+pub fn text_on_accent(accent: &str) -> &'static str {
+    text_on(accent)
 }
 
 /// `html_from_text` with a business's look. With no brand it is the plain version.
@@ -491,7 +510,9 @@ pub fn refund_receipt(
 }
 
 /// The words of an email that sends a payment link. `amount` is None for a link whose amount the payer types or
-/// that follows an invoice.
+/// that follows an invoice. `note` is the business's own message for this link (plain text, already cleaned);
+/// `min_part` is set when the link can be paid in parts.
+#[allow(clippy::too_many_arguments)]
 pub fn payment_link(
     merchant: &str,
     payer_name: &str,
@@ -499,6 +520,8 @@ pub fn payment_link(
     amount: Option<&str>,
     url: &str,
     expires_on: Option<chrono::NaiveDate>,
+    note: Option<&str>,
+    min_part: Option<&str>,
 ) -> (String, String) {
     let subject = match amount {
         Some(a) => format!("{merchant} asks you to pay {a}"),
@@ -512,6 +535,16 @@ pub fn payment_link(
     if let Some(d) = description {
         lines.push(format!("For: {d}"));
     }
+    if let Some(n) = note {
+        lines.push(String::new());
+        lines.push(n.to_string());
+    }
+    if let Some(m) = min_part {
+        lines.push(String::new());
+        lines.push(format!(
+            "You can pay in parts, at least {m} each time, until the full amount is paid."
+        ));
+    }
     lines.push(String::new());
     lines.push(format!("Pay here: {url}"));
     if let Some(e) = expires_on {
@@ -519,6 +552,40 @@ pub fn payment_link(
     }
     lines.push(String::new());
     lines.push("Only pay through the link above if you were expecting it from this business. Zyvor never asks for a card number, PIN or password by email.".into());
+    (subject, lines.join("\n"))
+}
+
+/// The words of a balance reminder on a link that is being paid in parts: how much is paid and how much is left,
+/// nothing more.
+#[allow(clippy::too_many_arguments)]
+pub fn payment_link_balance(
+    merchant: &str,
+    payer_name: &str,
+    description: Option<&str>,
+    paid: &str,
+    balance: &str,
+    min_part: &str,
+    url: &str,
+    expires_on: Option<chrono::NaiveDate>,
+) -> (String, String) {
+    let subject = format!("{merchant}: {balance} is still left to pay");
+    let mut lines = vec![format!("Hello {payer_name},"), String::new()];
+    lines.push(format!(
+        "You have paid {paid} to {merchant} so far. {balance} is still left."
+    ));
+    if let Some(d) = description {
+        lines.push(format!("For: {d}"));
+    }
+    lines.push(format!(
+        "You can pay in parts, at least {min_part} each time (or whatever is left, if that is less)."
+    ));
+    lines.push(String::new());
+    lines.push(format!("Pay here: {url}"));
+    if let Some(e) = expires_on {
+        lines.push(format!("The link works until {e}."));
+    }
+    lines.push(String::new());
+    lines.push("Ignore this message if you have already paid the rest. Only pay through the link above if you were expecting it from this business.".into());
     (subject, lines.join("\n"))
 }
 

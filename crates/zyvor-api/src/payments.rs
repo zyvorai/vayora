@@ -357,6 +357,38 @@ pub struct CreateAttempt {
     pub card_token_id: Option<String>,
 }
 
+/// When the business listed `return_url_origins`, a return address must be on one of them (empty list: any address that
+/// passed the address check). Shared by payments and payment links.
+pub async fn check_return_origin(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    url: &str,
+) -> Result<(), ApiError> {
+    let origins: Value = sqlx::query_scalar(
+        "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *conn)
+    .await?
+    .unwrap_or(json!([]));
+    if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| ApiError::invalid("invalid_return_url", "not a valid URL"))?;
+        let host = parsed.host_str().unwrap_or("");
+        let origin = match parsed.port() {
+            Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
+            None => format!("{}://{host}", parsed.scheme()),
+        };
+        if !list.iter().any(|o| o.as_str() == Some(origin.as_str())) {
+            return Err(ApiError::invalid(
+                "return_url_not_allowed",
+                "return_url origin is not on this tenant's allowlist",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn valid_vpa(v: &str) -> bool {
     v.split_once('@').is_some_and(|(h, p)| {
         (2..=64).contains(&h.len())
@@ -427,29 +459,7 @@ pub async fn start_attempt(
         ));
     }
     if let Some(u) = &b.return_url {
-        let origins: Value = sqlx::query_scalar(
-            "SELECT COALESCE(return_url_origins, '[]'::jsonb) FROM tenant_settings WHERE tenant_id = $1",
-        )
-        .bind(tenant_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .unwrap_or(json!([]));
-        if let Some(list) = origins.as_array().filter(|a| !a.is_empty()) {
-            let parsed = reqwest::Url::parse(u)
-                .map_err(|_| ApiError::invalid("invalid_return_url", "not a valid URL"))?;
-            let host = parsed.host_str().unwrap_or("");
-            let origin = match parsed.port() {
-                Some(p) => format!("{}://{host}:{p}", parsed.scheme()),
-                None => format!("{}://{host}", parsed.scheme()),
-            };
-            let ok = list.iter().any(|o| o.as_str() == Some(origin.as_str()));
-            if !ok {
-                return Err(ApiError::invalid(
-                    "return_url_not_allowed",
-                    "return_url origin is not on this tenant's allowlist",
-                ));
-            }
-        }
+        check_return_origin(&mut tx, tenant_id, u).await?;
     }
     let hash = fingerprint(&[
         intent_id,

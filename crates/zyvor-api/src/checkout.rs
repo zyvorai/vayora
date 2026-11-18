@@ -109,6 +109,11 @@ async fn session_body(
     .map(Method::as_str)
     .collect();
     methods.sort_unstable();
+    // a payment made through a payment link may be limited to some methods, and carries the link's wording
+    let link = crate::payment_links::presentation(&mut tx, tenant_id, intent_id).await?;
+    if let Some(allowed) = link.as_ref().and_then(|l| l["allowed_methods"].as_array()) {
+        methods.retain(|m| allowed.iter().any(|a| a.as_str() == Some(m)));
+    }
     let upi_flow = if candidates.iter().any(|c| {
         c.enabled
             && allowed.as_ref().is_none_or(|a| a.contains(&c.provider))
@@ -136,7 +141,7 @@ async fn session_body(
     };
     Ok(json!({
         "merchant": merchant, "amount_minor": amount, "currency": currency, "description": description,
-        "status": status, "phase": phase, "methods": methods, "upi_flow": upi_flow,
+        "status": status, "phase": phase, "methods": methods, "upi_flow": upi_flow, "link": link,
         "attempt": attempt.map(|a| json!({ "id": a.id, "method": a.method, "status": a.status, "failure_reason": a.failure_reason.filter(|_| a.status == "failed"), "action": a.client_action })),
     }))
 }
@@ -203,6 +208,25 @@ pub async fn pay(
     Json(b): Json<PayRequest>,
 ) -> Result<Response, ApiError> {
     let env = authorise(&s, &tenant_id, &intent_id, &b.secret).await?;
+    // a payment made through a link that accepts only some methods can only be paid with those
+    {
+        let mut tx = tenant::begin(&s.pool, &tenant_id).await?;
+        let allowed: Option<Vec<String>> = sqlx::query_scalar(
+            "SELECT l.allowed_methods FROM payment_intents i JOIN payment_links l ON l.id = i.metadata->>'payment_link' WHERE i.id = $1",
+        )
+        .bind(&intent_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten();
+        if let Some(list) = allowed
+            && !list.contains(&b.method.trim().to_lowercase())
+        {
+            return Err(ApiError::invalid(
+                "method_not_allowed",
+                "this payment link does not accept that method",
+            ));
+        }
+    }
     start_attempt(
         &s,
         &tenant_id,

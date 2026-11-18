@@ -22,6 +22,9 @@ const HEADER: usize = 3;
 
 #[derive(Clone)]
 pub struct Crypto {
+    /// A key derived from the master key for keyed hashes that must not be reversible or comparable across
+    /// deployments (see `derive`). Never used to encrypt.
+    derived: [u8; 32],
     current: (u8, Aes256Gcm),
     /// Every key that may decrypt, current first.
     all: Vec<(u8, Aes256Gcm)>,
@@ -42,10 +45,25 @@ fn parse(h: &str, name: &str) -> Result<(u8, Aes256Gcm), String> {
 impl Crypto {
     pub fn from_hex(h: &str) -> Result<Self, String> {
         let k = parse(h, "ZYVOR_MASTER_KEY")?;
+        let raw = hex::decode(h.trim()).map_err(|_| "ZYVOR_MASTER_KEY must be hex".to_string())?;
+        let mut d = Sha256::new();
+        d.update(b"zyvor-derived-key-v1|");
+        d.update(&raw);
         Ok(Self {
+            derived: d.finalize().into(),
             current: k.clone(),
             all: vec![k],
         })
+    }
+
+    /// A secret for keyed hashes, different for each `purpose` and for each deployment's master key. Rotating the master
+    /// key changes it, which is harmless for the day-scoped hashes it is used for.
+    pub fn derive(&self, purpose: &str) -> [u8; 32] {
+        let mut d = Sha256::new();
+        d.update(self.derived);
+        d.update(b"|");
+        d.update(purpose.as_bytes());
+        d.finalize().into()
     }
 
     /// Also accept these keys (comma separated hex) for decrypting, never for encrypting.

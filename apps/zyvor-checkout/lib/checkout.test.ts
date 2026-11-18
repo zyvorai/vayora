@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VPA, failureCopy, money, pollDelay, supportLink, supportRef } from "./checkout";
+import { VPA, cardProps, failureCopy, money, pollDelay, safeHttps, supportLink, supportRef } from "./checkout";
 
 describe("checkout helpers", () => {
   it("formats money from minor units with Indian grouping", () => {
@@ -34,5 +34,15 @@ describe("checkout helpers", () => {
     for (const bad of [undefined, "", "javascript:alert(1)", "http://help.example.com", "https://u:p@help.example.com", "mailto:not an email", "data:text/html,x"]) {
       expect(supportLink(bad, "AB12CD34"), String(bad)).toBeNull();
     }
+  });
+  it("uses a link's logo and return address only when they are plain https", () => {
+    expect(safeHttps("https://shop.example.com/logo.png")).toBe("https://shop.example.com/logo.png");
+    for (const bad of ["http://shop.example.com/x", "javascript:alert(1)", "data:image/png;base64,AAAA", "https://u:p@shop.example.com/", "", null, undefined, "not a url"]) expect(safeHttps(bad as string | null | undefined)).toBeNull();
+  });
+  it("applies a business colour only as a plain hex pair, never as free text", () => {
+    expect(cardProps({ accent: { color: "#0b7285", on_color: "#ffffff" }, logo_url: null })).toEqual({ className: "card branded", style: { "--brand": "#0b7285", "--brand-on": "#ffffff" } });
+    expect(cardProps({ accent: { color: "red;}</style>", on_color: "#ffffff" }, logo_url: null })).toEqual({ className: "card" });
+    expect(cardProps(null)).toEqual({ className: "card" });
+    expect(cardProps({ accent: null, logo_url: "https://x.example/l.png" })).toEqual({ className: "card" });
   });
 });

@@ -7619,7 +7619,7 @@ paths:
                     type:
                     - string
                     - 'null'
-                    format: date-time
+                  existing: {}
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -7726,6 +7726,171 @@ paths:
         required: true
         schema:
           type: string
+  /v1/payment_links/bulk:
+    post:
+      summary: Create many payment links from a CSV (all or nothing, repeatable; dry_run checks only)
+      tags:
+      - payment_links
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import_id:
+                    type:
+                    - string
+                    - 'null'
+                  repeat:
+                    type: boolean
+                  dry_run:
+                    type: boolean
+                  rows:
+                    type: integer
+                  created: {}
+                  existing: {}
+                  links: {}
+                  export_path:
+                    type: string
+        4XX: &id002
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkBody'
+  /v1/payment_links/imports/{id}/export.csv:
+    get:
+      summary: Export the links an upload made or found, with their addresses, as CSV
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+        4XX: *id002
+      parameters: &id003
+      - &id004
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_links/{id}/send_sms:
+    post:
+      summary: Text a payment link to its customer (sandbox logs it; a configured hook delivers it)
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  queued:
+                    type: boolean
+                  mode: {}
+        '202':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX: *id002
+      parameters: *id003
+  /v1/payment_links/{id}/share:
+    get:
+      summary: Address and ready-to-paste wording for sharing a payment link
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  url: {}
+                  text: {}
+                  sms_text: {}
+                  email_subject: {}
+                  qr_path:
+                    type: string
+                  can_email: {}
+                  can_sms: {}
+                  sms_mode: {}
+        4XX: *id002
+      parameters: *id003
+  /v1/payment_links/{id}/analytics:
+    get:
+      summary: Opened, started, paid, failed and expired counts for one payment link, per day, with its funnel
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  to: {}
+                  totals: {}
+                  daily: {}
+                  funnel: {}
+                  notes: {}
+        4XX: *id002
+      parameters:
+      - *id004
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+  /v1/payment_links/analytics:
+    get:
+      summary: Opened, started, paid, failed and expired counts for all payment links, per day, with the conversion funnel
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  to: {}
+                  totals: {}
+                  daily: {}
+                  funnel: {}
+                  notes: {}
+        4XX: *id002
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
   /v1/checkout/links/{tenant_id}/{token}:
     get:
       summary: Public payment link details
@@ -7760,18 +7925,18 @@ paths:
                     type: string
                   status:
                     type: string
-                  open_amount:
-                    type: boolean
+                  open_amount: {}
                   min_amount_minor:
-                    type:
-                    - integer
-                    - 'null'
-                    format: int64
+                    type: integer
                   max_amount_minor:
+                    type: integer
+                  message:
                     type:
-                    - integer
+                    - string
                     - 'null'
-                    format: int64
+                  brand: {}
+                  allowed_methods: {}
+                  partial: {}
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -8212,9 +8377,7 @@ paths:
                 type: object
                 properties:
                   config: {}
-                  routing_health_rule:
-                    type: string
-                    description: What routing does with this health data, in one sentence (the circuit breaker is the only health rule)
+                  routing_health_rule: {}
                   providers: {}
                   recent_changes:
                     type: array
@@ -8392,7 +8555,8 @@ components:
           description: '`unknown` means the provider''s outcome is not known yet; no other attempt can start until it resolves.'
         route:
           type: object
-          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
+          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider
+            considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
         client_action:
           type:
           - object
@@ -9097,6 +9261,28 @@ components:
           format: int32
         remind_before_expiry:
           type: boolean
+        message:
+          type: string
+        thank_you:
+          type: string
+        return_url:
+          type: string
+        use_branding:
+          type: boolean
+        allowed_methods:
+          type: array
+          items:
+            type: string
+        external_ref:
+          type: string
+        allow_partial:
+          type: boolean
+        min_part_minor:
+          type: integer
+          format: int64
+        balance_reminder_days:
+          type: integer
+          format: int32
     CouponQuery:
       type: object
       x-generated: true
@@ -9233,6 +9419,37 @@ components:
       properties:
         mandate_id:
           type: string
+    DaysQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int64
+    BulkBody:
+      type: object
+      x-generated: true
+      properties:
+        csv:
+          type: string
+        filename:
+          type: string
+        dry_run:
+          type: boolean
+        message:
+          type: string
+        thank_you:
+          type: string
+        return_url:
+          type: string
+        use_branding:
+          type: boolean
+        allowed_methods:
+          type: array
+          items:
+            type: string
+      required:
+      - csv
     InstallmentsNewPlan:
       type: object
       x-generated: true

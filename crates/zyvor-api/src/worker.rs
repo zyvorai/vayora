@@ -114,6 +114,25 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3b3. balance reminders on payment links that are being paid in parts, and the SMS hook
+        if let Some(base) = &s.checkout_public_url
+            && !crate::platform::live_frozen(&s.pool, &tid).await?
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            let today = crate::clock::today(&mut tx).await?;
+            match crate::payment_links::remind_balances(&mut tx, &tid, base, today, &s.sms).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "payment link balance reminders failed")
+                }
+            }
+        }
+        if let Err(e) = crate::sms::drain_tenant(s, client, &tid).await {
+            tracing::warn!(tenant = %tid, error = %e, "SMS delivery pass failed");
+        }
+        if let Err(e) = crate::link_stats::purge_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = %e, "link visitor hash cleanup failed");
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
