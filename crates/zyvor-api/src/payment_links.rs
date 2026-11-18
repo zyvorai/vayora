@@ -158,7 +158,7 @@ pub async fn create_link(
     .await?;
     sqlx::query("INSERT INTO payment_links (id, tenant_id, token, description, amount_minor, currency, invoice_id, customer_id, max_uses, expires_at, created_by, splits, convenience_fee_bp, branch_id, counter_id, open_amount, min_amount_minor, max_amount_minor, remind_before_expiry) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)")
         .bind(&id).bind(&auth.tenant_id).bind(&token).bind(&b.description).bind(b.amount_minor).bind(&currency)
-        .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(|x| json!({ "vendor_id": x.vendor_id, "amount_minor": x.amount_minor })).collect::<Vec<_>>())))
+        .bind(&b.invoice_id).bind(&b.customer_id).bind(b.max_uses).bind(b.expires_at).bind(&auth.actor).bind(b.splits.as_ref().map(|v| json!(v.iter().map(crate::splits::SplitIn::to_json).collect::<Vec<_>>())))
         .bind(b.convenience_fee_bp.unwrap_or(0))
         .bind(&branch).bind(&counter).bind(open).bind(b.min_amount_minor).bind(b.max_amount_minor).bind(b.remind_before_expiry.unwrap_or(false))
         .execute(&mut *tx).await
@@ -683,17 +683,23 @@ pub async fn link_start(
             .fetch_one(&mut *tx)
             .await?;
     if let Some(v) = stored {
-        let sp: Vec<crate::splits::SplitIn> = v
+        let mut sp: Vec<crate::splits::SplitIn> = v
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|x| {
-                Some(crate::splits::SplitIn {
-                    vendor_id: x["vendor_id"].as_str()?.to_string(),
-                    amount_minor: x["amount_minor"].as_i64()?,
-                })
-            })
+            .filter_map(crate::splits::SplitIn::from_json)
             .collect();
+        // a share given as gross_minor takes the commission rule in force today for this link
+        crate::commission::resolve_splits(
+            &mut tx,
+            &mut sp,
+            &crate::commission::Ctx {
+                currency: &currency,
+                payment_link_id: Some(&link_id),
+                event_ref: None,
+            },
+        )
+        .await?;
         crate::splits::validate(&sp, amount - p.fee).map_err(|_| {
             ApiError::conflict(
                 "link_unavailable",

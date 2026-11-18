@@ -237,6 +237,27 @@ type GetCollectionsPromisesResponse struct {
 	Data []any `json:"data"`
 }
 
+type GetCommissionRulesByIdResponse struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	VendorID           *string `json:"vendor_id"`
+	PaymentLinkID      *string `json:"payment_link_id"`
+	EventRef           any     `json:"event_ref"`
+	Currency           string  `json:"currency"`
+	BasisPoints        any     `json:"basis_points"`
+	FlatMinor          int64   `json:"flat_minor"`
+	MinCommissionMinor int64   `json:"min_commission_minor"`
+	CapMinor           int64   `json:"cap_minor"`
+	EffectiveFrom      any     `json:"effective_from"`
+	EffectiveTo        any     `json:"effective_to"`
+	Status             string  `json:"status"`
+	Scope              any     `json:"scope"`
+}
+
+type GetCommissionRulesResponse struct {
+	Data any `json:"data"`
+}
+
 type GetConsoleBranchesResponse struct {
 	Data []GetConsoleBranchesResponseDataItem `json:"data"`
 }
@@ -718,6 +739,14 @@ type GetPaymentLinksResponse struct {
 	Data []any `json:"data"`
 }
 
+type GetPayoutBatchesResponse struct {
+	Data any `json:"data"`
+}
+
+type GetPayoutSchedulesResponse struct {
+	Data []any `json:"data"`
+}
+
 type GetPayoutsByIdResponse struct {
 	ID          string  `json:"id"`
 	VendorID    *string `json:"vendor_id"`
@@ -1004,6 +1033,10 @@ type GetVendorsByIdDetailsResponse struct {
 	Details any    `json:"details"`
 }
 
+type GetVendorsByIdDocumentsResponse struct {
+	Data []any `json:"data"`
+}
+
 type GetVendorsResponse struct {
 	Data []any `json:"data"`
 }
@@ -1230,6 +1263,54 @@ type PostCollectionsDunningRunResponse struct {
 type PostCollectionsPromisesByIdCancelResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+type PostCommissionRulesByIdRetireResponse struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	VendorID           *string `json:"vendor_id"`
+	PaymentLinkID      *string `json:"payment_link_id"`
+	EventRef           any     `json:"event_ref"`
+	Currency           string  `json:"currency"`
+	BasisPoints        any     `json:"basis_points"`
+	FlatMinor          int64   `json:"flat_minor"`
+	MinCommissionMinor int64   `json:"min_commission_minor"`
+	CapMinor           int64   `json:"cap_minor"`
+	EffectiveFrom      any     `json:"effective_from"`
+	EffectiveTo        any     `json:"effective_to"`
+	Status             string  `json:"status"`
+	Scope              any     `json:"scope"`
+}
+
+type PostCommissionRulesPreviewResponse struct {
+	Ok                            bool   `json:"ok"`
+	Problems                      any    `json:"problems"`
+	On                            any    `json:"on"`
+	Currency                      string `json:"currency"`
+	AmountMinor                   int64  `json:"amount_minor"`
+	Parties                       any    `json:"parties"`
+	VendorsTotalMinor             int64  `json:"vendors_total_minor"`
+	CommissionTotalMinor          int64  `json:"commission_total_minor"`
+	RefundMinor                   int64  `json:"refund_minor"`
+	MerchantKeepsAfterRefundMinor int64  `json:"merchant_keeps_after_refund_minor"`
+	Rounding                      string `json:"rounding"`
+}
+
+type PostCommissionRulesResponse struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	VendorID           *string `json:"vendor_id"`
+	PaymentLinkID      *string `json:"payment_link_id"`
+	EventRef           any     `json:"event_ref"`
+	Currency           string  `json:"currency"`
+	BasisPoints        any     `json:"basis_points"`
+	FlatMinor          int64   `json:"flat_minor"`
+	MinCommissionMinor int64   `json:"min_commission_minor"`
+	CapMinor           int64   `json:"cap_minor"`
+	EffectiveFrom      any     `json:"effective_from"`
+	EffectiveTo        any     `json:"effective_to"`
+	Status             string  `json:"status"`
+	Scope              any     `json:"scope"`
 }
 
 type PostConsoleAuthenticateResponse struct {
@@ -1794,6 +1875,46 @@ type PostPaymentLinksResponse struct {
 	ExpiresAt *string `json:"expires_at"`
 }
 
+type PostPayoutBatchesByIdApproveResponse struct {
+	Error any `json:"error"`
+}
+
+type PostPayoutBatchesByIdCancelResponse struct {
+	BatchID *string `json:"batch_id"`
+}
+
+type PostPayoutBatchesByIdRejectResponse struct {
+	BatchID *string `json:"batch_id"`
+}
+
+type PostPayoutBatchesByIdResolveResponse struct {
+	Action    any   `json:"action"`
+	Attempted int64 `json:"attempted"`
+	Outcomes  any   `json:"outcomes"`
+}
+
+type PostPayoutBatchesByIdRetryResponse struct {
+	Action    any   `json:"action"`
+	Attempted int64 `json:"attempted"`
+	Outcomes  any   `json:"outcomes"`
+}
+
+type PostPayoutBatchesByIdSendResponse struct {
+	Action    any   `json:"action"`
+	Attempted int64 `json:"attempted"`
+	Outcomes  any   `json:"outcomes"`
+}
+
+type PostPayoutSchedulesRunResponse struct {
+	Date          any     `json:"date"`
+	Due           int64   `json:"due"`
+	BatchID       *string `json:"batch_id"`
+	ProposedItems any     `json:"proposed_items"`
+	TotalMinor    int64   `json:"total_minor"`
+	AutoApproved  any     `json:"auto_approved"`
+	Schedules     any     `json:"schedules"`
+}
+
 type PostPayoutsBulkResponse struct {
 	Count          int64 `json:"count"`
 	AlreadyExisted any   `json:"already_existed"`
@@ -2217,6 +2338,31 @@ type PostUsersResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Role  string `json:"role"`
+}
+
+type PostVendorsByIdActivateResponse struct {
+	From   any `json:"from"`
+	Reason any `json:"reason"`
+}
+
+type PostVendorsByIdDocumentsResponse struct {
+	ID          string `json:"id"`
+	VendorID    string `json:"vendor_id"`
+	Kind        string `json:"kind"`
+	Filename    any    `json:"filename"`
+	ContentType any    `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Sha256      any    `json:"sha256"`
+}
+
+type PostVendorsByIdReactivateResponse struct {
+	From   any `json:"from"`
+	Reason any `json:"reason"`
+}
+
+type PostVendorsByIdSuspendResponse struct {
+	From   any `json:"from"`
+	Reason any `json:"reason"`
 }
 
 type PostVendorsResponse struct {

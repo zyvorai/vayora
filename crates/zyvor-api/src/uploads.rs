@@ -41,7 +41,7 @@ pub struct UploadIn {
 }
 
 /// A name that is safe to show and to send back in a header: no path, no control characters, not long.
-fn safe_name(raw: &str) -> String {
+pub(crate) fn safe_name(raw: &str) -> String {
     let base = raw.rsplit(['/', '\\']).next().unwrap_or("");
     let cleaned: String = base
         .chars()

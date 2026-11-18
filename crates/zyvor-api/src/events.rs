@@ -126,6 +126,19 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("payout.rejected", "A payout was rejected."),
     (
+        "payout_batch.approval_required",
+        "A batch of payouts was proposed (from a file, balances or a schedule) and needs a second person's approval.",
+    ),
+    (
+        "payout_batch.approved",
+        "A batch of payouts was approved; its payouts can be sent or paid from your bank.",
+    ),
+    ("payout_batch.rejected", "A batch of payouts was rejected."),
+    (
+        "payout_batch.completed",
+        "Every payout of an approved batch that was not left out is paid or closed.",
+    ),
+    (
         "closing.signed_off",
         "A branch's end-of-day closing was signed off.",
     ),

@@ -19,6 +19,7 @@ pub mod clientenv;
 pub mod clock;
 pub mod closing;
 pub mod collections;
+pub mod commission;
 pub mod console_users;
 pub mod counters;
 pub mod coupons;
@@ -45,6 +46,8 @@ pub mod onboarding;
 pub mod outbox;
 pub mod payment_links;
 pub mod payments;
+pub mod payout_batches;
+pub mod payout_schedules;
 pub mod payouts;
 pub mod pdf;
 pub mod platform;
@@ -69,6 +72,7 @@ pub mod testdata;
 pub mod timeline;
 pub mod unsubscribe;
 pub mod uploads;
+pub mod vendors;
 pub mod webhooks_in;
 pub mod worker;
 
@@ -142,6 +146,9 @@ pub struct AppState {
     pub review_timezone: Option<chrono_tz::Tz>,
     /// Give each new request and change to an on-duty reviewer, the one holding the fewest (`ZYVOR_REVIEW_AUTO_ASSIGN`).
     pub review_auto_assign: bool,
+    /// Replaces the payout rail (`ZYVOR_PAYOUT_RAIL_URL` or the simulator) for every payout sent. For tests that
+    /// need a rail that fails, hangs or counts its calls; always `None` in the binaries.
+    pub payout_rail: Option<Arc<dyn zyvor_settle::PayoutRail>>,
 }
 
 pub use crypto::Crypto;
@@ -180,6 +187,7 @@ impl AppState {
             review_utc_offset_minutes: 330,
             review_timezone: None,
             review_auto_assign: false,
+            payout_rail: None,
         }
     }
 
@@ -513,8 +521,86 @@ pub fn app(state: AppState) -> Router {
             "/vendors",
             post(payouts::create_vendor).get(payouts::list_vendors),
         )
+        .route("/vendors/invite", post(vendors::invite))
+        .route("/vendors/{id}", get(vendors::get_vendor))
         .route("/vendors/{id}/balance", get(splits::balance))
         .route("/vendors/{id}/details", get(payouts::vendor_details))
+        .route("/vendors/{id}/profile", put(vendors::put_profile))
+        .route(
+            "/vendors/{id}/bank_account",
+            post(vendors::add_bank_account),
+        )
+        .route("/vendors/{id}/verify", post(vendors::verify))
+        .route("/vendors/{id}/activate", post(vendors::activate))
+        .route("/vendors/{id}/suspend", post(vendors::suspend))
+        .route("/vendors/{id}/reactivate", post(vendors::reactivate))
+        .route("/vendors/{id}/payout_settings", put(vendors::put_settings))
+        .route(
+            "/vendors/{id}/documents",
+            post(vendors::upload_document).get(vendors::list_documents),
+        )
+        .route(
+            "/vendors/{id}/documents/{doc}/file",
+            get(vendors::document_file),
+        )
+        .route(
+            "/commission_rules",
+            post(commission::create_rule).get(commission::list_rules),
+        )
+        .route("/commission_rules/preview", post(commission::preview))
+        .route("/commission_rules/{id}", get(commission::get_rule))
+        .route(
+            "/commission_rules/{id}/retire",
+            post(commission::retire_rule),
+        )
+        .route(
+            "/payout_policy",
+            get(payout_batches::get_policy).put(payout_batches::put_policy),
+        )
+        .route(
+            "/payout_batches",
+            post(payout_batches::create).get(payout_batches::list),
+        )
+        .route("/payout_batches/preview", post(payout_batches::preview))
+        .route(
+            "/payout_batches/from_balances",
+            post(payout_batches::from_balances),
+        )
+        .route("/payout_batches/{id}", get(payout_batches::get))
+        .route(
+            "/payout_batches/{id}/approve",
+            post(payout_batches::approve),
+        )
+        .route("/payout_batches/{id}/reject", post(payout_batches::reject))
+        .route("/payout_batches/{id}/cancel", post(payout_batches::cancel))
+        .route(
+            "/payout_batches/{id}/items/{item}/exclude",
+            post(payout_batches::exclude_item),
+        )
+        .route("/payout_batches/{id}/send", post(payout_batches::send))
+        .route("/payout_batches/{id}/retry", post(payout_batches::retry))
+        .route(
+            "/payout_batches/{id}/resolve",
+            post(payout_batches::resolve),
+        )
+        .route(
+            "/payout_batches/{id}/report.csv",
+            get(payout_batches::report_csv),
+        )
+        .route(
+            "/payout_schedules",
+            post(payout_schedules::create).get(payout_schedules::list),
+        )
+        .route("/payout_schedules/run", post(payout_schedules::run_now))
+        .route("/payout_schedules/{id}", get(payout_schedules::get))
+        .route(
+            "/payout_schedules/{id}/pause",
+            post(payout_schedules::pause),
+        )
+        .route(
+            "/payout_schedules/{id}/resume",
+            post(payout_schedules::resume),
+        )
         .route(
             "/payouts",
             post(payouts::create_payout).get(payouts::list_payouts),

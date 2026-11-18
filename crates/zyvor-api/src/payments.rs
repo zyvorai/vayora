@@ -152,7 +152,14 @@ pub async fn create_intent(
             .as_ref()
             .map(|v| {
                 v.iter()
-                    .map(|x| format!("{}={}", x.vendor_id, x.amount_minor))
+                    .map(|x| {
+                        format!(
+                            "{}={}:{}",
+                            x.vendor_id,
+                            x.amount_minor,
+                            x.gross_minor.unwrap_or(0)
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join(",")
             })
@@ -203,7 +210,23 @@ pub async fn create_intent(
             ));
         }
     }
-    if let Some(sp) = &b.splits {
+    if let Some(sp) = b.splits.as_mut() {
+        // shares given as `gross_minor` take their commission here, from the rule in force today
+        let event_ref = b
+            .metadata
+            .as_ref()
+            .and_then(|m| m["event_ref"].as_str())
+            .map(str::to_string);
+        crate::commission::resolve_splits(
+            &mut tx,
+            sp,
+            &crate::commission::Ctx {
+                currency: currency.code(),
+                payment_link_id: None,
+                event_ref,
+            },
+        )
+        .await?;
         crate::splits::validate(sp, b.amount_minor)?;
     }
     let client_secret = format!(
