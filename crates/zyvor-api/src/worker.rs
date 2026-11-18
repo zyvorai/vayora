@@ -132,6 +132,10 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
             }
         }
+        // 3f. soft retry: failures nobody has handled yet go to another provider (off unless the business turned it on)
+        if let Err(e) = crate::softretry::sweep(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "soft retry sweep failed");
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

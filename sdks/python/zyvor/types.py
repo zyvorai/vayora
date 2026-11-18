@@ -860,11 +860,74 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRoutingAutomationResponse = TypedDict("GetRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
-    "routing_health_rule": "str",
+    "automation_paused": "Any",
+    "routing_health_rule": "Any",
     "providers": "Any",
     "recent_changes": "List[Any]",
+})
+
+GetRoutingScorecardResponse = TypedDict("GetRoutingScorecardResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "success_rate_rule": "str",
+    "median_rule": "str",
+    "scorecard": "Any",
+})
+
+GetRoutingShadowReportResponse = TypedDict("GetRoutingShadowReportResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "shadow": "Any",
+    "decisions": "int",
+    "agreed": "int",
+    "differed": "Any",
+    "no_route_in_shadow": "int",
+    "agreement_rate_bps": "Any",
+    "differences": "List[GetRoutingShadowReportResponseDifferencesItem]",
+    "outcome_by_provider": "List[GetRoutingShadowReportResponseOutcomeByProviderItem]",
+    "recent_differences": "List[GetRoutingShadowReportResponseRecentDifferencesItem]",
+    "limits": "str",
+})
+
+GetRoutingShadowReportResponseDifferencesItem = TypedDict("GetRoutingShadowReportResponseDifferencesItem", {
+    "method": "str",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "decisions": "int",
+    "fee_comparable": "int",
+    "estimated_fee_difference_minor": "int",
+})
+
+GetRoutingShadowReportResponseOutcomeByProviderItem = TypedDict("GetRoutingShadowReportResponseOutcomeByProviderItem", {
+    "provider": "str",
+    "method": "str",
+    "payments_sent": "int",
+    "succeeded": "int",
+    "provider_failures": "int",
+    "payer_declines": "int",
+    "unresolved": "int",
+    "of_which_shadow_would_have_chosen_another": "int",
+})
+
+GetRoutingShadowReportResponseRecentDifferencesItem = TypedDict("GetRoutingShadowReportResponseRecentDifferencesItem", {
+    "attempt_id": "str",
+    "method": "str",
+    "amount_minor": "int",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "applied_explanation": "Optional[str]",
+    "shadow_explanation": "Optional[str]",
+    "applied_fee_minor": "Optional[int]",
+    "shadow_fee_minor": "Optional[int]",
+    "attempt_status": "str",
+    "at": "str",
 })
 
 GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
@@ -2011,6 +2074,16 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "updated_at": "str",
 })
 
+PostRoutingAutomationPauseResponse = TypedDict("PostRoutingAutomationPauseResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
+PostRoutingAutomationResumeResponse = TypedDict("PostRoutingAutomationResumeResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
 PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
     "id": "str",
     "name": "str",
@@ -2248,6 +2321,11 @@ PutProviderAccountsByProviderResponse = TypedDict("PutProviderAccountsByProvider
     "provider": "str",
     "enabled": "bool",
     "replaced": "Any",
+})
+
+PutRoutingAutomationResponse = TypedDict("PutRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
 })
 
 RefundRow = TypedDict("RefundRow", {

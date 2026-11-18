@@ -354,6 +354,12 @@ class Tests(unittest.TestCase):
             ("z.routing_health(method='upi')", "GET", "/v1/routing/health?method=upi", None),
             ("z.routing_health_settings()", "GET", "/v1/routing/health/settings", None),
             ("z.update_routing_health_settings(min_samples=20)", "PUT", "/v1/routing/health/settings", {"min_samples": 20}),
+            ("z.routing_automation()", "GET", "/v1/routing/automation", None),
+            ("z.update_routing_automation(soft_retry_enabled=True)", "PUT", "/v1/routing/automation", {"soft_retry_enabled": True}),
+            ("z.pause_routing_automation('provider talks')", "POST", "/v1/routing/automation/pause", {"reason": "provider talks"}),
+            ("z.resume_routing_automation()", "POST", "/v1/routing/automation/resume", {}),
+            ("z.routing_shadow_report(days=3, method='upi')", "GET", "/v1/routing/shadow/report?days=3&method=upi", None),
+            ("z.routing_scorecard(days=14)", "GET", "/v1/routing/scorecard?days=14", None),
         ]
         for call, verb, url, body in rows:
             seen.clear()

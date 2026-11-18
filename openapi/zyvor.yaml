@@ -8212,9 +8212,8 @@ paths:
                 type: object
                 properties:
                   config: {}
-                  routing_health_rule:
-                    type: string
-                    description: What routing does with this health data, in one sentence (the circuit breaker is the only health rule)
+                  automation_paused: {}
+                  routing_health_rule: {}
                   providers: {}
                   recent_changes:
                     type: array
@@ -8262,6 +8261,262 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SettingsIn'
+  /v1/routing/automation:
+    get:
+      summary: Read this business's routing automation settings (shadow mode, soft retry, cost-aware routing, the kill switch)
+        and what is in force right now. Every automation is off by default; the kill switch overrides each switch
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Change routing automation settings; fields not sent keep their value. Needs the admin scope. Each switch that
+        changes writes its own audit entry
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationSettingsIn'
+  /v1/routing/automation/pause:
+    post:
+      summary: Pull the routing kill switch - shadow mode, soft retry, cost-aware routing, failover and the circuit breaker
+        all stop acting at once. Idempotent, audited, needs the admin scope
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PauseIn'
+  /v1/routing/automation/resume:
+    post:
+      summary: Release the routing kill switch; each automation acts again if its own switch is on. Idempotent, audited, needs
+        the admin scope
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/shadow/report:
+    get:
+      summary: Compare shadow decisions with the routing actually applied over a window - agreement rate, where they differ,
+        estimated fee difference from the fee rules, and the outcomes of the payments that were sent. Estimates, read-only
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window_days: {}
+                  method: {}
+                  shadow: {}
+                  decisions:
+                    type: integer
+                    format: int64
+                  agreed:
+                    type: integer
+                    format: int64
+                  differed: {}
+                  no_route_in_shadow:
+                    type: integer
+                    format: int64
+                  agreement_rate_bps: {}
+                  differences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        method:
+                          type: string
+                        applied_provider:
+                          type: string
+                        shadow_provider:
+                          type:
+                          - string
+                          - 'null'
+                        decisions:
+                          type: integer
+                          format: int64
+                        fee_comparable:
+                          type: integer
+                          format: int64
+                        estimated_fee_difference_minor:
+                          type: integer
+                          format: int64
+                  outcome_by_provider:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method:
+                          type: string
+                        payments_sent:
+                          type: integer
+                          format: int64
+                        succeeded:
+                          type: integer
+                          format: int64
+                        provider_failures:
+                          type: integer
+                          format: int64
+                        payer_declines:
+                          type: integer
+                          format: int64
+                        unresolved:
+                          type: integer
+                          format: int64
+                        of_which_shadow_would_have_chosen_another:
+                          type: integer
+                          format: int64
+                  recent_differences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attempt_id:
+                          type: string
+                        method:
+                          type: string
+                        amount_minor:
+                          type: integer
+                          format: int64
+                        applied_provider:
+                          type: string
+                        shadow_provider:
+                          type:
+                          - string
+                          - 'null'
+                        applied_explanation:
+                          type:
+                          - string
+                          - 'null'
+                        shadow_explanation:
+                          type:
+                          - string
+                          - 'null'
+                        applied_fee_minor:
+                          type:
+                          - integer
+                          - 'null'
+                          format: int64
+                        shadow_fee_minor:
+                          type:
+                          - integer
+                          - 'null'
+                          format: int64
+                        attempt_status:
+                          type: string
+                        at:
+                          type: string
+                          format: date-time
+                  limits:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+        x-generated: true
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/routing/scorecard:
+    get:
+      summary: Provider scorecard - per provider and method the success rate (payer declines excluded), failure classes, median
+        time to resolve, unresolved payments, observed effective fee and the last degrade and recovery
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window_days: {}
+                  method: {}
+                  success_rate_rule:
+                    type: string
+                  median_rule:
+                    type: string
+                  scorecard: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+        x-generated: true
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
 components:
   securitySchemes:
     bearer:
@@ -8392,7 +8647,8 @@ components:
           description: '`unknown` means the provider''s outcome is not known yet; no other attempt can start until it resolves.'
         route:
           type: object
-          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
+          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider
+            considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
         client_action:
           type:
           - object
@@ -8632,6 +8888,56 @@ components:
       required:
       - name
       - query
+    ScorecardQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int32
+        method:
+          type: string
+    ReportQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int32
+        method:
+          type: string
+    PauseIn:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+    AutomationSettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        shadow_enabled:
+          type: boolean
+        shadow_policy: {}
+        soft_retry_enabled:
+          type: boolean
+        soft_retry_max_attempts:
+          type: integer
+          format: int32
+        soft_retry_window_seconds:
+          type: integer
+          format: int32
+        cost_aware_enabled:
+          type: boolean
+        cost_success_floor_bps:
+          type: integer
+          format: int32
+        cost_premium_bps:
+          type: integer
+          format: int32
+        cost_min_fee_samples:
+          type: integer
+          format: int32
     RotaIn:
       type: object
       x-generated: true

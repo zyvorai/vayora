@@ -55,12 +55,14 @@ pub mod registry;
 pub mod reminders;
 pub mod reqlog;
 pub mod rota;
+pub mod routing_auto;
 pub mod saved_views;
 pub mod settle;
 pub mod signup;
 pub mod sim_circle;
 pub mod sim_mandate;
 pub mod sim_pay;
+pub mod softretry;
 pub mod state_machine;
 pub mod suggestions;
 pub mod telemetry;
@@ -592,6 +594,15 @@ pub fn app(state: AppState) -> Router {
             "/routing/health/settings",
             get(health::get_settings).put(health::put_settings),
         )
+        // routing automation: shadow mode, soft retry, cost-aware routing, one kill switch, the provider scorecard
+        .route(
+            "/routing/automation",
+            get(routing_auto::get_automation).put(routing_auto::put_automation),
+        )
+        .route("/routing/automation/pause", post(routing_auto::pause))
+        .route("/routing/automation/resume", post(routing_auto::resume))
+        .route("/routing/shadow/report", get(routing_auto::shadow_report))
+        .route("/routing/scorecard", get(routing_auto::scorecard))
         .route("/test_data/reset", post(testdata::reset))
         .route(
             "/settings/logo",

@@ -127,16 +127,28 @@ async fn session_body(
     .bind(intent_id)
     .fetch_optional(&mut *tx)
     .await?;
+    // A definitive provider-side failure that a soft retry is about to answer with another provider. The payer is
+    // told so; no second payment can exist until that retry is created, and it is created only after this attempt
+    // has failed (see softretry.rs).
+    let retrying = attempt.as_ref().is_some_and(|a| a.status == "failed")
+        && status != "succeeded"
+        && crate::softretry::pending(&mut tx, intent_id).await?;
+    let retried = attempt
+        .as_ref()
+        .is_some_and(|a| a.route.get("soft_retry").is_some());
     let phase = match (status.as_str(), attempt.as_ref().map(|a| a.status.as_str())) {
         ("succeeded", _) => "paid",
         (_, Some("unknown")) => "confirming",
         (_, Some("pending" | "created" | "authorized")) => "awaiting_payment",
+        (_, Some("failed")) if retrying => "trying_another_way",
         (_, Some("failed")) => "failed",
         _ => "choose_method",
     };
     Ok(json!({
         "merchant": merchant, "amount_minor": amount, "currency": currency, "description": description,
         "status": status, "phase": phase, "methods": methods, "upi_flow": upi_flow,
+        // true when the attempt shown is a second try on another provider after the first one failed definitively
+        "retried_on_another_provider": retried,
         "attempt": attempt.map(|a| json!({ "id": a.id, "method": a.method, "status": a.status, "failure_reason": a.failure_reason.filter(|_| a.status == "failed"), "action": a.client_action })),
     }))
 }

@@ -73,6 +73,32 @@ pub struct Candidate {
     pub fees: BTreeMap<Method, Fee>,
     /// Success-rate signal and breaker state for the method being routed (none when not computed).
     pub signal: Option<Signal>,
+    /// What this payment would cost on this provider, from fee rules and observed fees (none when not computed).
+    /// Used only when the request carries a `CostPolicy`.
+    pub cost: Option<Cost>,
+}
+
+/// The estimated cost of one payment on one provider, and where the number comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cost {
+    pub minor: i64,
+    /// `observed` (fees the provider actually deducted), `fee_rule` (a contract rule the merchant entered) or
+    /// `configured` (the routing fee table).
+    pub basis: &'static str,
+}
+
+/// Cost-aware routing, off unless a request carries it. See `docs/zyvor/ROUTING.md` ("Cost-aware routing").
+///
+/// Among the eligible providers the cheapest wins, but only a provider with enough recent attempts (the signal's
+/// `min_samples`) and a success rate at or above `floor_bps` can win on cost. A provider whose success rate is
+/// better by at least `success_rate_margin_bps` still wins over a cheaper one if it costs no more than
+/// `premium_bps` extra. Nothing here can pick a provider the hard filters, failover or the circuit breaker removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CostPolicy {
+    /// Success rate (basis points) a provider needs before cost may decide.
+    pub floor_bps: u32,
+    /// How much more (basis points of the cheapest cost) a clearly more reliable provider may cost.
+    pub premium_bps: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -121,6 +147,8 @@ pub struct Request {
     /// Failover: providers that definitively failed this payment already. They are skipped when another
     /// eligible provider exists, and used again only when nothing else is eligible.
     pub avoid: Vec<Avoid>,
+    /// Cost-aware routing (none = the lowest configured fee decides, as before).
+    pub cost: Option<CostPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +188,8 @@ pub struct NoRoute(pub String);
 struct Elig<'a> {
     c: &'a Candidate,
     fee: i64,
+    /// Where `fee` comes from, for the sentence (`None` = the configured fee table).
+    basis: Option<&'static str>,
 }
 
 fn note(
@@ -200,6 +230,174 @@ fn degraded_detail(c: &Candidate) -> String {
     }
 }
 
+/// How an estimated cost is described: "INR 5.00, from fees the provider actually deducted".
+fn cost_text(e: &Elig, money: &dyn Fn(i64) -> String) -> String {
+    let src = match e.basis {
+        Some("observed") => "from fees the provider actually deducted",
+        Some("fee_rule") => "from your fee rule",
+        _ => "from your configured fee",
+    };
+    format!("{}, {src}", money(e.fee))
+}
+
+/// The cost-aware choice among two or more providers (see `CostPolicy`): the index of the chosen provider and the
+/// end of the sentence "Chosen because it ...", naming what was traded off. Guardrails, in order:
+/// 1. only a provider with a known success rate (enough recent attempts) at or above the floor may win on cost;
+/// 2. if none qualifies, a provider with no success-rate data may still be chosen on cost (it is not known to be
+///    below the floor); when every provider has data and all are below the floor, the best success rate wins,
+///    never the cheapest.
+fn cost_choice(
+    pool: &[Elig],
+    policy: &CostPolicy,
+    money: &dyn Fn(i64) -> String,
+    reasons: &mut Vec<String>,
+) -> (usize, String) {
+    let rate = |e: &Elig| e.c.signal.as_ref().and_then(|s| s.success_rate_bps);
+    let floor = policy.floor_bps;
+    let cheapest_of = |idx: &[usize]| {
+        *idx.iter()
+            .min_by(|&&a, &&b| {
+                pool[a]
+                    .fee
+                    .cmp(&pool[b].fee)
+                    .then_with(|| rate(&pool[b]).cmp(&rate(&pool[a])))
+                    .then_with(|| pool[a].c.provider.cmp(&pool[b].c.provider))
+            })
+            .expect("non-empty")
+    };
+    let good: Vec<usize> = (0..pool.len())
+        .filter(|&i| rate(&pool[i]).is_some_and(|r| r >= floor))
+        .collect();
+    let unknown: Vec<usize> = (0..pool.len())
+        .filter(|&i| rate(&pool[i]).is_none())
+        .collect();
+    let below: Vec<usize> = (0..pool.len())
+        .filter(|&i| rate(&pool[i]).is_some_and(|r| r < floor))
+        .collect();
+
+    if !good.is_empty() {
+        let cheapest = cheapest_of(&good);
+        let cr = rate(&pool[cheapest]).unwrap_or(0);
+        // Trade a little cost for a clearly better success rate.
+        let better = good
+            .iter()
+            .copied()
+            .filter(|&i| {
+                rate(&pool[i]).unwrap_or(0) >= cr + DEFAULT_SUCCESS_RATE_MARGIN_BPS
+                    && i128::from(pool[i].fee) * 10_000
+                        <= i128::from(pool[cheapest].fee) * i128::from(10_000 + policy.premium_bps)
+            })
+            .max_by(|&a, &b| {
+                rate(&pool[a])
+                    .cmp(&rate(&pool[b]))
+                    .then_with(|| pool[b].fee.cmp(&pool[a].fee))
+                    .then_with(|| pool[b].c.provider.cmp(&pool[a].c.provider))
+            });
+        let mut left_out = String::new();
+        let excluded: Vec<String> = below
+            .iter()
+            .chain(unknown.iter())
+            .filter(|&&i| pool[i].fee < pool[cheapest].fee)
+            .map(|&i| {
+                format!(
+                    "{} (cheaper at {}, but {})",
+                    pool[i].c.provider,
+                    money(pool[i].fee),
+                    if rate(&pool[i]).is_some() {
+                        format!("its success rate is below your {} floor", pct(floor))
+                    } else {
+                        "it has too few recent attempts to show it is above your success-rate floor"
+                            .to_string()
+                    }
+                )
+            })
+            .collect();
+        if !excluded.is_empty() {
+            left_out = format!(
+                " (left out of the cost comparison: {})",
+                excluded.join("; ")
+            );
+        }
+        if let Some(b) = better {
+            let (p, c) = (&pool[b], &pool[cheapest]);
+            reasons.push(format!(
+                "cost-aware: {} costs {} more than the cheapest ({}) but its success rate is {} bps against {} bps (premium allowed {} bps)",
+                p.c.provider,
+                p.fee - c.fee,
+                c.c.provider,
+                rate(p).unwrap_or(0),
+                cr,
+                policy.premium_bps
+            ));
+            return (
+                b,
+                format!(
+                    "has a better recent success rate ({} against {} for {}) and costs {} more ({} against {}), within the {} extra you allow for reliability{left_out}",
+                    pct(rate(p).unwrap_or(0)),
+                    pct(cr),
+                    c.c.provider,
+                    money(p.fee - c.fee),
+                    cost_text(p, money),
+                    money(c.fee),
+                    pct(policy.premium_bps),
+                ),
+            );
+        }
+        reasons.push(format!(
+            "cost-aware: lowest cost among providers at or above the {floor} bps success floor"
+        ));
+        let c = &pool[cheapest];
+        let basis = if good.len() > 1 {
+            format!(
+                "has the lowest estimated cost ({}) among providers with a success rate of at least {}{left_out}",
+                cost_text(c, money),
+                pct(floor)
+            )
+        } else {
+            format!(
+                "is the only provider with enough recent attempts and a success rate of at least {} (estimated cost {}){left_out}",
+                pct(floor),
+                cost_text(c, money)
+            )
+        };
+        return (cheapest, basis);
+    }
+    if !unknown.is_empty() {
+        let i = cheapest_of(&unknown);
+        reasons.push("cost-aware: no provider has enough recent attempts above the success floor; lowest cost among those without data".to_string());
+        return (
+            i,
+            format!(
+                "has the lowest estimated cost ({}); no provider has enough recent attempts to show a success rate above your {} floor, so cost decided",
+                cost_text(&pool[i], money),
+                pct(floor)
+            ),
+        );
+    }
+    // every provider has data and every one is below the floor: reliability, not price
+    let best = *below
+        .iter()
+        .max_by(|&&a, &&b| {
+            rate(&pool[a])
+                .cmp(&rate(&pool[b]))
+                .then_with(|| pool[b].fee.cmp(&pool[a].fee))
+                .then_with(|| pool[b].c.provider.cmp(&pool[a].c.provider))
+        })
+        .expect("non-empty");
+    reasons.push(
+        "cost-aware: every provider is below the success floor; best success rate wins, not the cheapest"
+            .to_string(),
+    );
+    (
+        best,
+        format!(
+            "has the best recent success rate ({}); every provider is below your {} floor, so cost was not used to choose",
+            pct(rate(&pool[best]).unwrap_or(0)),
+            pct(floor)
+        ),
+    )
+}
+
 pub fn choose(
     req: &Request,
     candidates: &[Candidate],
@@ -233,13 +431,18 @@ pub fn choose(
                 considered.push(note(c, "rejected", reason, explanation, None))
             }
             None => {
-                let fee = c
-                    .fees
-                    .get(&req.method)
-                    .copied()
-                    .unwrap_or_default()
-                    .estimate(req.amount_minor);
-                eligible.push(Elig { c, fee });
+                let (fee, basis) = match (req.cost.as_ref(), c.cost) {
+                    (Some(_), Some(cost)) => (cost.minor, Some(cost.basis)),
+                    _ => (
+                        c.fees
+                            .get(&req.method)
+                            .copied()
+                            .unwrap_or_default()
+                            .estimate(req.amount_minor),
+                        None,
+                    ),
+                };
+                eligible.push(Elig { c, fee, basis });
             }
         }
     }
@@ -484,7 +687,14 @@ pub fn choose(
                     ));
                 }
             }
-            match by_success {
+            let by_cost = match (by_success.is_none(), req.cost.as_ref()) {
+                (true, Some(policy)) if pool.len() > 1 => {
+                    let (i, basis) = cost_choice(&pool, policy, &money, &mut reasons);
+                    Some((&pool[i], basis))
+                }
+                _ => None,
+            };
+            match by_success.or(by_cost) {
                 Some(x) => x,
                 None => {
                     let best = pool
@@ -574,6 +784,7 @@ mod tests {
             caps: caps(methods, &[Currency::Inr]),
             enabled: true,
             signal: None,
+            cost: None,
             fees: methods
                 .iter()
                 .map(|m| {
@@ -596,6 +807,7 @@ mod tests {
             allowed: None,
             upi_intent: false,
             avoid: vec![],
+            cost: None,
         }
     }
 
@@ -1034,6 +1246,255 @@ mod tests {
             }
             .estimate(1),
             0
+        );
+    }
+
+    // ---- cost-aware routing ----
+
+    fn priced(mut c: Candidate, minor: i64, basis: &'static str) -> Candidate {
+        c.cost = Some(Cost { minor, basis });
+        c
+    }
+    fn cost_req(floor_bps: u32, premium_bps: u32) -> Request {
+        Request {
+            cost: Some(CostPolicy {
+                floor_bps,
+                premium_bps,
+            }),
+            ..req(Method::Upi, 100_000)
+        }
+    }
+
+    #[test]
+    fn cost_awareness_is_off_unless_the_request_asks_for_it() {
+        // `cost` data on the candidates is ignored without a policy: the configured fee (a: 100 bps, b: 30 bps) decides
+        let c = [
+            priced(cand("a", &[Method::Upi], 100), 1, "observed"),
+            priced(cand("b", &[Method::Upi], 30), 999_999, "observed"),
+        ];
+        assert_eq!(
+            choose(&req(Method::Upi, 100_000), &c, &[])
+                .unwrap()
+                .provider,
+            "b"
+        );
+    }
+
+    #[test]
+    fn a_cheaper_provider_below_the_success_floor_is_never_chosen_for_being_cheaper() {
+        let cheap = with_signal(
+            priced(cand("cheap", &[Method::Upi], 10), 100, "fee_rule"),
+            60,
+            40,
+            10,
+            Breaker::Healthy,
+        );
+        let sound = with_signal(
+            priced(cand("sound", &[Method::Upi], 10), 900, "fee_rule"),
+            95,
+            5,
+            10,
+            Breaker::Healthy,
+        );
+        // 60% against a floor of 80%: excluded from the cost comparison, said so in words
+        let d = choose(&cost_req(8_000, 500), &[cheap.clone(), sound.clone()], &[]).unwrap();
+        assert_eq!(d.provider, "sound", "{:?}", d.reasons);
+        assert!(
+            d.explanation
+                .contains("only provider with enough recent attempts"),
+            "{}",
+            d.explanation
+        );
+        assert!(
+            d.explanation.contains("cheap (cheaper at INR 1.00"),
+            "{}",
+            d.explanation
+        );
+        assert!(
+            d.explanation.contains("below your 80.0% floor"),
+            "{}",
+            d.explanation
+        );
+        // with a floor both clear, price decides
+        let d = choose(&cost_req(5_000, 500), &[cheap, sound], &[]).unwrap();
+        assert_eq!(d.provider, "cheap");
+        assert!(
+            d.explanation
+                .contains("lowest estimated cost (INR 1.00, from your fee rule)"),
+            "{}",
+            d.explanation
+        );
+    }
+
+    #[test]
+    fn a_provider_without_enough_samples_cannot_win_on_cost_while_a_proven_one_exists() {
+        let new = priced(cand("new", &[Method::Upi], 10), 50, "configured"); // no signal at all
+        let proven = with_signal(
+            priced(cand("proven", &[Method::Upi], 10), 500, "observed"),
+            90,
+            10,
+            10,
+            Breaker::Healthy,
+        );
+        let few = with_signal(
+            priced(cand("few", &[Method::Upi], 10), 20, "observed"),
+            2,
+            0,
+            10, // 2 samples < 10: no success rate
+            Breaker::Healthy,
+        );
+        let d = choose(&cost_req(8_000, 500), &[new, few, proven], &[]).unwrap();
+        assert_eq!(d.provider, "proven");
+        assert!(
+            d.explanation.contains("too few recent attempts"),
+            "{}",
+            d.explanation
+        );
+    }
+
+    #[test]
+    fn with_no_success_data_at_all_cost_decides_and_says_so() {
+        let c = [
+            priced(cand("a", &[Method::Upi], 10), 300, "observed"),
+            priced(cand("b", &[Method::Upi], 10), 200, "fee_rule"),
+        ];
+        let d = choose(&cost_req(8_000, 500), &c, &[]).unwrap();
+        assert_eq!(d.provider, "b");
+        assert!(
+            d.explanation
+                .contains("no provider has enough recent attempts"),
+            "{}",
+            d.explanation
+        );
+    }
+
+    #[test]
+    fn when_everyone_is_below_the_floor_reliability_wins_not_price() {
+        let a = with_signal(
+            priced(cand("a", &[Method::Upi], 10), 100, "observed"),
+            50,
+            50,
+            10,
+            Breaker::Healthy,
+        );
+        let b = with_signal(
+            priced(cand("b", &[Method::Upi], 10), 900, "observed"),
+            70,
+            30,
+            10,
+            Breaker::Healthy,
+        );
+        let d = choose(&cost_req(9_000, 500), &[a, b], &[]).unwrap();
+        assert_eq!(d.provider, "b");
+        assert!(
+            d.explanation
+                .contains("every provider is below your 90.0% floor"),
+            "{}",
+            d.explanation
+        );
+    }
+
+    #[test]
+    fn a_clearly_more_reliable_provider_wins_if_it_costs_only_a_little_more_and_the_sentence_says_so()
+     {
+        let cheap = with_signal(
+            priced(cand("cheap", &[Method::Upi], 10), 1_000, "observed"),
+            88,
+            12,
+            10,
+            Breaker::Healthy,
+        );
+        let steady = with_signal(
+            priced(cand("steady", &[Method::Upi], 10), 1_040, "observed"),
+            97,
+            3,
+            10,
+            Breaker::Healthy,
+        );
+        // 4% more cost, premium allowed 5%, success 97.0% vs 88.0% (margin 2%): the traded-off sentence
+        let d = choose(&cost_req(8_000, 500), &[cheap.clone(), steady.clone()], &[]).unwrap();
+        assert_eq!(d.provider, "steady");
+        assert!(
+            d.explanation.contains(
+                "better recent success rate (97.0% against 88.0% for cheap) and costs INR 0.40 more"
+            ),
+            "{}",
+            d.explanation
+        );
+        // premium allowed only 3%: the extra 4% is too much, the cheaper provider keeps it
+        let d = choose(&cost_req(8_000, 300), &[cheap, steady], &[]).unwrap();
+        assert_eq!(d.provider, "cheap");
+    }
+
+    #[test]
+    fn cost_never_overrides_hard_filters_failover_the_breaker_or_a_preference() {
+        let a = with_signal(
+            priced(cand("a", &[Method::Upi], 10), 100, "observed"),
+            99,
+            1,
+            10,
+            Breaker::Degraded,
+        );
+        let b = with_signal(
+            priced(cand("b", &[Method::Upi], 10), 900, "observed"),
+            90,
+            10,
+            10,
+            Breaker::Healthy,
+        );
+        let c = with_signal(
+            priced(cand("c", &[Method::Upi], 10), 500, "observed"),
+            90,
+            10,
+            10,
+            Breaker::Healthy,
+        );
+        // a is degraded: skipped however cheap
+        assert_eq!(
+            choose(
+                &cost_req(8_000, 500),
+                &[a.clone(), b.clone(), c.clone()],
+                &[]
+            )
+            .unwrap()
+            .provider,
+            "c"
+        );
+        // c already failed this payment: skipped
+        let r = Request {
+            avoid: vec![Avoid {
+                provider: "c".into(),
+                reason: "declined".into(),
+            }],
+            ..cost_req(8_000, 500)
+        };
+        assert_eq!(
+            choose(&r, &[a.clone(), b.clone(), c.clone()], &[])
+                .unwrap()
+                .provider,
+            "b"
+        );
+        // a routing-rule preference still wins
+        let prefer_b = Rule {
+            prefer: vec!["b".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            choose(&cost_req(8_000, 500), &[b.clone(), c.clone()], &[prefer_b])
+                .unwrap()
+                .provider,
+            "b"
+        );
+        // excluded by rule: never chosen
+        let ex = Rule {
+            exclude: vec!["c".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            choose(&cost_req(8_000, 500), &[b, c], &[ex])
+                .unwrap()
+                .provider,
+            "b"
         );
     }
 }

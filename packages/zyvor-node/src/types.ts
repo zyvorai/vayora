@@ -856,11 +856,74 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
 export interface GetRoutingHealthResponse {
   config: unknown;
-  routing_health_rule: string;
+  automation_paused: unknown;
+  routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
+}
+
+export interface GetRoutingScorecardResponse {
+  window_days: unknown;
+  method: unknown;
+  success_rate_rule: string;
+  median_rule: string;
+  scorecard: unknown;
+}
+
+export interface GetRoutingShadowReportResponse {
+  window_days: unknown;
+  method: unknown;
+  shadow: unknown;
+  decisions: number;
+  agreed: number;
+  differed: unknown;
+  no_route_in_shadow: number;
+  agreement_rate_bps: unknown;
+  differences: GetRoutingShadowReportResponseDifferencesItem[];
+  outcome_by_provider: GetRoutingShadowReportResponseOutcomeByProviderItem[];
+  recent_differences: GetRoutingShadowReportResponseRecentDifferencesItem[];
+  limits: string;
+}
+
+export interface GetRoutingShadowReportResponseDifferencesItem {
+  method: string;
+  applied_provider: string;
+  shadow_provider: string | null;
+  decisions: number;
+  fee_comparable: number;
+  estimated_fee_difference_minor: number;
+}
+
+export interface GetRoutingShadowReportResponseOutcomeByProviderItem {
+  provider: string;
+  method: string;
+  payments_sent: number;
+  succeeded: number;
+  provider_failures: number;
+  payer_declines: number;
+  unresolved: number;
+  of_which_shadow_would_have_chosen_another: number;
+}
+
+export interface GetRoutingShadowReportResponseRecentDifferencesItem {
+  attempt_id: string;
+  method: string;
+  amount_minor: number;
+  applied_provider: string;
+  shadow_provider: string | null;
+  applied_explanation: string | null;
+  shadow_explanation: string | null;
+  applied_fee_minor: number | null;
+  shadow_fee_minor: number | null;
+  attempt_status: string;
+  at: string;
 }
 
 export interface GetSavedViewsResponse {
@@ -2007,6 +2070,16 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostRoutingAutomationPauseResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
+export interface PostRoutingAutomationResumeResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
 export interface PostSavedViewsResponse {
   id: string;
   name: string;
@@ -2244,6 +2317,11 @@ export interface PutProviderAccountsByProviderResponse {
   provider: string;
   enabled: boolean;
   replaced: unknown;
+}
+
+export interface PutRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
 }
 
 export interface RefundRow {

@@ -876,11 +876,74 @@ type GetRefundsResponse struct {
 	HasMore bool        `json:"has_more"`
 }
 
+type GetRoutingAutomationResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
 type GetRoutingHealthResponse struct {
-	Config            any    `json:"config"`
-	RoutingHealthRule string `json:"routing_health_rule"`
-	Providers         any    `json:"providers"`
-	RecentChanges     []any  `json:"recent_changes"`
+	Config            any   `json:"config"`
+	AutomationPaused  any   `json:"automation_paused"`
+	RoutingHealthRule any   `json:"routing_health_rule"`
+	Providers         any   `json:"providers"`
+	RecentChanges     []any `json:"recent_changes"`
+}
+
+type GetRoutingScorecardResponse struct {
+	WindowDays      any    `json:"window_days"`
+	Method          any    `json:"method"`
+	SuccessRateRule string `json:"success_rate_rule"`
+	MedianRule      string `json:"median_rule"`
+	Scorecard       any    `json:"scorecard"`
+}
+
+type GetRoutingShadowReportResponse struct {
+	WindowDays        any                                                   `json:"window_days"`
+	Method            any                                                   `json:"method"`
+	Shadow            any                                                   `json:"shadow"`
+	Decisions         int64                                                 `json:"decisions"`
+	Agreed            int64                                                 `json:"agreed"`
+	Differed          any                                                   `json:"differed"`
+	NoRouteInShadow   int64                                                 `json:"no_route_in_shadow"`
+	AgreementRateBps  any                                                   `json:"agreement_rate_bps"`
+	Differences       []GetRoutingShadowReportResponseDifferencesItem       `json:"differences"`
+	OutcomeByProvider []GetRoutingShadowReportResponseOutcomeByProviderItem `json:"outcome_by_provider"`
+	RecentDifferences []GetRoutingShadowReportResponseRecentDifferencesItem `json:"recent_differences"`
+	Limits            string                                                `json:"limits"`
+}
+
+type GetRoutingShadowReportResponseDifferencesItem struct {
+	Method                      string  `json:"method"`
+	AppliedProvider             string  `json:"applied_provider"`
+	ShadowProvider              *string `json:"shadow_provider"`
+	Decisions                   int64   `json:"decisions"`
+	FeeComparable               int64   `json:"fee_comparable"`
+	EstimatedFeeDifferenceMinor int64   `json:"estimated_fee_difference_minor"`
+}
+
+type GetRoutingShadowReportResponseOutcomeByProviderItem struct {
+	Provider                            string `json:"provider"`
+	Method                              string `json:"method"`
+	PaymentsSent                        int64  `json:"payments_sent"`
+	Succeeded                           int64  `json:"succeeded"`
+	ProviderFailures                    int64  `json:"provider_failures"`
+	PayerDeclines                       int64  `json:"payer_declines"`
+	Unresolved                          int64  `json:"unresolved"`
+	OfWhichShadowWouldHaveChosenAnother int64  `json:"of_which_shadow_would_have_chosen_another"`
+}
+
+type GetRoutingShadowReportResponseRecentDifferencesItem struct {
+	AttemptID          string  `json:"attempt_id"`
+	Method             string  `json:"method"`
+	AmountMinor        int64   `json:"amount_minor"`
+	AppliedProvider    string  `json:"applied_provider"`
+	ShadowProvider     *string `json:"shadow_provider"`
+	AppliedExplanation *string `json:"applied_explanation"`
+	ShadowExplanation  *string `json:"shadow_explanation"`
+	AppliedFeeMinor    *int64  `json:"applied_fee_minor"`
+	ShadowFeeMinor     *int64  `json:"shadow_fee_minor"`
+	AttemptStatus      string  `json:"attempt_status"`
+	At                 string  `json:"at"`
 }
 
 type GetSavedViewsResponse struct {
@@ -2027,6 +2090,16 @@ type PostRefundsByIdRetryResponse struct {
 	UpdatedAt         string  `json:"updated_at"`
 }
 
+type PostRoutingAutomationPauseResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
+type PostRoutingAutomationResumeResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
 type PostSavedViewsResponse struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -2264,6 +2337,11 @@ type PutProviderAccountsByProviderResponse struct {
 	Provider string `json:"provider"`
 	Enabled  bool   `json:"enabled"`
 	Replaced any    `json:"replaced"`
+}
+
+type PutRoutingAutomationResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
 }
 
 type RefundRow struct {

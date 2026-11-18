@@ -21,6 +21,7 @@ describe("checkout helpers", () => {
   it("polls only while a payment is in flight", () => {
     expect(pollDelay("awaiting_payment")).toBe(2000);
     expect(pollDelay("confirming")).toBe(4000);
+    expect(pollDelay("trying_another_way")).toBe(2000);
     expect(pollDelay("paid")).toBeNull();
     expect(pollDelay("choose_method")).toBeNull();
   });

@@ -44,6 +44,24 @@ thresholds are not tuned on real traffic. The decline classifier recognises only
 and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
 (minutes-long window on the database clock). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
 
+## Delivered in this slice: routing automation (shadow mode, soft retry, cost-aware routing, kill switch, scorecard)
+| Behaviour | Evidence |
+|---|---|
+| Everything off by default; settings validated, scoped (`payments:read` to read, `admin` to change), audited per switch; isolated by row-level security | `automation_settings_are_validated_scoped_audited_and_isolated` |
+| Shadow mode records the candidate policy's decision next to the applied one, never changes routing, never calls a provider; the report gives agreement, differences, estimated fee difference and outcomes | `shadow_records_what_a_candidate_policy_would_do_next_to_what_was_applied_and_changes_nothing` |
+| Cost-aware routing: fee rules and observed fees feed the cost; a provider below the success floor is never chosen for being cheaper; minimum samples; per-business switch; the sentence says what was traded | `cost_aware_routing_uses_fee_rules_and_observed_fees_and_never_picks_a_provider_below_the_floor_for_being_cheaper`, `observed_fees_from_settlements_beat_a_fee_rule_once_there_are_enough_samples`, router unit tests (`cost_*`, `a_cheaper_provider_below_the_success_floor_...`), cost model unit tests |
+| Soft retry only after `provider_fault` / `provider_rejected`, once, on another non-degraded provider, within limits | `a_refused_payment_is_retried_once_on_the_other_provider_and_never_twice`, `only_provider_faults_and_refusals_are_retried_never_payer_declines_unknown_causes_or_unresolved_payments`, `limits_alternates_degraded_providers_and_the_window_stop_a_retry_and_the_decision_is_recorded_once` |
+| No path creates a second live attempt while the first is unresolved; concurrent retriers and manual attempts create one | `many_callers_racing_to_retry_one_failure_create_exactly_one_attempt_and_never_two_live`, `a_retry_that_itself_goes_unknown_blocks_every_further_attempt`, `a_late_answer_from_the_resolver_starts_the_retry_after_the_unknown_is_settled`, `a_provider_webhook_and_the_worker_start_retries_but_a_decline_with_no_known_cause_does_not` |
+| The checkout says "trying another way" while a retry is due and never offers a second payment | `the_checkout_says_trying_another_way_while_a_retry_is_due_and_never_offers_a_second_payment`, `lib/checkout.test.ts` |
+| The kill switch stops every automation at once, is idempotent, audited and per business | `the_kill_switch_stops_every_automation_at_once_is_audited_and_is_per_business` |
+| Scorecard excludes payer declines, shows failure classes, unresolved, median time, observed fee, last degrade | `the_scorecard_excludes_payer_declines_and_shows_classes_unresolved_and_the_last_degrade` |
+
+**Limits.** Simulators and the local provider mock only. Defaults (retry limits, success floor, premium, minimum fee
+samples) are not tuned on real traffic. Shadow mode compares decisions, not outcomes. Retry depends on the decline
+classes, which were not verified against a live provider. The new console sections were built and
+unit-tested but not looked at in a browser. Checkout translations of the new message are
+not reviewed by native speakers. Details in [ROUTING.md](ROUTING.md) section 6.
+
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.
 
