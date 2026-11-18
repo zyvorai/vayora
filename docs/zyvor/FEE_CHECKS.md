@@ -120,7 +120,7 @@ rule clearing a stale finding, tenant isolation). All against simulators and han
 
 ## Not done
 
-- No console page for rules or findings yet (API only), and no SDK convenience methods (types are generated).
+- The console has a **Fee checks** page (rules, tolerance and owner, findings, summary, run the check). It was looked at in a browser against a stand-in API with made-up data, not against a running Zyvor API. There is no settlement detail page in the console, so the "fee differs" line from `/explain` is not shown there. No SDK convenience methods (types are generated); the console calls the endpoints directly.
 - No import of a provider's fee schedule or invoice: rules are typed in by a person.
 - No auto-applied credit or dispute with the provider; a person raises that outside Zyvor.
 - Not verified against any real provider statement.

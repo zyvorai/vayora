@@ -42,7 +42,7 @@ Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkou
 thresholds are not tuned on real traffic. The decline classifier recognises only codes found in this repository
 (simulator, local mock, tests); Razorpay and PhonePe have none, every unrecognised decline counts against the provider,
 and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
-(minutes-long window on the database clock). No console screen. Details in [ROUTING.md](ROUTING.md).
+(minutes-long window on the database clock). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
 
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.

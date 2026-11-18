@@ -14,7 +14,7 @@ synthetic statements**. No real account number, real statement or live provider 
 | Matching debits to payouts and refunds, credits to payments by RRN | Built, simulator and synthetic data only. |
 | UTR / RRN stored on payments | Built for the simulator and for the field names Razorpay and Cashfree document (see below); the real field names have **not** been checked against a live account. |
 | MT940 and CAMT.053 | Unchanged (the older strict parsers). They feed the same matching, but do not have layouts, dry run or fingerprints. |
-| Console screens for any of this | Not built. API only. |
+| Console screens for any of this | A **Bank statements** page: upload with a layout picker and custom columns, a dry-run preview with line-level errors, import, past uploads, lines with the evidence for each match, confirm or reject suggestions, ageing and open cases. Looked at in a browser against a stand-in API with made-up data, not against a running Zyvor API or a real bank file. |
 
 ## The flow
 

@@ -734,12 +734,6 @@ export const saveReturnUrlOrigins = async (_: FormState, f: FormData) => {
   return run(["/settings"], (z) => z.settings.update({ return_url_origins: origins }), "admin");
 };
 
-export const importBankCsv = async (_: FormState, f: FormData): Promise<FormState> => {
-  const csv = String(f.get("csv") ?? "").trim();
-  if (!csv) return { error: "Paste CSV statement text." };
-  return run(["/reconciliation"], (z) => z.bankStatements.importCsv(csv), "finance");
-};
-
 export const saveMoneyMode = async (_: FormState, f: FormData) => {
   const mode = text(f, "money_mode");
   if (mode !== "orchestrate" && mode !== "acquire") return { error: "Choose orchestrate or acquire." };

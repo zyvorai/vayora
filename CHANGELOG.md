@@ -5,6 +5,12 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Console pages for fee checks, bank statements and routing health
+- **Fee checks** (`/fees`): fee rules (percentage, flat, cap, GST on the fee, refund fee return, effective date), tolerance and owner, findings and summary (took more / took less, by provider and method), run the check. Rates are typed by a person; none are built in.
+- **Bank statements** (`/bank-statements`): upload a CSV with a layout or your own column names, check it first (nothing saved, line-level problems listed), import, past uploads, lines with the evidence for each match, suggestions labelled as needing a person with confirm and reject, ageing and open cases. The old paste box on Reconciliation now points here.
+- **Routing health** (`/routing`): recent success rate (or "not enough data" under the minimum), saved versus current state in plain words, recent set-aside and recovery events, and the limits (admin only to change).
+- Writes need a finance role (limits: admin); viewers can read. Console only, no API change. Checked in a browser against a stand-in API with made-up data; not against a running Zyvor API or a real bank file.
+
 ## 18 November 2026 — Decline classes, health sweeper, one health rule, routing explanations (simulators only)
 **Routing health tells the truth**
 - Declines are classified when recorded (`payment_attempts.failure_class`: `payer_declined`, `provider_fault`, `declined` = unknown, `provider_rejected`, `cancelled`). Payer declines (insufficient funds, the payer left) are left out of the success rate and the circuit breaker, shown as `payer_declines` in `GET /v1/routing/health`, and are not a reason to fail over. Unknown causes still count against the provider. Only codes found in the repository's simulator, mock and tests are recognised; nothing was checked against a live provider.

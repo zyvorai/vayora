@@ -212,7 +212,7 @@ ignores provider health completely; turn failover off to keep retrying the same 
 
 ## What is not done
 
-No console screen yet (API only; the `explanation` sentences are ready for one). No per-provider threshold overrides
+The console has a **Routing health** page (success rate or "not enough data", saved and current state, recent changes, and limits that only an admin can change); it was looked at in a browser against a stand-in API with made-up data, not against a running Zyvor API. No per-provider threshold overrides
 (one set per tenant). No cross-tenant or platform-wide signal. The decline classifier knows only the codes listed above;
 Razorpay and PhonePe have none, and no failure code of any provider was verified against a live account. Existing
 declines recorded before migration 0079 stay `declined` (unknown) and keep counting against the provider until they age
