@@ -1,0 +1,13 @@
+{
+  "description": "Time from a clean checkout to the first captured SANDBOX payment (simulated providers, local machine)",
+  "stages_seconds": {
+    "clone": 0.2,
+    "build": 83.6,
+    "database_migrations_and_services_start": 1.5,
+    "tenant_key_and_provider_setup": 0.1,
+    "intent_attempt_payer_approves_captured": 0
+  },
+  "total_seconds_to_first_captured_payment": 85.4,
+  "total_seconds_excluding_compile": 1.8000000000000114,
+  "api_calls_after_stack_up": 5
+}

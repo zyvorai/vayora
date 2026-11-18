@@ -1,0 +1,36 @@
+{
+  "description": "Double-charge check under timeouts, retries, concurrency and replays (simulator)",
+  "intents_per_phase": {
+    "timeout_after_accept_then_parallel_retries": 20,
+    "outage_503_or_hang_parallel_retries_lookup_failover_late_approval": 20,
+    "eight_parallel_same_key_and_eight_distinct_keys_repeated_webhooks": 20,
+    "intent_creation_replayed_five_times_per_key_and_with_a_different_body": 20,
+    "seeded_chaos_random_faults_parallelism_and_keys": 40
+  },
+  "requests": {
+    "requests": 1143,
+    "attempt_posts": 1023,
+    "created_201": 326,
+    "refused_409": 697,
+    "same_key_replays": 240,
+    "webhook_deliveries": 53,
+    "refresh_calls": 69
+  },
+  "attempts_recorded": 154,
+  "requests_that_were_rate_limited_and_retried": 0,
+  "provider_orders_created": {
+    "razorpay": 749,
+    "cashfree": 369
+  },
+  "audit": {
+    "intents_with_attempts": 120,
+    "intents_paid_at_provider": 92,
+    "intents_with_more_than_one_captured_attempt_in_platform": 0,
+    "intents_paid_more_than_once_at_provider": 0,
+    "intents_paid_at_provider_but_no_captured_attempt_in_platform": 0
+  },
+  "unexpected_observations": [],
+  "pass": true,
+  "seed": 20261118,
+  "wall_seconds": 33.9
+}

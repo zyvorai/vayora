@@ -13,9 +13,9 @@ const [a, b] = process.argv.slice(2).map((f) => JSON.parse(readFileSync(f, "utf8
 const IGNORE = /(^|\.)(generated_at|machine|wall_seconds|window_seconds|description|note|version|files|file_list|checkout_install_and_build_seconds|missed|false_alarms)(\.|$)/;
 const problems = [];
 function rule(path) {
+  if (/latency_ms\.(p95|max)$/.test(path)) return "tail";
   if (/bytes|transferred/.test(path) && path.includes("s5_checkout_weight")) return "bytes";
   if (/load_event_ms|s5_first_payment|ms_until|latency_ms|_ms$|seconds/.test(path) && !/tolerance_minor/.test(path)) return "timing";
-  if (/latency_ms\.(p95|max)$/.test(path)) return "tail";
   if (path.startsWith("s1_outage")) return "outage";
   if (/^s2_double_charge\.audit\./.test(path) && !/more_than|no_captured|not_recorded/.test(path)) return "volume";
   if (path.startsWith("s2_double_charge.requests") || /^s2_double_charge\.(attempts_recorded|provider_orders_created)/.test(path)) return "volume";
