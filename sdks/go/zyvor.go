@@ -167,10 +167,14 @@ func (c *Client) CreateAttempt(intentID, method, vpa, idempotencyKey string) (*A
 
 // AttemptOpts are optional fields for CreateAttemptOpts (network token charge, return URL, UPI flow).
 type AttemptOpts struct {
-	VPA          string
-	ReturnURL    string
-	UpiFlow      string
-	CardTokenID  string
+	VPA         string
+	ReturnURL   string
+	UpiFlow     string
+	CardTokenID string
+	// Instrument is what the payer used, never a card number: card_network or card_bin (first 6-8 digits), upi_app, bank.
+	Instrument map[string]any
+	// OfferCodes are codes the payer typed.
+	OfferCodes []string
 }
 
 func (c *Client) CreateAttemptOpts(intentID, method string, opts AttemptOpts, idempotencyKey string) (*Attempt, error) {
@@ -189,6 +193,12 @@ func (c *Client) CreateAttemptOpts(intentID, method string, opts AttemptOpts, id
 	}
 	if opts.CardTokenID != "" {
 		body["card_token_id"] = opts.CardTokenID
+	}
+	if len(opts.Instrument) > 0 {
+		body["instrument"] = opts.Instrument
+	}
+	if len(opts.OfferCodes) > 0 {
+		body["offer_codes"] = opts.OfferCodes
 	}
 	var out Attempt
 	err := c.do("POST", "/v1/payment_intents/"+intentID+"/attempts", body, idempotencyKey, &out)
@@ -2047,4 +2057,152 @@ func (c *Client) RoutingScorecard(days int, method string) (map[string]any, erro
 		q["days"] = days
 	}
 	return c.call("GET", withQuery("/v1/routing/scorecard", q), nil)
+}
+
+// ListOffers lists merchant-funded offers; status "" means all.
+func (c *Client) ListOffers(status string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/offers", map[string]any{"status": status}), nil)
+}
+
+// CreateOffer creates an offer: name, kind ("percent" in basis points or "flat" in minor units), value, and optional
+// conditions (methods, card_networks, bin_ranges, upi_apps, upi_handles, banks, min_amount_minor, max_amount_minor,
+// segment, valid_from, valid_until), caps (max_redemptions, max_per_customer, budget_minor) and stacking (stackable,
+// stack_group, priority).
+func (c *Client) CreateOffer(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/offers", body)
+}
+
+// GetOffer returns one offer with what it has cost so far.
+func (c *Client) GetOffer(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/offers/"+url.PathEscape(id), nil)
+}
+
+// UpdateOffer changes status, name, description, valid_until, caps or priority; the conditions and discount are fixed.
+func (c *Client) UpdateOffer(id string, body map[string]any) (map[string]any, error) {
+	return c.call("PATCH", "/v1/offers/"+url.PathEscape(id), body)
+}
+
+// PreviewOffers says what a payment would be offered (amount_minor, method, optional customer_id, instrument, vpa,
+// offer_codes). Nothing is reserved.
+func (c *Client) PreviewOffers(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/offers/preview", body)
+}
+
+// OfferRefundPreview says how much of an offer discount a refund would hand back; amountMinor 0 means everything
+// still refundable.
+func (c *Client) OfferRefundPreview(intentId string, amountMinor int64) (map[string]any, error) {
+	body := map[string]any{"intent_id": intentId}
+	if amountMinor > 0 {
+		body["amount_minor"] = amountMinor
+	}
+	return c.call("POST", "/v1/offers/refund_preview", body)
+}
+
+// IntentOffers lists the offers that priced one payment and who funded each (always the merchant).
+func (c *Client) IntentOffers(intentId string) (map[string]any, error) {
+	return c.call("GET", "/v1/payment_intents/"+url.PathEscape(intentId)+"/offers", nil)
+}
+
+// ValidateRoutingRules checks rules without saving them.
+func (c *Client) ValidateRoutingRules(rules []any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/validate", map[string]any{"rules": rules})
+}
+
+// CreateRoutingRuleSet saves a new immutable version of the routing rules; activate makes it the active one.
+func (c *Client) CreateRoutingRuleSet(rules []any, note string, activate bool) (map[string]any, error) {
+	body := map[string]any{"rules": rules, "activate": activate}
+	if note != "" {
+		body["note"] = note
+	}
+	return c.call("POST", "/v1/routing/rule_sets", body)
+}
+
+// ListRoutingRuleSets lists the saved versions and the active one.
+func (c *Client) ListRoutingRuleSets() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/rule_sets", nil)
+}
+
+// ActivateRoutingRuleSet makes a saved version the active one (refused while an experiment runs).
+func (c *Client) ActivateRoutingRuleSet(version int) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/"+fmt.Sprint(version)+"/activate", map[string]any{})
+}
+
+// RollbackRoutingRuleSet makes the previously active rule set active again.
+func (c *Client) RollbackRoutingRuleSet() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/rollback", map[string]any{})
+}
+
+// RoutingDryRun says which provider a payment would take. Creates nothing.
+func (c *Client) RoutingDryRun(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/dry_run", body)
+}
+
+// StartRoutingExperiment sends variant_percent of payments through a saved variant rule set, with guardrails.
+func (c *Client) StartRoutingExperiment(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments", body)
+}
+
+// RoutingExperimentResults returns success rate per arm, the verdict and whether the guardrail would stop it.
+func (c *Client) RoutingExperimentResults(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/experiments/"+url.PathEscape(id), nil)
+}
+
+// StopRoutingExperiment stops a running experiment.
+func (c *Client) StopRoutingExperiment(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments/"+url.PathEscape(id)+"/stop", map[string]any{})
+}
+
+// ListRoutingAlerts lists downtime alerts; status is "open", "resolved" or "" for all.
+func (c *Client) ListRoutingAlerts(status string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/routing/alerts", map[string]any{"status": status}), nil)
+}
+
+// OfferRedemptions lists the payments an offer priced; status "" means all.
+func (c *Client) OfferRedemptions(id, status string, limit int) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/offers/"+url.PathEscape(id)+"/redemptions", map[string]any{"status": status, "limit": limit}), nil)
+}
+
+// GetRoutingRuleSet returns one saved rule version.
+func (c *Client) GetRoutingRuleSet(version int) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/rule_sets/"+fmt.Sprint(version), nil)
+}
+
+// DeactivateRoutingRuleSet stops using any rule set: the older routing rules in the settings apply again.
+func (c *Client) DeactivateRoutingRuleSet() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/deactivate", map[string]any{})
+}
+
+// ListRoutingExperiments lists routing experiments.
+func (c *Client) ListRoutingExperiments() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/experiments", nil)
+}
+
+// EvaluateRoutingExperiment runs the guardrail now: it stops the experiment if the variant is clearly worse.
+func (c *Client) EvaluateRoutingExperiment(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments/"+url.PathEscape(id)+"/evaluate", map[string]any{})
+}
+
+// GetRoutingAlert returns one downtime alert with its case.
+func (c *Client) GetRoutingAlert(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/alerts/"+url.PathEscape(id), nil)
+}
+
+// AcknowledgeRoutingAlert marks an open downtime alert as seen.
+func (c *Client) AcknowledgeRoutingAlert(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/alerts/"+url.PathEscape(id)+"/ack", map[string]any{})
+}
+
+// CheckRoutingAlerts checks provider health for downtime now (the worker does the same on its cycle).
+func (c *Client) CheckRoutingAlerts() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/alerts/evaluate", map[string]any{})
+}
+
+// RoutingAlertSettings returns the downtime alert thresholds and email address.
+func (c *Client) RoutingAlertSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/alerts/settings", nil)
+}
+
+// UpdateRoutingAlertSettings changes the alert thresholds; fields not sent keep their value.
+func (c *Client) UpdateRoutingAlertSettings(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/alerts/settings", body)
 }

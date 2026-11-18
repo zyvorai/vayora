@@ -68,8 +68,9 @@ class Zyvor:
     def get_intent(self, intent_id: str) -> types.GetPaymentIntentsByIdResponse:
         return self._req("GET", f"/v1/payment_intents/{intent_id}")
 
-    def create_attempt(self, intent_id: str, method: str, vpa: Optional[str] = None, idempotency_key: Optional[str] = None, return_url: Optional[str] = None, upi_flow: Optional[str] = None, card_token_id: Optional[str] = None) -> types.PostPaymentIntentsByIdAttemptsResponse:
-        body = {"method": method, "vpa": vpa, "return_url": return_url, "upi_flow": upi_flow, "card_token_id": card_token_id}
+    def create_attempt(self, intent_id: str, method: str, vpa: Optional[str] = None, idempotency_key: Optional[str] = None, return_url: Optional[str] = None, upi_flow: Optional[str] = None, card_token_id: Optional[str] = None, instrument: Optional[dict] = None, offer_codes: Optional[list] = None) -> types.PostPaymentIntentsByIdAttemptsResponse:
+        """`instrument` is what the payer used, never a card number: card_network or card_bin (first 6-8 digits), upi_app, bank. `offer_codes` are codes the payer typed."""
+        body = {"method": method, "vpa": vpa, "return_url": return_url, "upi_flow": upi_flow, "card_token_id": card_token_id, "instrument": instrument, "offer_codes": offer_codes}
         return self._req("POST", f"/v1/payment_intents/{intent_id}/attempts", {k: v for k, v in body.items() if v is not None}, idempotency_key or str(uuid.uuid4()))
 
     def refund(self, intent_id: str, amount_minor: Optional[int] = None, idempotency_key: Optional[str] = None, **extra) -> dict:
@@ -944,6 +945,101 @@ class Zyvor:
     def routing_scorecard(self, days: Optional[int] = None, method: Optional[str] = None) -> types.GetRoutingScorecardResponse:
         """Per provider and method: success rate (payer declines excluded), failure classes, median time to resolve, unresolved, observed fee, last degrade and recovery."""
         return self._req("GET", "/v1/routing/scorecard" + self._qs({"days": days, "method": method}))
+    # ---- offers (merchant-funded discounts, judged when a payment attempt is created)
+    def list_offers(self, *, status: Optional[str] = None) -> types.GetOffersResponse:
+        return self._req("GET", "/v1/offers" + self._qs({"status": status}))
+
+    def create_offer(self, **fields) -> dict:
+        """name, kind ('percent' in basis points or 'flat' in minor units), value, and optional conditions (methods, card_networks, bin_ranges, upi_apps, upi_handles, banks, min/max_amount_minor, segment, valid_from/valid_until), caps (max_redemptions, max_per_customer, budget_minor) and stacking (stackable, stack_group, priority)."""
+        return self._req("POST", "/v1/offers", fields)
+
+    def get_offer(self, offer_id: str) -> types.GetOffersByIdResponse:
+        return self._req("GET", f"/v1/offers/{urllib.parse.quote(offer_id, safe='')}")
+
+    def update_offer(self, offer_id: str, **fields) -> dict:
+        """status, name, description, valid_until, max_redemptions, max_per_customer, budget_minor, priority."""
+        return self._req("PATCH", f"/v1/offers/{urllib.parse.quote(offer_id, safe='')}", fields)
+
+    def preview_offers(self, **fields) -> types.PostOffersPreviewResponse:
+        """What a payment would be offered: amount_minor, method, optional customer_id, instrument, vpa, offer_codes. Nothing is reserved."""
+        return self._req("POST", "/v1/offers/preview", fields)
+
+    def offer_refund_preview(self, intent_id: str, amount_minor: Optional[int] = None) -> dict:
+        body = {"intent_id": intent_id}
+        if amount_minor is not None:
+            body["amount_minor"] = amount_minor
+        return self._req("POST", "/v1/offers/refund_preview", body)
+
+    def offer_redemptions(self, offer_id: str, *, status: Optional[str] = None, limit: Optional[int] = None) -> types.GetOffersByIdRedemptionsResponse:
+        return self._req("GET", f"/v1/offers/{urllib.parse.quote(offer_id, safe='')}/redemptions" + self._qs({"status": status, "limit": limit}))
+
+    def intent_offers(self, intent_id: str) -> types.GetPaymentIntentsByIdOffersResponse:
+        """Which offers priced one payment, and who funded each (always the merchant)."""
+        return self._req("GET", f"/v1/payment_intents/{urllib.parse.quote(intent_id, safe='')}/offers")
+
+    # ---- routing rule builder, experiments and downtime alerts
+    def validate_routing_rules(self, rules: list) -> dict:
+        return self._req("POST", "/v1/routing/rule_sets/validate", {"rules": rules})
+
+    def create_routing_rule_set(self, rules: list, note: Optional[str] = None, activate: bool = False) -> dict:
+        body = {"rules": rules, "activate": activate}
+        if note is not None:
+            body["note"] = note
+        return self._req("POST", "/v1/routing/rule_sets", body)
+
+    def list_routing_rule_sets(self) -> types.GetRoutingRuleSetsResponse:
+        return self._req("GET", "/v1/routing/rule_sets")
+
+    def get_routing_rule_set(self, version: int) -> types.GetRoutingRuleSetsByVersionResponse:
+        return self._req("GET", f"/v1/routing/rule_sets/{int(version)}")
+
+    def activate_routing_rule_set(self, version: int) -> types.PostRoutingRuleSetsByVersionActivateResponse:
+        return self._req("POST", f"/v1/routing/rule_sets/{int(version)}/activate", {})
+
+    def rollback_routing_rule_set(self) -> types.PostRoutingRuleSetsRollbackResponse:
+        return self._req("POST", "/v1/routing/rule_sets/rollback", {})
+
+    def deactivate_routing_rule_set(self) -> types.PostRoutingRuleSetsDeactivateResponse:
+        return self._req("POST", "/v1/routing/rule_sets/deactivate", {})
+
+    def routing_dry_run(self, **fields) -> types.PostRoutingDryRunResponse:
+        """Which provider would this payment take: method, amount_minor, optional currency, card_network or card_bin, customer_id or segment, at, rules, version. Creates nothing."""
+        return self._req("POST", "/v1/routing/dry_run", fields)
+
+    def start_routing_experiment(self, name: str, variant_version: int, variant_percent: int, **fields) -> types.PostRoutingExperimentsResponse:
+        return self._req("POST", "/v1/routing/experiments", {"name": name, "variant_version": variant_version, "variant_percent": variant_percent, **fields})
+
+    def list_routing_experiments(self) -> types.GetRoutingExperimentsResponse:
+        return self._req("GET", "/v1/routing/experiments")
+
+    def routing_experiment_results(self, experiment_id: str) -> types.GetRoutingExperimentsByIdResponse:
+        return self._req("GET", f"/v1/routing/experiments/{urllib.parse.quote(experiment_id, safe='')}")
+
+    def stop_routing_experiment(self, experiment_id: str) -> types.PostRoutingExperimentsByIdStopResponse:
+        return self._req("POST", f"/v1/routing/experiments/{urllib.parse.quote(experiment_id, safe='')}/stop", {})
+
+    def evaluate_routing_experiment(self, experiment_id: str) -> types.PostRoutingExperimentsByIdEvaluateResponse:
+        """Run the guardrail now: stops the experiment if the variant is clearly worse."""
+        return self._req("POST", f"/v1/routing/experiments/{urllib.parse.quote(experiment_id, safe='')}/evaluate", {})
+
+    def list_routing_alerts(self, *, status: Optional[str] = None) -> types.GetRoutingAlertsResponse:
+        return self._req("GET", "/v1/routing/alerts" + self._qs({"status": status}))
+
+    def get_routing_alert(self, alert_id: str) -> types.GetRoutingAlertsByIdResponse:
+        return self._req("GET", f"/v1/routing/alerts/{urllib.parse.quote(alert_id, safe='')}")
+
+    def acknowledge_routing_alert(self, alert_id: str) -> types.PostRoutingAlertsByIdAckResponse:
+        return self._req("POST", f"/v1/routing/alerts/{urllib.parse.quote(alert_id, safe='')}/ack", {})
+
+    def routing_alert_settings(self) -> dict:
+        return self._req("GET", "/v1/routing/alerts/settings")
+
+    def update_routing_alert_settings(self, **fields) -> dict:
+        """enabled, min_samples, open_failure_pct, resolve_failure_pct, window_minutes, hold_seconds, flap_window_seconds, email_to ('' turns email off)."""
+        return self._req("PUT", "/v1/routing/alerts/settings", fields)
+
+    def check_routing_alerts(self) -> dict:
+        return self._req("POST", "/v1/routing/alerts/evaluate", {})
 
 
 def verify_webhook(secret: str, header: str, raw_body: bytes, tolerance_seconds: int = 300, now: Optional[int] = None) -> bool:

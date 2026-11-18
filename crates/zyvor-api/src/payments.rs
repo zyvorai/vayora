@@ -378,6 +378,13 @@ pub struct CreateAttempt {
     /// Charge a previously stored network card token (never PAN/CVV). Requires `method=card`.
     #[serde(default)]
     pub card_token_id: Option<String>,
+    /// What the payer used, without any card number: a card network or the first 6-8 digits of the card (BIN), a UPI
+    /// app, a bank. Offers, routing rules and the downtime alerts use it. See `instrument.rs`.
+    #[serde(default)]
+    pub instrument: Option<crate::instrument_hint::InstrumentIn>,
+    /// Offer codes the payer typed. Offers that need no code apply by themselves.
+    #[serde(default)]
+    pub offer_codes: Option<Vec<String>>,
 }
 
 /// When the business listed `return_url_origins`, a return address must be on one of them (empty list: any address that
@@ -516,6 +523,7 @@ pub(crate) async fn start_attempt_with(
         b.return_url.as_deref().unwrap_or(""),
         b.upi_flow.as_deref().unwrap_or(""),
         b.card_token_id.as_deref().unwrap_or(""),
+        &format!("{:?}|{:?}", b.instrument, b.offer_codes),
     ]);
     let key = match idempotency::begin(&mut tx, tenant_id, "attempts", headers, &hash).await? {
         Begin::Replay {
@@ -680,10 +688,60 @@ pub(crate) async fn start_attempt_with(
         return Err(crate::risk::blocked(s, tenant_id, actor, rule, detail).await);
     }
 
+    // What the payer used (never a card number), then the offers that apply: the attempt is for the discounted amount.
+    let token_brand: Option<String> = match b.card_token_id.as_deref() {
+        Some(t) => {
+            sqlx::query_scalar("SELECT brand FROM card_tokens WHERE id = $1 AND revoked_at IS NULL")
+                .bind(t)
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten()
+        }
+        None => None,
+    };
+    let instrument = crate::instrument_hint::build(
+        b.instrument.as_ref(),
+        b.vpa.as_deref(),
+        token_brand.as_deref(),
+    )?;
+    let offer_codes = crate::offers::clean_codes(b.offer_codes.as_ref());
+    let segment = crate::offers::segment(&mut tx, customer_id.as_deref(), Some(intent_id)).await?;
+    let offer_facts = crate::offers::AttemptFacts {
+        intent_id,
+        amount_minor,
+        currency: currency.code(),
+        method: method.as_str(),
+        instrument: &instrument,
+        customer_id: customer_id.as_deref(),
+        segment,
+        codes: &offer_codes,
+    };
+    let offer_eval = crate::offers::plan_for_attempt(&mut tx, &offer_facts).await?;
+    // From here on `amount_minor` is what the payer is asked for.
+    let amount_minor = offer_eval.net_minor;
+
     let routing = registry::routing(&mut tx, tenant_id).await?;
     let mut candidates = registry::candidates(s, &mut tx, tenant_id, env, &routing).await?;
     // Routing automation: the kill switch, cost-aware routing, shadow mode and soft retry are all per business.
     let auto = crate::routing_auto::load(&mut tx, tenant_id).await?;
+    // The rule builder's active rule set (or the older settings rules), and the experiment arm. With the kill
+    // switch on, neither rule sets nor experiments apply: the settings rules route, as before any automation.
+    let rule_ctx = crate::rulebuilder::RuleCtx {
+        method,
+        amount_minor,
+        currency: currency.code(),
+        card_network: instrument.card_network.as_deref(),
+        segment,
+        at: Utc::now(),
+    };
+    let selection =
+        crate::rulebuilder::select(&mut tx, intent_id, &rule_ctx, &routing.rules, auto.paused)
+            .await?;
+    // Shadow mode compares against what is really live: the rule builder's rules when a rule set is in force.
+    let live_routing = registry::Routing {
+        rules: selection.rules.clone(),
+        fees: routing.fees.clone(),
+    };
     // Success-rate signal and circuit breaker for this method, and what already failed this very payment.
     // The live-attempt check above has run: everything on this intent is terminal, so a failover can never
     // sit beside an unresolved first attempt. With the kill switch on, health is read but never applied.
@@ -717,6 +775,18 @@ pub(crate) async fn start_attempt_with(
         }
         None => None,
     };
+    // A soft retry never charges a different amount than the attempt it repeats: the offers are judged again (the
+    // failed attempt gave its use back), and if the payer would now pay more or less, no retry is made.
+    if let Some(g) = &soft_guard {
+        let before: i64 =
+            sqlx::query_scalar("SELECT amount_minor FROM payment_attempts WHERE id = $1")
+                .bind(&g.from_attempt_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if before != amount_minor {
+            return Err(crate::softretry::price_changed(before, amount_minor));
+        }
+    }
     let avoid = if let Some(g) = &soft_guard {
         // every provider already used for this payment, and a degraded one is never a retry target
         for c in candidates.iter_mut() {
@@ -752,10 +822,12 @@ pub(crate) async fn start_attempt_with(
         cost: cost_policy,
     };
     let mut decision;
+    let mut fell_back;
     let mut attempts_at_routing = 0;
     loop {
-        decision = router::choose(&route_request, &candidates, &routing.rules)
-            .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
+        (decision, fell_back) =
+            crate::rulebuilder::choose_with(&selection, &route_request, &candidates)
+                .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
         // A probe of a degraded provider needs the one probe slot; if another payment took it, route without.
         let Some(p) = decision.probe.clone() else {
             break;
@@ -802,16 +874,24 @@ pub(crate) async fn start_attempt_with(
     };
 
     let attempt_id = new_id("att");
-    let mut route_json = serde_json::to_value(&decision).unwrap();
+    let mut route_json = crate::rulebuilder::route_json(
+        &decision,
+        &selection,
+        fell_back,
+        (!offer_eval.applied.is_empty()).then(|| offer_eval.summary()),
+    );
     if let Some(g) = &soft_guard {
         route_json["soft_retry"] = g.describe(&decision.provider);
     }
     // What a later soft retry needs to repeat this request elsewhere; only kept while soft retry is on, and never
     // for a stored card token (the token belongs to one provider).
-    let retry_input = (auto.soft_retry_active() && b.card_token_id.is_none())
-        .then(|| json!({ "vpa": b.vpa, "return_url": b.return_url, "upi_flow": b.upi_flow }));
+    // The instrument hint (a BIN of at most 8 digits, never a card number) and offer codes are kept with it, so a retry
+    // is priced on the same facts; they go with the stored request when it is cleared.
+    let retry_input = (auto.soft_retry_active() && b.card_token_id.is_none()).then(|| {
+        json!({ "vpa": b.vpa, "return_url": b.return_url, "upi_flow": b.upi_flow, "instrument": b.instrument, "offer_codes": b.offer_codes })
+    });
     sqlx::query(
-        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route, retry_input) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)",
+        "INSERT INTO payment_attempts (id, tenant_id, intent_id, provider, method, status, amount_minor, currency, route, retry_input, instrument) VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10)",
     )
     .bind(&attempt_id)
     .bind(tenant_id)
@@ -822,7 +902,26 @@ pub(crate) async fn start_attempt_with(
     .bind(currency.code())
     .bind(route_json)
     .bind(retry_input)
+    .bind(instrument.to_json())
     .execute(&mut *tx)
+    .await?;
+    crate::offers::reserve(
+        &mut tx,
+        tenant_id,
+        actor,
+        &attempt_id,
+        &offer_facts,
+        &offer_eval,
+    )
+    .await?;
+    crate::rulebuilder::record_assignment(
+        &mut tx,
+        tenant_id,
+        &selection,
+        fell_back,
+        &attempt_id,
+        intent_id,
+    )
     .await?;
     if auto.shadow_active() {
         // What the candidate policy would have done, next to what was applied. Never changes routing.
@@ -832,7 +931,7 @@ pub(crate) async fn start_attempt_with(
             intent_id,
             &attempt_id,
             &auto,
-            &routing,
+            &live_routing,
             &route_request,
             &decision,
             &candidates,
@@ -863,7 +962,7 @@ pub(crate) async fn start_attempt_with(
         actor,
         "payment_attempt.created",
         Some(&attempt_id),
-        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id, "failover_from": decision.failover_from, "probe": decision.probe }),
+        json!({ "provider": decision.provider, "reasons": decision.reasons, "card_token_id": b.card_token_id, "failover_from": decision.failover_from, "probe": decision.probe, "rule_set_version": selection.version, "experiment": selection.experiment, "discount_minor": offer_eval.discount_minor, "gross_minor": offer_eval.gross_minor }),
     )
     .await?;
     // Customer details some providers require.
@@ -1395,12 +1494,14 @@ pub async fn apply_provider_state(
                 conn, tenant_id, attempt_id, &intent_id, &provider, amount, currency,
             )
             .await?;
+            crate::offers::redeemed(conn, tenant_id, attempt_id).await?;
         }
         Attempt::Authorized => {
             sqlx::query("UPDATE payment_intents SET status = 'processing', updated_at = now() WHERE id = $1").bind(&intent_id).execute(&mut *conn).await?;
             tenant::emit(conn, tenant_id, "payment.authorized", payload).await?;
         }
         Attempt::Failed => {
+            crate::offers::release(conn, tenant_id, attempt_id).await?;
             sqlx::query(
                 "UPDATE payment_intents SET status = 'requires_payment_method', updated_at = now()
                  WHERE id = $1 AND status = 'processing' AND NOT EXISTS (SELECT 1 FROM payment_attempts WHERE intent_id = $1 AND status IN ('created', 'pending', 'authorized', 'unknown', 'captured'))",

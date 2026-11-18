@@ -238,6 +238,10 @@ fn effective(a: &Automation, h: &crate::health::Config) -> Value {
         "cost_aware": on(a.cost_aware_enabled),
         "failover": on(h.failover_enabled),
         "circuit_breaker": on(h.breaker_enabled),
+        // the rule builder's saved rule sets, routing experiments, and what downtime alerts do beyond recording
+        "rule_sets": !a.paused,
+        "experiments": !a.paused,
+        "alert_notifications": !a.paused,
         "note": if a.paused {
             "The kill switch is on: no routing automation acts. New payments use your own routing rules and the lowest configured fee."
         } else {

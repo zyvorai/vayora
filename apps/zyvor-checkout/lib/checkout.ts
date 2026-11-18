@@ -30,7 +30,7 @@ export interface Session {
   link?: LinkBlock | null;
   /** True when the attempt shown is a second try on another provider after the first one failed definitively. */
   retried_on_another_provider?: boolean;
-  attempt: { id: string; method: string; status: string; failure_reason: string | null; action: { type: string; [k: string]: unknown } | null } | null;
+  attempt: { id: string; method: string; status: string; /** What this attempt asks the payer for, after any offer. */ amount_minor?: number; failure_reason: string | null; action: { type: string; [k: string]: unknown } | null } | null;
 }
 
 export const VPA = /^[A-Za-z0-9._-]{2,64}@[A-Za-z]{2,32}$/;

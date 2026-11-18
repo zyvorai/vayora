@@ -85,6 +85,14 @@ fn final_skip(why: impl Into<String>) -> ApiError {
     ApiError::conflict(FINAL, why)
 }
 
+/// The offers would now price the retry differently from the attempt that failed (a capped offer was used up, or
+/// ended, in between). The payer is never charged a different amount by an automatic retry, so none is made.
+pub fn price_changed(before: i64, now: i64) -> ApiError {
+    final_skip(format!(
+        "the offers now apply differently: the failed attempt was for {before} minor units and the retry would be for {now}"
+    ))
+}
+
 /// Every condition that must hold, checked after `start_attempt_with` took the intent's row lock and found no live
 /// attempt on it. Errors are never surfaced to a payer: the caller treats them as "no retry".
 pub async fn guard(
@@ -350,6 +358,12 @@ async fn run_inner(s: &AppState, tenant_id: &str, intent_id: &str) -> Result<(),
             return_url: text("return_url"),
             upi_flow: text("upi_flow"),
             card_token_id: None,
+            instrument: input
+                .get("instrument")
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
+            offer_codes: input
+                .get("offer_codes")
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
         };
         let method: String = {
             let mut tx = tenant::begin(&s.pool, tenant_id).await?;

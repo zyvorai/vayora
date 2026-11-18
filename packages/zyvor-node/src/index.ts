@@ -232,8 +232,9 @@ export class Zyvor {
     /** `q` matches a payment id exactly, or part of its reference or description. */
     list: (p: { limit?: number; startingAfter?: string; status?: string; q?: string; /** Created on or after this day (IST, YYYY-MM-DD). */ createdFrom?: string; /** Created on or before this day (IST, YYYY-MM-DD). */ createdTo?: string } = {}) =>
       this.req<Page<PaymentIntent>>("GET", `/v1/payment_intents${this.qs({ limit: p.limit, starting_after: p.startingAfter, status: p.status, q: p.q, created_from: p.createdFrom, created_to: p.createdTo })}`),
-    attempt: (intentId: string, p: { method: Method; vpa?: string; returnUrl?: string; upiFlow?: string; cardTokenId?: string; idempotencyKey?: string }) =>
-      this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa, return_url: p.returnUrl, upi_flow: p.upiFlow, card_token_id: p.cardTokenId }, key(p.idempotencyKey)),
+    /** `instrument` is what the payer used, never a card number: card_network or card_bin (first 6-8 digits), upi_app, bank. `offerCodes` are codes the payer typed. */
+    attempt: (intentId: string, p: { method: Method; vpa?: string; returnUrl?: string; upiFlow?: string; cardTokenId?: string; instrument?: { card_network?: string; card_bin?: string; upi_app?: string; bank?: string }; offerCodes?: string[]; idempotencyKey?: string }) =>
+      this.req<PaymentAttempt>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/attempts`, { method: p.method, vpa: p.vpa, return_url: p.returnUrl, upi_flow: p.upiFlow, card_token_id: p.cardTokenId, instrument: p.instrument, offer_codes: p.offerCodes }, key(p.idempotencyKey)),
     refund: (intentId: string, p: { amountMinor?: number; reason?: string; externalRef?: string; idempotencyKey?: string }) =>
       this.req<Refund>("POST", `/v1/payment_intents/${encodeURIComponent(intentId)}/refunds`, { amount_minor: p.amountMinor, reason: p.reason, external_ref: p.externalRef }, key(p.idempotencyKey)),
   };
@@ -540,6 +541,60 @@ export class Zyvor {
     shadowReport: (q: { days?: number; method?: string } = {}) => this.req<GetRoutingShadowReportResponse>("GET", `/v1/routing/shadow/report${this.qs({ days: q.days, method: q.method })}`),
     /** Per provider and method: success rate (payer declines excluded), failure classes, median time to resolve, unresolved, observed fee, last degrade and recovery. */
     scorecard: (q: { days?: number; method?: string } = {}) => this.req<GetRoutingScorecardResponse>("GET", `/v1/routing/scorecard${this.qs({ days: q.days, method: q.method })}`),
+  };
+
+  /** Offers: merchant-funded discounts judged when a payment attempt is created. Body fields are the API's (snake_case). */
+  readonly offers = {
+    list: (p: { status?: string } = {}) => this.req("GET", `/v1/offers${this.qs(p)}`),
+    create: (body: Record<string, unknown>) => this.req("POST", "/v1/offers", body),
+    get: (id: string) => this.req("GET", `/v1/offers/${encodeURIComponent(id)}`),
+    /** Status, name, end date, caps and priority only; conditions and the discount are fixed. */
+    update: (id: string, body: Record<string, unknown>) => this.req("PATCH", `/v1/offers/${encodeURIComponent(id)}`, body),
+    /** What a payment would be offered (nothing is reserved), with the reason each other offer did not apply. */
+    preview: (body: Record<string, unknown>) => this.req("POST", "/v1/offers/preview", body),
+    /** How much of an offer discount a refund of this amount would hand back. */
+    refundPreview: (p: { intentId: string; amountMinor?: number }) => this.req("POST", "/v1/offers/refund_preview", { intent_id: p.intentId, amount_minor: p.amountMinor }),
+    redemptions: (id: string, p: { status?: string; limit?: number } = {}) => this.req("GET", `/v1/offers/${encodeURIComponent(id)}/redemptions${this.qs(p)}`),
+    /** Which offers priced one payment, and who funded each (always the merchant). */
+    forIntent: (intentId: string) => this.req("GET", `/v1/payment_intents/${encodeURIComponent(intentId)}/offers`),
+  };
+
+  /** The routing rule builder: validated, versioned rule sets with a dry run. */
+  readonly routingRules = {
+    validate: (rules: unknown[]) => this.req("POST", "/v1/routing/rule_sets/validate", { rules }),
+    /** Saves a new immutable version; `activate` makes it the active one. */
+    create: (p: { rules: unknown[]; note?: string; activate?: boolean }) => this.req("POST", "/v1/routing/rule_sets", p),
+    list: () => this.req("GET", "/v1/routing/rule_sets"),
+    get: (version: number) => this.req("GET", `/v1/routing/rule_sets/${version}`),
+    activate: (version: number) => this.req("POST", `/v1/routing/rule_sets/${version}/activate`, {}),
+    /** Back to the rule set that was active before the current one. */
+    rollback: () => this.req("POST", "/v1/routing/rule_sets/rollback", {}),
+    /** Back to the older routing rules in the settings. */
+    deactivate: () => this.req("POST", "/v1/routing/rule_sets/deactivate", {}),
+    /** Which provider would this payment take? Creates nothing. */
+    dryRun: (body: Record<string, unknown>) => this.req("POST", "/v1/routing/dry_run", body),
+  };
+
+  /** Routing experiments: a share of payments through a variant rule set, with guardrails. */
+  readonly routingExperiments = {
+    start: (p: { name: string; variantVersion: number; variantPercent: number; method?: string; minSample?: number; minDropBps?: number }) =>
+      this.req("POST", "/v1/routing/experiments", { name: p.name, variant_version: p.variantVersion, variant_percent: p.variantPercent, method: p.method, min_sample: p.minSample, min_drop_bps: p.minDropBps }),
+    list: () => this.req("GET", "/v1/routing/experiments"),
+    results: (id: string) => this.req("GET", `/v1/routing/experiments/${encodeURIComponent(id)}`),
+    stop: (id: string) => this.req("POST", `/v1/routing/experiments/${encodeURIComponent(id)}/stop`, {}),
+    /** Runs the guardrail now: stops the experiment if the variant is clearly worse. */
+    evaluate: (id: string) => this.req("POST", `/v1/routing/experiments/${encodeURIComponent(id)}/evaluate`, {}),
+  };
+
+  /** Provider, bank and UPI-handle downtime alerts. */
+  readonly routingAlerts = {
+    list: (p: { status?: "open" | "resolved" } = {}) => this.req("GET", `/v1/routing/alerts${this.qs(p)}`),
+    get: (id: string) => this.req("GET", `/v1/routing/alerts/${encodeURIComponent(id)}`),
+    acknowledge: (id: string) => this.req("POST", `/v1/routing/alerts/${encodeURIComponent(id)}/ack`, {}),
+    settings: () => this.req("GET", "/v1/routing/alerts/settings"),
+    /** Fields left out keep their value; an empty `email_to` turns email off. */
+    updateSettings: (body: Record<string, unknown>) => this.req("PUT", "/v1/routing/alerts/settings", body),
+    evaluate: () => this.req("POST", "/v1/routing/alerts/evaluate", {}),
   };
 
   readonly coupons = {

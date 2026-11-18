@@ -9560,6 +9560,8 @@ paths:
                   method: {}
                   status:
                     type: string
+                  amount_minor:
+                    type: integer
                   failure_reason: {}
                   action: {}
         4XX:
@@ -9600,6 +9602,8 @@ paths:
                   method: {}
                   status:
                     type: string
+                  amount_minor:
+                    type: integer
                   failure_reason: {}
                   action: {}
         4XX:
@@ -14164,6 +14168,820 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Claim'
+  /v1/offers:
+    post:
+      summary: 'Create a merchant-funded offer (conditions: method, card network or BIN range, UPI app or handle, bank, amount
+        band, new or returning customer, validity; caps; stacking)'
+      tags:
+      - offers
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOffer'
+    get:
+      summary: List offers
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OfferRow'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/offers/preview:
+    post:
+      summary: Preview what a payment of this size, method and payer would be offered, with the reason each other offer did
+        not apply (nothing is reserved)
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preview:
+                    type: boolean
+                  note:
+                    type: string
+                  customer_segment: {}
+                  evaluation: {}
+                  funded_by:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewBody'
+  /v1/offers/refund_preview:
+    post:
+      summary: Preview how much of an offer discount a refund of this amount would hand back
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent_id:
+                    type: string
+                  attempt_id:
+                    type: string
+                  paid_minor:
+                    type: integer
+                    format: int64
+                  refund_minor:
+                    type: integer
+                  discount_returned_minor:
+                    type: integer
+                    format: int64
+                  redemptions:
+                    type: array
+                    items: {}
+                  rule:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundPreviewBody'
+  /v1/offers/{id}:
+    get:
+      summary: One offer with what it has cost so far (discount given less refunds)
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offer: {}
+                  totals: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    patch:
+      summary: Pause, resume, archive an offer or change its name, end date, caps or priority (its conditions and discount
+        are fixed)
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchOffer'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/offers/{id}/redemptions:
+    get:
+      summary: The payments an offer priced, with funding source and refund adjustments
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/payment_intents/{id}/offers:
+    get:
+      summary: Which offers priced one payment, and who funded each
+      tags:
+      - offers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent_id:
+                    type: string
+                  funded_by:
+                    type: string
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/checkout/{tenant_id}/{intent_id}/offers:
+    post:
+      summary: 'Public checkout: the price the payer would be asked for with a method, after offers (nothing reserved)'
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gross_minor:
+                    type: integer
+                  discount_minor:
+                    type: integer
+                  net_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  funded_by:
+                    type: string
+                  offers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        discount_minor:
+                          type: integer
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OffersRequest'
+    parameters:
+    - name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: intent_id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/routing/dry_run:
+    post:
+      summary: Which provider would this payment take, and why (full decision; creates nothing, claims no circuit-breaker
+        probe)
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run:
+                    type: boolean
+                  automation_paused: {}
+                  provider:
+                    type: string
+                  explanation: {}
+                  would_probe: {}
+                  decision: {}
+                  rule_source: {}
+                  matched_rules: {}
+                  unmatched_rules:
+                    type: array
+                    items: {}
+                  experiment: {}
+                  fell_back_to_control: {}
+                  notes: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DryRun'
+  /v1/routing/rule_sets:
+    post:
+      summary: Save a new immutable version of the routing rules (validated), optionally activating it
+      tags:
+      - routing
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    format: int32
+                  active:
+                    type: boolean
+                  warnings: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewVersion'
+    get:
+      summary: List saved routing rule versions and which one is active
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_version: {}
+                  previous_version: {}
+                  activated_at:
+                    type:
+                    - string
+                    - 'null'
+                  activated_by: {}
+                  source:
+                    type: string
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/rule_sets/validate:
+    post:
+      summary: 'Check routing rules without saving them: every error and warning, with the rule it is in'
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RulesBody'
+  /v1/routing/rule_sets/rollback:
+    post:
+      summary: Make the rule set that was active before the current one active again
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_version: {}
+                  rolled_back_from: {}
+                  source:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/rule_sets/deactivate:
+    post:
+      summary: Stop using any rule set so the older routing rules in the settings apply again
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_version: {}
+                  changed:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/rule_sets/{version}:
+    get:
+      summary: One saved routing rule version
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {}
+                  rules: {}
+                  note:
+                    type:
+                    - string
+                    - 'null'
+                  created_by: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  active: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+  /v1/routing/rule_sets/{version}/activate:
+    post:
+      summary: Make a saved rule version the active one (refused while an experiment runs)
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_version: {}
+                  changed:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+  /v1/routing/experiments:
+    post:
+      summary: 'Start a routing experiment: send a share of payments through a variant rule set, with guardrails'
+      tags:
+      - routing
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  control_version: {}
+                  variant_version: {}
+                  variant_percent: {}
+                  method: {}
+                  started_at:
+                    type:
+                    - string
+                    - 'null'
+                  ended_at:
+                    type:
+                    - string
+                    - 'null'
+                  stop_reason: {}
+                  guardrails: {}
+                  control: {}
+                  variant: {}
+                  left_out_fell_back_to_control:
+                    type: integer
+                    format: int64
+                  verdict: {}
+                  would_auto_stop: {}
+                  automation_paused: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewExperiment'
+    get:
+      summary: List routing experiments
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/experiments/{id}:
+    get:
+      summary: 'Experiment results: success rate per arm, providers used, verdict and whether the guardrail would stop it'
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  control_version: {}
+                  variant_version: {}
+                  variant_percent: {}
+                  method: {}
+                  started_at:
+                    type:
+                    - string
+                    - 'null'
+                  ended_at:
+                    type:
+                    - string
+                    - 'null'
+                  stop_reason: {}
+                  guardrails: {}
+                  control: {}
+                  variant: {}
+                  left_out_fell_back_to_control:
+                    type: integer
+                    format: int64
+                  verdict: {}
+                  would_auto_stop: {}
+                  automation_paused: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/routing/experiments/{id}/stop:
+    post:
+      summary: Stop a running experiment
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  control_version: {}
+                  variant_version: {}
+                  variant_percent: {}
+                  method: {}
+                  started_at:
+                    type:
+                    - string
+                    - 'null'
+                  ended_at:
+                    type:
+                    - string
+                    - 'null'
+                  stop_reason: {}
+                  guardrails: {}
+                  control: {}
+                  variant: {}
+                  left_out_fell_back_to_control:
+                    type: integer
+                    format: int64
+                  verdict: {}
+                  would_auto_stop: {}
+                  automation_paused: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/routing/experiments/{id}/evaluate:
+    post:
+      summary: 'Run the guardrail now: stops the experiment if the variant is clearly worse'
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  control_version: {}
+                  variant_version: {}
+                  variant_percent: {}
+                  method: {}
+                  started_at:
+                    type:
+                    - string
+                    - 'null'
+                  ended_at:
+                    type:
+                    - string
+                    - 'null'
+                  stop_reason: {}
+                  guardrails: {}
+                  control: {}
+                  variant: {}
+                  left_out_fell_back_to_control:
+                    type: integer
+                    format: int64
+                  verdict: {}
+                  would_auto_stop: {}
+                  automation_paused: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/routing/alerts:
+    get:
+      summary: List provider, bank and UPI-handle downtime alerts
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  open:
+                    type: integer
+                    format: int64
+                  data:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/routing/alerts/settings:
+    get:
+      summary: Downtime alert thresholds, hold and flap windows and the email address
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Change downtime alert thresholds; fields not sent keep their value
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertSettingsIn'
+  /v1/routing/alerts/evaluate:
+    post:
+      summary: Check provider health for downtime now (the worker does the same on its cycle)
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/alerts/{id}:
+    get:
+      summary: One downtime alert with its case
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert: {}
+                  case: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  /v1/routing/alerts/{id}/ack:
+    post:
+      summary: Acknowledge an open downtime alert
+      tags:
+      - routing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  acknowledged_by: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
 components:
   securitySchemes:
     bearer:
@@ -15857,6 +16675,137 @@ components:
       required:
       - name
       - query
+    RulesBody:
+      type: object
+      x-generated: true
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuilderRule'
+      required:
+      - rules
+    BuilderRule:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        when:
+          $ref: '#/components/schemas/When'
+        then:
+          $ref: '#/components/schemas/Then'
+      required:
+      - then
+    Then:
+      type: object
+      x-generated: true
+      properties:
+        prefer:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+        prefer_success_rate:
+          type: boolean
+        success_rate_margin_bps:
+          type: integer
+          format: int32
+    When:
+      type: object
+      x-generated: true
+      properties:
+        methods:
+          type: array
+          items:
+            type: string
+        min_amount_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+        currencies:
+          type: array
+          items:
+            type: string
+        card_networks:
+          type: array
+          items:
+            type: string
+        segments:
+          type: array
+          items:
+            type: string
+        time_window:
+          $ref: '#/components/schemas/TimeWindow'
+    TimeWindow:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        utc_offset_minutes:
+          type: integer
+          format: int32
+      required:
+      - from
+      - to
+    NewVersion:
+      type: object
+      x-generated: true
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuilderRule'
+        note:
+          type: string
+        activate:
+          type: boolean
+      required:
+      - rules
+    DryRun:
+      type: object
+      x-generated: true
+      properties:
+        method:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        card_network:
+          type: string
+        card_bin:
+          type: string
+        customer_id:
+          type: string
+        segment:
+          type: string
+        at:
+          type: string
+          format: date-time
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuilderRule'
+        version:
+          type: integer
+          format: int32
+        intent_id:
+          type: string
+        arm:
+          type: string
+      required:
+      - method
+      - amount_minor
     ScorecardQuery:
       type: object
       x-generated: true
@@ -16635,6 +17584,12 @@ components:
           type: string
         card_token_id:
           type: string
+        instrument:
+          type: object
+        offer_codes:
+          type: array
+          items:
+            type: string
       required:
       - method
     StartBody:
@@ -16764,6 +17719,170 @@ components:
       required:
       - kind
       - reference
+    RefundPreviewBody:
+      type: object
+      x-generated: true
+      properties:
+        intent_id:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+      required:
+      - intent_id
+    RedemptionQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    PreviewBody:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        method:
+          type: string
+        customer_id:
+          type: string
+        instrument:
+          type: object
+        vpa:
+          type: string
+        offer_codes:
+          type: array
+          items:
+            type: string
+      required:
+      - amount_minor
+      - method
+    PatchOffer:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          format: int32
+        max_per_customer:
+          type: integer
+          format: int32
+        budget_minor:
+          type: integer
+          format: int64
+        priority:
+          type: integer
+          format: int32
+    NewOffer:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        code:
+          type: string
+        kind:
+          type: string
+        value:
+          type: integer
+          format: int64
+        max_discount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        methods:
+          type: array
+          items:
+            type: string
+        card_networks:
+          type: array
+          items:
+            type: string
+        bin_ranges:
+          type: array
+          items:
+            $ref: '#/components/schemas/BinRange'
+        upi_apps:
+          type: array
+          items:
+            type: string
+        upi_handles:
+          type: array
+          items:
+            type: string
+        banks:
+          type: array
+          items:
+            type: string
+        min_amount_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+        segment:
+          type: string
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        max_redemptions:
+          type: integer
+          format: int32
+        max_per_customer:
+          type: integer
+          format: int32
+        budget_minor:
+          type: integer
+          format: int64
+        stackable:
+          type: boolean
+        stack_group:
+          type: string
+        priority:
+          type: integer
+          format: int32
+      required:
+      - name
+      - kind
+      - value
+    BinRange:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+      required:
+      - from
+      - to
+    OffersListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
     SetMoneyMode:
       type: object
       x-generated: true
@@ -17191,6 +18310,30 @@ components:
           type: string
         format:
           type: string
+    NewExperiment:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        variant_version:
+          type: integer
+          format: int32
+        variant_percent:
+          type: integer
+          format: int32
+        method:
+          type: string
+        min_sample:
+          type: integer
+          format: int32
+        min_drop_bps:
+          type: integer
+          format: int32
+      required:
+      - name
+      - variant_version
+      - variant_percent
     DonationStartIn:
       type: object
       x-generated: true
@@ -17666,6 +18809,31 @@ components:
           type: string
         upi_flow:
           type: string
+        instrument:
+          type: object
+        offer_codes:
+          type: array
+          items:
+            type: string
+      required:
+      - secret
+      - method
+    OffersRequest:
+      type: object
+      x-generated: true
+      properties:
+        secret:
+          type: string
+        method:
+          type: string
+        vpa:
+          type: string
+        instrument:
+          type: object
+        offer_codes:
+          type: array
+          items:
+            type: string
       required:
       - secret
       - method
@@ -17957,6 +19125,38 @@ components:
         min_age_seconds:
           type: integer
           format: int64
+    AlertsListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+    AlertSettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        enabled:
+          type: boolean
+        min_samples:
+          type: integer
+          format: int32
+        open_failure_pct:
+          type: integer
+          format: int32
+        resolve_failure_pct:
+          type: integer
+          format: int32
+        window_minutes:
+          type: integer
+          format: int32
+        hold_seconds:
+          type: integer
+          format: int32
+        flap_window_seconds:
+          type: integer
+          format: int32
+        email_to:
+          type: string
     Toggle:
       type: object
       x-generated: true
@@ -18343,6 +19543,147 @@ components:
       - state
       - retry_no
       - created_at
+    OfferRow:
+      type: object
+      x-generated: true
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        code:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        kind:
+          type: string
+        value:
+          type: integer
+          format: int64
+        max_discount_minor:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        currency:
+          type: string
+        methods:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        card_networks:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        bin_ranges: {}
+        upi_apps:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        upi_handles:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        banks:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        min_amount_minor:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        max_amount_minor:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        segment:
+          type:
+          - string
+          - 'null'
+        valid_from:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        valid_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        max_redemptions:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        max_per_customer:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        budget_minor:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        redemptions:
+          type: integer
+          format: int32
+        spent_minor:
+          type: integer
+          format: int64
+        stackable:
+          type: boolean
+        stack_group:
+          type:
+          - string
+          - 'null'
+        priority:
+          type: integer
+          format: int32
+        funded_by:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - name
+      - status
+      - kind
+      - value
+      - currency
+      - bin_ranges
+      - redemptions
+      - spent_minor
+      - stackable
+      - priority
+      - funded_by
+      - created_by
+      - created_at
+      - updated_at
     IntentRow:
       type: object
       x-generated: true

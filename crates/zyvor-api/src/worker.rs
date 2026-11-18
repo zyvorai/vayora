@@ -201,6 +201,15 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3i. downtime alerts (provider, bank, UPI handle): off unless the business opted in; recorded only while the
+        // routing kill switch is on
+        if let Err(e) = crate::alerts::sweep_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "downtime alert sweep failed");
+        }
+        // 3j. the running routing experiment's guardrail (skipped while the routing kill switch is on)
+        if let Err(e) = crate::experiments::sweep_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "routing experiment check failed");
+        }
         // 4. payments that never reached a settlement
         let mut tx = tenant::begin(&s.pool, &tid).await?;
         if scan_missing(&mut tx, &tid, 3).await.is_ok() {

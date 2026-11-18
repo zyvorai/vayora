@@ -34,6 +34,18 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "A degraded provider recovered (a probe payment succeeded or its failure rate fell); it takes new payments again.",
     ),
     (
+        "provider.alert_opened",
+        "Possible downtime: a provider, a bank or a UPI handle crossed your failure threshold for a method; a case was opened.",
+    ),
+    (
+        "provider.alert_resolved",
+        "A downtime alert resolved: the failure rate fell back, the circuit breaker recovered, or no payments were attempted for a day.",
+    ),
+    (
+        "routing.experiment_stopped",
+        "A routing experiment stopped, by a person or automatically because its variant was clearly worse than the control.",
+    ),
+    (
         "mandate.created",
         "A UPI AutoPay mandate was created and is waiting for the payer to approve it.",
     ),
