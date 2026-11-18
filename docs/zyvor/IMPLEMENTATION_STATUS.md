@@ -33,6 +33,7 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 | Per-merchant return-URL allowlist | Built: `return_url_origins` on settings; empty = any https that passes SSRF |
 | OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
 | UPI AutoPay mandates | Level 1: simulator + Cashfree and Razorpay adapters from docs (local mocks only). Sponsor UPI declares mandates. See [MANDATES_LIVE.md](MANDATES_LIVE.md) |
+| Settlement fee checks | Level 1: per-merchant fee rules (percentage, flat, cap, GST on fee, effective dates, refund fee return, tolerance) compared with observed deductions per payment; findings become owned reconciliation cases and appear in the settlement explanation. No rates are shipped; tested against simulators and hand-built settlements only, never against a real provider statement. See [FEE_CHECKS.md](FEE_CHECKS.md) |
 | Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |
 | Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, auto-enrol into settlement batches, worker T+N release, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
 | Network card tokens | Level 1: store/revoke + charge via `card_token_id` on attempts (sim/stub vault). No live PCI vault |

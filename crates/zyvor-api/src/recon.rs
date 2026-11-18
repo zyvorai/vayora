@@ -284,6 +284,9 @@ pub async fn evaluate(
         }
     }
 
+    // 3b. fees against the merchant's own fee rules (records findings; moves no money)
+    crate::fee_check::run(conn, tenant_id, settlement_id, "system").await?;
+
     // 4. bank statement
     let bank: Option<(i64, i64)> = match &utr {
         Some(u) => sqlx::query_as("SELECT id, amount_minor FROM bank_statement_lines WHERE utr = $1 AND matched_settlement_id IS NULL").bind(u).fetch_optional(&mut *conn).await?,
@@ -671,6 +674,7 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
         breakdown.push(json!({ "reason": format!("{unmatched} payment(s) in this settlement are not in our records"), "amount_minor": 0 }));
     }
     let effective_bps = if gross > 0 { fees * 10_000 / gross } else { 0 };
+    let fee_check = crate::fee_check::compute(conn, id).await?;
     let mut narrative = format!(
         "{} paid {} on {settled_on}: {} payments worth {}{}. It deducted {} in fees and taxes ({}.{:02}% of payment value){}.",
         crate::timeline::provider_title(&provider),
@@ -694,6 +698,9 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
             String::new()
         },
     );
+    if let Some(line) = crate::fee_check::variance_sentence(&fee_check.lines) {
+        narrative += &format!(" {line}");
+    }
     if adj != 0 {
         narrative += &format!(" Adjustments account for {}.", money(adj));
     }
@@ -724,6 +731,7 @@ pub async fn explain_json(conn: &mut PgConnection, id: &str) -> Result<Value, Ap
         "settlement": { "id": id, "provider": provider, "provider_ref": provider_ref, "utr": utr, "settled_on": settled_on, "status": status, "net_minor": net },
         "payments": payments, "refunds": refund_lines, "adjustments": adjustments,
         "fees": { "observed_minor": fees, "configured_estimate_minor": est_fee, "effective_rate_bps": effective_bps },
+        "fee_check": fee_check.to_json(),
         "arithmetic": { "gross_minor": gross, "refunds_minor": refunds, "fees_minor": fees, "adjustments_minor": adj, "net_minor": net, "balances": gross - refunds - fees + adj == net },
         "expected_minor": expected, "received_minor": net, "difference_minor": net - expected, "difference_breakdown": breakdown,
         "bank_match": bank, "cases": cases, "narrative": narrative,

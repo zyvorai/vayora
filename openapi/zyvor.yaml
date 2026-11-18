@@ -338,6 +338,7 @@ paths:
                     type: array
                     items: {}
                   fees: {}
+                  fee_check: {}
                   arithmetic: {}
                   expected_minor:
                     type: integer
@@ -438,6 +439,7 @@ paths:
                     type: array
                     items: {}
                   fees: {}
+                  fee_check: {}
                   arithmetic: {}
                   expected_minor:
                     type: integer
@@ -638,6 +640,339 @@ paths:
                     type: array
                     items: {}
                   suggestions: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/fee_rules:
+    get:
+      summary: List fee rules (rates you entered from your own contract)
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Add a fee rule for a provider and method, from an effective date
+      tags:
+      - reconciliation
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  provider:
+                    type: string
+                  method: {}
+                  bps: {}
+                  flat_minor:
+                    type: integer
+                  cap_minor:
+                    type: integer
+                  gst_bps: {}
+                  refund_returns_fee: {}
+                  effective_from: {}
+                  note:
+                    type:
+                    - string
+                    - 'null'
+                  created_by: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRule'
+  /v1/fee_rules/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      summary: Remove a fee rule (recorded findings keep the rule they were checked against)
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/fee_checks/settings:
+    get:
+      summary: Fee check tolerance and owner
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tolerance_minor:
+                    type: integer
+                  owner: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Set the fee check tolerance (paise) and who owns new findings
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tolerance_minor:
+                    type: integer
+                  owner:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsBody'
+  /v1/fee_checks/summary:
+    get:
+      summary: Open fee findings, total variance, by provider and method
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules_configured:
+                    type: integer
+                    format: int64
+                  open_findings: {}
+                  open_cases:
+                    type: integer
+                    format: int64
+                  over_deducted_minor:
+                    type: integer
+                  under_deducted_minor:
+                    type: integer
+                  total_variance_minor:
+                    type: integer
+                  total_absolute_variance_minor:
+                    type: integer
+                  by_provider_method:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method:
+                          type: string
+                        open_findings:
+                          type: integer
+                          format: int64
+                        settlements:
+                          type: integer
+                          format: int64
+                        over_deducted_minor:
+                          type: integer
+                          format: int64
+                        under_deducted_minor:
+                          type: integer
+                          format: int64
+                        total_variance_minor:
+                          type: integer
+                  lines_without_a_rule:
+                    type: integer
+                    format: int64
+                  message:
+                    type:
+                    - string
+                    - 'null'
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/fee_checks/findings:
+    get:
+      summary: List fee findings (payments whose deducted fee differs from your rule)
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+  /v1/fee_checks/run:
+    post:
+      summary: Re-check settlements against the current fee rules
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settlements_checked:
+                    type: integer
+                  flagged: {}
+                  ok:
+                    type: boolean
+                  no_rule: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeeCheckRunBody'
+  /v1/settlements/{id}/fee_check:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      summary: What the fee check says about one settlement (writes nothing)
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attempt_id:
+                    type:
+                    - string
+                    - 'null'
+                  provider:
+                    type: string
+                  method: {}
+                  status:
+                    type: string
+                  payment_minor:
+                    type: integer
+                  refunded_minor:
+                    type: integer
+                  actual_minor:
+                    type: integer
+                  expected_minor:
+                    type: integer
+                  variance_minor:
+                    type: integer
+                  rule: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Re-check one settlement and record the finding
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attempt_id:
+                    type:
+                    - string
+                    - 'null'
+                  provider:
+                    type: string
+                  method: {}
+                  status:
+                    type: string
+                  payment_minor:
+                    type: integer
+                  refunded_minor:
+                    type: integer
+                  actual_minor:
+                    type: integer
+                  expected_minor:
+                    type: integer
+                  variance_minor:
+                    type: integer
+                  rule: {}
         4XX:
           $ref: '#/components/responses/Error'
   /v1/me:
@@ -2088,7 +2423,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RunBody'
+              $ref: '#/components/schemas/BillingRunBody'
   /v1/invoices/{id}/credit_notes:
     post:
       summary: Issue a credit note against an invoice
@@ -8610,6 +8945,70 @@ components:
       - amount_minor
       - from
       - to
+    SettingsBody:
+      type: object
+      x-generated: true
+      properties:
+        tolerance_minor:
+          type: integer
+          format: int64
+        owner:
+          type: string
+    FeeCheckRunBody:
+      type: object
+      x-generated: true
+      properties:
+        since:
+          type: string
+          format: date
+        limit:
+          type: integer
+          format: int64
+    NewRule:
+      type: object
+      x-generated: true
+      properties:
+        provider:
+          type: string
+        method:
+          type: string
+        bps:
+          type: integer
+          format: int64
+        flat_minor:
+          type: integer
+          format: int64
+        cap_minor:
+          type: integer
+          format: int64
+        gst_bps:
+          type: integer
+          format: int64
+        refund_returns_fee:
+          type: boolean
+        effective_from:
+          type: string
+          format: date
+        note:
+          type: string
+      required:
+      - provider
+      - method
+      - bps
+      - effective_from
+    FindingsQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        provider:
+          type: string
+        method:
+          type: string
+        limit:
+          type: integer
+          format: int64
     DisputesResolve:
       type: object
       x-generated: true
@@ -8876,7 +9275,7 @@ components:
           format: date
       required:
       - ends_on
-    RunBody:
+    BillingRunBody:
       type: object
       x-generated: true
       properties:
