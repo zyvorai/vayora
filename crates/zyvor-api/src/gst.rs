@@ -612,6 +612,147 @@ pub async fn gstr1(
     })))
 }
 
+// ---------- summary export ----------
+
+/// One row of the GST summary: sales or credit notes, by supply type and rate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryRow {
+    /// `sales` or `credit_notes`.
+    pub section: &'static str,
+    /// `b2b` (buyer has a GSTIN) or `b2c`.
+    pub supply: &'static str,
+    /// Rate in basis points; credit notes carry no rate of their own.
+    pub rate_bp: Option<i32>,
+    pub documents: i64,
+    pub taxable_minor: i64,
+    pub cgst_minor: i64,
+    pub sgst_minor: i64,
+    pub igst_minor: i64,
+}
+
+impl SummaryRow {
+    pub fn tax_minor(&self) -> i64 {
+        self.cgst_minor + self.sgst_minor + self.igst_minor
+    }
+    pub fn to_json(&self) -> Value {
+        json!({
+            "section": self.section, "supply": self.supply, "rate_bp": self.rate_bp, "documents": self.documents,
+            "taxable_minor": self.taxable_minor, "cgst_minor": self.cgst_minor, "sgst_minor": self.sgst_minor,
+            "igst_minor": self.igst_minor, "tax_minor": self.tax_minor(),
+        })
+    }
+}
+
+/// Sales less credit notes over a set of rows.
+pub fn summary_net(rows: &[SummaryRow]) -> SummaryRow {
+    let mut n = SummaryRow {
+        section: "net",
+        supply: "all",
+        rate_bp: None,
+        documents: 0,
+        taxable_minor: 0,
+        cgst_minor: 0,
+        sgst_minor: 0,
+        igst_minor: 0,
+    };
+    for r in rows {
+        let sign = if r.section == "sales" { 1 } else { -1 };
+        n.documents += r.documents;
+        n.taxable_minor += sign * r.taxable_minor;
+        n.cgst_minor += sign * r.cgst_minor;
+        n.sgst_minor += sign * r.sgst_minor;
+        n.igst_minor += sign * r.igst_minor;
+    }
+    n
+}
+
+/// Invoices (not void) and credit notes in `[from, to]` (IST days, inclusive), summed by supply type and rate.
+/// Same population as the GSTR-1 preparation view; credit notes need an invoice with a place of supply.
+pub async fn summary_rows(
+    conn: &mut sqlx::PgConnection,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<SummaryRow>, sqlx::Error> {
+    let sales: Vec<(String, i32, i64, i64, i64, i64, i64)> = sqlx::query_as(
+        "SELECT CASE WHEN i.buyer_gstin IS NULL THEN 'b2c' ELSE 'b2b' END, l.rate_bp, count(DISTINCT i.id)::BIGINT,
+                COALESCE(SUM(l.taxable_minor), 0)::BIGINT, COALESCE(SUM(l.cgst_minor), 0)::BIGINT,
+                COALESCE(SUM(l.sgst_minor), 0)::BIGINT, COALESCE(SUM(l.igst_minor), 0)::BIGINT
+         FROM invoices i JOIN invoice_lines l ON l.invoice_id = i.id
+         WHERE i.status <> 'void' AND (i.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2
+         GROUP BY 1, 2 ORDER BY 1, 2",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_all(&mut *conn)
+    .await?;
+    let notes: Vec<(String, i64, i64, i64, i64, i64)> = sqlx::query_as(
+        "SELECT CASE WHEN i.buyer_gstin IS NULL THEN 'b2c' ELSE 'b2b' END, count(*)::BIGINT,
+                COALESCE(SUM(n.taxable_minor), 0)::BIGINT, COALESCE(SUM(n.cgst_minor), 0)::BIGINT,
+                COALESCE(SUM(n.sgst_minor), 0)::BIGINT, COALESCE(SUM(n.igst_minor), 0)::BIGINT
+         FROM credit_notes n JOIN invoices i ON i.id = n.invoice_id
+         WHERE i.place_of_supply IS NOT NULL AND (n.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2
+         GROUP BY 1 ORDER BY 1",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_all(&mut *conn)
+    .await?;
+    let supply = |s: &str| if s == "b2b" { "b2b" } else { "b2c" };
+    let mut rows: Vec<SummaryRow> = sales
+        .into_iter()
+        .map(|(s, rate, docs, t, c, sg, ig)| SummaryRow {
+            section: "sales",
+            supply: supply(&s),
+            rate_bp: Some(rate),
+            documents: docs,
+            taxable_minor: t,
+            cgst_minor: c,
+            sgst_minor: sg,
+            igst_minor: ig,
+        })
+        .collect();
+    rows.extend(notes.into_iter().map(|(s, docs, t, c, sg, ig)| SummaryRow {
+        section: "credit_notes",
+        supply: supply(&s),
+        rate_bp: None,
+        documents: docs,
+        taxable_minor: t,
+        cgst_minor: c,
+        sgst_minor: sg,
+        igst_minor: ig,
+    }));
+    Ok(rows)
+}
+
+/// The summary as CSV, amounts as decimals, a closing `net` row (sales less credit notes).
+pub fn summary_csv(rows: &[SummaryRow]) -> String {
+    let mut out =
+        String::from("section,supply,rate_percent,documents,taxable,cgst,sgst,igst,tax_total\n");
+    let rate = |r: Option<i32>| {
+        r.map(|b| format!("{}.{:02}", b / 100, b % 100))
+            .unwrap_or_default()
+    };
+    let line = |r: &SummaryRow| {
+        format!(
+            "{},{},{},{},{},{},{},{},{}\n",
+            r.section,
+            r.supply,
+            rate(r.rate_bp),
+            r.documents,
+            crate::exports::decimal(r.taxable_minor),
+            crate::exports::decimal(r.cgst_minor),
+            crate::exports::decimal(r.sgst_minor),
+            crate::exports::decimal(r.igst_minor),
+            crate::exports::decimal(r.tax_minor()),
+        )
+    };
+    for r in rows {
+        out.push_str(&line(r));
+    }
+    out.push_str(&line(&summary_net(rows)));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,6 +824,33 @@ mod tests {
         );
         let c = compute(&[line(2, 50_000, 500), line(1, 20_000, 1800)], "27", "07");
         assert_eq!((c.tax, c.intra_state), (8_600, false));
+    }
+
+    #[test]
+    fn summary_net_is_sales_less_credit_notes_and_csv_ends_with_it() {
+        let row = |section, rate, taxable, cgst, sgst, igst| SummaryRow {
+            section,
+            supply: "b2c",
+            rate_bp: rate,
+            documents: 1,
+            taxable_minor: taxable,
+            cgst_minor: cgst,
+            sgst_minor: sgst,
+            igst_minor: igst,
+        };
+        let rows = vec![
+            row("sales", Some(1800), 100_000, 9_000, 9_000, 0),
+            row("credit_notes", None, 20_000, 1_800, 1_800, 0),
+        ];
+        let n = summary_net(&rows);
+        assert_eq!(
+            (n.taxable_minor, n.cgst_minor, n.sgst_minor, n.tax_minor()),
+            (80_000, 7_200, 7_200, 14_400)
+        );
+        let csv = summary_csv(&rows);
+        let last = csv.lines().last().unwrap();
+        assert_eq!(last, "net,all,,2,800.00,72.00,72.00,0.00,144.00");
+        assert!(csv.contains("sales,b2c,18.00,1,1000.00,90.00,90.00,0.00,180.00"));
     }
 
     #[test]

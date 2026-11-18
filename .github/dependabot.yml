@@ -11,6 +11,8 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    # init and analyze must always be the same release; bump all codeql-action steps in one pull request.
+    groups: { codeql-action: { patterns: ["github/codeql-action/*"] } }
   - package-ecosystem: pip
     directory: /sdks/python
     schedule: { interval: monthly }

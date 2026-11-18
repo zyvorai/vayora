@@ -778,7 +778,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SettingsBody'
+              $ref: '#/components/schemas/FeeCheckSettingsBody'
   /v1/fee_checks/summary:
     get:
       summary: Open fee findings, total variance, by provider and method
@@ -3012,6 +3012,615 @@ paths:
                   by_kind:
                     type: object
         4XX: *id001
+  /v1/cash/dashboard:
+    get:
+      summary: 'Money in transit by provider: captured not settled, settled not matched to a bank credit, matched, refunds
+        and payouts pending'
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  currency:
+                    type: string
+                  matched_window_days: {}
+                  by_provider: {}
+                  totals: {}
+                  payouts_pending:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        count:
+                          type: integer
+                          format: int64
+                        amount_minor:
+                          type: integer
+                          format: int64
+                  paid_payouts_without_bank_debit_match: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: matched_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Window for matched settlements, 1-365 days (default 30)
+  /v1/cash/lag:
+    get:
+      summary: Observed settlement lag per provider and method (median and spread), or not enough data
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  lookback_days: {}
+                  min_samples: {}
+                  data:
+                    type: array
+                    items: {}
+                  tenant_rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method: {}
+                        expected_lag_days: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/cash/forecast:
+    get:
+      summary: Expected credits per day for the next N days, with a range from observed lag
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of:
+                    type:
+                    - string
+                    - 'null'
+                  currency:
+                    type: string
+                  horizon_days: {}
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {}
+                        expected_minor:
+                          type: integer
+                        cumulative_low_minor:
+                          type: integer
+                        cumulative_expected_minor:
+                          type: integer
+                        cumulative_high_minor:
+                          type: integer
+                  overdue: {}
+                  expected_after_horizon_minor:
+                    type: integer
+                  expected_without_range_minor:
+                    type: integer
+                  not_forecast:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method: {}
+                        payments: {}
+                        amount_minor:
+                          type: integer
+                        status:
+                          type: string
+                  basis:
+                    type: array
+                    items: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Days ahead, 1-30 (default 7)
+  /v1/cash/alerts/scan:
+    post:
+      summary: Check for settlements later than the provider's observed range or your expected lag; opens cases and settlement.delayed
+        events once per subject
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending_cases_opened: {}
+                  late_cases_opened: {}
+                  case_kinds: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: lookback_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: How far back to look for settlements that arrived late, 1-90 (default 14)
+  /v1/cash/settings:
+    get:
+      summary: 'Forecast and alert settings: minimum samples, grace days, refund SLA hours'
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  min_samples: {}
+                  alert_grace_days: {}
+                  refund_sla_hours: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Set the minimum samples (3-500), alert grace days (0-30) and refund SLA hours
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  min_samples: {}
+                  alert_grace_days: {}
+                  refund_sla_hours: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashSettingsBody'
+  /v1/cash/lag_rules:
+    get:
+      summary: List the settlement lags you expect per provider and method
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        provider:
+                          type: string
+                        method:
+                          type: string
+                        expected_lag_days:
+                          type: integer
+                          format: int32
+                        note:
+                          type: string
+                        created_by:
+                          type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Set the settlement lag you expect (days) for a provider and method
+      tags:
+      - reconciliation
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  provider:
+                    type: string
+                  method: {}
+                  expected_lag_days:
+                    type: integer
+                    format: int64
+                  note:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLagRule'
+  /v1/cash/lag_rules/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      summary: Remove a lag rule
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/analytics/refunds:
+    get:
+      summary: Refund rate over time, time to refund, refunds past the SLA, fee-not-returned leakage and duplicate refunds
+        blocked
+      tags:
+      - reconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: {}
+                  to: {}
+                  bucket: {}
+                  currency:
+                    type: string
+                  series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        starts:
+                          type: string
+                        captured_count: {}
+                        captured_minor:
+                          type: integer
+                        refunds_requested_count: {}
+                        refunds_requested_minor:
+                          type: integer
+                        refunds_processed_count: {}
+                        refunds_processed_minor:
+                          type: integer
+                        refund_rate_bps: {}
+                  totals: {}
+                  time_to_refund: {}
+                  sla:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        count:
+                          type: integer
+                          format: int64
+                        amount_minor:
+                          type: integer
+                          format: int64
+                        oldest_hours: {}
+                  leakage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method:
+                          type: string
+                        lines:
+                          type: integer
+                          format: int64
+                        settlements:
+                          type: integer
+                          format: int64
+                        amount_minor:
+                          type: integer
+                          format: int64
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: First IST day, YYYY-MM-DD (default 29 days before to)
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Last IST day (default today)
+      - name: bucket
+        in: query
+        required: false
+        schema:
+          type: string
+        description: day (default) or week
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: SLA breaches to list, 1-200 (default 50)
+  /v1/exports/journal:
+    get:
+      summary: One page of the double-entry journal for a date range as CSV, Tally CSV, Tally XML or JSON; every voucher balances
+      tags:
+      - exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: First IST day, YYYY-MM-DD (required)
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Last IST day, inclusive (required, at most 366 days after from)
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+        description: csv (default), tally_csv, tally_xml or json
+      - name: currency
+        in: query
+        required: false
+        schema:
+          type: string
+        description: INR (default) or USD
+      - name: kinds
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Comma list of payments, refunds, fees, settlements, payouts, other
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+        description: The x-next-cursor of the previous page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Vouchers per page, 1-5000 (default 1000)
+  /v1/exports/gst_summary:
+    get:
+      summary: GST summary for a date range by supply type and rate, sales less credit notes, as CSV or JSON
+      tags:
+      - exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+        description: First IST day, YYYY-MM-DD (required)
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Last IST day, inclusive (required)
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+        description: csv (default) or json
+  /v1/exports/account_mappings:
+    get:
+      summary: 'Account codes for exports: built-in chart, your overrides, and what each ledger account resolves to'
+      tags:
+      - exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defaults:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ledger_account: {}
+                        code:
+                          type: string
+                        name:
+                          type: string
+                  overrides:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        ledger_account:
+                          type: string
+                        code:
+                          type: string
+                        name:
+                          type: string
+                        updated_by:
+                          type: string
+                  effective:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ledger_account: {}
+                        code:
+                          type: string
+                        name:
+                          type: string
+                        mapped: {}
+                  unmapped_code: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Map a ledger account (or a family ending in :*) to your accounting code and name
+      tags:
+      - exports
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  ledger_account:
+                    type: string
+                  code:
+                    type: string
+                  name:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewMapping'
+  /v1/exports/account_mappings/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    delete:
+      summary: Remove an account mapping; the built-in code applies again
+      tags:
+      - exports
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  ledger_account:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
   /v1/disputes:
     get:
       summary: Open or list disputes (an open dispute holds the amount so it cannot be refunded)
@@ -8198,9 +8807,9 @@ paths:
               $ref: '#/components/schemas/NewProviderAccount'
   /v1/routing/health:
     get:
-      summary: Read provider health - per provider and method the recent success rate, circuit-breaker state (healthy, degraded,
-        probe_due), thresholds and recent degrade and recovery events. Read-only; transitions are recorded when a payment
-        is routed
+      summary: Read provider health - per provider and method the recent success rate, payer declines (shown, not counted),
+        circuit-breaker state (healthy, degraded, probe_due), what routing does with it (routing_effect), thresholds and recent
+        degrade and recovery events. Read-only; transitions are recorded when a payment is routed or by the background sweeper
       tags:
       - payments
       responses:
@@ -8212,6 +8821,8 @@ paths:
                 type: object
                 properties:
                   config: {}
+                  automation_paused: {}
+                  routing_health_rule: {}
                   providers: {}
                   recent_changes:
                     type: array
@@ -8259,6 +8870,1676 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SettingsIn'
+  /v1/events:
+    post:
+      summary: Create a ticketed event with its tiers and registration form
+      tags:
+      - events
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vendor_id:
+                    type:
+                    - string
+                    - 'null'
+                  share_bp: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewEvent'
+    get:
+      summary: List ticketed events with seat counts
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+                  has_more:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      description: Needs the `events:read` scope.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: starting_after
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/events/{id}:
+    get:
+      summary: Get an event with tiers, registration form, seat counts and order and ticket totals
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:read` scope.
+    put:
+      summary: Change an event's details or capacity (never below seats held or sold)
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditEvent'
+  /v1/events/{id}/status:
+    post:
+      summary: Open sales (on_sale) or close them (closed)
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusBody'
+  /v1/events/{id}/tiers:
+    post:
+      summary: Add a ticket tier (price, quantity, sale window, early bird, payment methods)
+      tags:
+      - events
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewTier'
+  /v1/events/{id}/tiers/{tier_id}:
+    put:
+      summary: Replace a tier's settings; existing orders keep their price
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: tier_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewTier'
+  /v1/events/{id}/tiers/{tier_id}/archive:
+    post:
+      summary: Stop selling a tier; tickets already sold stay valid
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: tier_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+  /v1/events/{id}/form_fields:
+    put:
+      summary: Replace the registration form
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  online_url: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  capacity: {}
+                  hold_minutes: {}
+                  seats_held: {}
+                  seats_sold: {}
+                  seats_available: {}
+                  splits: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  cancelled_at:
+                    type:
+                    - string
+                    - 'null'
+                  tiers: {}
+                  form_fields: {}
+                  tickets: {}
+                  orders: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldsBody'
+  /v1/events/{id}/orders:
+    get:
+      summary: List an event's ticket orders
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+                  has_more:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: starting_after
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/orders/{order_id}:
+    get:
+      summary: Get one ticket order with its lines and tickets
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  code:
+                    type: string
+                  status:
+                    type: string
+                  tier_id:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/orders/{order_id}/cancel:
+    post:
+      summary: 'Cancel one order: release it if unpaid, or void its tickets and refund it through the refund flow'
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: {}
+                  refund_batch: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write and refunds:write` scope.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelBody'
+  /v1/events/{id}/cancel:
+    post:
+      summary: 'Cancel an event: stop sales, release unpaid orders, void tickets and refund every paid order as one tracked
+        batch'
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                  status:
+                    type: string
+                  already_cancelled:
+                    type: boolean
+                  refund_batch: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:write and refunds:write` scope.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelBody'
+  /v1/events/{id}/attendees:
+    get:
+      summary: List attendees (one row per ticket); search by name, email, phone or ticket code
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+                  has_more:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: tier_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: starting_after
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/attendees.csv:
+    get:
+      summary: Export attendees and their registration answers as CSV
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: tier_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: starting_after
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/checkin:
+    post:
+      summary: Check a ticket in (QR payload or typed code); a second scan is reported as a duplicate
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: {}
+                  valid:
+                    type: boolean
+                  code:
+                    type: string
+                  manual_entry: {}
+                  ticket: {}
+                  checked_in_at:
+                    type:
+                    - string
+                    - 'null'
+                  checked_in_by: {}
+                  message:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:checkin` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanBody'
+  /v1/events/{id}/checkin/sync:
+    post:
+      summary: Upload scans collected offline, applied oldest first
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counts: {}
+                  results: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:checkin` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncBody'
+  /v1/events/{id}/checkin/export:
+    get:
+      summary: Valid tickets and their QR payloads for offline door use (JSON, or CSV with format=csv)
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: {}
+                  generated_at:
+                    type:
+                    - string
+                    - 'null'
+                  count:
+                    type: integer
+                  tickets:
+                    type: array
+                    items: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      description: Needs the `events:checkin` scope.
+  /v1/events/{id}/checkin/stats:
+    get:
+      summary: How many tickets are checked in, still expected, and the latest double scans
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked_in: {}
+                  expected: {}
+                  refunded: {}
+                  void: {}
+                  recent_duplicates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                        scanned_by:
+                          type: string
+                        scanned_at:
+                          type: string
+                          format: date-time
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:checkin` scope.
+  /v1/events/{id}/refund_report:
+    get:
+      summary: 'Refund report for an event: money by refund status, batches and one line per order'
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                  currency:
+                    type: string
+                  orders_to_refund:
+                    type: integer
+                    format: int64
+                  amount_minor:
+                    type: integer
+                    format: int64
+                  processed: {}
+                  in_progress: {}
+                  awaiting_approval: {}
+                  failed_or_rejected: {}
+                  not_yet_sent: {}
+                  errors: {}
+                  batches: {}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        order_id:
+                          type: string
+                        buyer_name:
+                          type: string
+                        buyer_email:
+                          type: string
+                        amount_minor:
+                          type: integer
+                          format: int64
+                        state:
+                          type: string
+                        refund_id:
+                          type:
+                          - string
+                          - 'null'
+                        refund_status:
+                          type:
+                          - string
+                          - 'null'
+                        error:
+                          type:
+                          - string
+                          - 'null'
+                        failure_reason:
+                          type:
+                          - string
+                          - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/refund_batches/{batch_id}:
+    get:
+      summary: Progress of one bulk refund batch
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  event_id:
+                    type:
+                    - string
+                    - 'null'
+                  kind:
+                    type: string
+                  reason: {}
+                  requested_by: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  orders: {}
+                  queued: {}
+                  requested: {}
+                  errors: {}
+                  refunds_by_status: {}
+                  amount_minor_by_status: {}
+                  finished: {}
+                  needs_attention: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: batch_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `events:read` scope.
+  /v1/events/{id}/refund_batches/{batch_id}/process:
+    post:
+      summary: Send the next slice of a batch's queued refunds now (optionally retrying errors)
+      tags:
+      - events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  event_id:
+                    type:
+                    - string
+                    - 'null'
+                  kind:
+                    type: string
+                  reason: {}
+                  requested_by: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+                  orders: {}
+                  queued: {}
+                  requested: {}
+                  errors: {}
+                  refunds_by_status: {}
+                  amount_minor_by_status: {}
+                  finished: {}
+                  needs_attention: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: batch_id
+        in: path
+        required: true
+        schema:
+          type: string
+      description: Needs the `refunds:write` scope.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessBody'
+  /v1/public/events/{tenant_id}/{event_id}:
+    get:
+      summary: 'Public event page: tiers with current price, sale windows and availability, and the registration form'
+      tags:
+      - public_events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  merchant: {}
+                  name:
+                    type: string
+                  description:
+                    type:
+                    - string
+                    - 'null'
+                  mode: {}
+                  venue: {}
+                  starts_at:
+                    type:
+                    - string
+                    - 'null'
+                  ends_at:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  currency:
+                    type: string
+                  on_sale: {}
+                  hold_minutes: {}
+                  tiers:
+                    type: array
+                    items: {}
+                  form_fields:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        label: {}
+                        kind:
+                          type: string
+                        required: {}
+                        options: {}
+                        min_len: {}
+                        max_len: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/public/events/{tenant_id}/{event_id}/orders:
+    post:
+      summary: 'Place an order: holds the seats and creates the payment (send an Idempotency-Key to make a retry safe)'
+      tags:
+      - public_events
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderBody'
+  /v1/public/events/{tenant_id}/orders/{order_id}:
+    get:
+      summary: Buyer's order and tickets (with QR payloads once paid); needs the order token
+      tags:
+      - public_events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  merchant: {}
+                  event: {}
+                  buyer: {}
+                  quantity:
+                    type: integer
+                    format: int32
+                  subtotal_minor:
+                    type: integer
+                    format: int64
+                  discount_minor:
+                    type: integer
+                    format: int64
+                  total_minor:
+                    type: integer
+                    format: int64
+                  currency:
+                    type: string
+                  intent_id:
+                    type:
+                    - string
+                    - 'null'
+                  hold_expires_at:
+                    type:
+                    - string
+                    - 'null'
+                  paid_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tier:
+                          type: string
+                        quantity:
+                          type: integer
+                          format: int32
+                        unit_price_minor:
+                          type: integer
+                          format: int64
+                  tickets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        code:
+                          type: string
+                        status:
+                          type: string
+                        tier:
+                          type: string
+                        checked_in_at:
+                          type:
+                          - string
+                          - 'null'
+                          format: date-time
+                        qr_payload: {}
+                        qr_path:
+                          type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: t
+        in: query
+        required: true
+        schema:
+          type: string
+        description: The buyer's order token.
+  /v1/public/events/{tenant_id}/orders/{order_id}/cancel:
+    post:
+      summary: Buyer gives up an unpaid order; its seats are released at once
+      tags:
+      - public_events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: t
+        in: query
+        required: true
+        schema:
+          type: string
+        description: The buyer's order token.
+  /v1/public/events/{tenant_id}/orders/{order_id}/tickets/{ticket_id}/qr.svg:
+    get:
+      summary: QR image of one valid ticket; needs the order token
+      tags:
+      - public_events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      security: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: t
+        in: query
+        required: true
+        schema:
+          type: string
+        description: The buyer's order token.
+  /v1/routing/automation:
+    get:
+      summary: Read this business's routing automation settings (shadow mode, soft retry, cost-aware routing, the kill switch)
+        and what is in force right now. Every automation is off by default; the kill switch overrides each switch
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Change routing automation settings; fields not sent keep their value. Needs the admin scope. Each switch that
+        changes writes its own audit entry
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationSettingsIn'
+  /v1/routing/automation/pause:
+    post:
+      summary: Pull the routing kill switch - shadow mode, soft retry, cost-aware routing, failover and the circuit breaker
+        all stop acting at once. Idempotent, audited, needs the admin scope
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PauseIn'
+  /v1/routing/automation/resume:
+    post:
+      summary: Release the routing kill switch; each automation acts again if its own switch is on. Idempotent, audited, needs
+        the admin scope
+      tags:
+      - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {}
+                  effective: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/routing/shadow/report:
+    get:
+      summary: Compare shadow decisions with the routing actually applied over a window - agreement rate, where they differ,
+        estimated fee difference from the fee rules, and the outcomes of the payments that were sent. Estimates, read-only
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window_days: {}
+                  method: {}
+                  shadow: {}
+                  decisions:
+                    type: integer
+                    format: int64
+                  agreed:
+                    type: integer
+                    format: int64
+                  differed: {}
+                  no_route_in_shadow:
+                    type: integer
+                    format: int64
+                  agreement_rate_bps: {}
+                  differences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        method:
+                          type: string
+                        applied_provider:
+                          type: string
+                        shadow_provider:
+                          type:
+                          - string
+                          - 'null'
+                        decisions:
+                          type: integer
+                          format: int64
+                        fee_comparable:
+                          type: integer
+                          format: int64
+                        estimated_fee_difference_minor:
+                          type: integer
+                          format: int64
+                  outcome_by_provider:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        method:
+                          type: string
+                        payments_sent:
+                          type: integer
+                          format: int64
+                        succeeded:
+                          type: integer
+                          format: int64
+                        provider_failures:
+                          type: integer
+                          format: int64
+                        payer_declines:
+                          type: integer
+                          format: int64
+                        unresolved:
+                          type: integer
+                          format: int64
+                        of_which_shadow_would_have_chosen_another:
+                          type: integer
+                          format: int64
+                  recent_differences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attempt_id:
+                          type: string
+                        method:
+                          type: string
+                        amount_minor:
+                          type: integer
+                          format: int64
+                        applied_provider:
+                          type: string
+                        shadow_provider:
+                          type:
+                          - string
+                          - 'null'
+                        applied_explanation:
+                          type:
+                          - string
+                          - 'null'
+                        shadow_explanation:
+                          type:
+                          - string
+                          - 'null'
+                        applied_fee_minor:
+                          type:
+                          - integer
+                          - 'null'
+                          format: int64
+                        shadow_fee_minor:
+                          type:
+                          - integer
+                          - 'null'
+                          format: int64
+                        attempt_status:
+                          type: string
+                        at:
+                          type: string
+                          format: date-time
+                  limits:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+        x-generated: true
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/routing/scorecard:
+    get:
+      summary: Provider scorecard - per provider and method the success rate (payer declines excluded), failure classes, median
+        time to resolve, unresolved payments, observed effective fee and the last degrade and recovery
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window_days: {}
+                  method: {}
+                  success_rate_rule:
+                    type: string
+                  median_rule:
+                    type: string
+                  scorecard: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+        x-generated: true
+      - name: method
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
 components:
   securitySchemes:
     bearer:
@@ -8282,6 +10563,192 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    TicketEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+        venue:
+          type:
+          - string
+          - 'null'
+        online_url:
+          type:
+          - string
+          - 'null'
+        starts_at:
+          type: string
+        ends_at:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          enum:
+          - draft
+          - on_sale
+          - closed
+          - cancelled
+        currency:
+          type: string
+        capacity:
+          type: integer
+        hold_minutes:
+          type: integer
+        seats_held:
+          type: integer
+        seats_sold:
+          type: integer
+        seats_available:
+          type: integer
+        splits: {}
+        created_at:
+          type: string
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+        tiers:
+          type: array
+          items: {}
+        form_fields:
+          type: array
+          items: {}
+        tickets:
+          type: object
+        orders:
+          type: object
+    EventOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - paid
+          - expired
+          - cancelled
+          - refunded
+          - needs_refund
+        buyer:
+          type: object
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+            phone:
+              type:
+              - string
+              - 'null'
+        answers:
+          type: object
+        quantity:
+          type: integer
+        subtotal_minor:
+          type: integer
+        discount_minor:
+          type: integer
+        total_minor:
+          type: integer
+        currency:
+          type: string
+        intent_id:
+          type:
+          - string
+          - 'null'
+        hold_expires_at:
+          type:
+          - string
+          - 'null'
+        paid_at:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+        cancel_reason:
+          type:
+          - string
+          - 'null'
+        lines:
+          type: array
+          items: {}
+        tickets:
+          type: array
+          items: {}
+    ScanResult:
+      type: object
+      properties:
+        result:
+          type: string
+          enum:
+          - ok
+          - duplicate
+          - refunded
+          - void
+          - wrong_event
+          - invalid
+        valid:
+          type: boolean
+        code:
+          type: string
+        manual_entry:
+          type: boolean
+        ticket: {}
+        checked_in_at:
+          type:
+          - string
+          - 'null'
+        checked_in_by:
+          type:
+          - string
+          - 'null'
+        message:
+          type: string
+    RefundBatch:
+      type: object
+      properties:
+        id:
+          type: string
+        event_id:
+          type: string
+        kind:
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+        requested_by:
+          type: string
+        created_at:
+          type: string
+        orders:
+          type: integer
+        queued:
+          type: integer
+        requested:
+          type: integer
+        errors:
+          type: integer
+        refunds_by_status:
+          type: object
+        amount_minor_by_status:
+          type: object
+        finished:
+          type: boolean
+        needs_attention:
+          type: boolean
     RoutingHealthConfig:
       type: object
       properties:
@@ -8369,6 +10836,9 @@ components:
           - razorpay
           - cashfree
           - custom
+          - sponsor_upi
+          - phonepe
+          - payu
           - sim
         method:
           type: string
@@ -8389,7 +10859,8 @@ components:
           description: '`unknown` means the provider''s outcome is not known yet; no other attempt can start until it resolves.'
         route:
           type: object
-          description: 'Why this provider was chosen: every provider considered and the reason'
+          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider
+            considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
         client_action:
           type:
           - object
@@ -8441,6 +10912,293 @@ components:
       - kind
       - filename
       - data_base64
+    SyncBody:
+      type: object
+      x-generated: true
+      properties:
+        scans:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncScan'
+      required:
+      - scans
+    SyncScan:
+      type: object
+      x-generated: true
+      properties:
+        code:
+          type: string
+        scanned_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - scanned_at
+    StatusBody:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    ScanBody:
+      type: object
+      x-generated: true
+      properties:
+        code:
+          type: string
+      required:
+      - code
+    ProcessBody:
+      type: object
+      x-generated: true
+      properties:
+        retry_errors:
+          type: boolean
+    NewTier:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price_minor:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+          format: int32
+        per_order_max:
+          type: integer
+          format: int32
+        sale_starts_at:
+          type: string
+          format: date-time
+        sale_ends_at:
+          type: string
+          format: date-time
+        early_bird_price_minor:
+          type: integer
+          format: int64
+        early_bird_starts_at:
+          type: string
+          format: date-time
+        early_bird_ends_at:
+          type: string
+          format: date-time
+        allowed_methods:
+          type: array
+          items:
+            type: string
+      required:
+      - name
+      - price_minor
+      - quantity
+    NewEvent:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+        venue:
+          type: string
+        online_url:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          format: int32
+        hold_minutes:
+          type: integer
+          format: int32
+        splits:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShareIn'
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewTier'
+        form_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewField'
+      required:
+      - name
+      - starts_at
+      - capacity
+    NewField:
+      type: object
+      x-generated: true
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        kind:
+          type: string
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+        min_len:
+          type: integer
+          format: int32
+        max_len:
+          type: integer
+          format: int32
+      required:
+      - key
+      - label
+      - kind
+    ShareIn:
+      type: object
+      x-generated: true
+      properties:
+        vendor_id:
+          type: string
+        share_bp:
+          type: integer
+          format: int64
+      required:
+      - vendor_id
+      - share_bp
+    TicketingListQuery:
+      type: object
+      x-generated: true
+      properties:
+        status:
+          type: string
+        limit:
+          type: integer
+          format: int64
+        starting_after:
+          type: string
+    FieldsBody:
+      type: object
+      x-generated: true
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewField'
+      required:
+      - fields
+    ExportQuery:
+      type: object
+      x-generated: true
+      properties:
+        format:
+          type: string
+    EditEvent:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        venue:
+          type: string
+        online_url:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          format: int32
+        hold_minutes:
+          type: integer
+          format: int32
+    CancelBody:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+        force:
+          type: boolean
+    AttendeeQuery:
+      type: object
+      x-generated: true
+      properties:
+        q:
+          type: string
+        status:
+          type: string
+        tier_id:
+          type: string
+        limit:
+          type: integer
+          format: int64
+        starting_after:
+          type: string
+    TokenQuery:
+      type: object
+      x-generated: true
+      properties:
+        t:
+          type: string
+      required:
+      - t
+    OrderBody:
+      type: object
+      x-generated: true
+      properties:
+        buyer:
+          $ref: '#/components/schemas/Buyer'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineIn'
+        answers: {}
+        coupon:
+          type: string
+      required:
+      - buyer
+      - lines
+    LineIn:
+      type: object
+      x-generated: true
+      properties:
+        tier_id:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+      required:
+      - tier_id
+      - quantity
+    Buyer:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      required:
+      - name
+      - email
     Body:
       type: object
       x-generated: true
@@ -8629,6 +11387,56 @@ components:
       required:
       - name
       - query
+    ScorecardQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int32
+        method:
+          type: string
+    ReportQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int32
+        method:
+          type: string
+    PauseIn:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+    AutomationSettingsIn:
+      type: object
+      x-generated: true
+      properties:
+        shadow_enabled:
+          type: boolean
+        shadow_policy: {}
+        soft_retry_enabled:
+          type: boolean
+        soft_retry_max_attempts:
+          type: integer
+          format: int32
+        soft_retry_window_seconds:
+          type: integer
+          format: int32
+        cost_aware_enabled:
+          type: boolean
+        cost_success_floor_bps:
+          type: integer
+          format: int32
+        cost_premium_bps:
+          type: integer
+          format: int32
+        cost_min_fee_samples:
+          type: integer
+          format: int32
     RotaIn:
       type: object
       x-generated: true
@@ -8709,6 +11517,19 @@ components:
           type: string
         external_ref:
           type: string
+    RefundQuery:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        bucket:
+          type: string
+        limit:
+          type: integer
+          format: int64
     SyncRequest:
       type: object
       x-generated: true
@@ -9353,7 +12174,7 @@ components:
       - amount_minor
       - from
       - to
-    SettingsBody:
+    FeeCheckSettingsBody:
       type: object
       x-generated: true
       properties:
@@ -9417,6 +12238,49 @@ components:
         limit:
           type: integer
           format: int64
+    NewMapping:
+      type: object
+      x-generated: true
+      properties:
+        ledger_account:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+      required:
+      - ledger_account
+      - code
+      - name
+    JournalQuery:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        format:
+          type: string
+        currency:
+          type: string
+        kinds:
+          type: string
+        after:
+          type: string
+        limit:
+          type: integer
+          format: int64
+    GstQuery:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        format:
+          type: string
     DisputesResolve:
       type: object
       x-generated: true
@@ -9674,6 +12538,56 @@ components:
       required:
       - secret
       - method
+    CashSettingsBody:
+      type: object
+      x-generated: true
+      properties:
+        min_samples:
+          type: integer
+          format: int64
+        alert_grace_days:
+          type: integer
+          format: int64
+        refund_sla_hours:
+          type: integer
+          format: int64
+    ScanQuery:
+      type: object
+      x-generated: true
+      properties:
+        lookback_days:
+          type: integer
+          format: int64
+    NewLagRule:
+      type: object
+      x-generated: true
+      properties:
+        provider:
+          type: string
+        method:
+          type: string
+        expected_lag_days:
+          type: integer
+          format: int64
+        note:
+          type: string
+      required:
+      - provider
+      - expected_lag_days
+    ForecastQuery:
+      type: object
+      x-generated: true
+      properties:
+        days:
+          type: integer
+          format: int64
+    DashQuery:
+      type: object
+      x-generated: true
+      properties:
+        matched_days:
+          type: integer
+          format: int64
     TrialChange:
       type: object
       x-generated: true

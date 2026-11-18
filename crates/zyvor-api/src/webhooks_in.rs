@@ -16,7 +16,7 @@ use crate::{
     cases::open_case,
     error::ApiError,
     mandates,
-    payments::{Incoming, apply_provider_state},
+    payments::{Applied, Incoming, apply_provider_state},
     refunds::apply_refund_result,
     registry,
     state_machine::Attempt,
@@ -70,6 +70,8 @@ pub async fn receive(
     }
 
     let mut refresh_mandate: Option<String> = None;
+    // an intent whose attempt the provider just reported failed: a soft retry may start the next one elsewhere
+    let mut retry_intent: Option<String> = None;
     let outcome = match ev.kind {
         EventKind::PaymentAuthorized | EventKind::PaymentCaptured | EventKind::PaymentFailed => {
             // The order reference identifies our attempt. The provider's payment id is only a fallback,
@@ -106,10 +108,17 @@ pub async fn receive(
                         raw: Some(ev.raw.clone()),
                         failure_class: None,
                     };
-                    format!(
-                        "{:?}",
-                        apply_provider_state(&mut tx, &tenant_id, &id, &inc, "webhook").await?
-                    )
+                    let applied =
+                        apply_provider_state(&mut tx, &tenant_id, &id, &inc, "webhook").await?;
+                    if applied == Applied::Applied(Attempt::Failed) {
+                        retry_intent = sqlx::query_scalar(
+                            "SELECT intent_id FROM payment_attempts WHERE id = $1",
+                        )
+                        .bind(&id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                    }
+                    format!("{applied:?}")
                 }
             }
         }
@@ -181,6 +190,11 @@ pub async fn receive(
     };
     sqlx::query("UPDATE webhook_inbox SET outcome = $4 WHERE tenant_id = $1 AND provider = $2 AND event_id = $3").bind(&tenant_id).bind(&provider).bind(&ev.event_id).bind(&outcome).execute(&mut *tx).await?;
     tx.commit().await?;
+    if let Some(intent_id) = retry_intent {
+        // In the background: the provider is waiting for our answer to its webhook, not for another payment call.
+        let (s2, t2) = (s.clone(), tenant_id.clone());
+        tokio::spawn(async move { crate::softretry::run(&s2, &t2, &intent_id).await });
+    }
     if let Some(mid) = refresh_mandate {
         // Refresh asks the provider and applies through the same path as GET /v1/mandates/{id}/refresh.
         let _ = mandates::refresh_mandate_internal(&s, &tenant_id, &env, &mid, "webhook").await;

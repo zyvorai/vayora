@@ -13,6 +13,8 @@ use zyvor_core::Currency;
 
 pub mod cashfree;
 pub mod custom;
+pub mod decline;
+pub mod payu;
 pub mod phonepe;
 pub mod razorpay;
 pub mod router;
@@ -285,7 +287,7 @@ pub struct SettlementRecord {
 /// payment that reaches the account directly. `None` when the payload carries none: nothing is guessed.
 ///
 /// Field names: Razorpay's payment entity has `acquirer_data.rrn` (and `acquirer_data.upi_transaction_id` for UPI);
-/// Cashfree's payment has `bank_reference`; the simulator sets `bank_reference` itself. Other adapters report none.
+/// Cashfree's payment has `bank_reference`; PayU's has `bank_ref_num`; the simulator sets `bank_reference` itself. Other adapters report none.
 /// These names come from the providers' public API references, not from a live account, so check them on first use.
 pub fn bank_reference(provider: &str, raw: &Value) -> Option<String> {
     let text = |v: &Value| {
@@ -308,6 +310,9 @@ pub fn bank_reference(provider: &str, raw: &Value) -> Option<String> {
             text(&raw["data"]["payment"]["bank_reference"]).or_else(|| text(&raw["bank_reference"]))
         }
         "sim" => text(&raw["bank_reference"]),
+        // Verify Payment's transaction object and the payment webhook both carry `bank_ref_num` (and the
+        // webhook also `bank_ref_no`), written for successful payments. From PayU's public docs; not checked live.
+        "payu" => text(&raw["bank_ref_num"]).or_else(|| text(&raw["bank_ref_no"])),
         _ => None,
     }
 }
@@ -560,14 +565,34 @@ pub(crate) fn check_status(
     }
 }
 
+/// Refuse, before anything is sent, a request the adapter's own declared capabilities say it cannot do: an
+/// unsupported method or currency, or an amount that is not positive. The router already keeps such requests
+/// away; an adapter does not rely on that, because the alternative is a real provider being asked to try.
+/// `Unsupported` and `Rejected` both mean "definitely not started".
+pub(crate) fn check_request(caps: &Capabilities, req: &CreatePayment) -> Result<(), ProviderError> {
+    caps.supports(req.method, req.currency)
+        .map_err(ProviderError::Unsupported)?;
+    if req.amount_minor <= 0 {
+        return Err(ProviderError::Rejected(
+            "the amount must be greater than zero".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) async fn read_json(res: reqwest::Response) -> Result<Value, ProviderError> {
     let status = res.status();
-    let body: Value = res.json().await.unwrap_or(Value::Null);
+    let parsed: Option<Value> = res.json().await.ok();
     if status.is_success() {
-        Ok(body)
+        // A success status with a body we cannot read is an answer we do not understand, not an empty one:
+        // treating it as empty let a lookup read "no items" as "never happened".
+        parsed.ok_or_else(|| {
+            ProviderError::Uncertain(format!("HTTP {status} with an unreadable body"))
+        })
     } else if status.is_server_error() {
         Err(ProviderError::Uncertain(format!("HTTP {status}")))
     } else {
+        let body = parsed.unwrap_or(Value::Null);
         let msg = body
             .pointer("/error/description")
             .or_else(|| body.get("message"))
@@ -629,6 +654,10 @@ mod bank_reference_tests {
         assert_eq!(
             bank_reference("phonepe", &json!({ "bank_reference": "123456789012" })),
             None
+        );
+        assert_eq!(
+            bank_reference("payu", &json!({ "bank_ref_num": "793887773815" })).as_deref(),
+            Some("793887773815")
         );
     }
 

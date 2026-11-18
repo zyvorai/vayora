@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inr, inrCompact, maskKey, parseRupees, pct } from "./format";
+import { bpsPercent, dayYear, inr, inrCompact, maskKey, parsePercentBps, parseRupees, parseRupeesOrZero, pct } from "./format";
 
 describe("inr", () => {
   it("uses Indian grouping and two decimals", () => {
@@ -38,5 +38,49 @@ describe("misc", () => {
     expect(pct(0.8333)).toBe("83.3%");
     expect(maskKey("sk_test_abcdef123456")).toBe("sk_test_••••3456");
     expect(maskKey("short")).toBe("••••");
+  });
+});
+
+describe("bpsPercent", () => {
+  it("writes basis points as a percentage without floats", () => {
+    expect(bpsPercent(0)).toBe("0%");
+    expect(bpsPercent(150)).toBe("1.5%");
+    expect(bpsPercent(175)).toBe("1.75%");
+    expect(bpsPercent(200)).toBe("2%");
+    expect(bpsPercent(5)).toBe("0.05%");
+    expect(bpsPercent(10000)).toBe("100%");
+  });
+});
+
+describe("parsePercentBps", () => {
+  it("reads a typed percentage as basis points", () => {
+    expect(parsePercentBps("1.5")).toBe(150);
+    expect(parsePercentBps(" 18 ")).toBe(1800);
+    expect(parsePercentBps("0")).toBe(0);
+    expect(parsePercentBps("0.05")).toBe(5);
+    expect(parsePercentBps("100")).toBe(10000);
+  });
+  it("refuses anything else", () => {
+    for (const bad of ["", "101", "1.555", "-1", "1,5", "abc", "1%", "100.01", ".5"]) expect(parsePercentBps(bad), bad).toBeNull();
+  });
+});
+
+describe("parseRupeesOrZero", () => {
+  it("allows zero as well as amounts", () => {
+    expect(parseRupeesOrZero("0")).toBe(0);
+    expect(parseRupeesOrZero("0.00")).toBe(0);
+    expect(parseRupeesOrZero("2.50")).toBe(250);
+    expect(parseRupeesOrZero("1,200")).toBe(120000);
+    expect(parseRupeesOrZero("-1")).toBeNull();
+    expect(parseRupeesOrZero("1.234")).toBeNull();
+    expect(parseRupeesOrZero("")).toBeNull();
+  });
+});
+
+describe("dayYear", () => {
+  it("writes a day with its year, whatever the time zone", () => {
+    expect(dayYear("2026-10-01")).toBe("1 Oct 2026");
+    expect(dayYear("2026-10-01T23:59:00Z")).toBe("1 Oct 2026");
+    expect(dayYear("not a date")).toBe("not a date");
   });
 });

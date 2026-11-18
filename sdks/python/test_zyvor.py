@@ -324,6 +324,54 @@ class Tests(unittest.TestCase):
             self.assertEqual(got[2], body, call)
         self.assertEqual(len(rows), 95)
 
+    def test_fee_check_bank_statement_and_routing_health_methods(self):
+        seen = []
+        def opener(req, timeout=None):
+            seen.append((req.get_method(), req.full_url.split("8080")[1], json.loads(req.data) if req.data else None, req.get_header("Idempotency-key")))
+            return FakeRes(b'{"ok":true}')
+        z = Zyvor("k", opener=opener)
+        rows = [
+            ("z.list_fee_rules()", "GET", "/v1/fee_rules", None),
+            ("z.create_fee_rule('razorpay', 'upi', 200, '2026-04-01', gst_bps=1800, note='demo')", "POST", "/v1/fee_rules", {"provider": "razorpay", "method": "upi", "bps": 200, "effective_from": "2026-04-01", "gst_bps": 1800, "note": "demo"}),
+            ("z.delete_fee_rule('rule_1')", "DELETE", "/v1/fee_rules/rule_1", None),
+            ("z.fee_check_settings()", "GET", "/v1/fee_checks/settings", None),
+            ("z.update_fee_check_settings(tolerance_minor=100)", "POST", "/v1/fee_checks/settings", {"tolerance_minor": 100}),
+            ("z.fee_check_summary()", "GET", "/v1/fee_checks/summary", None),
+            ("z.list_fee_findings(status='open', provider='razorpay', limit=5)", "GET", "/v1/fee_checks/findings?limit=5&provider=razorpay&status=open", None),
+            ("z.run_fee_check(since='2026-04-01')", "POST", "/v1/fee_checks/run", {"since": "2026-04-01"}),
+            ("z.settlement_fee_check('set_1')", "GET", "/v1/settlements/set_1/fee_check", None),
+            ("z.recheck_settlement_fee('set_1')", "POST", "/v1/settlements/set_1/fee_check", {}),
+            ("z.preview_bank_statement('a,b', layout='generic')", "POST", "/v1/bank_statements/preview", {"csv": "a,b", "layout": "generic"}),
+            ("z.import_bank_csv('a,b')", "POST", "/v1/bank_statements/import_csv", {"csv": "a,b"}),
+            ("z.bank_statement_layouts()", "GET", "/v1/bank_statements/layouts", None),
+            ("z.list_bank_imports()", "GET", "/v1/bank_statements/imports", None),
+            ("z.list_bank_lines(status='unmatched', from_date='2026-04-01', import_id=3)", "GET", "/v1/bank_statements/lines?from=2026-04-01&import_id=3&status=unmatched", None),
+            ("z.get_bank_line(7)", "GET", "/v1/bank_statements/lines/7", None),
+            ("z.rematch_bank()", "POST", "/v1/bank_statements/rematch", {}),
+            ("z.confirm_bank_match(9, note='ok')", "POST", "/v1/bank_statements/matches/9/confirm", {"note": "ok"}),
+            ("z.reject_bank_match(9)", "POST", "/v1/bank_statements/matches/9/reject", {}),
+            ("z.recon_ageing()", "GET", "/v1/recon/ageing", None),
+            ("z.routing_health(method='upi')", "GET", "/v1/routing/health?method=upi", None),
+            ("z.routing_health_settings()", "GET", "/v1/routing/health/settings", None),
+            ("z.update_routing_health_settings(min_samples=20)", "PUT", "/v1/routing/health/settings", {"min_samples": 20}),
+            ("z.routing_automation()", "GET", "/v1/routing/automation", None),
+            ("z.update_routing_automation(soft_retry_enabled=True)", "PUT", "/v1/routing/automation", {"soft_retry_enabled": True}),
+            ("z.pause_routing_automation('provider talks')", "POST", "/v1/routing/automation/pause", {"reason": "provider talks"}),
+            ("z.resume_routing_automation()", "POST", "/v1/routing/automation/resume", {}),
+            ("z.routing_shadow_report(days=3, method='upi')", "GET", "/v1/routing/shadow/report?days=3&method=upi", None),
+            ("z.routing_scorecard(days=14)", "GET", "/v1/routing/scorecard?days=14", None),
+        ]
+        for call, verb, url, body in rows:
+            seen.clear()
+            eval(call, {"z": z})
+            self.assertEqual(seen[0][:3], (verb, url, body), call)
+        # an error from the API surfaces as ZyvorError
+        def refuse(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 403, "no", {}, io.BytesIO(b'{"error":{"code":"forbidden","message":"admin scope"}}'))
+        with self.assertRaises(ZyvorError) as cm:
+            Zyvor("k", opener=refuse).update_routing_health_settings(failover_enabled=False)
+        self.assertEqual((cm.exception.status, cm.exception.code), (403, "forbidden"))
+
     def test_update_settings_sends_only_what_it_is_given(self):
         seen = []
         z = Zyvor("k", opener=lambda req, timeout=None: (seen.append(json.loads(req.data)), FakeRes(b"{}"))[1])

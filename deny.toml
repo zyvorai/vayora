@@ -2,6 +2,14 @@
 [advisories]
 version = 2
 yanked = "deny"
+# Both are "unmaintained" notices (no vulnerability, "all versions affected", no upgrade exists), not security
+# defects. chrono/chrono-tz carry every timestamp and time-zone conversion in the API, settlement and provider
+# crates and sqlx's `chrono` feature, so replacing them (for example with `time` or `jiff`) is a planned migration,
+# not a CI fix. Re-review when either advisory changes or by 2027-05-18, whichever comes first.
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, no vulnerability; migration tracked, see comment above" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz is unmaintained, no vulnerability; migration tracked, see comment above" },
+]
 
 [licenses]
 version = 2

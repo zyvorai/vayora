@@ -203,3 +203,86 @@ describe("signed actor", () => {
     expect(m![2]).toBe(createHmac("sha256", "console-actor-secret-0123456789").update(`${m![1]}.priya`).digest("hex"));
   });
 });
+
+describe("fee checks, bank statements and routing health", () => {
+  it("calls the right verb, path and body", async () => {
+    const f = vi.fn(async () => json(200, { ok: true }));
+    const c = client(f);
+    await c.feeRules.list();
+    await c.feeRules.create({ provider: "razorpay", method: "upi", bps: 200, effectiveFrom: "2026-04-01", gstBps: 1800 });
+    await c.feeRules.remove("rule_1");
+    await c.feeChecks.settings();
+    await c.feeChecks.updateSettings({ toleranceMinor: 100 });
+    await c.feeChecks.summary();
+    await c.feeChecks.findings({ status: "open", provider: "razorpay", limit: 5 });
+    await c.feeChecks.run({ since: "2026-04-01" });
+    await c.feeChecks.settlement("set_1");
+    await c.feeChecks.recheckSettlement("set_1");
+    await c.bankStatements.preview("a,b", { layout: "generic", dateFormat: "%d/%m/%Y" });
+    await c.bankStatements.importCsv("a,b");
+    await c.bankStatements.layouts();
+    await c.bankStatements.imports();
+    await c.bankStatements.lines({ status: "unmatched", from: "2026-04-01", importId: 3 });
+    await c.bankStatements.line(7);
+    await c.bankStatements.rematch();
+    await c.bankStatements.confirmMatch(9, "ok");
+    await c.bankStatements.rejectMatch(9);
+    await c.cases.ageing();
+    await c.routing.health("upi");
+    await c.routing.healthSettings();
+    await c.routing.updateHealthSettings({ minSamples: 20, failoverEnabled: false });
+    await c.routing.automation();
+    await c.routing.updateAutomation({ softRetryEnabled: true, costSuccessFloorBps: 8500 });
+    await c.routing.pauseAutomation("provider talks");
+    await c.routing.resumeAutomation();
+    await c.routing.shadowReport({ days: 3, method: "upi" });
+    await c.routing.scorecard({ days: 14 });
+    const seen = (f.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]);
+    expect(seen).toEqual([
+      ["GET", "/v1/fee_rules", undefined],
+      ["POST", "/v1/fee_rules", { provider: "razorpay", method: "upi", bps: 200, effective_from: "2026-04-01", gst_bps: 1800 }],
+      ["DELETE", "/v1/fee_rules/rule_1", undefined],
+      ["GET", "/v1/fee_checks/settings", undefined],
+      ["POST", "/v1/fee_checks/settings", { tolerance_minor: 100 }],
+      ["GET", "/v1/fee_checks/summary", undefined],
+      ["GET", "/v1/fee_checks/findings?status=open&provider=razorpay&limit=5", undefined],
+      ["POST", "/v1/fee_checks/run", { since: "2026-04-01" }],
+      ["GET", "/v1/settlements/set_1/fee_check", undefined],
+      ["POST", "/v1/settlements/set_1/fee_check", {}],
+      ["POST", "/v1/bank_statements/preview", { csv: "a,b", layout: "generic", date_format: "%d/%m/%Y" }],
+      ["POST", "/v1/bank_statements/import_csv", { csv: "a,b" }],
+      ["GET", "/v1/bank_statements/layouts", undefined],
+      ["GET", "/v1/bank_statements/imports", undefined],
+      ["GET", "/v1/bank_statements/lines?status=unmatched&from=2026-04-01&import_id=3", undefined],
+      ["GET", "/v1/bank_statements/lines/7", undefined],
+      ["POST", "/v1/bank_statements/rematch", {}],
+      ["POST", "/v1/bank_statements/matches/9/confirm", { note: "ok" }],
+      ["POST", "/v1/bank_statements/matches/9/reject", {}],
+      ["GET", "/v1/recon/ageing", undefined],
+      ["GET", "/v1/routing/health?method=upi", undefined],
+      ["GET", "/v1/routing/health/settings", undefined],
+      ["PUT", "/v1/routing/health/settings", { min_samples: 20, failover_enabled: false }],
+      ["GET", "/v1/routing/automation", undefined],
+      ["PUT", "/v1/routing/automation", { soft_retry_enabled: true, cost_success_floor_bps: 8500 }],
+      ["POST", "/v1/routing/automation/pause", { reason: "provider talks" }],
+      ["POST", "/v1/routing/automation/resume", {}],
+      ["GET", "/v1/routing/shadow/report?days=3&method=upi", undefined],
+      ["GET", "/v1/routing/scorecard?days=14", undefined],
+    ]);
+  });
+
+  it("raises ZyvorError with the API's code", async () => {
+    const f = vi.fn(async () => json(403, { error: { code: "forbidden", message: "admin scope" } }));
+    await expect(client(f).routing.updateHealthSettings({ breakerEnabled: false })).rejects.toMatchObject({ status: 403, code: "forbidden" });
+  });
+
+  it("runs the new CLI commands", async () => {
+    const f = vi.fn(async () => json(200, { data: [] }));
+    const out: string[] = [];
+    const env = { ZYVOR_API_KEY: "k" };
+    for (const argv of [["recon", "ageing"], ["fee-rules", "list"], ["fee-checks", "summary"], ["fee-checks", "run", "--since", "2026-04-01"], ["bank", "lines", "--status", "unmatched"], ["routing", "health", "--method", "upi"]]) {
+      expect(await run(argv, env, (s) => out.push(s), f as unknown as typeof fetch)).toBe(0);
+    }
+    expect((f.mock.calls as unknown as [string][]).map((c) => c[0].replace("http://localhost:8080", ""))).toEqual(["/v1/recon/ageing", "/v1/fee_rules", "/v1/fee_checks/summary", "/v1/fee_checks/run", "/v1/bank_statements/lines?status=unmatched", "/v1/routing/health?method=upi"]);
+  });
+});

@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { DeleteTestClockResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetSettlementBatchesByIdResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostMandatesByIdDebitsResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse } from "./types.js";
+import type { DeleteFeeRulesByIdResponse, DeleteTestClockResponse, GetBankStatementsImportsResponse, GetBankStatementsLayoutsResponse, GetBankStatementsLinesResponse, GetFeeChecksFindingsResponse, GetFeeChecksSettingsResponse, GetFeeChecksSummaryResponse, GetFeeRulesResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetReconAgeingResponse, GetRoutingAutomationResponse, GetRoutingHealthResponse, GetRoutingScorecardResponse, GetRoutingShadowReportResponse, GetSettlementBatchesByIdResponse, GetSettlementsByIdFeeCheckResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostBankStatementsMatchesByIdConfirmResponse, PostBankStatementsMatchesByIdRejectResponse, PostBankStatementsPreviewResponse, PostBankStatementsRematchResponse, PostFeeChecksRunResponse, PostFeeChecksSettingsResponse, PostFeeRulesResponse, PostMandatesByIdDebitsResponse, PostRoutingAutomationPauseResponse, PostRoutingAutomationResumeResponse, PostSettlementsByIdFeeCheckResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse, PutRoutingAutomationResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -153,6 +153,9 @@ export interface ZyvorOptions {
   fetch?: typeof fetch;
 }
 
+export interface BankCsvOptions { filename?: string; layout?: string; mapping?: Record<string, unknown>; dateFormat?: string; delimiter?: string }
+const csvBody = (csv: string, o: BankCsvOptions) => ({ csv, filename: o.filename, layout: o.layout, mapping: o.mapping, date_format: o.dateFormat, delimiter: o.delimiter });
+
 const key = (k?: string) => k ?? randomUUID();
 
 /** Amounts are integer minor units (paise). Every payment write takes an idempotency key: reuse it on retry. */
@@ -269,6 +272,8 @@ export class Zyvor {
     assign: (id: string, assignee: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/assign`, { assignee }),
     resolve: (id: string, resolution: string) => this.req("POST", `/v1/recon/cases/${encodeURIComponent(id)}/resolve`, { resolution }),
     /** Open cases for captured payments still missing a settlement after `olderThanDays` (default 3). */
+    /** Open cases by age and kind. */
+    ageing: () => this.req<GetReconAgeingResponse>("GET", "/v1/recon/ageing"),
     scan: (olderThanDays?: number) => this.req<{ new_cases: number }>("POST", `/v1/recon/scan${olderThanDays != null ? `?older_than_days=${olderThanDays}` : ""}`),
   };
 
@@ -469,9 +474,72 @@ export class Zyvor {
 
   /** Bank statement import for reconciliation (JSON lines, CSV, MT940 or CAMT.053). */
   readonly bankStatements = {
-    importCsv: (csv: string) => this.req("POST", "/v1/bank_statements/import_csv", { csv }),
+    /** `options`: `filename`, `layout`, `mapping`, `dateFormat`, `delimiter` (see `layouts`). All or nothing; re-imports add nothing. */
+    importCsv: (csv: string, options: BankCsvOptions = {}) => this.req("POST", "/v1/bank_statements/import_csv", csvBody(csv, options)),
+    /** Dry run: line-level problems, totals and duplicates. Stores nothing. */
+    preview: (csv: string, options: BankCsvOptions = {}) => this.req<PostBankStatementsPreviewResponse>("POST", "/v1/bank_statements/preview", csvBody(csv, options)),
+    /** Supported layouts, date and amount formats. */
+    layouts: () => this.req<GetBankStatementsLayoutsResponse>("GET", "/v1/bank_statements/layouts"),
+    imports: () => this.req<GetBankStatementsImportsResponse>("GET", "/v1/bank_statements/imports"),
+    /** Lines with their match status. `from` and `to` are days (YYYY-MM-DD). */
+    lines: (p: { status?: "unmatched" | "suggested" | "matched"; direction?: string; from?: string; to?: string; importId?: number; limit?: number } = {}) =>
+      this.req<GetBankStatementsLinesResponse>("GET", `/v1/bank_statements/lines${this.qs({ status: p.status, direction: p.direction, from: p.from, to: p.to, import_id: p.importId, limit: p.limit })}`),
+    /** One line with every match it has had and its cases. */
+    line: (id: number) => this.req<Record<string, unknown>>("GET", `/v1/bank_statements/lines/${id}`),
+    /** Look again at every unmatched settlement and bank line. */
+    rematch: () => this.req<PostBankStatementsRematchResponse>("POST", "/v1/bank_statements/rematch", {}),
+    /** A person accepts a suggested match. */
+    confirmMatch: (id: number, note?: string) => this.req<PostBankStatementsMatchesByIdConfirmResponse>("POST", `/v1/bank_statements/matches/${id}/confirm`, note ? { note } : {}),
+    /** Reject a suggested match; it is not suggested again. */
+    rejectMatch: (id: number, note?: string) => this.req<PostBankStatementsMatchesByIdRejectResponse>("POST", `/v1/bank_statements/matches/${id}/reject`, note ? { note } : {}),
     importMt940: (text: string) => this.req("POST", "/v1/bank_statements/import_mt940", { text }),
     importCamt: (text: string) => this.req("POST", "/v1/bank_statements/import_camt", { text }),
+  };
+
+  /** Fee checks: compare the fee a provider deducted with the rate you entered from your own contract. */
+  readonly feeRules = {
+    list: () => this.req<GetFeeRulesResponse>("GET", "/v1/fee_rules"),
+    /** `bps` is the percentage in basis points (200 = 2%); `effectiveFrom` is YYYY-MM-DD. */
+    create: (p: { provider: string; method: string; bps: number; effectiveFrom: string; flatMinor?: number; capMinor?: number; gstBps?: number; refundReturnsFee?: boolean; note?: string }) =>
+      this.req<PostFeeRulesResponse>("POST", "/v1/fee_rules", { provider: p.provider, method: p.method, bps: p.bps, effective_from: p.effectiveFrom, flat_minor: p.flatMinor, cap_minor: p.capMinor, gst_bps: p.gstBps, refund_returns_fee: p.refundReturnsFee, note: p.note }),
+    /** Findings already recorded keep the rule they were checked against. */
+    remove: (id: string) => this.req<DeleteFeeRulesByIdResponse>("DELETE", `/v1/fee_rules/${encodeURIComponent(id)}`),
+  };
+
+  readonly feeChecks = {
+    settings: () => this.req<GetFeeChecksSettingsResponse>("GET", "/v1/fee_checks/settings"),
+    /** `toleranceMinor` in paise; fields left out keep their value. */
+    updateSettings: (p: { toleranceMinor?: number; owner?: string }) => this.req<PostFeeChecksSettingsResponse>("POST", "/v1/fee_checks/settings", { tolerance_minor: p.toleranceMinor, owner: p.owner }),
+    summary: () => this.req<GetFeeChecksSummaryResponse>("GET", "/v1/fee_checks/summary"),
+    findings: (p: { status?: string; provider?: string; method?: string; limit?: number } = {}) => this.req<GetFeeChecksFindingsResponse>("GET", `/v1/fee_checks/findings${this.qs(p)}`),
+    /** Re-check settlements against the current rules (`since` is YYYY-MM-DD). */
+    run: (p: { since?: string; limit?: number } = {}) => this.req<PostFeeChecksRunResponse>("POST", "/v1/fee_checks/run", p),
+    /** What the check says about one settlement. Writes nothing. */
+    settlement: (settlementId: string) => this.req<GetSettlementsByIdFeeCheckResponse>("GET", `/v1/settlements/${encodeURIComponent(settlementId)}/fee_check`),
+    /** Re-check one settlement and record the finding. */
+    recheckSettlement: (settlementId: string) => this.req<PostSettlementsByIdFeeCheckResponse>("POST", `/v1/settlements/${encodeURIComponent(settlementId)}/fee_check`, {}),
+  };
+
+  /** Provider health: recent success rate, circuit-breaker state and thresholds per provider and method. */
+  readonly routing = {
+    /** Read only; `method` narrows to one payment method. */
+    health: (method?: string) => this.req<GetRoutingHealthResponse>("GET", `/v1/routing/health${this.qs({ method })}`),
+    healthSettings: () => this.req<Record<string, unknown>>("GET", "/v1/routing/health/settings"),
+    /** Needs the admin scope. Fields left out keep their value. */
+    updateHealthSettings: (p: { breakerEnabled?: boolean; failoverEnabled?: boolean; windowAttempts?: number; windowMinutes?: number; minSamples?: number; degradeFailurePct?: number; recoverFailurePct?: number; cooldownSeconds?: number }) =>
+      this.req<Record<string, unknown>>("PUT", "/v1/routing/health/settings", { breaker_enabled: p.breakerEnabled, failover_enabled: p.failoverEnabled, window_attempts: p.windowAttempts, window_minutes: p.windowMinutes, min_samples: p.minSamples, degrade_failure_pct: p.degradeFailurePct, recover_failure_pct: p.recoverFailurePct, cooldown_seconds: p.cooldownSeconds }),
+    /** Shadow mode, soft retry, cost-aware routing and the kill switch for this business (all off by default). */
+    automation: () => this.req<GetRoutingAutomationResponse>("GET", "/v1/routing/automation"),
+    /** Needs the admin scope. Fields left out keep their value. `shadowPolicy` is `{ rules?: [...], cost_aware?: boolean }`. */
+    updateAutomation: (p: { shadowEnabled?: boolean; shadowPolicy?: Record<string, unknown>; softRetryEnabled?: boolean; softRetryMaxAttempts?: number; softRetryWindowSeconds?: number; costAwareEnabled?: boolean; costSuccessFloorBps?: number; costPremiumBps?: number; costMinFeeSamples?: number }) =>
+      this.req<PutRoutingAutomationResponse>("PUT", "/v1/routing/automation", { shadow_enabled: p.shadowEnabled, shadow_policy: p.shadowPolicy, soft_retry_enabled: p.softRetryEnabled, soft_retry_max_attempts: p.softRetryMaxAttempts, soft_retry_window_seconds: p.softRetryWindowSeconds, cost_aware_enabled: p.costAwareEnabled, cost_success_floor_bps: p.costSuccessFloorBps, cost_premium_bps: p.costPremiumBps, cost_min_fee_samples: p.costMinFeeSamples }),
+    /** The kill switch: every routing automation stops acting at once. Admin scope; idempotent; audited. */
+    pauseAutomation: (reason?: string) => this.req<PostRoutingAutomationPauseResponse>("POST", "/v1/routing/automation/pause", { reason }),
+    resumeAutomation: () => this.req<PostRoutingAutomationResumeResponse>("POST", "/v1/routing/automation/resume", {}),
+    /** Shadow decisions against what was applied, over the last `days` (default 7). Read only. */
+    shadowReport: (q: { days?: number; method?: string } = {}) => this.req<GetRoutingShadowReportResponse>("GET", `/v1/routing/shadow/report${this.qs({ days: q.days, method: q.method })}`),
+    /** Per provider and method: success rate (payer declines excluded), failure classes, median time to resolve, unresolved, observed fee, last degrade and recovery. */
+    scorecard: (q: { days?: number; method?: string } = {}) => this.req<GetRoutingScorecardResponse>("GET", `/v1/routing/scorecard${this.qs({ days: q.days, method: q.method })}`),
   };
 
   readonly coupons = {

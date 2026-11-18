@@ -345,7 +345,7 @@ impl SettlementCheck {
     }
 }
 
-async fn load_rules(conn: &mut PgConnection) -> Result<Vec<Rule>, sqlx::Error> {
+pub(crate) async fn load_rules(conn: &mut PgConnection) -> Result<Vec<Rule>, sqlx::Error> {
     let rows: Vec<(String, String, String, i32, i64, Option<i64>, Option<i32>, bool, NaiveDate)> = sqlx::query_as(
         "SELECT id, provider, method, bps, flat_minor, cap_minor, gst_bps, refund_returns_fee, effective_from FROM fee_rules ORDER BY effective_from",
     )

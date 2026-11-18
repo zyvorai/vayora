@@ -309,9 +309,35 @@ func (c *Client) Gstr1(period string) (map[string]any, error) {
 	return c.call("GET", "/v1/gst/gstr1?period="+url.QueryEscape(period), nil)
 }
 
-// ImportBankCsv imports a bank statement CSV for reconciliation.
-func (c *Client) ImportBankCsv(csv string) (map[string]any, error) {
-	return c.call("POST", "/v1/bank_statements/import_csv", map[string]any{"csv": csv})
+// ImportBankCsv imports a bank statement CSV for reconciliation. The optional map may hold filename, layout, mapping,
+// date_format and delimiter (see BankStatementLayouts).
+func (c *Client) ImportBankCsv(csv string, options ...map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_csv", withCSV(csv, options))
+}
+
+func withCSV(csv string, options []map[string]any) map[string]any {
+	body := map[string]any{}
+	for _, o := range options {
+		for k, v := range o {
+			body[k] = v
+		}
+	}
+	body["csv"] = csv
+	return body
+}
+
+// withQuery appends the non-empty options as a query string.
+func withQuery(path string, opts map[string]any) string {
+	v := url.Values{}
+	for k, x := range opts {
+		if x != nil && fmt.Sprint(x) != "" {
+			v.Set(k, fmt.Sprint(x))
+		}
+	}
+	if len(v) > 0 {
+		return path + "?" + v.Encode()
+	}
+	return path
 }
 
 // ImportBankMt940 imports a SWIFT MT940 bank statement.
@@ -1846,4 +1872,179 @@ func (c *Client) ResetTestData() (map[string]any, error) {
 // UpdateSettings changes organisation settings; send only the fields to change (see GetSettings for the shape).
 func (c *Client) UpdateSettings(patch map[string]any) (map[string]any, error) {
 	return c.call("POST", "/v1/settings", patch)
+}
+
+// ListFeeRules lists fee rules (rates you entered from your own contract).
+func (c *Client) ListFeeRules() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_rules", nil)
+}
+
+// CreateFeeRule adds a rule: bps is the percentage in basis points (200 = 2%), effectiveFrom is YYYY-MM-DD. opts may
+// hold flat_minor, cap_minor, gst_bps, refund_returns_fee and note.
+func (c *Client) CreateFeeRule(provider, method string, bps int64, effectiveFrom string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, v := range opts {
+		body[k] = v
+	}
+	body["provider"], body["method"], body["bps"], body["effective_from"] = provider, method, bps, effectiveFrom
+	return c.call("POST", "/v1/fee_rules", body)
+}
+
+// DeleteFeeRule removes a rule; findings already recorded keep the rule they were checked against.
+func (c *Client) DeleteFeeRule(ruleId string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/fee_rules/"+url.PathEscape(ruleId), nil)
+}
+
+// FeeCheckSettings returns the fee check tolerance (paise) and who owns new findings.
+func (c *Client) FeeCheckSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_checks/settings", nil)
+}
+
+// UpdateFeeCheckSettings sets tolerance_minor and/or owner; fields left out keep their value.
+func (c *Client) UpdateFeeCheckSettings(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/fee_checks/settings", body)
+}
+
+// FeeCheckSummary returns open fee findings, total variance, by provider and method.
+func (c *Client) FeeCheckSummary() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_checks/summary", nil)
+}
+
+// ListFeeFindings lists payments whose deducted fee differs from your rule; opts: status, provider, method, limit.
+func (c *Client) ListFeeFindings(opts map[string]any) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/fee_checks/findings", opts), nil)
+}
+
+// RunFeeCheck re-checks settlements against the current rules; body may hold since (YYYY-MM-DD) and limit.
+func (c *Client) RunFeeCheck(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/fee_checks/run", body)
+}
+
+// SettlementFeeCheck says what the fee check finds on one settlement. Writes nothing.
+func (c *Client) SettlementFeeCheck(settlementId string) (map[string]any, error) {
+	return c.call("GET", "/v1/settlements/"+url.PathEscape(settlementId)+"/fee_check", nil)
+}
+
+// RecheckSettlementFee re-checks one settlement and records the finding.
+func (c *Client) RecheckSettlementFee(settlementId string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlements/"+url.PathEscape(settlementId)+"/fee_check", nil)
+}
+
+// PreviewBankStatement is a dry run of a CSV import: line-level problems, totals and duplicates; nothing is stored.
+func (c *Client) PreviewBankStatement(csv string, options ...map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/preview", withCSV(csv, options))
+}
+
+// BankStatementLayouts lists the supported statement layouts, date and amount formats.
+func (c *Client) BankStatementLayouts() (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/layouts", nil)
+}
+
+// ListBankImports lists imported bank statement files.
+func (c *Client) ListBankImports() (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/imports", nil)
+}
+
+// ListBankLines lists statement lines with their match status; opts: status, direction, from, to (YYYY-MM-DD),
+// import_id, limit.
+func (c *Client) ListBankLines(opts map[string]any) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/bank_statements/lines", opts), nil)
+}
+
+// GetBankLine returns one statement line with every match it has had and its cases.
+func (c *Client) GetBankLine(lineId int64) (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/lines/"+fmt.Sprint(lineId), nil)
+}
+
+// RematchBank looks again at every unmatched settlement and bank line.
+func (c *Client) RematchBank() (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/rematch", nil)
+}
+
+// ConfirmBankMatch accepts a suggested match; note is optional.
+func (c *Client) ConfirmBankMatch(matchId int64, note string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/matches/"+fmt.Sprint(matchId)+"/confirm", noteBody(note))
+}
+
+// RejectBankMatch rejects a suggested match; it is not suggested again. note is optional.
+func (c *Client) RejectBankMatch(matchId int64, note string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/matches/"+fmt.Sprint(matchId)+"/reject", noteBody(note))
+}
+
+func noteBody(note string) map[string]any {
+	if note == "" {
+		return nil
+	}
+	return map[string]any{"note": note}
+}
+
+// ReconAgeing returns open reconciliation cases by age and kind.
+func (c *Client) ReconAgeing() (map[string]any, error) {
+	return c.call("GET", "/v1/recon/ageing", nil)
+}
+
+// RoutingHealth reads per provider and method the recent success rate, circuit-breaker state, thresholds and recent
+// events. method "" means all. Read only.
+func (c *Client) RoutingHealth(method string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/routing/health", map[string]any{"method": method}), nil)
+}
+
+// RoutingHealthSettings returns the provider-health thresholds.
+func (c *Client) RoutingHealthSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/health/settings", nil)
+}
+
+// UpdateRoutingHealthSettings changes thresholds (admin scope); fields not sent keep their value: breaker_enabled,
+// failover_enabled, window_attempts, window_minutes, min_samples, degrade_failure_pct, recover_failure_pct,
+// cooldown_seconds.
+func (c *Client) UpdateRoutingHealthSettings(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/health/settings", body)
+}
+
+// RoutingAutomation returns shadow mode, soft retry, cost-aware routing and the kill switch for this business (all off
+// by default) and what is in force now.
+func (c *Client) RoutingAutomation() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/automation", nil)
+}
+
+// UpdateRoutingAutomation changes automation settings (admin scope); fields not sent keep their value: shadow_enabled,
+// shadow_policy, soft_retry_enabled, soft_retry_max_attempts, soft_retry_window_seconds, cost_aware_enabled,
+// cost_success_floor_bps, cost_premium_bps, cost_min_fee_samples.
+func (c *Client) UpdateRoutingAutomation(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/automation", body)
+}
+
+// PauseRoutingAutomation pulls the kill switch: every routing automation stops acting at once (admin scope,
+// idempotent, audited). reason may be empty.
+func (c *Client) PauseRoutingAutomation(reason string) (map[string]any, error) {
+	body := map[string]any{}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return c.call("POST", "/v1/routing/automation/pause", body)
+}
+
+// ResumeRoutingAutomation releases the kill switch (admin scope, idempotent, audited).
+func (c *Client) ResumeRoutingAutomation() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/automation/resume", map[string]any{})
+}
+
+// RoutingShadowReport compares shadow decisions with what was applied over the last days (0 = the default of 7).
+// method "" means all. Read only.
+func (c *Client) RoutingShadowReport(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/shadow/report", q), nil)
+}
+
+// RoutingScorecard returns per provider and method the success rate (payer declines excluded), failure classes,
+// median time to resolve, unresolved payments, observed fee and the last degrade and recovery. Read only.
+func (c *Client) RoutingScorecard(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/scorecard", q), nil)
 }
