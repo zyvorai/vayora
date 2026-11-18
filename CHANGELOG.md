@@ -4,6 +4,13 @@ What shipped, newest first. Everything here is verified against local simulators
 intent and QR, which was also run against Cashfree's own sandbox. Nothing has run against a live provider. See
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
+## 18 November 2026 — Fee checks on settlements
+**What a provider deducted, against your own contract (simulators only)**
+- Fee rules you enter (percentage in basis points, flat paise, cap, GST on the fee, refund fee return, effective-from date) and a tolerance in paise. No rate for any provider, method or network is built in; with no rule the answer is "no expected fee configured" and nothing is flagged.
+- Each settlement is checked per payment as it is ingested (and on demand): expected vs actual deduction, the rule applied, over- and under-deduction. A variance above tolerance becomes one `fee_check` reconciliation case per settlement (assigned to the configured owner), and the settlement explanation says "Fee differs from your configured rate by X". Findings never change money or the ledger.
+- API: `/v1/fee_rules`, `/v1/fee_checks/{settings,summary,findings,run}`, `/v1/settlements/{id}/fee_check`; OpenAPI and generated SDK types updated; migration 0078 with row-level security. See `docs/zyvor/FEE_CHECKS.md`.
+- Not checked against any real provider statement. No console page yet.
+
 ## 7 November 2026 — Android parity follow-through
 **More iOS test-mode extras on Android**
 - Pay: Receive QR (`vayora://request` open amount), category memory on settle, open-amount typing on review.

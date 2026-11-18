@@ -27,6 +27,7 @@ pub mod docfacts;
 pub mod docread;
 pub mod error;
 pub mod events;
+pub mod fee_check;
 pub mod fx;
 pub mod gst;
 pub mod idempotency;
@@ -367,6 +368,26 @@ pub fn app(state: AppState) -> Router {
             get(suggestions::case_suggestions),
         )
         .route("/analytics/cost", get(recon::cost_analytics))
+        // fee checks: what a provider deducted against the merchant's own contract
+        .route(
+            "/fee_rules",
+            post(fee_check::create_rule).get(fee_check::list_rules),
+        )
+        .route(
+            "/fee_rules/{id}",
+            axum::routing::delete(fee_check::delete_rule),
+        )
+        .route(
+            "/fee_checks/settings",
+            get(fee_check::get_settings).post(fee_check::set_settings),
+        )
+        .route("/fee_checks/summary", get(fee_check::summary))
+        .route("/fee_checks/findings", get(fee_check::list_findings))
+        .route("/fee_checks/run", post(fee_check::run_all))
+        .route(
+            "/settlements/{id}/fee_check",
+            get(fee_check::get_check).post(fee_check::recheck),
+        )
         // administration
         .route("/api_keys", post(create_key).get(list_keys))
         .route("/api_keys/{id}/revoke", post(revoke_key))

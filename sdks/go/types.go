@@ -54,6 +54,11 @@ type DebitRow struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+type DeleteFeeRulesByIdResponse struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
 type DeleteMailSuppressionsByEmailResponse struct {
 	Email   string `json:"email"`
 	Removed bool   `json:"removed"`
@@ -321,6 +326,45 @@ type GetEventsCatalogueResponse struct {
 type GetEventsCatalogueResponseDataItem struct {
 	Type        any     `json:"type"`
 	Description *string `json:"description"`
+}
+
+type GetFeeChecksFindingsResponse struct {
+	Data []any  `json:"data"`
+	Note string `json:"note"`
+}
+
+type GetFeeChecksSettingsResponse struct {
+	ToleranceMinor int64 `json:"tolerance_minor"`
+	Owner          any   `json:"owner"`
+}
+
+type GetFeeChecksSummaryResponse struct {
+	RulesConfigured            int64                                             `json:"rules_configured"`
+	OpenFindings               any                                               `json:"open_findings"`
+	OpenCases                  int64                                             `json:"open_cases"`
+	OverDeductedMinor          int64                                             `json:"over_deducted_minor"`
+	UnderDeductedMinor         int64                                             `json:"under_deducted_minor"`
+	TotalVarianceMinor         int64                                             `json:"total_variance_minor"`
+	TotalAbsoluteVarianceMinor int64                                             `json:"total_absolute_variance_minor"`
+	ByProviderMethod           []GetFeeChecksSummaryResponseByProviderMethodItem `json:"by_provider_method"`
+	LinesWithoutARule          int64                                             `json:"lines_without_a_rule"`
+	Message                    *string                                           `json:"message"`
+	Note                       string                                            `json:"note"`
+}
+
+type GetFeeChecksSummaryResponseByProviderMethodItem struct {
+	Provider           string `json:"provider"`
+	Method             string `json:"method"`
+	OpenFindings       int64  `json:"open_findings"`
+	Settlements        int64  `json:"settlements"`
+	OverDeductedMinor  int64  `json:"over_deducted_minor"`
+	UnderDeductedMinor int64  `json:"under_deducted_minor"`
+	TotalVarianceMinor int64  `json:"total_variance_minor"`
+}
+
+type GetFeeRulesResponse struct {
+	Data any    `json:"data"`
+	Note string `json:"note"`
 }
 
 type GetFxConvertResponse struct {
@@ -866,6 +910,7 @@ type GetSettlementsByIdExplainResponse struct {
 	Refunds             []any `json:"refunds"`
 	Adjustments         []any `json:"adjustments"`
 	Fees                any   `json:"fees"`
+	FeeCheck            any   `json:"fee_check"`
 	Arithmetic          any   `json:"arithmetic"`
 	ExpectedMinor       int64 `json:"expected_minor"`
 	ReceivedMinor       int64 `json:"received_minor"`
@@ -874,6 +919,19 @@ type GetSettlementsByIdExplainResponse struct {
 	BankMatch           any   `json:"bank_match"`
 	Cases               []any `json:"cases"`
 	Narrative           bool  `json:"narrative"`
+}
+
+type GetSettlementsByIdFeeCheckResponse struct {
+	AttemptID     *string `json:"attempt_id"`
+	Provider      string  `json:"provider"`
+	Method        any     `json:"method"`
+	Status        string  `json:"status"`
+	PaymentMinor  int64   `json:"payment_minor"`
+	RefundedMinor int64   `json:"refunded_minor"`
+	ActualMinor   int64   `json:"actual_minor"`
+	ExpectedMinor int64   `json:"expected_minor"`
+	VarianceMinor int64   `json:"variance_minor"`
+	Rule          any     `json:"rule"`
 }
 
 type GetSettlementsResponse struct {
@@ -1210,6 +1268,32 @@ type PostDisputesResponse struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostFeeChecksRunResponse struct {
+	SettlementsChecked int64 `json:"settlements_checked"`
+	Flagged            any   `json:"flagged"`
+	Ok                 bool  `json:"ok"`
+	NoRule             any   `json:"no_rule"`
+}
+
+type PostFeeChecksSettingsResponse struct {
+	ToleranceMinor int64 `json:"tolerance_minor"`
+	Owner          bool  `json:"owner"`
+}
+
+type PostFeeRulesResponse struct {
+	ID               string  `json:"id"`
+	Provider         string  `json:"provider"`
+	Method           any     `json:"method"`
+	Bps              any     `json:"bps"`
+	FlatMinor        int64   `json:"flat_minor"`
+	CapMinor         int64   `json:"cap_minor"`
+	GstBps           any     `json:"gst_bps"`
+	RefundReturnsFee any     `json:"refund_returns_fee"`
+	EffectiveFrom    any     `json:"effective_from"`
+	Note             *string `json:"note"`
+	CreatedBy        any     `json:"created_by"`
 }
 
 type PostFxRatesResponse struct {
@@ -1903,6 +1987,19 @@ type PostSettlementBatchesResponse struct {
 	Currency string `json:"currency"`
 }
 
+type PostSettlementsByIdFeeCheckResponse struct {
+	AttemptID     *string `json:"attempt_id"`
+	Provider      string  `json:"provider"`
+	Method        any     `json:"method"`
+	Status        string  `json:"status"`
+	PaymentMinor  int64   `json:"payment_minor"`
+	RefundedMinor int64   `json:"refunded_minor"`
+	ActualMinor   int64   `json:"actual_minor"`
+	ExpectedMinor int64   `json:"expected_minor"`
+	VarianceMinor int64   `json:"variance_minor"`
+	Rule          any     `json:"rule"`
+}
+
 type PostSettlementsByIdSimulateBankResponse struct {
 	Added                int64 `json:"added"`
 	SettlementsRechecked int64 `json:"settlements_rechecked"`
@@ -1914,6 +2011,7 @@ type PostSettlementsImportResponse struct {
 	Refunds             []any `json:"refunds"`
 	Adjustments         []any `json:"adjustments"`
 	Fees                any   `json:"fees"`
+	FeeCheck            any   `json:"fee_check"`
 	Arithmetic          any   `json:"arithmetic"`
 	ExpectedMinor       int64 `json:"expected_minor"`
 	ReceivedMinor       int64 `json:"received_minor"`

@@ -28,6 +28,7 @@ const TABLES: &[&str] = &[
     "invoice_lines",
     "invoice_allocations",
     "payment_splits",
+    "fee_check_lines",
     "settlement_items",
     "bank_statement_lines",
     "settlements",

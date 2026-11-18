@@ -34,6 +34,11 @@ export interface DebitRow {
   created_at: string;
 }
 
+export interface DeleteFeeRulesByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
 export interface DeleteMailSuppressionsByEmailResponse {
   email: string;
   removed: boolean;
@@ -301,6 +306,45 @@ export interface GetEventsCatalogueResponse {
 export interface GetEventsCatalogueResponseDataItem {
   type: unknown;
   description: string | null;
+}
+
+export interface GetFeeChecksFindingsResponse {
+  data: unknown[];
+  note: string;
+}
+
+export interface GetFeeChecksSettingsResponse {
+  tolerance_minor: number;
+  owner: unknown;
+}
+
+export interface GetFeeChecksSummaryResponse {
+  rules_configured: number;
+  open_findings: unknown;
+  open_cases: number;
+  over_deducted_minor: number;
+  under_deducted_minor: number;
+  total_variance_minor: number;
+  total_absolute_variance_minor: number;
+  by_provider_method: GetFeeChecksSummaryResponseByProviderMethodItem[];
+  lines_without_a_rule: number;
+  message: string | null;
+  note: string;
+}
+
+export interface GetFeeChecksSummaryResponseByProviderMethodItem {
+  provider: string;
+  method: string;
+  open_findings: number;
+  settlements: number;
+  over_deducted_minor: number;
+  under_deducted_minor: number;
+  total_variance_minor: number;
+}
+
+export interface GetFeeRulesResponse {
+  data: unknown;
+  note: string;
 }
 
 export interface GetFxConvertResponse {
@@ -846,6 +890,7 @@ export interface GetSettlementsByIdExplainResponse {
   refunds: unknown[];
   adjustments: unknown[];
   fees: unknown;
+  fee_check: unknown;
   arithmetic: unknown;
   expected_minor: number;
   received_minor: number;
@@ -854,6 +899,19 @@ export interface GetSettlementsByIdExplainResponse {
   bank_match: unknown;
   cases: unknown[];
   narrative: boolean;
+}
+
+export interface GetSettlementsByIdFeeCheckResponse {
+  attempt_id: string | null;
+  provider: string;
+  method: unknown;
+  status: string;
+  payment_minor: number;
+  refunded_minor: number;
+  actual_minor: number;
+  expected_minor: number;
+  variance_minor: number;
+  rule: unknown;
 }
 
 export interface GetSettlementsResponse {
@@ -1190,6 +1248,32 @@ export interface PostDisputesResponse {
   id: string;
   status: string;
   amount_minor: number;
+}
+
+export interface PostFeeChecksRunResponse {
+  settlements_checked: number;
+  flagged: unknown;
+  ok: boolean;
+  no_rule: unknown;
+}
+
+export interface PostFeeChecksSettingsResponse {
+  tolerance_minor: number;
+  owner: boolean;
+}
+
+export interface PostFeeRulesResponse {
+  id: string;
+  provider: string;
+  method: unknown;
+  bps: unknown;
+  flat_minor: number;
+  cap_minor: number;
+  gst_bps: unknown;
+  refund_returns_fee: unknown;
+  effective_from: unknown;
+  note: string | null;
+  created_by: unknown;
 }
 
 export interface PostFxRatesResponse {
@@ -1883,6 +1967,19 @@ export interface PostSettlementBatchesResponse {
   currency: string;
 }
 
+export interface PostSettlementsByIdFeeCheckResponse {
+  attempt_id: string | null;
+  provider: string;
+  method: unknown;
+  status: string;
+  payment_minor: number;
+  refunded_minor: number;
+  actual_minor: number;
+  expected_minor: number;
+  variance_minor: number;
+  rule: unknown;
+}
+
 export interface PostSettlementsByIdSimulateBankResponse {
   added: number;
   settlements_rechecked: number;
@@ -1894,6 +1991,7 @@ export interface PostSettlementsImportResponse {
   refunds: unknown[];
   adjustments: unknown[];
   fees: unknown;
+  fee_check: unknown;
   arithmetic: unknown;
   expected_minor: number;
   received_minor: number;
