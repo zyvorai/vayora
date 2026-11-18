@@ -3,7 +3,7 @@
 //   arm "vayora":   the payment may use either provider; failover, success-rate signal and circuit breaker are on (defaults)
 // The primary provider (razorpay, the cheaper one in this setup) is made to fail by the SIMULATED provider mock.
 // Payments run one after another so the seeded failure pattern is exactly reproducible.
-import { env, newTenant, setRoutingFees, outage, rate, pct, round, subseed, ok, auditDoubleCharges, now, sleep } from "../lib/common.mjs";
+import { env, stats, newTenant, setRoutingFees, outage, rate, pct, round, subseed, ok, auditDoubleCharges, now, sleep } from "../lib/common.mjs";
 import { journey } from "../lib/journey.mjs";
 
 const N = env.quick ? 16 : 40; // payments inside the outage window
@@ -21,10 +21,13 @@ const cells = [
   { mode: "hang", pct: 100, lookup: true },
   { mode: "hang", pct: 100, lookup: false },
 ];
+const only = process.env.BENCH_S1_ONLY; // for debugging, e.g. "hang:100:true"
 const quickCells = cells.filter((c) => c.pct === 0 || (c.pct === 100 && c.lookup) || (c.mode === "reject" && c.pct === 60));
 
+const tenants = [];
 async function arm(cell, name) {
   const t = await newTenant(`s1 ${name}`);
+  tenants.push(t.id);
   await setRoutingFees(t);
   const pinned = name === "baseline" ? ["razorpay"] : null;
   const o = { pinned, lookup: cell.lookup };
@@ -69,12 +72,13 @@ async function arm(cell, name) {
 
 export async function run() {
   const out = { description: "Success during outage/brown-out, baseline (pinned to one provider) vs Vayora routing", payments_per_cell: N, healthy_warmup_payments: WARM, cells: [] };
-  for (const cell of env.quick ? quickCells : cells) {
+  for (const cell of only ? cells.filter((c) => `${c.mode}:${c.pct}:${c.lookup}` === only) : env.quick ? quickCells : cells) {
     const baseline = await arm(cell, "baseline");
     const vayora = await arm(cell, "vayora");
     out.cells.push({ mode: cell.mode, fail_pct: cell.pct, lookup_available: cell.lookup, baseline, vayora });
     console.error(`  s1 ${cell.mode} ${cell.pct}% lookup=${cell.lookup}: baseline ${baseline.success_rate_pct}%  vayora ${vayora.success_rate_pct}%`);
   }
-  out.double_charge_audit_over_this_scenario = await auditDoubleCharges();
+  out.double_charge_audit_over_this_scenario = await auditDoubleCharges(tenants);
+  out.requests_that_were_rate_limited_and_retried = stats.rate_limited_retries;
   return out;
 }

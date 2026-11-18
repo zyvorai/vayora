@@ -56,6 +56,7 @@ export const rate = (n, d) => (d === 0 ? null : round((100 * n) / d, 1));
 // The API limits requests per client address (300/s sustained for authenticated calls, no environment switch for it).
 // Everything here comes from 127.0.0.1, so the load generator paces itself below that limit instead of changing the
 // product: a token bucket of 250 requests/s (burst 600), and a wait-and-retry if the API still answers 429.
+export const stats = { rate_limited_retries: 0 };
 const bucket = { tokens: 600, last: performance.now() };
 async function pace() {
   for (;;) {
@@ -71,6 +72,7 @@ export async function call(key, method, path, body, opts = {}) {
     await pace();
     const r = await callOnce(key, method, path, body, opts);
     if (r.status !== 429) return r;
+    stats.rate_limited_retries++;
     await sleep(1100);
   }
   throw new Error(`${method} ${path}: still rate limited after retries`);
@@ -212,11 +214,12 @@ export async function writeJson(path, obj) {
  *    (this is the money that would actually have left the payer's account).
  * Also reports money the provider took that the platform has no captured attempt for.
  */
-export async function auditDoubleCharges() {
+export async function auditDoubleCharges(tenantIds) {
+  const only = tenantIds?.length ? ` WHERE tenant_id IN (${tenantIds.map((t) => `'${t}'`).join(",")})` : "";
   const stats = await sim("stats");
   const rz = stats.razorpay_captured_payments_by_order ?? {};
   const cf = stats.cashfree_successful_payments_by_order ?? {};
-  const rows = sql("SELECT intent_id, id, provider, COALESCE(provider_order_ref,''), status FROM payment_attempts");
+  const rows = sql("SELECT intent_id, id, provider, COALESCE(provider_order_ref,''), status FROM payment_attempts" + only);
   const byIntent = new Map();
   for (const [intent, id, provider, orderRef, status] of rows) {
     const e = byIntent.get(intent) ?? { providerPaid: 0, captured: 0, attempts: 0 };

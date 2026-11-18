@@ -5,6 +5,12 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Reproducible benchmark harness (simulator only)
+- `bench/run.sh` runs five scenarios against the local provider mock with fixed seeds and writes JSON plus a markdown table: success during an outage and a seeded brown-out (baseline pinned to one provider vs Vayora failover and breaker), a double-charge audit under timeouts, retries, concurrency and replays (checked in the platform's records and in the provider's), reconciliation of synthetic statements in eight layouts with injected errors (auto-confirmed wrong matches reported), fee-variance precision and recall, and developer time to first payment from a clean checkout with checkout page weight.
+- `bench/check-repro.mjs` compares two runs against documented tolerances; `bench/ci.sh` runs everything twice and applies hard gates (not wired into a workflow).
+- `zyvor-provider-mock`: `POST /_sim/outage` accepts `fail_pct` and `seed` for a repeatable brown-out; `GET /_sim/stats` reports captured Razorpay payments per order. Both tested; existing behaviour is unchanged without the new fields.
+- Numbers are local, simulator-only and make no comparison with any named provider. See [docs/zyvor/BENCHMARKS.md](docs/zyvor/BENCHMARKS.md).
+
 ## 18 November 2026 — Success-rate routing, circuit breaker and failover (simulators only)
 **Routing**
 - Per-tenant rolling success rate per provider and method, from stored attempts, ignored below a minimum sample; rules can set `prefer_success_rate`.

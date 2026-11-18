@@ -3,7 +3,7 @@
 // idempotency keys, and the provider replays webhooks. The payer approves every attempt the platform shows as pending,
 // and late approvals arrive after timeouts. Money only "leaves" when the simulated provider records a successful payment.
 // Pass criterion: 0 intents paid more than once, checked in the platform's database AND in the provider's own records.
-import { env, newTenant, setRoutingFees, outage, sim, rng, subseed, call, createIntent, startAttempt, payerApproves, refreshAttempt, deliver, uniq, auditDoubleCharges, sqlScalar } from "../lib/common.mjs";
+import { env, stats, newTenant, setRoutingFees, outage, sim, rng, subseed, call, createIntent, startAttempt, payerApproves, refreshAttempt, deliver, uniq, auditDoubleCharges, sqlScalar } from "../lib/common.mjs";
 
 const K = env.quick ? 6 : 20;
 const counters = { requests: 0, attempt_posts: 0, created_201: 0, refused_409: 0, same_key_replays: 0, webhook_deliveries: 0, refresh_calls: 0 };
@@ -168,14 +168,15 @@ export async function run() {
 
   await outage("razorpay", "off");
   await outage("cashfree", "off");
-  const audit = await auditDoubleCharges();
-  const stats = await sim("stats");
+  const audit = await auditDoubleCharges([t.id]);
+  const mockStats = await sim("stats");
   return {
     description: "Double-charge check under timeouts, retries, concurrency and replays (simulator)",
     intents_per_phase: phases,
     requests: counters,
-    attempts_recorded: sqlScalar("SELECT count(*) FROM payment_attempts"),
-    provider_orders_created: { razorpay: stats.razorpay_orders, cashfree: stats.cashfree_orders },
+    attempts_recorded: sqlScalar(`SELECT count(*) FROM payment_attempts WHERE tenant_id = '${t.id}'`),
+    requests_that_were_rate_limited_and_retried: stats.rate_limited_retries,
+    provider_orders_created: { razorpay: mockStats.razorpay_orders, cashfree: mockStats.cashfree_orders },
     audit,
     unexpected_observations: failures,
     pass: audit.intents_with_more_than_one_captured_attempt_in_platform === 0 && audit.intents_paid_more_than_once_at_provider === 0 && failures.length === 0,
