@@ -175,6 +175,7 @@ pub async fn candidates(
         out.push(Candidate {
             fees: routing.fees.get(&provider).cloned().unwrap_or_default(),
             caps: p.capabilities(),
+            signal: None,
             enabled,
             health: Health {
                 recent_attempts: attempts as u32,

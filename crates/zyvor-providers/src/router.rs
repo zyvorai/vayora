@@ -47,6 +47,40 @@ impl Health {
     }
 }
 
+/// Where the circuit breaker stands for one provider and method.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Breaker {
+    /// Taking new payments normally.
+    #[default]
+    Healthy,
+    /// Skipped for new payments while it cools down.
+    Degraded,
+    /// Degraded, the cool-down is over and no probe is out: one new payment may test it.
+    ProbeDue,
+}
+
+/// The recent outcome of one provider for one method, derived from stored attempts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Signal {
+    /// Resolved attempts in the window (successes + failures + unresolved). Merchant cancellations and
+    /// attempts still in flight are not counted.
+    pub samples: u32,
+    pub successes: u32,
+    /// Definitive failures: the provider declined it, or refused the request.
+    pub failures: u32,
+    /// Attempts whose outcome is unknown. They count against the provider for the breaker.
+    pub unresolved: u32,
+    /// Successes over samples, in basis points. `None` until there are at least `min_samples`
+    /// attempts: a tiny sample never moves routing.
+    pub success_rate_bps: Option<u32>,
+    pub min_samples: u32,
+    pub breaker: Breaker,
+}
+
+/// How much better (basis points) one provider's success rate must be before it beats a cheaper one.
+pub const DEFAULT_SUCCESS_RATE_MARGIN_BPS: u32 = 200;
+
 #[derive(Debug, Clone)]
 pub struct Candidate {
     pub provider: String,
@@ -55,6 +89,8 @@ pub struct Candidate {
     pub health: Health,
     /// Configured fee per method.
     pub fees: BTreeMap<Method, Fee>,
+    /// Success-rate signal and breaker state for the method being routed (none when not computed).
+    pub signal: Option<Signal>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -66,6 +102,14 @@ pub struct Rule {
     pub prefer: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Among the eligible providers, prefer the one with the better recent success rate. Applies only when every
+    /// remaining provider has enough samples and the best leads by `success_rate_margin_bps`; otherwise the
+    /// lowest fee decides. A `prefer` list, when it names an eligible provider, still wins.
+    #[serde(default)]
+    pub prefer_success_rate: bool,
+    /// Lead (basis points) the best provider needs. Default 200.
+    #[serde(default)]
+    pub success_rate_margin_bps: Option<u32>,
 }
 
 impl Rule {
@@ -74,6 +118,13 @@ impl Rule {
             && self.min_amount_minor.is_none_or(|v| req.amount_minor >= v)
             && self.max_amount_minor.is_none_or(|v| req.amount_minor <= v)
     }
+}
+
+/// A provider that already failed this payment definitively (nothing was taken, nothing is pending there).
+#[derive(Debug, Clone)]
+pub struct Avoid {
+    pub provider: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +136,9 @@ pub struct Request {
     pub allowed: Option<Vec<String>>,
     /// A UPI payment with no payer-typed UPI ID: the provider must issue the QR / intent itself.
     pub upi_intent: bool,
+    /// Failover: providers that definitively failed this payment already. They are skipped when another
+    /// eligible provider exists, and used again only when nothing else is eligible.
+    pub avoid: Vec<Avoid>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +147,9 @@ pub struct Considered {
     pub outcome: &'static str,
     pub reason: String,
     pub estimated_fee_minor: Option<i64>,
+    /// The success-rate signal this decision saw.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<Signal>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,11 +157,39 @@ pub struct Decision {
     pub provider: String,
     pub reasons: Vec<String>,
     pub considered: Vec<Considered>,
+    /// Providers skipped because they already failed this payment definitively.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failover_from: Vec<String>,
+    /// Set when this payment is the circuit breaker's probe of a degraded provider. The caller must claim the
+    /// probe slot atomically and choose again if it loses the race.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub probe: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("no provider can handle this payment: {0}")]
 pub struct NoRoute(pub String);
+
+#[derive(Clone)]
+struct Elig<'a> {
+    c: &'a Candidate,
+    fee: i64,
+    unhealthy: Option<String>,
+}
+
+fn note(c: &Candidate, outcome: &'static str, reason: String, fee: Option<i64>) -> Considered {
+    Considered {
+        provider: c.provider.clone(),
+        outcome,
+        reason,
+        estimated_fee_minor: fee,
+        signal: c.signal.clone(),
+    }
+}
+
+fn breaker(c: &Candidate) -> Breaker {
+    c.signal.as_ref().map(|s| s.breaker).unwrap_or_default()
+}
 
 pub fn choose(
     req: &Request,
@@ -113,7 +198,7 @@ pub fn choose(
 ) -> Result<Decision, NoRoute> {
     let active: Vec<&Rule> = rules.iter().filter(|r| r.matches(req)).collect();
     let mut considered = Vec::new();
-    let mut eligible: Vec<(&Candidate, i64, Option<String>)> = Vec::new();
+    let mut eligible: Vec<Elig> = Vec::new();
 
     for c in candidates {
         let hard = if !c.enabled {
@@ -134,12 +219,7 @@ pub fn choose(
             None
         };
         match hard {
-            Some(reason) => considered.push(Considered {
-                provider: c.provider.clone(),
-                outcome: "rejected",
-                reason,
-                estimated_fee_minor: None,
-            }),
+            Some(reason) => considered.push(note(c, "rejected", reason, None)),
             None => {
                 let fee = c
                     .fees
@@ -147,7 +227,11 @@ pub fn choose(
                     .copied()
                     .unwrap_or_default()
                     .estimate(req.amount_minor);
-                eligible.push((c, fee, c.health.unhealthy()));
+                eligible.push(Elig {
+                    c,
+                    fee,
+                    unhealthy: c.health.unhealthy(),
+                });
             }
         }
     }
@@ -166,74 +250,248 @@ pub fn choose(
     }
 
     let mut reasons = Vec::new();
-    let healthy: Vec<_> = eligible
+    let mut failover_from = Vec::new();
+    let mut pool = eligible.clone();
+
+    // Failover: skip what already failed this payment, unless nothing else is eligible.
+    let avoided = |name: &str| req.avoid.iter().find(|a| a.provider == name);
+    let fresh: Vec<Elig> = pool
         .iter()
-        .filter(|(_, _, h)| h.is_none())
+        .filter(|e| avoided(&e.c.provider).is_none())
+        .cloned()
+        .collect();
+    if fresh.is_empty() {
+        if pool.iter().any(|e| avoided(&e.c.provider).is_some()) {
+            reasons.push(
+                "no other eligible provider: trying the one that failed this payment again"
+                    .to_string(),
+            );
+        }
+    } else if fresh.len() < pool.len() {
+        for e in &pool {
+            if let Some(a) = avoided(&e.c.provider) {
+                failover_from.push(e.c.provider.clone());
+                considered.push(note(
+                    e.c,
+                    "skipped_failover",
+                    format!(
+                        "failed this payment already ({}); trying another provider",
+                        a.reason
+                    ),
+                    Some(e.fee),
+                ));
+            }
+        }
+        reasons.push(format!(
+            "failover: {} failed this payment definitively, using another provider",
+            failover_from.join(", ")
+        ));
+        pool = fresh;
+    }
+
+    // Circuit breaker, half-open: one new payment may test a degraded provider once its cool-down is over.
+    if let Some(probe) = pool
+        .iter()
+        .filter(|e| breaker(e.c) == Breaker::ProbeDue)
+        .min_by(|a, b| a.c.provider.cmp(&b.c.provider))
+        .cloned()
+    {
+        for e in &pool {
+            if e.c.provider == probe.c.provider {
+                continue;
+            }
+            if matches!(breaker(e.c), Breaker::Degraded | Breaker::ProbeDue) {
+                considered.push(note(
+                    e.c,
+                    "skipped_degraded",
+                    "degraded by the circuit breaker".to_string(),
+                    Some(e.fee),
+                ));
+            } else {
+                considered.push(note(
+                    e.c,
+                    "not_chosen",
+                    format!("{} is being probed after its cool-down", probe.c.provider),
+                    Some(e.fee),
+                ));
+            }
+        }
+        reasons.push(format!(
+            "circuit breaker probe: {} was degraded and its cool-down is over; this payment tests it",
+            probe.c.provider
+        ));
+        considered.push(note(probe.c, "probe", reasons.join("; "), Some(probe.fee)));
+        return Ok(Decision {
+            provider: probe.c.provider.clone(),
+            reasons,
+            considered,
+            failover_from,
+            probe: Some(probe.c.provider.clone()),
+        });
+    }
+
+    // Circuit breaker, open: degraded providers are skipped for new payments.
+    let live: Vec<Elig> = pool
+        .iter()
+        .filter(|e| breaker(e.c) != Breaker::Degraded)
+        .cloned()
+        .collect();
+    if live.is_empty() {
+        reasons.push(
+            "every eligible provider is degraded by the circuit breaker; choosing among them anyway"
+                .to_string(),
+        );
+    } else if live.len() < pool.len() {
+        let names: Vec<_> = pool
+            .iter()
+            .filter(|e| breaker(e.c) == Breaker::Degraded)
+            .map(|e| {
+                considered.push(note(
+                    e.c,
+                    "skipped_degraded",
+                    format!(
+                        "degraded: recent failure rate crossed the threshold ({})",
+                        e.c.signal
+                            .as_ref()
+                            .map(|s| format!(
+                                "{} failed or unresolved of {}",
+                                s.failures + s.unresolved,
+                                s.samples
+                            ))
+                            .unwrap_or_default()
+                    ),
+                    Some(e.fee),
+                ));
+                e.c.provider.clone()
+            })
+            .collect();
+        reasons.push(format!("skipped degraded: {}", names.join(", ")));
+        pool = live;
+    }
+
+    // The older, coarser health heuristic only reorders.
+    let healthy: Vec<Elig> = pool
+        .iter()
+        .filter(|e| e.unhealthy.is_none())
         .cloned()
         .collect();
     let pool = if healthy.is_empty() {
         reasons.push("all eligible providers are degraded; choosing among them anyway".to_string());
-        eligible.clone()
+        pool
     } else {
         healthy
     };
-    for (c, fee, h) in &eligible {
-        if let Some(h) = h
-            && pool.iter().all(|(p, _, _)| p.provider != c.provider)
+    for e in &eligible {
+        if let Some(h) = &e.unhealthy
+            && pool.iter().all(|p| p.c.provider != e.c.provider)
+            && !considered.iter().any(|c| c.provider == e.c.provider)
         {
-            {
-                considered.push(Considered {
-                    provider: c.provider.clone(),
-                    outcome: "deprioritised",
-                    reason: format!("degraded: {h}"),
-                    estimated_fee_minor: Some(*fee),
-                });
-            }
+            considered.push(note(
+                e.c,
+                "deprioritised",
+                format!("degraded: {h}"),
+                Some(e.fee),
+            ));
         }
     }
 
     let preferred = active
         .iter()
         .flat_map(|r| r.prefer.iter())
-        .find_map(|p| pool.iter().find(|(c, _, _)| &c.provider == p));
-    let (chosen, fee, _) = match preferred {
+        .find_map(|p| pool.iter().find(|e| &e.c.provider == p));
+    let by_rate = active.iter().any(|r| r.prefer_success_rate);
+    let margin = active
+        .iter()
+        .filter(|r| r.prefer_success_rate)
+        .filter_map(|r| r.success_rate_margin_bps)
+        .min()
+        .unwrap_or(DEFAULT_SUCCESS_RATE_MARGIN_BPS);
+    let rate = |e: &Elig| e.c.signal.as_ref().and_then(|s| s.success_rate_bps);
+
+    let chosen: &Elig = match preferred {
         Some(p) => {
-            reasons.push(format!("routing rule prefers {}", p.0.provider));
+            reasons.push(format!("routing rule prefers {}", p.c.provider));
             p
         }
         None => {
-            let best = pool
-                .iter()
-                .min_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.provider.cmp(&b.0.provider)))
-                .expect("pool non-empty");
-            reasons.push(if pool.len() > 1 {
-                format!("lowest estimated fee ({} minor units)", best.1)
-            } else {
-                "only eligible provider".to_string()
-            });
-            best
+            let mut by_success: Option<&Elig> = None;
+            if by_rate && pool.len() > 1 {
+                if pool.iter().all(|e| rate(e).is_some()) {
+                    let mut ranked: Vec<&Elig> = pool.iter().collect();
+                    ranked.sort_by(|a, b| {
+                        rate(b)
+                            .cmp(&rate(a))
+                            .then_with(|| a.fee.cmp(&b.fee))
+                            .then_with(|| a.c.provider.cmp(&b.c.provider))
+                    });
+                    let (top, next) = (ranked[0], ranked[1]);
+                    let (tr, nr) = (rate(top).unwrap_or(0), rate(next).unwrap_or(0));
+                    if tr >= nr + margin {
+                        reasons.push(format!(
+                            "best recent success rate: {} {} bps vs {} {} bps (margin {margin})",
+                            top.c.provider, tr, next.c.provider, nr
+                        ));
+                        by_success = Some(top);
+                    } else {
+                        reasons.push(format!(
+                            "success rates within {margin} bps of each other; fell back to fee"
+                        ));
+                    }
+                } else {
+                    let missing: Vec<_> = pool
+                        .iter()
+                        .filter(|e| rate(e).is_none())
+                        .map(|e| e.c.provider.as_str())
+                        .collect();
+                    reasons.push(format!(
+                        "not enough recent attempts for {} to compare success rates; fell back to fee",
+                        missing.join(", ")
+                    ));
+                }
+            }
+            match by_success {
+                Some(e) => e,
+                None => {
+                    let best = pool
+                        .iter()
+                        .min_by(|a, b| {
+                            a.fee
+                                .cmp(&b.fee)
+                                .then_with(|| a.c.provider.cmp(&b.c.provider))
+                        })
+                        .expect("pool non-empty");
+                    reasons.push(if pool.len() > 1 {
+                        format!("lowest estimated fee ({} minor units)", best.fee)
+                    } else {
+                        "only eligible provider".to_string()
+                    });
+                    best
+                }
+            }
         }
     };
-    for (c, f, _) in &pool {
-        if c.provider != chosen.provider {
-            considered.push(Considered {
-                provider: c.provider.clone(),
-                outcome: "not_chosen",
-                reason: format!("estimated fee {f}; {} preferred", chosen.provider),
-                estimated_fee_minor: Some(*f),
-            });
+    for e in &pool {
+        if e.c.provider != chosen.c.provider {
+            considered.push(note(
+                e.c,
+                "not_chosen",
+                format!("estimated fee {}; {} preferred", e.fee, chosen.c.provider),
+                Some(e.fee),
+            ));
         }
     }
-    considered.push(Considered {
-        provider: chosen.provider.clone(),
-        outcome: "selected",
-        reason: reasons.join("; "),
-        estimated_fee_minor: Some(*fee),
-    });
+    considered.push(note(
+        chosen.c,
+        "selected",
+        reasons.join("; "),
+        Some(chosen.fee),
+    ));
     Ok(Decision {
-        provider: chosen.provider.clone(),
+        provider: chosen.c.provider.clone(),
         reasons,
         considered,
+        failover_from,
+        probe: None,
     })
 }
 
@@ -259,6 +517,7 @@ mod tests {
             caps: caps(methods, &[Currency::Inr]),
             enabled: true,
             health: Health::default(),
+            signal: None,
             fees: methods
                 .iter()
                 .map(|m| {
@@ -280,6 +539,7 @@ mod tests {
             currency: Currency::Inr,
             allowed: None,
             upi_intent: false,
+            avoid: vec![],
         }
     }
 
@@ -428,6 +688,191 @@ mod tests {
             ..req(Method::Upi, 1_000)
         };
         assert_eq!(choose(&r, &c, &[]).unwrap().provider, "b");
+    }
+
+    fn with_signal(
+        mut c: Candidate,
+        successes: u32,
+        failures: u32,
+        min: u32,
+        b: Breaker,
+    ) -> Candidate {
+        let samples = successes + failures;
+        c.signal = Some(Signal {
+            samples,
+            successes,
+            failures,
+            unresolved: 0,
+            success_rate_bps: (samples >= min && samples > 0).then(|| successes * 10_000 / samples),
+            min_samples: min,
+            breaker: b,
+        });
+        c
+    }
+    fn rate_rule() -> Rule {
+        Rule {
+            prefer_success_rate: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn better_success_rate_beats_a_cheaper_provider_only_with_enough_data_and_margin() {
+        let cheap = with_signal(
+            cand("cheap", &[Method::Upi], 10),
+            80,
+            20,
+            10,
+            Breaker::Healthy,
+        );
+        let dear = with_signal(
+            cand("dear", &[Method::Upi], 100),
+            97,
+            3,
+            10,
+            Breaker::Healthy,
+        );
+        let r = [rate_rule()];
+        let d = choose(
+            &req(Method::Upi, 10_000),
+            &[cheap.clone(), dear.clone()],
+            &r,
+        )
+        .unwrap();
+        assert_eq!(d.provider, "dear");
+        assert!(
+            d.reasons
+                .iter()
+                .any(|x| x.contains("best recent success rate"))
+        );
+        // every considered provider carries the signal it was judged on
+        assert!(d.considered.iter().all(|c| c.signal.is_some()));
+
+        // without the rule fee still decides
+        assert_eq!(
+            choose(
+                &req(Method::Upi, 10_000),
+                &[cheap.clone(), dear.clone()],
+                &[]
+            )
+            .unwrap()
+            .provider,
+            "cheap"
+        );
+
+        // a tiny sample never flips routing
+        let few = with_signal(
+            cand("dear", &[Method::Upi], 100),
+            3,
+            0,
+            10,
+            Breaker::Healthy,
+        );
+        let d = choose(&req(Method::Upi, 10_000), &[cheap.clone(), few], &r).unwrap();
+        assert_eq!(d.provider, "cheap");
+        assert!(
+            d.reasons
+                .iter()
+                .any(|x| x.contains("not enough recent attempts"))
+        );
+
+        // a lead inside the margin is noise
+        let close = with_signal(
+            cand("dear", &[Method::Upi], 100),
+            81,
+            19,
+            10,
+            Breaker::Healthy,
+        );
+        let d = choose(&req(Method::Upi, 10_000), &[cheap, close], &r).unwrap();
+        assert_eq!(d.provider, "cheap");
+        assert!(d.reasons.iter().any(|x| x.contains("within")));
+    }
+
+    #[test]
+    fn an_explicit_prefer_list_still_beats_the_success_rate_option() {
+        let a = with_signal(cand("a", &[Method::Upi], 10), 50, 50, 10, Breaker::Healthy);
+        let b = with_signal(cand("b", &[Method::Upi], 10), 99, 1, 10, Breaker::Healthy);
+        let r = Rule {
+            prefer: vec!["a".into()],
+            prefer_success_rate: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            choose(&req(Method::Upi, 1_000), &[a, b], &[r])
+                .unwrap()
+                .provider,
+            "a"
+        );
+    }
+
+    #[test]
+    fn a_degraded_provider_is_skipped_for_new_payments_and_a_probe_is_marked() {
+        let bad = with_signal(
+            cand("cheap", &[Method::Upi], 10),
+            2,
+            18,
+            10,
+            Breaker::Degraded,
+        );
+        let ok = cand("dear", &[Method::Upi], 100);
+        let d = choose(&req(Method::Upi, 10_000), &[bad.clone(), ok.clone()], &[]).unwrap();
+        assert_eq!(d.provider, "dear");
+        let skipped = d.considered.iter().find(|c| c.provider == "cheap").unwrap();
+        assert_eq!(skipped.outcome, "skipped_degraded");
+        assert!(skipped.signal.is_some());
+        assert!(d.probe.is_none());
+
+        // only option: still used (a signal never leaves a business unable to take payments), and it says so
+        let d = choose(&req(Method::Upi, 10_000), std::slice::from_ref(&bad), &[]).unwrap();
+        assert_eq!(d.provider, "cheap");
+        assert!(
+            d.reasons
+                .iter()
+                .any(|r| r.contains("every eligible provider is degraded"))
+        );
+
+        // cool-down over: exactly one payment probes it, and the decision says so
+        let due = with_signal(
+            cand("cheap", &[Method::Upi], 10),
+            2,
+            18,
+            10,
+            Breaker::ProbeDue,
+        );
+        let d = choose(&req(Method::Upi, 10_000), &[due, ok], &[]).unwrap();
+        assert_eq!(d.provider, "cheap");
+        assert_eq!(d.probe.as_deref(), Some("cheap"));
+        assert!(d.considered.iter().any(|c| c.outcome == "probe"));
+    }
+
+    #[test]
+    fn failover_skips_what_failed_this_payment_but_never_leaves_no_route() {
+        let a = cand("a", &[Method::Upi], 10);
+        let b = cand("b", &[Method::Upi], 90);
+        let mut r = req(Method::Upi, 10_000);
+        r.avoid = vec![Avoid {
+            provider: "a".into(),
+            reason: "provider_rejected".into(),
+        }];
+        let d = choose(&r, &[a.clone(), b.clone()], &[]).unwrap();
+        assert_eq!(d.provider, "b");
+        assert_eq!(d.failover_from, vec!["a".to_string()]);
+        assert!(
+            d.considered
+                .iter()
+                .any(|c| c.provider == "a" && c.outcome == "skipped_failover")
+        );
+        // nothing else eligible: the same provider is tried again, as a plain retry always was
+        let d = choose(&r, std::slice::from_ref(&a), &[]).unwrap();
+        assert_eq!(d.provider, "a");
+        assert!(d.failover_from.is_empty());
+        // a hard filter still wins over failover: b is excluded, so a is all that is left
+        let ex = Rule {
+            exclude: vec!["b".into()],
+            ..Default::default()
+        };
+        assert_eq!(choose(&r, &[a, b], &[ex]).unwrap().provider, "a");
     }
 
     #[test]
