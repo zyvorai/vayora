@@ -5,6 +5,9 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — SDK methods for fee checks, bank statements and routing health
+- Node, Python and Go SDKs gain typed methods for fee rules, fee checks (settings, summary, findings, run, per-settlement check), bank statements (preview, layouts, imports, lines, rematch, match confirm and reject), reconciliation ageing and routing health with its settings. CSV import and preview accept the layout options. The Node CLI gains matching read commands. Tested with mocked HTTP only; no server change.
+
 ## 18 November 2026 — Success-rate routing, circuit breaker and failover (simulators only)
 **Routing**
 - Per-tenant rolling success rate per provider and method, from stored attempts, ignored below a minimum sample; rules can set `prefer_success_rate`.
