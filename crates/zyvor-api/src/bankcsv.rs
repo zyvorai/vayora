@@ -394,7 +394,7 @@ pub(crate) fn detect_delimiter(text: &str) -> char {
         .unwrap_or(',')
 }
 
-fn norm_header(s: &str) -> String {
+pub(crate) fn norm_header(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_alphanumeric())
         .flat_map(char::to_lowercase)
@@ -615,6 +615,16 @@ fn grouping_ok(int_part: &str) -> bool {
     let western = mid.iter().all(|x| x.len() == 3);
     let indian = mid.iter().all(|x| x.len() == 2) && first.len() <= 2;
     western || indian
+}
+
+/// An amount in rupees as people type it ("1,250.50", "₹ 499"), as whole paise. No sign, no Dr/Cr, at most two
+/// decimals, grouping only the Indian or western way. For files that are not bank statements.
+pub(crate) fn parse_rupees(s: &str) -> Result<i64, String> {
+    match parse_amount(s)? {
+        Some(a) if !a.negative && a.credit.is_none() && a.minor > 0 => Ok(a.minor),
+        Some(_) => Err(format!("`{}` must be a positive amount", s.trim())),
+        None => Err("the amount is empty".into()),
+    }
 }
 
 fn parse_amount(s: &str) -> Result<Option<Amt>, String> {

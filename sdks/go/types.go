@@ -341,9 +341,13 @@ type GetCheckoutLinksByTenantIdByTokenResponse struct {
 	CouponApplied  any     `json:"coupon_applied"`
 	Currency       string  `json:"currency"`
 	Status         string  `json:"status"`
-	OpenAmount     bool    `json:"open_amount"`
-	MinAmountMinor *int64  `json:"min_amount_minor"`
-	MaxAmountMinor *int64  `json:"max_amount_minor"`
+	OpenAmount     any     `json:"open_amount"`
+	MinAmountMinor int64   `json:"min_amount_minor"`
+	MaxAmountMinor int64   `json:"max_amount_minor"`
+	Message        *string `json:"message"`
+	Brand          any     `json:"brand"`
+	AllowedMethods any     `json:"allowed_methods"`
+	Partial        any     `json:"partial"`
 }
 
 type GetClosingsResponse struct {
@@ -1086,6 +1090,36 @@ type GetPaymentIntentsByIdTimelineResponse struct {
 type GetPaymentIntentsResponse struct {
 	Data    []IntentRow `json:"data"`
 	HasMore bool        `json:"has_more"`
+}
+
+type GetPaymentLinksAnalyticsResponse struct {
+	From   any `json:"from"`
+	To     any `json:"to"`
+	Totals any `json:"totals"`
+	Daily  any `json:"daily"`
+	Funnel any `json:"funnel"`
+	Notes  any `json:"notes"`
+}
+
+type GetPaymentLinksByIdAnalyticsResponse struct {
+	From   any `json:"from"`
+	To     any `json:"to"`
+	Totals any `json:"totals"`
+	Daily  any `json:"daily"`
+	Funnel any `json:"funnel"`
+	Notes  any `json:"notes"`
+}
+
+type GetPaymentLinksByIdShareResponse struct {
+	ID           string `json:"id"`
+	URL          any    `json:"url"`
+	Text         any    `json:"text"`
+	SmsText      any    `json:"sms_text"`
+	EmailSubject any    `json:"email_subject"`
+	QrPath       string `json:"qr_path"`
+	CanEmail     any    `json:"can_email"`
+	CanSms       any    `json:"can_sms"`
+	SmsMode      any    `json:"sms_mode"`
 }
 
 type GetPaymentLinksResponse struct {
@@ -2531,6 +2565,17 @@ type PostPaymentIntentsResponse struct {
 	ClientSecret     string   `json:"client_secret"`
 }
 
+type PostPaymentLinksBulkResponse struct {
+	ImportID   *string `json:"import_id"`
+	Repeat     bool    `json:"repeat"`
+	DryRun     bool    `json:"dry_run"`
+	Rows       int64   `json:"rows"`
+	Created    any     `json:"created"`
+	Existing   any     `json:"existing"`
+	Links      any     `json:"links"`
+	ExportPath string  `json:"export_path"`
+}
+
 type PostPaymentLinksByIdCancelResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
@@ -2541,6 +2586,12 @@ type PostPaymentLinksByIdSendResponse struct {
 	Queued bool   `json:"queued"`
 }
 
+type PostPaymentLinksByIdSendSmsResponse struct {
+	ID     string `json:"id"`
+	Queued bool   `json:"queued"`
+	Mode   any    `json:"mode"`
+}
+
 type PostPaymentLinksResponse struct {
 	ID        string  `json:"id"`
 	Token     any     `json:"token"`
@@ -2548,6 +2599,7 @@ type PostPaymentLinksResponse struct {
 	Path      string  `json:"path"`
 	MaxUses   *int64  `json:"max_uses"`
 	ExpiresAt *string `json:"expires_at"`
+	Existing  any     `json:"existing"`
 }
 
 type PostPayoutsBulkResponse struct {

@@ -321,9 +321,13 @@ export interface GetCheckoutLinksByTenantIdByTokenResponse {
   coupon_applied: unknown;
   currency: string;
   status: string;
-  open_amount: boolean;
-  min_amount_minor: number | null;
-  max_amount_minor: number | null;
+  open_amount: unknown;
+  min_amount_minor: number;
+  max_amount_minor: number;
+  message: string | null;
+  brand: unknown;
+  allowed_methods: unknown;
+  partial: unknown;
 }
 
 export interface GetClosingsResponse {
@@ -1066,6 +1070,36 @@ export interface GetPaymentIntentsByIdTimelineResponse {
 export interface GetPaymentIntentsResponse {
   data: IntentRow[];
   has_more: boolean;
+}
+
+export interface GetPaymentLinksAnalyticsResponse {
+  from: unknown;
+  to: unknown;
+  totals: unknown;
+  daily: unknown;
+  funnel: unknown;
+  notes: unknown;
+}
+
+export interface GetPaymentLinksByIdAnalyticsResponse {
+  from: unknown;
+  to: unknown;
+  totals: unknown;
+  daily: unknown;
+  funnel: unknown;
+  notes: unknown;
+}
+
+export interface GetPaymentLinksByIdShareResponse {
+  id: string;
+  url: unknown;
+  text: unknown;
+  sms_text: unknown;
+  email_subject: unknown;
+  qr_path: string;
+  can_email: unknown;
+  can_sms: unknown;
+  sms_mode: unknown;
 }
 
 export interface GetPaymentLinksResponse {
@@ -2511,6 +2545,17 @@ export interface PostPaymentIntentsResponse {
   client_secret: string;
 }
 
+export interface PostPaymentLinksBulkResponse {
+  import_id: string | null;
+  repeat: boolean;
+  dry_run: boolean;
+  rows: number;
+  created: unknown;
+  existing: unknown;
+  links: unknown;
+  export_path: string;
+}
+
 export interface PostPaymentLinksByIdCancelResponse {
   id: string;
   status: string;
@@ -2521,6 +2566,12 @@ export interface PostPaymentLinksByIdSendResponse {
   queued: boolean;
 }
 
+export interface PostPaymentLinksByIdSendSmsResponse {
+  id: string;
+  queued: boolean;
+  mode: unknown;
+}
+
 export interface PostPaymentLinksResponse {
   id: string;
   token: unknown;
@@ -2528,6 +2579,7 @@ export interface PostPaymentLinksResponse {
   path: string;
   max_uses: number | null;
   expires_at: string | null;
+  existing: unknown;
 }
 
 export interface PostPayoutsBulkResponse {
