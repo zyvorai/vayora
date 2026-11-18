@@ -3178,6 +3178,7 @@ dependencies = [
  "form_urlencoded",
  "hex",
  "hmac",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",

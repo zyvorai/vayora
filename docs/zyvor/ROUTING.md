@@ -213,7 +213,11 @@ ignores provider health completely; turn failover off to keep retrying the same 
 
 - Local provider mock (`zyvor-provider-mock`): `POST /_sim/outage {"provider": "razorpay"|"cashfree", "mode": ...}`,
   sticky until `"off"`. `reject` answers HTTP 400 on order creation (definitive: nothing created), `unavailable` answers
-  503 and `hang` never answers (both leave the outcome unknown to the caller). The older one-shot switch
+  503 and `hang` never answers (both leave the outcome unknown to the caller). Add `"fail_pct": 30` (0 to 100, default
+  100) for a **brown-out**: only that share of order-creation calls fails and the rest are served normally. Which calls
+  fail is fixed by `"seed"` (default 0), so a run repeats exactly. `GET /_sim/stats` also reports
+  `razorpay_captured_payments_by_order` next to the Cashfree equivalent, so a test can tell a double charge from one.
+  The benchmark harness ([BENCHMARKS.md](BENCHMARKS.md)) uses these. The older one-shot switch
   `POST /_sim/behaviour` (`cashfree.pay` = `hang_after_accept`) models a timeout after the provider accepted the payment.
 - The in-process `sim` provider already declines by UPI handle (`fail*`) and times out by handle (`uncertain*`).
 

@@ -14,6 +14,12 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - **Checkout**: clearer expired / used / cancelled / paid / busy states, accessible amount errors, and new strings in six languages (the non-English ones are machine-assisted drafts).
 - Migration 0083 (additive; row-level security on every new table). OpenAPI and generated SDK types updated. See [docs/zyvor/PAYMENT_LINKS.md](docs/zyvor/PAYMENT_LINKS.md). Tested against simulators and a local stand-in SMS receiver; no console page yet.
 
+## 18 November 2026 — Reproducible benchmark harness (simulator only)
+- `bench/run.sh` runs five scenarios against the local provider mock with fixed seeds and writes JSON plus a markdown table: success during an outage and a seeded brown-out (baseline pinned to one provider vs Vayora failover and breaker), a double-charge audit under timeouts, retries, concurrency and replays (checked in the platform's records and in the provider's), reconciliation of synthetic statements in eight layouts with injected errors (auto-confirmed wrong matches reported), fee-variance precision and recall, and developer time to first payment from a clean checkout with checkout page weight.
+- `bench/check-repro.mjs` compares two runs against documented tolerances; `bench/ci.sh` runs everything twice and applies hard gates (not wired into a workflow).
+- `zyvor-provider-mock`: `POST /_sim/outage` accepts `fail_pct` and `seed` for a repeatable brown-out; `GET /_sim/stats` reports captured Razorpay payments per order. Both tested; existing behaviour is unchanged without the new fields.
+- Numbers are local, simulator-only and make no comparison with any named provider. See [docs/zyvor/BENCHMARKS.md](docs/zyvor/BENCHMARKS.md).
+
 ## 18 November 2026 — Routing automation: shadow mode, soft retry, cost-aware routing, kill switch, scorecard (simulators only)
 - **Kill switch** per business (`POST /v1/routing/automation/pause` and `/resume`, admin): shadow mode, soft retry, cost-aware routing, failover and the breaker's effect on routing all stop at once; idempotent and audited. Every automation is **off by default** and each switch writes an audit entry.
 - **Shadow mode**: records what a candidate policy would have chosen next to what was applied (never changes routing, never calls a provider). `GET /v1/routing/shadow/report`: agreement rate, where they differ, estimated fee difference, outcomes of the payments that were sent. It cannot know how the other provider would have done.
