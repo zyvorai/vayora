@@ -1341,7 +1341,7 @@ pub async fn export(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>
         ),
         (
             "payment_attempts",
-            "SELECT to_jsonb(t) - 'raw' FROM payment_attempts t ORDER BY id",
+            "SELECT to_jsonb(t) - 'raw' - 'retry_input' FROM payment_attempts t ORDER BY id",
         ),
         ("refunds", "SELECT to_jsonb(t) FROM refunds t ORDER BY id"),
         (

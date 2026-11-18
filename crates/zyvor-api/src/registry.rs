@@ -152,18 +152,16 @@ pub async fn candidates(
     env: &str,
     routing: &Routing,
 ) -> Result<Vec<Candidate>, ApiError> {
-    // every new payment (API, payment link, checkout) starts here: none for a business whose live mode was taken away
-    if env == "live" && crate::platform::live_frozen(&state.pool, tenant_id).await? {
+    // every new payment (API, payment link, checkout) starts here: none for a business whose live mode was taken away.
+    // Both checks use the caller's own connection: asking the pool for a second one while this one is held (as these
+    // used to) can exhaust the pool when many requests for the same payment are waiting on its row lock.
+    if env == "live" && crate::platform::live_frozen(&mut *conn, tenant_id).await? {
         return Err(ApiError::conflict(
             "live_access_revoked",
             "this business cannot take new payments: Zyvor has taken live mode away",
         ));
     }
-    {
-        let mut gate = crate::tenant::begin(&state.pool, tenant_id).await?;
-        crate::money_mode::acquire_live_allowed(&mut gate, tenant_id).await?;
-        gate.rollback().await?;
-    }
+    crate::money_mode::acquire_live_allowed(&mut *conn, tenant_id).await?;
     let accounts: Vec<(String, bool)> = sqlx::query_as(
         "SELECT provider, enabled FROM provider_accounts WHERE tenant_id = $1 ORDER BY provider",
     )
@@ -177,6 +175,7 @@ pub async fn candidates(
             fees: routing.fees.get(&provider).cloned().unwrap_or_default(),
             caps: p.capabilities(),
             signal: None,
+            cost: None,
             enabled,
             provider,
         });

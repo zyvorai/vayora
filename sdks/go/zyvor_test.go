@@ -555,6 +555,14 @@ func TestFeeCheckBankStatementAndRoutingHealthMethods(t *testing.T) {
 		{"UpdateRoutingHealthSettings", func() (map[string]any, error) {
 			return c.UpdateRoutingHealthSettings(map[string]any{"min_samples": 20})
 		}, "PUT", "/v1/routing/health/settings", map[string]any{"min_samples": float64(20)}},
+		{"RoutingAutomation", func() (map[string]any, error) { return c.RoutingAutomation() }, "GET", "/v1/routing/automation", nil},
+		{"UpdateRoutingAutomation", func() (map[string]any, error) {
+			return c.UpdateRoutingAutomation(map[string]any{"soft_retry_enabled": true})
+		}, "PUT", "/v1/routing/automation", map[string]any{"soft_retry_enabled": true}},
+		{"PauseRoutingAutomation", func() (map[string]any, error) { return c.PauseRoutingAutomation("provider talks") }, "POST", "/v1/routing/automation/pause", map[string]any{"reason": "provider talks"}},
+		{"ResumeRoutingAutomation", func() (map[string]any, error) { return c.ResumeRoutingAutomation() }, "POST", "/v1/routing/automation/resume", map[string]any{}},
+		{"RoutingShadowReport", func() (map[string]any, error) { return c.RoutingShadowReport(3, "upi") }, "GET", "/v1/routing/shadow/report?days=3&method=upi", nil},
+		{"RoutingScorecard", func() (map[string]any, error) { return c.RoutingScorecard(14, "") }, "GET", "/v1/routing/scorecard?days=14", nil},
 	}
 	for _, r := range rows {
 		got = seen{}

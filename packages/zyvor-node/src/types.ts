@@ -40,7 +40,7 @@ export interface DeleteCashLagRulesByIdResponse {
 
 export interface DeleteExportsAccountMappingsByIdResponse {
   deleted: boolean;
-  ledger_account: string;
+  ledger_account: string | null;
 }
 
 export interface DeleteFeeRulesByIdResponse {
@@ -89,16 +89,42 @@ export interface GetAnalyticsCostResponse {
 }
 
 export interface GetAnalyticsRefundsResponse {
-  from: string;
-  to: string;
-  bucket: string;
+  from: unknown;
+  to: unknown;
+  bucket: unknown;
   currency: string;
-  series: unknown[];
+  series: GetAnalyticsRefundsResponseSeriesItem[];
   totals: unknown;
   time_to_refund: unknown;
-  sla: unknown;
-  leakage: unknown;
+  sla: GetAnalyticsRefundsResponseSlaItem[];
+  leakage: GetAnalyticsRefundsResponseLeakageItem[];
   note: string;
+}
+
+export interface GetAnalyticsRefundsResponseLeakageItem {
+  provider: string;
+  method: string;
+  lines: number;
+  settlements: number;
+  amount_minor: number;
+}
+
+export interface GetAnalyticsRefundsResponseSeriesItem {
+  starts: string;
+  captured_count: unknown;
+  captured_minor: number;
+  refunds_requested_count: unknown;
+  refunds_requested_minor: number;
+  refunds_processed_count: unknown;
+  refunds_processed_minor: number;
+  refund_rate_bps: unknown;
+}
+
+export interface GetAnalyticsRefundsResponseSlaItem {
+  status: string;
+  count: number;
+  amount_minor: number;
+  oldest_hours: unknown;
 }
 
 export interface GetApiKeysResponse {
@@ -190,54 +216,83 @@ export interface GetCardTokensResponse {
 }
 
 export interface GetCashDashboardResponse {
-  as_of: string;
+  as_of: string | null;
   currency: string;
-  matched_window_days: number;
-  by_provider: unknown[];
+  matched_window_days: unknown;
+  by_provider: unknown;
   totals: unknown;
-  payouts_pending: unknown;
+  payouts_pending: GetCashDashboardResponsePayoutsPendingItem[];
   paid_payouts_without_bank_debit_match: unknown;
   note: string;
 }
 
+export interface GetCashDashboardResponsePayoutsPendingItem {
+  status: string;
+  count: number;
+  amount_minor: number;
+}
+
 export interface GetCashForecastResponse {
-  as_of: string;
+  as_of: string | null;
   currency: string;
-  horizon_days: number;
+  horizon_days: unknown;
   days: GetCashForecastResponseDaysItem[];
   overdue: unknown;
   expected_after_horizon_minor: number;
   expected_without_range_minor: number;
-  not_forecast: unknown[];
+  not_forecast: GetCashForecastResponseNotForecastItem[];
   basis: unknown[];
   note: string;
 }
 
 export interface GetCashForecastResponseDaysItem {
-  date: string;
+  date: unknown;
   expected_minor: number;
   cumulative_low_minor: number;
   cumulative_expected_minor: number;
   cumulative_high_minor: number;
 }
 
+export interface GetCashForecastResponseNotForecastItem {
+  provider: string;
+  method: unknown;
+  payments: unknown;
+  amount_minor: number;
+  status: string;
+}
+
 export interface GetCashLagResponse {
-  as_of: string;
-  lookback_days: number;
-  min_samples: number;
+  as_of: string | null;
+  lookback_days: unknown;
+  min_samples: unknown;
   data: unknown[];
-  tenant_rules: unknown[];
+  tenant_rules: GetCashLagResponseTenantRulesItem[];
   note: string;
 }
 
+export interface GetCashLagResponseTenantRulesItem {
+  provider: string;
+  method: unknown;
+  expected_lag_days: unknown;
+}
+
 export interface GetCashLagRulesResponse {
-  data: unknown[];
+  data: GetCashLagRulesResponseDataItem[];
+}
+
+export interface GetCashLagRulesResponseDataItem {
+  id: string;
+  provider: string;
+  method: string;
+  expected_lag_days: number;
+  note: string;
+  created_by: string;
 }
 
 export interface GetCashSettingsResponse {
-  min_samples: number;
-  alert_grace_days: number;
-  refund_sla_hours: number;
+  min_samples: unknown;
+  alert_grace_days: unknown;
+  refund_sla_hours: unknown;
 }
 
 export interface GetCheckoutByTenantIdByIntentIdEventsResponse {
@@ -509,29 +564,32 @@ export interface GetEventsResponse {
 }
 
 export interface GetExportsAccountMappingsResponse {
-  defaults: unknown[];
-  overrides: unknown[];
-  effective: unknown[];
-  unmapped_code: string;
+  defaults: GetExportsAccountMappingsResponseDefaultsItem[];
+  overrides: GetExportsAccountMappingsResponseOverridesItem[];
+  effective: GetExportsAccountMappingsResponseEffectiveItem[];
+  unmapped_code: unknown;
   note: string;
 }
 
-export interface GetExportsGstSummaryResponse {
-  from: string;
-  to: string;
-  rows: unknown[];
-  net: unknown;
-  note: string;
+export interface GetExportsAccountMappingsResponseDefaultsItem {
+  ledger_account: unknown;
+  code: string;
+  name: string;
 }
 
-export interface GetExportsJournalResponse {
-  from: string;
-  to: string;
-  currency: string;
-  vouchers: unknown[];
-  totals: unknown;
-  unmapped_accounts: string[];
-  next_cursor: string | null;
+export interface GetExportsAccountMappingsResponseEffectiveItem {
+  ledger_account: unknown;
+  code: string;
+  name: string;
+  mapped: unknown;
+}
+
+export interface GetExportsAccountMappingsResponseOverridesItem {
+  id: number;
+  ledger_account: string;
+  code: string;
+  name: string;
+  updated_by: string;
 }
 
 export interface GetFeeChecksFindingsResponse {
@@ -1128,11 +1186,74 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
 export interface GetRoutingHealthResponse {
   config: unknown;
+  automation_paused: unknown;
   routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
+}
+
+export interface GetRoutingScorecardResponse {
+  window_days: unknown;
+  method: unknown;
+  success_rate_rule: string;
+  median_rule: string;
+  scorecard: unknown;
+}
+
+export interface GetRoutingShadowReportResponse {
+  window_days: unknown;
+  method: unknown;
+  shadow: unknown;
+  decisions: number;
+  agreed: number;
+  differed: unknown;
+  no_route_in_shadow: number;
+  agreement_rate_bps: unknown;
+  differences: GetRoutingShadowReportResponseDifferencesItem[];
+  outcome_by_provider: GetRoutingShadowReportResponseOutcomeByProviderItem[];
+  recent_differences: GetRoutingShadowReportResponseRecentDifferencesItem[];
+  limits: string;
+}
+
+export interface GetRoutingShadowReportResponseDifferencesItem {
+  method: string;
+  applied_provider: string;
+  shadow_provider: string | null;
+  decisions: number;
+  fee_comparable: number;
+  estimated_fee_difference_minor: number;
+}
+
+export interface GetRoutingShadowReportResponseOutcomeByProviderItem {
+  provider: string;
+  method: string;
+  payments_sent: number;
+  succeeded: number;
+  provider_failures: number;
+  payer_declines: number;
+  unresolved: number;
+  of_which_shadow_would_have_chosen_another: number;
+}
+
+export interface GetRoutingShadowReportResponseRecentDifferencesItem {
+  attempt_id: string;
+  method: string;
+  amount_minor: number;
+  applied_provider: string;
+  shadow_provider: string | null;
+  applied_explanation: string | null;
+  shadow_explanation: string | null;
+  applied_fee_minor: number | null;
+  shadow_fee_minor: number | null;
+  attempt_status: string;
+  at: string;
 }
 
 export interface GetSavedViewsResponse {
@@ -1418,9 +1539,9 @@ export interface PostCardTokensResponse {
 }
 
 export interface PostCashAlertsScanResponse {
-  pending_cases_opened: number;
-  late_cases_opened: number;
-  case_kinds: string[];
+  pending_cases_opened: unknown;
+  late_cases_opened: unknown;
+  case_kinds: unknown;
 }
 
 export interface PostCashEntriesResponse {
@@ -1430,15 +1551,15 @@ export interface PostCashEntriesResponse {
 export interface PostCashLagRulesResponse {
   id: string;
   provider: string;
-  method: string;
+  method: unknown;
   expected_lag_days: number;
-  note: string;
+  note: string | null;
 }
 
 export interface PostCashSettingsResponse {
-  min_samples: number;
-  alert_grace_days: number;
-  refund_sla_hours: number;
+  min_samples: unknown;
+  alert_grace_days: unknown;
+  refund_sla_hours: unknown;
 }
 
 export interface PostCheckoutByTenantIdByIntentIdAttemptsResponse {
@@ -2436,6 +2557,16 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostRoutingAutomationPauseResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
+export interface PostRoutingAutomationResumeResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
 export interface PostSavedViewsResponse {
   id: string;
   name: string;
@@ -2748,6 +2879,11 @@ export interface PutProviderAccountsByProviderResponse {
   provider: string;
   enabled: boolean;
   replaced: unknown;
+}
+
+export interface PutRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
 }
 
 export interface RefundRow {

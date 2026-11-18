@@ -5,6 +5,16 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Routing automation: shadow mode, soft retry, cost-aware routing, kill switch, scorecard (simulators only)
+- **Kill switch** per business (`POST /v1/routing/automation/pause` and `/resume`, admin): shadow mode, soft retry, cost-aware routing, failover and the breaker's effect on routing all stop at once; idempotent and audited. Every automation is **off by default** and each switch writes an audit entry.
+- **Shadow mode**: records what a candidate policy would have chosen next to what was applied (never changes routing, never calls a provider). `GET /v1/routing/shadow/report`: agreement rate, where they differ, estimated fee difference, outcomes of the payments that were sent. It cannot know how the other provider would have done.
+- **Soft-decline retry**: after a provider-side failure (`provider_fault`, `provider_rejected`) the next attempt starts on another, non-degraded provider, within attempt and time limits. Never after a payer decline, an unrecognised cause, a cancellation or an unresolved outcome. Idempotent (unique per failed attempt, idempotency key), guarded by the same row lock as every attempt; concurrency tests count live attempts and provider orders. Checkout shows "trying another way" (new strings in six languages, not natively reviewed).
+- **Cost-aware routing**: observed fees, then your fee rules, then the configured table; never picks a provider below a success-rate floor only for being cheaper; minimum samples; the explanation says what was traded off. Formula in [docs/zyvor/ROUTING.md](docs/zyvor/ROUTING.md).
+- **Provider scorecard** (`GET /v1/routing/scorecard`): success rate with payer declines excluded, failure classes, median time to resolve, unresolved, observed fee, last degrade and recovery. Console: new sections on the Routing health page; Node, Python and Go SDK methods and CLI commands.
+- Fix: `registry::candidates` no longer asks the connection pool for a second connection while the caller holds one (it could exhaust the pool when many requests for one payment waited on its row lock).
+- Console: two sentences on the Routing health page that were out of date after the decline classes and the sweeper are corrected.
+- Migration 0084 (additive: `routing_automation`, `routing_soft_retries`, `routing_shadow_decisions`, `payment_attempts.retry_input`, all with row-level security). OpenAPI and generated SDK types updated (the OpenAPI request-body generator was also re-run, which drops two hand-written descriptions it cannot keep). Simulators only; defaults not tuned on real traffic.
+
 ## 18 November 2026 — Cash visibility, refund analytics and accounting exports (simulators only)
 **Cash visibility**
 - `GET /v1/cash/dashboard`: by provider, money captured but not settled, settled but not matched to a bank credit, matched, refunds pending and payouts pending.

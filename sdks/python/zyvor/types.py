@@ -44,7 +44,7 @@ DeleteCashLagRulesByIdResponse = TypedDict("DeleteCashLagRulesByIdResponse", {
 
 DeleteExportsAccountMappingsByIdResponse = TypedDict("DeleteExportsAccountMappingsByIdResponse", {
     "deleted": "bool",
-    "ledger_account": "str",
+    "ledger_account": "Optional[str]",
 })
 
 DeleteFeeRulesByIdResponse = TypedDict("DeleteFeeRulesByIdResponse", {
@@ -93,16 +93,42 @@ GetAnalyticsCostResponse = TypedDict("GetAnalyticsCostResponse", {
 })
 
 GetAnalyticsRefundsResponse = TypedDict("GetAnalyticsRefundsResponse", {
-    "from": "str",
-    "to": "str",
-    "bucket": "str",
+    "from": "Any",
+    "to": "Any",
+    "bucket": "Any",
     "currency": "str",
-    "series": "List[Any]",
+    "series": "List[GetAnalyticsRefundsResponseSeriesItem]",
     "totals": "Any",
     "time_to_refund": "Any",
-    "sla": "Any",
-    "leakage": "Any",
+    "sla": "List[GetAnalyticsRefundsResponseSlaItem]",
+    "leakage": "List[GetAnalyticsRefundsResponseLeakageItem]",
     "note": "str",
+})
+
+GetAnalyticsRefundsResponseLeakageItem = TypedDict("GetAnalyticsRefundsResponseLeakageItem", {
+    "provider": "str",
+    "method": "str",
+    "lines": "int",
+    "settlements": "int",
+    "amount_minor": "int",
+})
+
+GetAnalyticsRefundsResponseSeriesItem = TypedDict("GetAnalyticsRefundsResponseSeriesItem", {
+    "starts": "str",
+    "captured_count": "Any",
+    "captured_minor": "int",
+    "refunds_requested_count": "Any",
+    "refunds_requested_minor": "int",
+    "refunds_processed_count": "Any",
+    "refunds_processed_minor": "int",
+    "refund_rate_bps": "Any",
+})
+
+GetAnalyticsRefundsResponseSlaItem = TypedDict("GetAnalyticsRefundsResponseSlaItem", {
+    "status": "str",
+    "count": "int",
+    "amount_minor": "int",
+    "oldest_hours": "Any",
 })
 
 GetApiKeysResponse = TypedDict("GetApiKeysResponse", {
@@ -194,54 +220,83 @@ GetCardTokensResponse = TypedDict("GetCardTokensResponse", {
 })
 
 GetCashDashboardResponse = TypedDict("GetCashDashboardResponse", {
-    "as_of": "str",
+    "as_of": "Optional[str]",
     "currency": "str",
-    "matched_window_days": "int",
-    "by_provider": "List[Any]",
+    "matched_window_days": "Any",
+    "by_provider": "Any",
     "totals": "Any",
-    "payouts_pending": "Any",
+    "payouts_pending": "List[GetCashDashboardResponsePayoutsPendingItem]",
     "paid_payouts_without_bank_debit_match": "Any",
     "note": "str",
 })
 
+GetCashDashboardResponsePayoutsPendingItem = TypedDict("GetCashDashboardResponsePayoutsPendingItem", {
+    "status": "str",
+    "count": "int",
+    "amount_minor": "int",
+})
+
 GetCashForecastResponse = TypedDict("GetCashForecastResponse", {
-    "as_of": "str",
+    "as_of": "Optional[str]",
     "currency": "str",
-    "horizon_days": "int",
+    "horizon_days": "Any",
     "days": "List[GetCashForecastResponseDaysItem]",
     "overdue": "Any",
     "expected_after_horizon_minor": "int",
     "expected_without_range_minor": "int",
-    "not_forecast": "List[Any]",
+    "not_forecast": "List[GetCashForecastResponseNotForecastItem]",
     "basis": "List[Any]",
     "note": "str",
 })
 
 GetCashForecastResponseDaysItem = TypedDict("GetCashForecastResponseDaysItem", {
-    "date": "str",
+    "date": "Any",
     "expected_minor": "int",
     "cumulative_low_minor": "int",
     "cumulative_expected_minor": "int",
     "cumulative_high_minor": "int",
 })
 
+GetCashForecastResponseNotForecastItem = TypedDict("GetCashForecastResponseNotForecastItem", {
+    "provider": "str",
+    "method": "Any",
+    "payments": "Any",
+    "amount_minor": "int",
+    "status": "str",
+})
+
 GetCashLagResponse = TypedDict("GetCashLagResponse", {
-    "as_of": "str",
-    "lookback_days": "int",
-    "min_samples": "int",
+    "as_of": "Optional[str]",
+    "lookback_days": "Any",
+    "min_samples": "Any",
     "data": "List[Any]",
-    "tenant_rules": "List[Any]",
+    "tenant_rules": "List[GetCashLagResponseTenantRulesItem]",
     "note": "str",
 })
 
+GetCashLagResponseTenantRulesItem = TypedDict("GetCashLagResponseTenantRulesItem", {
+    "provider": "str",
+    "method": "Any",
+    "expected_lag_days": "Any",
+})
+
 GetCashLagRulesResponse = TypedDict("GetCashLagRulesResponse", {
-    "data": "List[Any]",
+    "data": "List[GetCashLagRulesResponseDataItem]",
+})
+
+GetCashLagRulesResponseDataItem = TypedDict("GetCashLagRulesResponseDataItem", {
+    "id": "str",
+    "provider": "str",
+    "method": "str",
+    "expected_lag_days": "int",
+    "note": "str",
+    "created_by": "str",
 })
 
 GetCashSettingsResponse = TypedDict("GetCashSettingsResponse", {
-    "min_samples": "int",
-    "alert_grace_days": "int",
-    "refund_sla_hours": "int",
+    "min_samples": "Any",
+    "alert_grace_days": "Any",
+    "refund_sla_hours": "Any",
 })
 
 GetCheckoutByTenantIdByIntentIdEventsResponse = TypedDict("GetCheckoutByTenantIdByIntentIdEventsResponse", {
@@ -513,29 +568,32 @@ GetEventsResponse = TypedDict("GetEventsResponse", {
 })
 
 GetExportsAccountMappingsResponse = TypedDict("GetExportsAccountMappingsResponse", {
-    "defaults": "List[Any]",
-    "overrides": "List[Any]",
-    "effective": "List[Any]",
-    "unmapped_code": "str",
+    "defaults": "List[GetExportsAccountMappingsResponseDefaultsItem]",
+    "overrides": "List[GetExportsAccountMappingsResponseOverridesItem]",
+    "effective": "List[GetExportsAccountMappingsResponseEffectiveItem]",
+    "unmapped_code": "Any",
     "note": "str",
 })
 
-GetExportsGstSummaryResponse = TypedDict("GetExportsGstSummaryResponse", {
-    "from": "str",
-    "to": "str",
-    "rows": "List[Any]",
-    "net": "Any",
-    "note": "str",
+GetExportsAccountMappingsResponseDefaultsItem = TypedDict("GetExportsAccountMappingsResponseDefaultsItem", {
+    "ledger_account": "Any",
+    "code": "str",
+    "name": "str",
 })
 
-GetExportsJournalResponse = TypedDict("GetExportsJournalResponse", {
-    "from": "str",
-    "to": "str",
-    "currency": "str",
-    "vouchers": "List[Any]",
-    "totals": "Any",
-    "unmapped_accounts": "List[str]",
-    "next_cursor": "Optional[str]",
+GetExportsAccountMappingsResponseEffectiveItem = TypedDict("GetExportsAccountMappingsResponseEffectiveItem", {
+    "ledger_account": "Any",
+    "code": "str",
+    "name": "str",
+    "mapped": "Any",
+})
+
+GetExportsAccountMappingsResponseOverridesItem = TypedDict("GetExportsAccountMappingsResponseOverridesItem", {
+    "id": "int",
+    "ledger_account": "str",
+    "code": "str",
+    "name": "str",
+    "updated_by": "str",
 })
 
 GetFeeChecksFindingsResponse = TypedDict("GetFeeChecksFindingsResponse", {
@@ -1132,11 +1190,74 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRoutingAutomationResponse = TypedDict("GetRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
 GetRoutingHealthResponse = TypedDict("GetRoutingHealthResponse", {
     "config": "Any",
+    "automation_paused": "Any",
     "routing_health_rule": "Any",
     "providers": "Any",
     "recent_changes": "List[Any]",
+})
+
+GetRoutingScorecardResponse = TypedDict("GetRoutingScorecardResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "success_rate_rule": "str",
+    "median_rule": "str",
+    "scorecard": "Any",
+})
+
+GetRoutingShadowReportResponse = TypedDict("GetRoutingShadowReportResponse", {
+    "window_days": "Any",
+    "method": "Any",
+    "shadow": "Any",
+    "decisions": "int",
+    "agreed": "int",
+    "differed": "Any",
+    "no_route_in_shadow": "int",
+    "agreement_rate_bps": "Any",
+    "differences": "List[GetRoutingShadowReportResponseDifferencesItem]",
+    "outcome_by_provider": "List[GetRoutingShadowReportResponseOutcomeByProviderItem]",
+    "recent_differences": "List[GetRoutingShadowReportResponseRecentDifferencesItem]",
+    "limits": "str",
+})
+
+GetRoutingShadowReportResponseDifferencesItem = TypedDict("GetRoutingShadowReportResponseDifferencesItem", {
+    "method": "str",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "decisions": "int",
+    "fee_comparable": "int",
+    "estimated_fee_difference_minor": "int",
+})
+
+GetRoutingShadowReportResponseOutcomeByProviderItem = TypedDict("GetRoutingShadowReportResponseOutcomeByProviderItem", {
+    "provider": "str",
+    "method": "str",
+    "payments_sent": "int",
+    "succeeded": "int",
+    "provider_failures": "int",
+    "payer_declines": "int",
+    "unresolved": "int",
+    "of_which_shadow_would_have_chosen_another": "int",
+})
+
+GetRoutingShadowReportResponseRecentDifferencesItem = TypedDict("GetRoutingShadowReportResponseRecentDifferencesItem", {
+    "attempt_id": "str",
+    "method": "str",
+    "amount_minor": "int",
+    "applied_provider": "str",
+    "shadow_provider": "Optional[str]",
+    "applied_explanation": "Optional[str]",
+    "shadow_explanation": "Optional[str]",
+    "applied_fee_minor": "Optional[int]",
+    "shadow_fee_minor": "Optional[int]",
+    "attempt_status": "str",
+    "at": "str",
 })
 
 GetSavedViewsResponse = TypedDict("GetSavedViewsResponse", {
@@ -1422,9 +1543,9 @@ PostCardTokensResponse = TypedDict("PostCardTokensResponse", {
 })
 
 PostCashAlertsScanResponse = TypedDict("PostCashAlertsScanResponse", {
-    "pending_cases_opened": "int",
-    "late_cases_opened": "int",
-    "case_kinds": "List[str]",
+    "pending_cases_opened": "Any",
+    "late_cases_opened": "Any",
+    "case_kinds": "Any",
 })
 
 PostCashEntriesResponse = TypedDict("PostCashEntriesResponse", {
@@ -1434,15 +1555,15 @@ PostCashEntriesResponse = TypedDict("PostCashEntriesResponse", {
 PostCashLagRulesResponse = TypedDict("PostCashLagRulesResponse", {
     "id": "str",
     "provider": "str",
-    "method": "str",
+    "method": "Any",
     "expected_lag_days": "int",
-    "note": "str",
+    "note": "Optional[str]",
 })
 
 PostCashSettingsResponse = TypedDict("PostCashSettingsResponse", {
-    "min_samples": "int",
-    "alert_grace_days": "int",
-    "refund_sla_hours": "int",
+    "min_samples": "Any",
+    "alert_grace_days": "Any",
+    "refund_sla_hours": "Any",
 })
 
 PostCheckoutByTenantIdByIntentIdAttemptsResponse = TypedDict("PostCheckoutByTenantIdByIntentIdAttemptsResponse", {
@@ -2440,6 +2561,16 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "updated_at": "str",
 })
 
+PostRoutingAutomationPauseResponse = TypedDict("PostRoutingAutomationPauseResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
+PostRoutingAutomationResumeResponse = TypedDict("PostRoutingAutomationResumeResponse", {
+    "settings": "Any",
+    "effective": "Any",
+})
+
 PostSavedViewsResponse = TypedDict("PostSavedViewsResponse", {
     "id": "str",
     "name": "str",
@@ -2752,6 +2883,11 @@ PutProviderAccountsByProviderResponse = TypedDict("PutProviderAccountsByProvider
     "provider": "str",
     "enabled": "bool",
     "replaced": "Any",
+})
+
+PutRoutingAutomationResponse = TypedDict("PutRoutingAutomationResponse", {
+    "settings": "Any",
+    "effective": "Any",
 })
 
 RefundRow = TypedDict("RefundRow", {

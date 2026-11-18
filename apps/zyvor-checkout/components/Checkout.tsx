@@ -212,6 +212,21 @@ export function Checkout({ tenant, intent }: { tenant: string; intent: string })
       </div>
     );
   }
+  if (session.phase === "trying_another_way") {
+    // A definite failure that the merchant's settings answer with another provider. No second payment exists until
+    // the first has failed, and the payer is never asked to pay twice.
+    return (
+      <div className="card">
+        {head}
+        <div className="state" role="status" aria-live="polite">
+          <div className="spin" />
+          <h2 tabIndex={-1} data-announce>{t("retryTitle")}</h2>
+          <p>{t("retryBody")}</p>
+        </div>
+        <Help t={t} intent={intent} />
+      </div>
+    );
+  }
   if (session.phase === "confirming") {
     return (
       <div className="card">

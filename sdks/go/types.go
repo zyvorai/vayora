@@ -59,8 +59,8 @@ type DeleteCashLagRulesByIdResponse struct {
 }
 
 type DeleteExportsAccountMappingsByIdResponse struct {
-	Deleted       bool   `json:"deleted"`
-	LedgerAccount string `json:"ledger_account"`
+	Deleted       bool    `json:"deleted"`
+	LedgerAccount *string `json:"ledger_account"`
 }
 
 type DeleteFeeRulesByIdResponse struct {
@@ -109,16 +109,42 @@ type GetAnalyticsCostResponse struct {
 }
 
 type GetAnalyticsRefundsResponse struct {
-	From         string `json:"from"`
-	To           string `json:"to"`
-	Bucket       string `json:"bucket"`
-	Currency     string `json:"currency"`
-	Series       []any  `json:"series"`
-	Totals       any    `json:"totals"`
-	TimeToRefund any    `json:"time_to_refund"`
-	Sla          any    `json:"sla"`
-	Leakage      any    `json:"leakage"`
-	Note         string `json:"note"`
+	From         any                                      `json:"from"`
+	To           any                                      `json:"to"`
+	Bucket       any                                      `json:"bucket"`
+	Currency     string                                   `json:"currency"`
+	Series       []GetAnalyticsRefundsResponseSeriesItem  `json:"series"`
+	Totals       any                                      `json:"totals"`
+	TimeToRefund any                                      `json:"time_to_refund"`
+	Sla          []GetAnalyticsRefundsResponseSlaItem     `json:"sla"`
+	Leakage      []GetAnalyticsRefundsResponseLeakageItem `json:"leakage"`
+	Note         string                                   `json:"note"`
+}
+
+type GetAnalyticsRefundsResponseLeakageItem struct {
+	Provider    string `json:"provider"`
+	Method      string `json:"method"`
+	Lines       int64  `json:"lines"`
+	Settlements int64  `json:"settlements"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type GetAnalyticsRefundsResponseSeriesItem struct {
+	Starts                string `json:"starts"`
+	CapturedCount         any    `json:"captured_count"`
+	CapturedMinor         int64  `json:"captured_minor"`
+	RefundsRequestedCount any    `json:"refunds_requested_count"`
+	RefundsRequestedMinor int64  `json:"refunds_requested_minor"`
+	RefundsProcessedCount any    `json:"refunds_processed_count"`
+	RefundsProcessedMinor int64  `json:"refunds_processed_minor"`
+	RefundRateBps         any    `json:"refund_rate_bps"`
+}
+
+type GetAnalyticsRefundsResponseSlaItem struct {
+	Status      string `json:"status"`
+	Count       int64  `json:"count"`
+	AmountMinor int64  `json:"amount_minor"`
+	OldestHours any    `json:"oldest_hours"`
 }
 
 type GetApiKeysResponse struct {
@@ -210,54 +236,83 @@ type GetCardTokensResponse struct {
 }
 
 type GetCashDashboardResponse struct {
-	AsOf                             string `json:"as_of"`
-	Currency                         string `json:"currency"`
-	MatchedWindowDays                int64  `json:"matched_window_days"`
-	ByProvider                       []any  `json:"by_provider"`
-	Totals                           any    `json:"totals"`
-	PayoutsPending                   any    `json:"payouts_pending"`
-	PaidPayoutsWithoutBankDebitMatch any    `json:"paid_payouts_without_bank_debit_match"`
-	Note                             string `json:"note"`
+	AsOf                             *string                                      `json:"as_of"`
+	Currency                         string                                       `json:"currency"`
+	MatchedWindowDays                any                                          `json:"matched_window_days"`
+	ByProvider                       any                                          `json:"by_provider"`
+	Totals                           any                                          `json:"totals"`
+	PayoutsPending                   []GetCashDashboardResponsePayoutsPendingItem `json:"payouts_pending"`
+	PaidPayoutsWithoutBankDebitMatch any                                          `json:"paid_payouts_without_bank_debit_match"`
+	Note                             string                                       `json:"note"`
+}
+
+type GetCashDashboardResponsePayoutsPendingItem struct {
+	Status      string `json:"status"`
+	Count       int64  `json:"count"`
+	AmountMinor int64  `json:"amount_minor"`
 }
 
 type GetCashForecastResponse struct {
-	AsOf                      string                            `json:"as_of"`
-	Currency                  string                            `json:"currency"`
-	HorizonDays               int64                             `json:"horizon_days"`
-	Days                      []GetCashForecastResponseDaysItem `json:"days"`
-	Overdue                   any                               `json:"overdue"`
-	ExpectedAfterHorizonMinor int64                             `json:"expected_after_horizon_minor"`
-	ExpectedWithoutRangeMinor int64                             `json:"expected_without_range_minor"`
-	NotForecast               []any                             `json:"not_forecast"`
-	Basis                     []any                             `json:"basis"`
-	Note                      string                            `json:"note"`
+	AsOf                      *string                                  `json:"as_of"`
+	Currency                  string                                   `json:"currency"`
+	HorizonDays               any                                      `json:"horizon_days"`
+	Days                      []GetCashForecastResponseDaysItem        `json:"days"`
+	Overdue                   any                                      `json:"overdue"`
+	ExpectedAfterHorizonMinor int64                                    `json:"expected_after_horizon_minor"`
+	ExpectedWithoutRangeMinor int64                                    `json:"expected_without_range_minor"`
+	NotForecast               []GetCashForecastResponseNotForecastItem `json:"not_forecast"`
+	Basis                     []any                                    `json:"basis"`
+	Note                      string                                   `json:"note"`
 }
 
 type GetCashForecastResponseDaysItem struct {
-	Date                    string `json:"date"`
-	ExpectedMinor           int64  `json:"expected_minor"`
-	CumulativeLowMinor      int64  `json:"cumulative_low_minor"`
-	CumulativeExpectedMinor int64  `json:"cumulative_expected_minor"`
-	CumulativeHighMinor     int64  `json:"cumulative_high_minor"`
+	Date                    any   `json:"date"`
+	ExpectedMinor           int64 `json:"expected_minor"`
+	CumulativeLowMinor      int64 `json:"cumulative_low_minor"`
+	CumulativeExpectedMinor int64 `json:"cumulative_expected_minor"`
+	CumulativeHighMinor     int64 `json:"cumulative_high_minor"`
+}
+
+type GetCashForecastResponseNotForecastItem struct {
+	Provider    string `json:"provider"`
+	Method      any    `json:"method"`
+	Payments    any    `json:"payments"`
+	AmountMinor int64  `json:"amount_minor"`
+	Status      string `json:"status"`
 }
 
 type GetCashLagResponse struct {
-	AsOf         string `json:"as_of"`
-	LookbackDays int64  `json:"lookback_days"`
-	MinSamples   int64  `json:"min_samples"`
-	Data         []any  `json:"data"`
-	TenantRules  []any  `json:"tenant_rules"`
-	Note         string `json:"note"`
+	AsOf         *string                             `json:"as_of"`
+	LookbackDays any                                 `json:"lookback_days"`
+	MinSamples   any                                 `json:"min_samples"`
+	Data         []any                               `json:"data"`
+	TenantRules  []GetCashLagResponseTenantRulesItem `json:"tenant_rules"`
+	Note         string                              `json:"note"`
+}
+
+type GetCashLagResponseTenantRulesItem struct {
+	Provider        string `json:"provider"`
+	Method          any    `json:"method"`
+	ExpectedLagDays any    `json:"expected_lag_days"`
 }
 
 type GetCashLagRulesResponse struct {
-	Data []any `json:"data"`
+	Data []GetCashLagRulesResponseDataItem `json:"data"`
+}
+
+type GetCashLagRulesResponseDataItem struct {
+	ID              string `json:"id"`
+	Provider        string `json:"provider"`
+	Method          string `json:"method"`
+	ExpectedLagDays int64  `json:"expected_lag_days"`
+	Note            string `json:"note"`
+	CreatedBy       string `json:"created_by"`
 }
 
 type GetCashSettingsResponse struct {
-	MinSamples     int64 `json:"min_samples"`
-	AlertGraceDays int64 `json:"alert_grace_days"`
-	RefundSlaHours int64 `json:"refund_sla_hours"`
+	MinSamples     any `json:"min_samples"`
+	AlertGraceDays any `json:"alert_grace_days"`
+	RefundSlaHours any `json:"refund_sla_hours"`
 }
 
 type GetCheckoutByTenantIdByIntentIdEventsResponse struct {
@@ -529,29 +584,32 @@ type GetEventsResponse struct {
 }
 
 type GetExportsAccountMappingsResponse struct {
-	Defaults     []any  `json:"defaults"`
-	Overrides    []any  `json:"overrides"`
-	Effective    []any  `json:"effective"`
-	UnmappedCode string `json:"unmapped_code"`
-	Note         string `json:"note"`
+	Defaults     []GetExportsAccountMappingsResponseDefaultsItem  `json:"defaults"`
+	Overrides    []GetExportsAccountMappingsResponseOverridesItem `json:"overrides"`
+	Effective    []GetExportsAccountMappingsResponseEffectiveItem `json:"effective"`
+	UnmappedCode any                                              `json:"unmapped_code"`
+	Note         string                                           `json:"note"`
 }
 
-type GetExportsGstSummaryResponse struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Rows []any  `json:"rows"`
-	Net  any    `json:"net"`
-	Note string `json:"note"`
+type GetExportsAccountMappingsResponseDefaultsItem struct {
+	LedgerAccount any    `json:"ledger_account"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
 }
 
-type GetExportsJournalResponse struct {
-	From             string   `json:"from"`
-	To               string   `json:"to"`
-	Currency         string   `json:"currency"`
-	Vouchers         []any    `json:"vouchers"`
-	Totals           any      `json:"totals"`
-	UnmappedAccounts []string `json:"unmapped_accounts"`
-	NextCursor       *string  `json:"next_cursor"`
+type GetExportsAccountMappingsResponseEffectiveItem struct {
+	LedgerAccount any    `json:"ledger_account"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Mapped        any    `json:"mapped"`
+}
+
+type GetExportsAccountMappingsResponseOverridesItem struct {
+	ID            int64  `json:"id"`
+	LedgerAccount string `json:"ledger_account"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	UpdatedBy     string `json:"updated_by"`
 }
 
 type GetFeeChecksFindingsResponse struct {
@@ -1148,11 +1206,74 @@ type GetRefundsResponse struct {
 	HasMore bool        `json:"has_more"`
 }
 
+type GetRoutingAutomationResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
 type GetRoutingHealthResponse struct {
 	Config            any   `json:"config"`
+	AutomationPaused  any   `json:"automation_paused"`
 	RoutingHealthRule any   `json:"routing_health_rule"`
 	Providers         any   `json:"providers"`
 	RecentChanges     []any `json:"recent_changes"`
+}
+
+type GetRoutingScorecardResponse struct {
+	WindowDays      any    `json:"window_days"`
+	Method          any    `json:"method"`
+	SuccessRateRule string `json:"success_rate_rule"`
+	MedianRule      string `json:"median_rule"`
+	Scorecard       any    `json:"scorecard"`
+}
+
+type GetRoutingShadowReportResponse struct {
+	WindowDays        any                                                   `json:"window_days"`
+	Method            any                                                   `json:"method"`
+	Shadow            any                                                   `json:"shadow"`
+	Decisions         int64                                                 `json:"decisions"`
+	Agreed            int64                                                 `json:"agreed"`
+	Differed          any                                                   `json:"differed"`
+	NoRouteInShadow   int64                                                 `json:"no_route_in_shadow"`
+	AgreementRateBps  any                                                   `json:"agreement_rate_bps"`
+	Differences       []GetRoutingShadowReportResponseDifferencesItem       `json:"differences"`
+	OutcomeByProvider []GetRoutingShadowReportResponseOutcomeByProviderItem `json:"outcome_by_provider"`
+	RecentDifferences []GetRoutingShadowReportResponseRecentDifferencesItem `json:"recent_differences"`
+	Limits            string                                                `json:"limits"`
+}
+
+type GetRoutingShadowReportResponseDifferencesItem struct {
+	Method                      string  `json:"method"`
+	AppliedProvider             string  `json:"applied_provider"`
+	ShadowProvider              *string `json:"shadow_provider"`
+	Decisions                   int64   `json:"decisions"`
+	FeeComparable               int64   `json:"fee_comparable"`
+	EstimatedFeeDifferenceMinor int64   `json:"estimated_fee_difference_minor"`
+}
+
+type GetRoutingShadowReportResponseOutcomeByProviderItem struct {
+	Provider                            string `json:"provider"`
+	Method                              string `json:"method"`
+	PaymentsSent                        int64  `json:"payments_sent"`
+	Succeeded                           int64  `json:"succeeded"`
+	ProviderFailures                    int64  `json:"provider_failures"`
+	PayerDeclines                       int64  `json:"payer_declines"`
+	Unresolved                          int64  `json:"unresolved"`
+	OfWhichShadowWouldHaveChosenAnother int64  `json:"of_which_shadow_would_have_chosen_another"`
+}
+
+type GetRoutingShadowReportResponseRecentDifferencesItem struct {
+	AttemptID          string  `json:"attempt_id"`
+	Method             string  `json:"method"`
+	AmountMinor        int64   `json:"amount_minor"`
+	AppliedProvider    string  `json:"applied_provider"`
+	ShadowProvider     *string `json:"shadow_provider"`
+	AppliedExplanation *string `json:"applied_explanation"`
+	ShadowExplanation  *string `json:"shadow_explanation"`
+	AppliedFeeMinor    *int64  `json:"applied_fee_minor"`
+	ShadowFeeMinor     *int64  `json:"shadow_fee_minor"`
+	AttemptStatus      string  `json:"attempt_status"`
+	At                 string  `json:"at"`
 }
 
 type GetSavedViewsResponse struct {
@@ -1438,9 +1559,9 @@ type PostCardTokensResponse struct {
 }
 
 type PostCashAlertsScanResponse struct {
-	PendingCasesOpened int64    `json:"pending_cases_opened"`
-	LateCasesOpened    int64    `json:"late_cases_opened"`
-	CaseKinds          []string `json:"case_kinds"`
+	PendingCasesOpened any `json:"pending_cases_opened"`
+	LateCasesOpened    any `json:"late_cases_opened"`
+	CaseKinds          any `json:"case_kinds"`
 }
 
 type PostCashEntriesResponse struct {
@@ -1448,17 +1569,17 @@ type PostCashEntriesResponse struct {
 }
 
 type PostCashLagRulesResponse struct {
-	ID              string `json:"id"`
-	Provider        string `json:"provider"`
-	Method          string `json:"method"`
-	ExpectedLagDays int64  `json:"expected_lag_days"`
-	Note            string `json:"note"`
+	ID              string  `json:"id"`
+	Provider        string  `json:"provider"`
+	Method          any     `json:"method"`
+	ExpectedLagDays int64   `json:"expected_lag_days"`
+	Note            *string `json:"note"`
 }
 
 type PostCashSettingsResponse struct {
-	MinSamples     int64 `json:"min_samples"`
-	AlertGraceDays int64 `json:"alert_grace_days"`
-	RefundSlaHours int64 `json:"refund_sla_hours"`
+	MinSamples     any `json:"min_samples"`
+	AlertGraceDays any `json:"alert_grace_days"`
+	RefundSlaHours any `json:"refund_sla_hours"`
 }
 
 type PostCheckoutByTenantIdByIntentIdAttemptsResponse struct {
@@ -2456,6 +2577,16 @@ type PostRefundsByIdRetryResponse struct {
 	UpdatedAt         string  `json:"updated_at"`
 }
 
+type PostRoutingAutomationPauseResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
+type PostRoutingAutomationResumeResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
+}
+
 type PostSavedViewsResponse struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -2768,6 +2899,11 @@ type PutProviderAccountsByProviderResponse struct {
 	Provider string `json:"provider"`
 	Enabled  bool   `json:"enabled"`
 	Replaced any    `json:"replaced"`
+}
+
+type PutRoutingAutomationResponse struct {
+	Settings  any `json:"settings"`
+	Effective any `json:"effective"`
 }
 
 type RefundRow struct {
