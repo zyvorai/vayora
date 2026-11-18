@@ -259,11 +259,13 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
         "cashfree" => &["client_id", "client_secret"],
         "custom" | "sponsor_upi" => &["api_key"],
         "phonepe" => &["merchant_id", "salt_key"],
+        // `merchant_secret` is optional: only PayU's settlement report API needs it.
+        "payu" => &["key", "salt"],
         "sim" => &[],
         _ => {
             return Err(ApiError::invalid(
                 "unknown_provider",
-                "provider must be razorpay, cashfree, custom, sponsor_upi, phonepe or sim",
+                "provider must be razorpay, cashfree, custom, sponsor_upi, phonepe, payu or sim",
             ));
         }
     };
@@ -306,6 +308,16 @@ fn check_provider(s: &AppState, auth: &Auth, b: &NewProviderAccount) -> Result<(
         return Err(ApiError::invalid(
             "wrong_mode_credentials",
             "api.cashfree.com is Cashfree's production address; use sandbox.cashfree.com in a test environment",
+        ));
+    }
+    if let Some(u) = b.base_url.as_deref()
+        && b.provider == "payu"
+        && auth.env == "test"
+        && (u.contains("://secure.payu.in") || u.contains("://info.payu.in"))
+    {
+        return Err(ApiError::invalid(
+            "wrong_mode_credentials",
+            "secure.payu.in and info.payu.in are PayU's production addresses; use test.payu.in in a test environment",
         ));
     }
     if auth.env == "live" && b.provider == "sim" {

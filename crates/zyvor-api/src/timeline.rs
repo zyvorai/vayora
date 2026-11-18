@@ -43,6 +43,7 @@ pub(crate) fn provider_name(id: &str) -> String {
         "custom" => "your own gateway".into(),
         "sponsor_upi" => "sponsor UPI".into(),
         "phonepe" => "PhonePe".into(),
+        "payu" => "PayU".into(),
         other => other.to_string(),
     }
 }

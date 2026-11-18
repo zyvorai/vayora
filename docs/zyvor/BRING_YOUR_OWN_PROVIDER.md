@@ -26,6 +26,7 @@ flowchart LR
   T --> RZ[Razorpay adapter]
   T --> CF[Cashfree adapter]
   T --> PP[PhonePe adapter]
+  T --> PU[PayU adapter]
   T --> SU[sponsor_upi]
   T --> CU["custom adapter<br/>speaks the HTTP contract"]
   T --> SIM["sim<br/>tests only"]
@@ -33,6 +34,7 @@ flowchart LR
   RZ --> M[["Money is collected and settled by<br/>whoever is licensed to do it"]]
   CF --> M
   PP --> M
+  PU --> M
   SU --> M
   YG --> M
 ```
