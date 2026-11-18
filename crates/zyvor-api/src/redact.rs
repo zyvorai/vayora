@@ -10,53 +10,40 @@ fn is_key_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '/' | '=')
 }
 
+/// Replace the run of key characters that follows each case-insensitive prefix. Steps by whole
+/// characters, so a multi-byte character in the line (an ellipsis, Hindi, Odia) is copied through
+/// unchanged and never sliced.
 fn redact_prefixed(s: &str, prefixes: &[&str]) -> String {
     let mut out = String::with_capacity(s.len());
-    let lower = s.to_ascii_lowercase();
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let mut hit = None;
-        for p in prefixes {
-            let pl = p.to_ascii_lowercase();
-            if lower[i..].starts_with(&pl) {
-                hit = Some(p.len());
-                break;
-            }
-        }
-        if let Some(plen) = hit {
-            out.push_str(&s[i..i + plen]);
+    while i < s.len() {
+        let rest = &s[i..];
+        let hit = prefixes.iter().find(|p| {
+            rest.is_char_boundary(p.len().min(rest.len()))
+                && rest.len() >= p.len()
+                && rest[..p.len()].eq_ignore_ascii_case(p)
+        });
+        if let Some(p) = hit {
+            out.push_str(&rest[..p.len()]);
             out.push_str("[REDACTED]");
-            i += plen;
-            while i < bytes.len() && is_key_char(bytes[i] as char) {
-                i += 1;
+            i += p.len();
+            while let Some(c) = s[i..].chars().next() {
+                if !is_key_char(c) {
+                    break;
+                }
+                i += c.len_utf8();
             }
             continue;
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        let Some(c) = rest.chars().next() else { break };
+        out.push(c);
+        i += c.len_utf8();
     }
     out
 }
 
 fn redact_bearer(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let lower = s.to_ascii_lowercase();
-    let mut i = 0;
-    while i < s.len() {
-        if lower[i..].starts_with("bearer ") {
-            out.push_str(&s[i..i + 7]);
-            out.push_str("[REDACTED]");
-            i += 7;
-            while i < s.len() && is_key_char(s.as_bytes()[i] as char) {
-                i += 1;
-            }
-            continue;
-        }
-        out.push(s.as_bytes()[i] as char);
-        i += 1;
-    }
-    out
+    redact_prefixed(s, &["bearer "])
 }
 
 fn redact_pans(s: &str) -> String {
@@ -236,5 +223,42 @@ mod tests {
             "pay [REDACTED]@okhdfcbank"
         );
         assert_eq!(redact_text("plain log line"), "plain log line");
+    }
+}
+
+#[cfg(test)]
+mod utf8_tests {
+    use super::*;
+
+    #[test]
+    fn multibyte_text_is_copied_through_and_never_panics() {
+        // the real crash: a truncated SQL statement ending in an ellipsis in a slow-query warning
+        let ellipsis = "SELECT * FROM payments WHERE note = 'x' AND memo = '".to_string()
+            + &"a".repeat(150)
+            + "…";
+        assert_eq!(redact_text(&ellipsis), ellipsis);
+        let hindi = "भुगतान सफल रहा ₹५०० — धन्यवाद";
+        assert_eq!(redact_text(hindi), hindi);
+        let odia = "ଟଙ୍କା ଦେଇଛନ୍ତି";
+        assert_eq!(redact_text(odia), odia);
+    }
+
+    #[test]
+    fn secrets_next_to_multibyte_text_are_still_redacted() {
+        let out = redact_text("key=rzp_live_abc123XYZ… done ✓ Bearer tok_en-9 ଟଙ୍କା");
+        assert!(!out.contains("abc123XYZ"), "{out}");
+        assert!(!out.contains("tok_en-9"), "{out}");
+        assert!(out.contains("rzp_live_[REDACTED]"), "{out}");
+        assert!(out.contains("Bearer [REDACTED]"), "{out}");
+        assert!(out.contains("… done ✓"), "{out}");
+        assert!(out.contains("ଟଙ୍କା"), "{out}");
+    }
+
+    #[test]
+    fn prefixes_are_case_insensitive_and_a_short_tail_is_safe() {
+        assert_eq!(redact_text("WHSEC_AbC"), "WHSEC_[REDACTED]");
+        assert_eq!(redact_text("bearer "), "bearer [REDACTED]");
+        assert_eq!(redact_text("whsec"), "whsec");
+        assert_eq!(redact_text("é"), "é");
     }
 }
