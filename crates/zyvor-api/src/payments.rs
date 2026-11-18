@@ -1012,9 +1012,45 @@ pub struct Incoming {
     pub failure_reason: Option<String>,
     pub amount_minor: Option<i64>,
     pub raw: Option<Value>,
-    /// For a failure: `declined`, `provider_rejected` or `cancelled` (see `health`). Left out, a failure is
-    /// `declined`, or `cancelled` when it came from a cancel.
+    /// For a failure, set when the caller already knows why (`provider_rejected`). Left out, a failure is
+    /// classified by `failure_class_of`.
     pub failure_class: Option<&'static str>,
+}
+
+/// Why a failed attempt failed, in a form routing health can act on (stored in `payment_attempts.failure_class`):
+///
+/// - `cancelled`: the merchant cancelled it;
+/// - `payer_declined`: the payer's doing (insufficient funds, the payer left): not held against the provider;
+/// - `provider_fault`: the provider said so, or the outcome was unknown (a timeout) and the provider has since
+///   confirmed it failed;
+/// - `declined`: the provider said "failed" and the cause is not recognised ("unknown"): held against the provider,
+///   the conservative choice;
+/// - `provider_rejected`: set by the caller when the provider refused the request.
+///
+/// The words that are recognised are in `zyvor_providers::decline`; nothing else is guessed.
+fn failure_class_of(
+    inc: &Incoming,
+    provider: &str,
+    current: Attempt,
+    source: &str,
+) -> &'static str {
+    use zyvor_providers::decline::{DeclineClass, classify_decline};
+    if let Some(c) = inc.failure_class {
+        return c;
+    }
+    if source == "cancel" {
+        return "cancelled";
+    }
+    match classify_decline(
+        provider,
+        inc.failure_reason.as_deref(),
+        inc.raw.as_ref().unwrap_or(&Value::Null),
+    ) {
+        DeclineClass::Payer => "payer_declined",
+        DeclineClass::Provider => "provider_fault",
+        DeclineClass::Unknown if current == Attempt::Unknown => "provider_fault",
+        DeclineClass::Unknown => "declined",
+    }
 }
 
 pub fn incoming(st: &PaymentState) -> Incoming {
@@ -1148,11 +1184,7 @@ pub async fn apply_provider_state(
     .bind(&inc.provider_payment_ref)
     .bind(&inc.failure_reason)
     .bind(inc.raw.as_ref().map(|r| json!({ source: r })))
-    .bind(inc.failure_class.unwrap_or(if source == "cancel" {
-        "cancelled"
-    } else {
-        "declined"
-    }))
+    .bind(failure_class_of(inc, &provider, current, source))
     .execute(&mut *conn)
     .await?;
 

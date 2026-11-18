@@ -8198,9 +8198,9 @@ paths:
               $ref: '#/components/schemas/NewProviderAccount'
   /v1/routing/health:
     get:
-      summary: Read provider health - per provider and method the recent success rate, circuit-breaker state (healthy, degraded,
-        probe_due), thresholds and recent degrade and recovery events. Read-only; transitions are recorded when a payment
-        is routed
+      summary: Read provider health - per provider and method the recent success rate, payer declines (shown, not counted),
+        circuit-breaker state (healthy, degraded, probe_due), what routing does with it (routing_effect), thresholds and recent
+        degrade and recovery events. Read-only; transitions are recorded when a payment is routed or by the background sweeper
       tags:
       - payments
       responses:
@@ -8212,6 +8212,9 @@ paths:
                 type: object
                 properties:
                   config: {}
+                  routing_health_rule:
+                    type: string
+                    description: What routing does with this health data, in one sentence (the circuit breaker is the only health rule)
                   providers: {}
                   recent_changes:
                     type: array
@@ -8389,7 +8392,7 @@ components:
           description: '`unknown` means the provider''s outcome is not known yet; no other attempt can start until it resolves.'
         route:
           type: object
-          description: 'Why this provider was chosen: every provider considered and the reason'
+          description: 'Why this provider was chosen: `explanation` (one plain-language sentence), `reasons`, and every provider considered, each with its outcome, reason, `explanation` sentence and the success-rate signal it was judged on'
         client_action:
           type:
           - object

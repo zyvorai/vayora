@@ -4,16 +4,28 @@ Status: **implemented and tested against the in-process simulator and the local 
 has been used, so the defaults below are reasoned starting points, not tuned values. Nothing here changes a payment
 that already exists; it only influences which provider a NEW attempt is sent to.
 
-Code: `crates/zyvor-providers/src/router.rs` (the pure decision), `crates/zyvor-api/src/health.rs` (signal, breaker,
-failover list, API), `crates/zyvor-api/src/payments.rs` (`start_attempt`, the one place attempts are created).
-Tests: router unit tests, `health.rs` unit tests, `crates/zyvor-api/tests/failover.rs`.
+Code: `crates/zyvor-providers/src/router.rs` (the pure decision), `crates/zyvor-providers/src/decline.rs` (whose fault
+a decline was), `crates/zyvor-api/src/health.rs` (signal, breaker, sweeper, failover list, API),
+`crates/zyvor-api/src/worker.rs` (runs the sweeper), `crates/zyvor-api/src/payments.rs` (`start_attempt`, the one place
+attempts are created; `apply_provider_state`, the one place they are classified).
+Tests: router and decline unit tests, `health.rs` unit tests, `crates/zyvor-api/tests/failover.rs`,
+`crates/zyvor-api/tests/decline_sweeper.rs`.
 
 ## What already existed
 
 Hard filters (provider disabled, not allowed for this payment, capability matrix, rule exclusion), routing rules
-(`prefer` / `exclude` by method and amount band), configured fees, and a coarse health heuristic (more than half of the
-last 50 attempts failed, or any unresolved payment, only deprioritises). Every decision was stored on the attempt
-(`route`) with the providers considered. That is all unchanged. What follows is added on top.
+(`prefer` / `exclude` by method and amount band), configured fees. Every decision is stored on the attempt (`route`)
+with the providers considered. That is unchanged. What follows is added on top.
+
+**One health rule.** The router used to carry a second, older heuristic of its own (any unresolved payment, or more
+than half of the last 50 attempts of any method failing, only deprioritised a provider). It could not be switched off,
+looked at every method together, never expired, and `GET /v1/routing/health` did not show it, so health could say
+"healthy" while routing skipped the provider. It has been removed. The circuit breaker below is now the only health
+rule routing applies, and the health endpoint, the router and the sweeper all evaluate it through one function
+(`health::evaluate_one`). The consequence to know about: one unresolved payment no longer moves a provider down the
+list by itself. It still blocks a retry of that same payment (unchanged), counts as unresolved in the signal and, with
+enough samples, counts toward the breaker. A small business that wants an earlier reaction can lower `min_samples`
+(minimum 3).
 
 ## 1. The success-rate signal
 
@@ -25,9 +37,43 @@ For each tenant, provider and method the API computes, on demand, from `payment_
 - `success_rate_bps` (integer basis points), reported **only once there are at least `min_samples` resolved attempts**
   (default 10). Below that it is `null`, and a `null` rate never changes routing.
 
-Nothing is stored for this: it is derived from the attempts. Payer declines (for example insufficient funds) count as
-failures, because the attempt record does not say whose fault a decline was. That is why the default threshold is a
-majority (50%) and not a few percent. A provider with a high share of genuine payer declines would look worse than it is.
+Nothing is stored for this: it is derived from the attempts. **Payer declines are left out** of `samples`, `failures`
+and the success rate, and reported on their own as `payer_declines` (see "Decline classes" below). A provider whose
+payers are often short of money therefore does not look worse than it is, and a business with only payer declines has
+no verdict at all. Declines whose cause is not recognised still count as failures, so the default threshold is still a
+majority (50%) and not a few percent.
+
+## Decline classes
+
+Each failed attempt carries a `payment_attempts.failure_class` (migration 0079 widened the allowed values):
+
+| Class | Meaning | In the success rate and breaker? | Failover to another provider? |
+|---|---|---|---|
+| `payer_declined` | the payer's doing: insufficient funds, the payer left or refused | **no**, shown as `payer_declines` | no (the payer being short of money is no reason to change provider) |
+| `provider_fault` | the provider or bank side failed, including an unknown outcome (timeout) the provider later confirmed as failed | yes | yes |
+| `declined` | the provider said "failed" and the cause is **not recognised** ("unknown"). Every attempt recorded before migration 0079 is here | yes (the conservative choice) | yes |
+| `provider_rejected` | the provider refused the request before creating anything | yes | yes |
+| `cancelled` | the merchant cancelled it | no | no |
+
+An unknown decline counts as a provider-side failure on purpose: wrongly excusing a failing provider hides an outage,
+while wrongly counting one payer decline only makes the breaker slightly more cautious. A probe that the payer declined
+proves nothing about the provider, so it is neither a success nor a failure for the breaker (the next cool-down allows
+another probe).
+
+What is recognised (`crates/zyvor-providers/src/decline.rs`), using only strings and codes that appear in this
+repository's adapters, simulator, local mock, fixtures and tests:
+
+| Provider | Payer | Provider-side | Everything else |
+|---|---|---|---|
+| `cashfree` | payment status `USER_DROPPED` (and webhook `PAYMENT_USER_DROPPED_WEBHOOK`); reason `insufficient funds` (the text its subscription tests use) | none | `FAILED`, `CANCELLED`, `VOID` and the mock's "Payment declined by payer bank" are unknown |
+| `razorpay` | none shown in the repository | none | all unknown, including the mock's "Payment failed at bank" |
+| `phonepe` | none shown in the repository | none | all unknown (`PAYMENT_ERROR`, `PAYMENT_DECLINED`, ...) |
+| `sim` (simulator), `sponsor_upi` and custom providers that send the same words | `insufficient_funds`, `declined_by_payer` | `failed_at_provider` | `simulated_failure`, `simulated_token_decline` and any other text are unknown |
+
+Spelling is normalised (case, underscores, hyphens). **None of this was checked against a live provider**: real
+providers have many more codes (for example for a bank being down, a card expired, a wrong PIN, a failed 3-D Secure
+step), and until a real sandbox run (see [REAL_SANDBOX.md](REAL_SANDBOX.md)) shows what each means, they are unknown and
+count against the provider. The Razorpay and PhonePe rows are empty for exactly that reason.
 
 ## 2. Routing options
 
@@ -58,20 +104,56 @@ no history therefore gets traffic from fee or `prefer`, not from this option.
   `recover_failure_pct` (default 20) with enough samples (for example late webhooks resolved old unknowns). After a
   recovery the window starts afresh, so the failures that caused the degradation are not held against it again.
 - **Record.** Each degrade and recovery writes an audit entry (`provider.degraded`, `provider.recovered`) and queues a
-  webhook event of the same name (both are in `GET /v1/events/catalogue`), once, in the routing transaction.
+  webhook event of the same name (both are in `GET /v1/events/catalogue`), once, in the transaction that made the change.
 
-Honest limits: transitions are evaluated when a payment is routed (there is no background sweeper), so a quiet tenant is
-not marked degraded or recovered until the next payment of that method. `GET /v1/routing/health` shows what the next
-payment will see (`state`) next to what is stored (`stored_state`) and never writes. The breaker is not shared across
-tenants, and it is per method: a provider degraded for card is still used for UPI.
+### The health sweeper
+
+Transitions used to be evaluated only when a payment was routed, so a quiet business was not marked degraded or
+recovered until its next payment. The worker (`worker::run_cycle`, step 3e) now re-evaluates every enabled provider and
+method of each business that has attempts in the window or a stored breaker state, and records any transition through
+the same code a routed payment uses. So failures that were settled late (the resolver, a webhook) degrade a provider
+without waiting for a payment, and late successes recover it.
+
+- **Safe with several workers.** One advisory lock per business (`pg_try_advisory_xact_lock`, held for the sweep's
+  transaction) means one replica sweeps a business at a time; the others skip it and move on (`skipped_busy`).
+- **Exactly once.** A transition is a conditional update (`state <> 'degraded'` to degrade, `state = 'degraded'` to
+  recover); the audit entry and the event are written only when that update changed a row. A routed payment evaluating
+  the same state at the same instant blocks on the row, then changes nothing.
+- **Idempotent.** Running it again changes nothing unless the evidence changed.
+- **It never starts a payment and never takes the probe slot.** Only a real payment can probe; the sweeper does not.
+- **What it does not do.** Evidence that ages out of the window does not recover a degraded provider: only a successful
+  probe, or a window with enough samples that is at or below `recover_failure_pct`, does. A provider left degraded by a
+  quiet business shows `probe_due` once its cool-down is over, and the next payment tests it. Time is the database
+  clock; the test clock in `clock.rs` is a calendar date and is not used for the minutes-long window, so tests move time
+  by changing stored timestamps.
+
+`GET /v1/routing/health` shows what the next payment will see (`state`) next to what is stored (`stored_state`) and never
+writes. Each method row also says what routing does with it (`routing_effect`: `normal`, `skipped`, `probe_next` or
+`disabled`, with `routing_effect_text`), and the response carries `routing_health_rule`. A provider or method with no
+attempts in the window has no row and is used normally. The breaker is not shared across tenants, and it is per method:
+a provider degraded for card is still used for UPI.
 
 ### What every decision records
 
-`route.considered` lists every provider with `outcome` (`selected`, `not_chosen`, `rejected`, `deprioritised`,
-`skipped_degraded`, `skipped_failover`, `probe`), a plain-language `reason`, the estimated fee and the `signal` it was
-judged on (`samples`, `successes`, `failures`, `unresolved`, `success_rate_bps`, `min_samples`, `breaker`).
-`route.failover_from` and `route.probe` appear when they apply. The same facts go into the `payment_attempt.created`
-audit entry.
+`route.considered` lists every provider with `outcome` (`selected`, `not_chosen`, `rejected`, `skipped_degraded`,
+`skipped_failover`, `probe`), a `reason`, an `explanation`, the estimated fee and the `signal` it was judged on
+(`samples`, `successes`, `failures`, `payer_declines`, `unresolved`, `success_rate_bps`, `min_samples`, `breaker`).
+`route.explanation` repeats the chosen provider's sentence. `route.failover_from` and `route.probe` appear when they
+apply. The same facts go into the `payment_attempt.created` audit entry.
+
+**`explanation`** is one plain-language sentence a person can read in a console or an API client, written from the same
+facts as the decision, for example:
+
+- "Chosen because it has the lowest estimated fee (INR 5.00)."
+- "Chosen because it has the best recent success rate (95.0% against 75.0% for razorpay)."
+- "Chosen because it is the only provider left after skipping razorpay (degraded by the circuit breaker)."
+- "Chosen as a test: razorpay was degraded, its cool-down is over, and this payment checks whether it works again."
+- "Skipped because the circuit breaker has it degraded: 18 of its last 20 payments failed or are unresolved."
+- "Not chosen: cashfree was used instead, which has the lowest estimated fee (INR 5.00)."
+
+The reason `only eligible provider` is now used only when exactly one provider could take the payment at all. When other
+providers were set aside (failed this payment already, or degraded), the reason names them instead (`only provider left
+after skipping razorpay (degraded by the circuit breaker)`). Attempts routed before this change have no `explanation`.
 
 ## 3. Failover, and why it cannot double-charge
 
@@ -106,7 +188,7 @@ and the unique-capture index apply, and it would need a refund.
 
 | Route | Scope | Purpose |
 |---|---|---|
-| `GET /v1/routing/health[?method=upi]` | `payments:read` | per provider and method: signal, breaker state, reason, last probe, pending transition; thresholds; recent degrade/recover events. Lists the methods that have attempts in the window or a stored breaker state. |
+| `GET /v1/routing/health[?method=upi]` | `payments:read` | per provider and method: signal, `payer_declines`, breaker state, what routing does with it (`routing_effect`), reason, last probe, pending transition; thresholds; recent degrade/recover events. Lists the methods that have attempts in the window or a stored breaker state. |
 | `GET /v1/routing/health/settings` | `payments:read` | the tenant's thresholds (defaults when never set) |
 | `PUT /v1/routing/health/settings` | `admin` | change thresholds; only fields sent change; validated; audited (`routing_health.settings_updated`) |
 
@@ -116,8 +198,9 @@ the degrade value), `cooldown_seconds` 120 (10 to 86400). Branch-limited keys ca
 tenant-scoped by row-level security (`routing_health_config`, `provider_health_state`; tested).
 
 Existing tenants get the defaults without a migration step. Note that this turns the breaker and failover on for them:
-the breaker's default (at least 10 resolved attempts and at least half failing) is close to the old heuristic, and
-failover only changes which provider a retry uses, but turn both off in the settings if you want the old behaviour.
+failover only changes which provider a retry uses, and the breaker's default (at least 10 resolved attempts and at least
+half failing) is close to the router's old heuristic, which it replaces. Turn the breaker off in the settings and routing
+ignores provider health completely; turn failover off to keep retrying the same provider.
 
 ## 5. Making the simulators fail
 
@@ -129,5 +212,8 @@ failover only changes which provider a retry uses, but turn both off in the sett
 
 ## What is not done
 
-No console screen yet (API only). No background sweeper for degrade/recover. No per-provider threshold overrides (one
-set per tenant). No cross-tenant or platform-wide signal. Nothing verified against a real provider's behaviour.
+No console screen yet (API only; the `explanation` sentences are ready for one). No per-provider threshold overrides
+(one set per tenant). No cross-tenant or platform-wide signal. The decline classifier knows only the codes listed above;
+Razorpay and PhonePe have none, and no failure code of any provider was verified against a live account. Existing
+declines recorded before migration 0079 stay `declined` (unknown) and keep counting against the provider until they age
+out of the window. The sweeper and the classifier are tested against simulators only.

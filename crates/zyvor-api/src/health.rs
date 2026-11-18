@@ -2,7 +2,13 @@
 //! per-(provider, method) circuit breaker, and the failover list for a payment that already failed once.
 //!
 //! The signal is computed from `payment_attempts` on demand; only the breaker state and the tenant's
-//! thresholds are stored. A signal can only change which provider is *preferred* for NEW payments. It never
+//! thresholds are stored. The breaker is the ONE health rule routing applies (there used to be a second, coarser
+//! heuristic in the router; it is gone), and `GET /v1/routing/health`, the router and the background sweeper all
+//! evaluate it through `evaluate_one`, so they cannot disagree.
+//!
+//! A decline caused by the payer (insufficient funds, the payer left) is classified `payer_declined` when the
+//! attempt is recorded (`payments::apply_provider_state`, `zyvor_providers::decline`). Such attempts are left out of
+//! the samples, the failure rate and the breaker, and are reported separately as `payer_declines`. A signal can only change which provider is *preferred* for NEW payments. It never
 //! touches an attempt that already exists, and it can never start a second live attempt: that is guarded
 //! where attempts are created (`payments::start_attempt`), not here.
 
@@ -115,6 +121,8 @@ pub struct Stats {
     pub unresolved: u32,
     /// Created, pending or authorised-but-not-captured attempts: not yet counted either way.
     pub in_flight: u32,
+    /// Declines that were the payer's doing. Not in `samples()` and never a failure: shown, not judged.
+    pub payer_declines: u32,
 }
 
 impl Stats {
@@ -128,6 +136,12 @@ impl Stats {
             .unwrap_or(0)
     }
 }
+
+/// A failed attempt the merchant cancelled is not the provider's doing.
+const NOT_CANCELLED: &str = "NOT (status = 'failed' AND (failure_class IS NOT DISTINCT FROM 'cancelled' OR failure_reason IS NOT DISTINCT FROM 'canceled_by_merchant'))";
+/// Nor is a payer decline: it is excluded from the signal and the breaker and counted on its own.
+const NOT_PAYER_DECLINE: &str =
+    "NOT (status = 'failed' AND failure_class IS NOT DISTINCT FROM 'payer_declined')";
 
 const COUNT_SQL: &str = "SELECT COUNT(*) FILTER (WHERE status IN ('captured', 'authorized')),
         COUNT(*) FILTER (WHERE status = 'failed'),
@@ -152,7 +166,8 @@ pub async fn window_stats(
               AND created_at > now() - make_interval(mins => $4)
               AND ($6::timestamptz IS NULL OR created_at > $6)
               AND status IN ('captured', 'authorized', 'failed', 'unknown', 'created', 'pending')
-              AND NOT (status = 'failed' AND (failure_class IS NOT DISTINCT FROM 'cancelled' OR failure_reason IS NOT DISTINCT FROM 'canceled_by_merchant'))
+              AND {NOT_CANCELLED}
+              AND {NOT_PAYER_DECLINE}
             ORDER BY created_at DESC LIMIT $5) r"
     );
     let (s, f, u, i): (i64, i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -162,13 +177,29 @@ pub async fn window_stats(
         .bind(cfg.window_minutes)
         .bind(i64::from(cfg.window_attempts))
         .bind(not_before)
-        .fetch_one(conn)
+        .fetch_one(&mut *conn)
         .await?;
+    // payer declines in the same time window (after a recovery, only those since it)
+    let payer: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM payment_attempts
+         WHERE tenant_id = $1 AND provider = $2 AND method = $3
+           AND created_at > now() - make_interval(mins => $4)
+           AND ($5::timestamptz IS NULL OR created_at > $5)
+           AND status = 'failed' AND failure_class = 'payer_declined'",
+    )
+    .bind(tenant_id)
+    .bind(provider)
+    .bind(method)
+    .bind(cfg.window_minutes)
+    .bind(not_before)
+    .fetch_one(conn)
+    .await?;
     Ok(Stats {
         successes: s as u32,
         failures: f as u32,
         unresolved: u as u32,
         in_flight: i as u32,
+        payer_declines: payer as u32,
     })
 }
 
@@ -185,11 +216,13 @@ async fn since_stats(
                   AND a2.created_at >= (SELECT degraded_since FROM provider_health_state WHERE tenant_id = $1 AND provider = $2 AND method = $3)
                   AND a2.status IN ('captured', 'authorized', 'failed')
                   AND NOT (a2.status = 'failed' AND (a2.failure_class IS NOT DISTINCT FROM 'cancelled' OR a2.failure_reason IS NOT DISTINCT FROM 'canceled_by_merchant'))
+                  AND NOT (a2.status = 'failed' AND a2.failure_class IS NOT DISTINCT FROM 'payer_declined')
                 ORDER BY a2.created_at DESC LIMIT 1), false)
          FROM payment_attempts
          WHERE tenant_id = $1 AND provider = $2 AND method = $3
            AND created_at >= (SELECT degraded_since FROM provider_health_state WHERE tenant_id = $1 AND provider = $2 AND method = $3)
-           AND NOT (status = 'failed' AND (failure_class IS NOT DISTINCT FROM 'cancelled' OR failure_reason IS NOT DISTINCT FROM 'canceled_by_merchant'))"
+           AND {NOT_CANCELLED}
+           AND {NOT_PAYER_DECLINE}"
     );
     let (s, f, u, i, last_ok): (i64, i64, i64, i64, bool) =
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -204,6 +237,8 @@ async fn since_stats(
             failures: f as u32,
             unresolved: u as u32,
             in_flight: i as u32,
+            // a probe the payer declined is inconclusive, so it is not counted at all
+            payer_declines: 0,
         },
         last_ok,
     ))
@@ -349,11 +384,50 @@ fn signal(cfg: &Config, w: &Stats, b: Breaker) -> Signal {
         samples: n,
         successes: w.successes,
         failures: w.failures,
+        payer_declines: w.payer_declines,
         unresolved: w.unresolved,
         success_rate_bps: (n >= cfg.min_samples as u32 && n > 0).then(|| w.successes * 10_000 / n),
         min_samples: cfg.min_samples as u32,
         breaker: b,
     }
+}
+
+/// Everything known about one (provider, method) at this moment, from one place: the stored breaker row, the
+/// rolling window, the probes since degradation and what the breaker concludes from them. Routing, the health
+/// endpoint and the sweeper all go through this, so they cannot give different answers.
+pub struct Evaluated {
+    pub stored: Stored,
+    pub window: Stats,
+    pub eval: Eval,
+    pub signal: Signal,
+}
+
+pub async fn evaluate_one(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    provider: &str,
+    method: &str,
+    cfg: &Config,
+) -> Result<Evaluated, ApiError> {
+    let st = stored(conn, tenant_id, provider, method).await?;
+    let window = window_stats(conn, tenant_id, provider, method, cfg, st.recovered_at).await?;
+    let since = if st.degraded {
+        let (stats, last_succeeded) = since_stats(conn, tenant_id, provider, method).await?;
+        Since {
+            stats,
+            last_succeeded,
+        }
+    } else {
+        Since::default()
+    };
+    let eval = evaluate(cfg, &window, st.degraded, st.quiet_secs, &since);
+    let signal = signal(cfg, &window, eval.breaker);
+    Ok(Evaluated {
+        stored: st,
+        window,
+        eval,
+        signal,
+    })
 }
 
 /// Compute the signal and breaker state for every enabled candidate, for the method being routed, and record any
@@ -367,28 +441,85 @@ pub async fn attach_signals(
 ) -> Result<(), ApiError> {
     for c in candidates.iter_mut().filter(|c| c.enabled) {
         let m = method.as_str();
-        let st = stored(conn, tenant_id, &c.provider, m).await?;
-        let window = window_stats(conn, tenant_id, &c.provider, m, cfg, st.recovered_at).await?;
-        let since = if st.degraded {
-            let (stats, last_succeeded) = since_stats(conn, tenant_id, &c.provider, m).await?;
-            Since {
-                stats,
-                last_succeeded,
-            }
-        } else {
-            Since::default()
-        };
-        let ev = evaluate(cfg, &window, st.degraded, st.quiet_secs, &since);
-        let sig = signal(cfg, &window, ev.breaker);
-        if let Some(t) = &ev.transition {
-            record_transition(conn, tenant_id, &c.provider, m, t, &sig).await?;
+        let e = evaluate_one(conn, tenant_id, &c.provider, m, cfg).await?;
+        if let Some(t) = &e.eval.transition {
+            record_transition(conn, tenant_id, &c.provider, m, t, &e.signal).await?;
         }
-        c.signal = Some(sig);
+        c.signal = Some(e.signal);
     }
     Ok(())
 }
 
-/// Persist a transition once (concurrent routers race on the row) and tell the merchant.
+/// What a finished sweep of one business did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Sweep {
+    /// (provider, method) pairs evaluated.
+    pub checked: usize,
+    pub degraded: usize,
+    pub recovered: usize,
+    /// Another worker held this business's sweep, so nothing was done here (it is doing it).
+    pub skipped_busy: bool,
+}
+
+/// Re-evaluate the breaker for every enabled provider and method of one business that has attempts in the window or
+/// a stored breaker state, and record any degrade / recovery, so a quiet business degrades or recovers without
+/// waiting for its next payment. Late webhooks and the resolver change the evidence while nobody is paying.
+///
+/// Safe to run on any number of worker replicas and any number of times:
+/// - a transaction-scoped advisory lock per business means one replica sweeps it at a time; the others skip it
+///   (`skipped_busy`) rather than wait;
+/// - a transition is written by a conditional UPDATE (`state <> 'degraded'` / `state = 'degraded'`) and the audit
+///   entry and webhook event are written only when that UPDATE changed a row, so a transition is recorded once even
+///   when a routed payment evaluates it at the same moment (that one blocks on the row, then changes nothing);
+/// - it never starts a payment and never claims a probe: only `payments::start_attempt` does.
+///
+/// Time is the database's `now()`, shared by all replicas. The test clock (`clock.rs`) is a calendar date for
+/// billing and is deliberately not used for the minutes-long health window.
+pub async fn sweep_tenant(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Sweep, ApiError> {
+    let mut tx = tenant::begin(pool, tenant_id).await?;
+    let got: bool = sqlx::query_scalar(
+        "SELECT pg_try_advisory_xact_lock(hashtext('zyvor.health_sweep'), hashtext($1))",
+    )
+    .bind(tenant_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !got {
+        return Ok(Sweep {
+            skipped_busy: true,
+            ..Sweep::default()
+        });
+    }
+    let cfg = load_config(&mut tx, tenant_id).await?;
+    let pairs: Vec<(String, String)> = sqlx::query_as(
+        "SELECT a.provider, m.method FROM provider_accounts a
+         JOIN (SELECT provider, method FROM payment_attempts WHERE tenant_id = $1 AND created_at > now() - make_interval(mins => $2)
+               UNION SELECT provider, method FROM provider_health_state WHERE tenant_id = $1) m ON m.provider = a.provider
+         WHERE a.tenant_id = $1 AND a.enabled
+         GROUP BY a.provider, m.method ORDER BY a.provider, m.method",
+    )
+    .bind(tenant_id)
+    .bind(cfg.window_minutes)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut out = Sweep::default();
+    for (provider, method) in pairs {
+        let e = evaluate_one(&mut tx, tenant_id, &provider, &method, &cfg).await?;
+        out.checked += 1;
+        if let Some(t) = &e.eval.transition
+            && record_transition(&mut tx, tenant_id, &provider, &method, t, &e.signal).await?
+        {
+            match t {
+                Transition::Degrade(_) => out.degraded += 1,
+                Transition::Recover(_) => out.recovered += 1,
+            }
+        }
+    }
+    tx.commit().await?;
+    Ok(out)
+}
+
+/// Persist a transition once (concurrent routers and sweepers race on the row) and tell the merchant. True when this
+/// call made the change (and so wrote the audit entry and the event).
 async fn record_transition(
     conn: &mut PgConnection,
     tenant_id: &str,
@@ -396,7 +527,7 @@ async fn record_transition(
     method: &str,
     t: &Transition,
     sig: &Signal,
-) -> Result<(), ApiError> {
+) -> Result<bool, ApiError> {
     let (changed, event, reason) = match t {
         Transition::Degrade(why) => {
             let r = sqlx::query(
@@ -443,7 +574,7 @@ async fn record_transition(
         tenant::emit(conn, tenant_id, event, detail).await?;
         tracing::warn!(provider, method, reason, event, "provider health changed");
     }
-    Ok(())
+    Ok(changed)
 }
 
 /// Take the one probe slot for a degraded provider. False when someone else already took it (or the provider
@@ -470,13 +601,14 @@ pub async fn claim_probe(
 }
 
 /// Providers that already failed this payment in a way that proves nothing was taken: the provider answered
-/// "failed", or refused the request before creating anything. A merchant cancellation does not count (a late
-/// capture is still possible there), and neither does anything unresolved.
+/// "failed" (its own fault or an unrecognised cause), or refused the request before creating anything. A merchant
+/// cancellation does not count (a late capture is still possible there), neither does anything unresolved, and
+/// neither does a payer decline: the payer being short of money is no reason to move this payment to another provider.
 pub async fn failed_here(conn: &mut PgConnection, intent_id: &str) -> Result<Vec<Avoid>, ApiError> {
     let rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT DISTINCT ON (provider) provider, failure_class, failure_reason
          FROM payment_attempts WHERE intent_id = $1 AND status = 'failed'
-           AND failure_class IN ('declined', 'provider_rejected')
+           AND failure_class IN ('declined', 'provider_rejected', 'provider_fault')
          ORDER BY provider, created_at DESC",
     )
     .bind(intent_id)
@@ -503,7 +635,8 @@ pub struct HealthQuery {
 }
 
 /// Read provider health: the success-rate signal and breaker state per provider and method (read-only: asking
-/// never changes state; transitions are recorded when a payment is routed), plus recent degrade / recover events.
+/// never changes state; transitions are recorded when a payment is routed or by the background sweeper), plus recent
+/// degrade / recover events.
 pub async fn get_health(
     State(s): State<AppState>,
     auth: Auth,
@@ -543,38 +676,22 @@ pub async fn get_health(
         }
         let mut rows = Vec::new();
         for m in methods {
-            let st = stored(&mut tx, &auth.tenant_id, &provider, &m).await?;
-            let window = window_stats(
-                &mut tx,
-                &auth.tenant_id,
-                &provider,
-                &m,
-                &cfg,
-                st.recovered_at,
-            )
-            .await?;
-            let since = if st.degraded {
-                let (stats, last_succeeded) =
-                    since_stats(&mut tx, &auth.tenant_id, &provider, &m).await?;
-                Since {
-                    stats,
-                    last_succeeded,
-                }
-            } else {
-                Since::default()
-            };
-            let ev = evaluate(&cfg, &window, st.degraded, st.quiet_secs, &since);
-            let sig = signal(&cfg, &window, ev.breaker);
+            let e = evaluate_one(&mut tx, &auth.tenant_id, &provider, &m, &cfg).await?;
+            let (effect, effect_text) = routing_effect(e.eval.breaker, enabled);
             rows.push(json!({
                 "method": m,
-                "signal": sig,
-                "in_flight": window.in_flight,
-                "state": match ev.breaker { Breaker::Healthy => "healthy", Breaker::Degraded => "degraded", Breaker::ProbeDue => "probe_due" },
-                "stored_state": if st.degraded { "degraded" } else { "healthy" },
-                "reason": st.reason,
-                "degraded_since": st.degraded_since,
-                "last_probe_at": st.last_probe_at,
-                "pending_transition": ev.transition.as_ref().map(|t| match t {
+                "signal": e.signal,
+                "in_flight": e.window.in_flight,
+                // declines that were the payer's doing: visible here, never counted in the signal or the breaker
+                "payer_declines": e.window.payer_declines,
+                "state": match e.eval.breaker { Breaker::Healthy => "healthy", Breaker::Degraded => "degraded", Breaker::ProbeDue => "probe_due" },
+                "stored_state": if e.stored.degraded { "degraded" } else { "healthy" },
+                "reason": e.stored.reason,
+                "degraded_since": e.stored.degraded_since,
+                "last_probe_at": e.stored.last_probe_at,
+                "routing_effect": effect,
+                "routing_effect_text": effect_text,
+                "pending_transition": e.eval.transition.as_ref().map(|t| match t {
                     Transition::Degrade(r) => json!({ "to": "degraded", "reason": r }),
                     Transition::Recover(r) => json!({ "to": "healthy", "reason": r }),
                 }),
@@ -595,9 +712,35 @@ pub async fn get_health(
         .into_iter()
         .map(|(a, p, d, at)| json!({ "event": a, "provider": p, "detail": d, "at": at }))
         .collect();
-    Ok(Json(
-        json!({ "config": cfg, "providers": providers, "recent_changes": recent }),
-    ))
+    Ok(Json(json!({
+        "config": cfg,
+        "routing_health_rule": if cfg.breaker_enabled {
+            "The circuit breaker shown here is the only health rule routing applies. A degraded provider is skipped for new payments, unless every other eligible provider is degraded too. Payer declines are not counted. A provider or method with no attempts in the window has no row here and is used normally."
+        } else {
+            "The circuit breaker is switched off for this business, so provider health does not change which provider routing picks."
+        },
+        "providers": providers,
+        "recent_changes": recent,
+    })))
+}
+
+/// What routing does with a provider in this breaker state, in words a person can read. The router
+/// (`zyvor_providers::router::choose`) implements exactly this; `tests/decline_sweeper.rs` checks they agree.
+fn routing_effect(b: Breaker, enabled: bool) -> (&'static str, &'static str) {
+    if !enabled {
+        return ("disabled", "Disabled: routing never uses it.");
+    }
+    match b {
+        Breaker::Healthy => ("normal", "Takes new payments normally."),
+        Breaker::Degraded => (
+            "skipped",
+            "Skipped for new payments while degraded, unless every other eligible provider is degraded too.",
+        ),
+        Breaker::ProbeDue => (
+            "probe_next",
+            "Its cool-down is over: the next new payment for this method may test it. Other payments skip it.",
+        ),
+    }
 }
 
 pub async fn get_settings(State(s): State<AppState>, auth: Auth) -> Result<Json<Config>, ApiError> {
@@ -679,7 +822,36 @@ mod tests {
             failures: f,
             unresolved: u,
             in_flight: 0,
+            payer_declines: 0,
         }
+    }
+
+    #[test]
+    fn payer_declines_are_never_part_of_the_failure_rate() {
+        // 6 successes, 4 provider failures: 40%. Fifty payer declines on top change nothing.
+        let mut w = st(6, 4, 0);
+        w.payer_declines = 50;
+        assert_eq!(w.samples(), 10);
+        assert_eq!(w.failure_pct(), 40);
+        let e = evaluate(&Config::default(), &w, false, None, &Since::default());
+        assert_eq!(e.breaker, Breaker::Healthy);
+        // only payer declines: no samples at all, so no verdict either way
+        let only = Stats {
+            payer_declines: 80,
+            ..Stats::default()
+        };
+        assert_eq!(only.samples(), 0);
+        let e = evaluate(&Config::default(), &only, false, None, &Since::default());
+        assert_eq!(e.breaker, Breaker::Healthy);
+        assert!(e.transition.is_none());
+    }
+
+    #[test]
+    fn what_routing_does_with_each_state_is_stated_once() {
+        assert_eq!(routing_effect(Breaker::Healthy, true).0, "normal");
+        assert_eq!(routing_effect(Breaker::Degraded, true).0, "skipped");
+        assert_eq!(routing_effect(Breaker::ProbeDue, true).0, "probe_next");
+        assert_eq!(routing_effect(Breaker::Degraded, false).0, "disabled");
     }
 
     #[test]
