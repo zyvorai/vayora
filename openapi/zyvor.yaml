@@ -9220,7 +9220,7 @@ paths:
           $ref: '#/components/responses/Error'
   /v1/payment_links:
     post:
-      summary: Create a payment link (fixed amount or an invoice's outstanding)
+      summary: Create a payment link (exact, minimum, up-to or pay-what-you-want amount, or an invoice's outstanding)
       tags:
       - payment_links
       responses:
@@ -9248,6 +9248,23 @@ paths:
                     - string
                     - 'null'
                   existing: {}
+                  amount_mode:
+                    type: string
+                    enum:
+                    - exact
+                    - minimum
+                    - up_to
+                    - pay_what_you_want
+                  lifecycle_status:
+                    type: string
+                    enum:
+                    - created
+                    - active
+                    - partially_paid
+                    - paid
+                    - expired
+                    - cancelled
+                    - failed
         4XX:
           $ref: '#/components/responses/Error'
       requestBody:
@@ -9255,7 +9272,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NewLink'
+              $ref: '#/components/schemas/LinkCreate'
     get:
       summary: List payment links with usage and status
       tags:
@@ -9270,7 +9287,21 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: {}
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        status:
+                          type: string
+                        lifecycle_status:
+                          type: string
+                        payable:
+                          type: boolean
+                        paid_minor:
+                          type: integer
+                        amount_mode:
+                          type: string
         4XX:
           $ref: '#/components/responses/Error'
   /v1/payment_links/{id}/qr.svg:
@@ -9309,6 +9340,8 @@ paths:
                   id:
                     type: string
                   status:
+                    type: string
+                  lifecycle_status:
                     type: string
         4XX:
           $ref: '#/components/responses/Error'
@@ -9400,6 +9433,20 @@ paths:
                   brand: {}
                   allowed_methods: {}
                   partial: {}
+                  amount_mode:
+                    type: string
+                    enum:
+                    - exact
+                    - minimum
+                    - up_to
+                    - pay_what_you_want
+                  suggested_amount_minor:
+                    type:
+                    - integer
+                    - 'null'
+                    format: int64
+                  amount_rule:
+                    type: string
         4XX:
           $ref: '#/components/responses/Error'
       security: []
@@ -13128,6 +13175,995 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/DonationStartIn'
+  /v1/payment_links/lifecycle:
+    get:
+      summary: 'Payment link lifecycle model: statuses, allowed transitions, events'
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {}
+                  precedence: {}
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payment_links/{id}/lifecycle:
+    get:
+      summary: A payment link's lifecycle status, recorded status and history
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  recorded_status:
+                    type:
+                    - string
+                    - 'null'
+                  payable: {}
+                  paid_minor:
+                    type: integer
+                  payments: {}
+                  checkouts_started: {}
+                  allowed_next: {}
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        from:
+                          type:
+                          - string
+                          - 'null'
+                        to:
+                          type: string
+                        reason:
+                          type: string
+                        at:
+                          type: string
+                          format: date-time
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payment_links/{id}/instrument_rules:
+    put:
+      summary: Set the payer banks and UPI handles a payment link accepts (empty lists remove the rule)
+      tags:
+      - payment_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  instrument_rules: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRules'
+  /v1/payment_intents/{id}/instrument_rules:
+    put:
+      summary: Set the payer banks and UPI handles one payment accepts (before it succeeds)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  instrument_rules: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRules'
+  /v1/instrument_checks:
+    get:
+      summary: 'Payer-instrument checks: allowed, disallowed (refunded) and unverifiable payments'
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attempt_id:
+                          type: string
+                        intent_id:
+                          type: string
+                        link_id:
+                          type:
+                          - string
+                          - 'null'
+                        result:
+                          type: string
+                        payer_bank:
+                          type:
+                          - string
+                          - 'null'
+                        payer_vpa_handle:
+                          type:
+                          - string
+                          - 'null'
+                        refund_id:
+                          type:
+                          - string
+                          - 'null'
+                        detail:
+                          type: string
+                        checked_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: result
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+  /v1/verify/vpa:
+    post:
+      summary: Check a UPI id and compare the holder name (simulated unless a real provider is configured)
+      tags:
+      - verification
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  subject: {}
+                  ifsc: {}
+                  outcome:
+                    type: string
+                  name_match: {}
+                  safe_to_pay: {}
+                  provider:
+                    type: string
+                  simulated: {}
+                  detail: {}
+                  reused: {}
+                  note:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyVpa'
+  /v1/verify/bank_account:
+    post:
+      summary: Check a bank account by penny drop and compare the holder name (simulated unless a real provider is configured)
+      tags:
+      - verification
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  subject: {}
+                  ifsc: {}
+                  outcome:
+                    type: string
+                  name_match: {}
+                  safe_to_pay: {}
+                  provider:
+                    type: string
+                  simulated: {}
+                  detail: {}
+                  reused: {}
+                  note:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyBank'
+  /v1/verifications:
+    get:
+      summary: List verification results (masked)
+      tags:
+      - verification
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                        subject:
+                          type: string
+                        ifsc:
+                          type:
+                          - string
+                          - 'null'
+                        outcome:
+                          type: string
+                        name_match:
+                          type: string
+                        provider:
+                          type: string
+                        simulated:
+                          type: boolean
+                        created_by:
+                          type: string
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+  /v1/verifications/{id}:
+    get:
+      summary: One verification result (masked)
+      tags:
+      - verification
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  subject: {}
+                  ifsc: {}
+                  outcome:
+                    type: string
+                  name_match: {}
+                  safe_to_pay: {}
+                  provider:
+                    type: string
+                  simulated: {}
+                  detail: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/risk/rules:
+    post:
+      summary: Create a velocity or amount risk rule
+      tags:
+      - risk
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                  params: {}
+                  action: {}
+                  enabled:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRiskRule'
+    get:
+      summary: List risk rules
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        kind:
+                          type: string
+                        params: {}
+                        action:
+                          type: string
+                        enabled:
+                          type: boolean
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/risk/rules/{id}:
+    delete:
+      summary: Delete a risk rule
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/risk/lists:
+    post:
+      summary: Add a hashed value to the risk allow-list or block-list
+      tags:
+      - risk
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  list:
+                    type: string
+                  dimension: {}
+                  label:
+                    type: boolean
+                  expires_at:
+                    type:
+                    - object
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewEntry'
+    get:
+      summary: List allow-list and block-list entries (masked hints only)
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        list:
+                          type: string
+                        dimension:
+                          type: string
+                        label:
+                          type: string
+                        created_by:
+                          type: string
+                        expires_at:
+                          type:
+                          - object
+                          - 'null'
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: list
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/risk/lists/{id}:
+    delete:
+      summary: Remove a list entry
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/risk/evaluate:
+    post:
+      summary: 'Dry run: what the risk rules would decide for given values (records nothing)'
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run:
+                    type: boolean
+                  decision: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvalBody'
+  /v1/risk/decisions:
+    get:
+      summary: Risk decisions with the rules that fired and what they saw
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        subject_type:
+                          type: string
+                        subject_id:
+                          type: string
+                        action:
+                          type: string
+                        score:
+                          type:
+                          - integer
+                          - 'null'
+                          format: int32
+                        fired: {}
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: subject_id
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+  /v1/risk/review_queue:
+    get:
+      summary: Open risk review cases for payments and orders
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        case_id:
+                          type: string
+                        kind:
+                          type: string
+                        status:
+                          type: string
+                        subject_type:
+                          type: string
+                        subject_id:
+                          type: string
+                        explanation:
+                          type: string
+                        assignee:
+                          type:
+                          - string
+                          - 'null'
+                        created_at:
+                          type: object
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/risk/pin_tiers:
+    put:
+      summary: Set the delivery-risk tier of a pin-code prefix
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pin_prefix: {}
+                  tier:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinTierBody'
+    get:
+      summary: List pin-code tiers
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        pin_prefix:
+                          type: string
+                        tier:
+                          type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/risk/pin_tiers/{pin_prefix}:
+    delete:
+      summary: Remove a pin-code tier
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pin_prefix:
+                    type: string
+                  deleted:
+                    type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: pin_prefix
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/risk/order_score:
+    post:
+      summary: Explainable delivery-risk score for a cash-on-delivery order
+      tags:
+      - risk
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score: {}
+                  band: {}
+                  action: {}
+                  advice: {}
+                  contributions: {}
+                  review_at:
+                    type:
+                    - string
+                    - 'null'
+                  decline_at:
+                    type:
+                    - string
+                    - 'null'
+                  formula: {}
+                  pin_tier:
+                    type:
+                    - string
+                    - 'null'
+                  case_id:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderScoreBody'
+  /v1/payout_links:
+    post:
+      summary: 'Create a payout link: the recipient enters verified details and gets a payout'
+      tags:
+      - payout_links
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  existing:
+                    type: boolean
+                  token: {}
+                  expires_at:
+                    type:
+                    - string
+                    - 'null'
+                  note:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPayoutLink'
+    get:
+      summary: List payout links
+      tags:
+      - payout_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/payout_links/{id}:
+    get:
+      summary: One payout link and the state of its payout
+      tags:
+      - payout_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  purpose: {}
+                  external_ref:
+                    type:
+                    - string
+                    - 'null'
+                  status:
+                    type: string
+                  expires_at:
+                    type:
+                    - string
+                    - 'null'
+                  failed_attempts: {}
+                  payout_id:
+                    type:
+                    - string
+                    - 'null'
+                  payout_status: {}
+                  created_by: {}
+                  created_at:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/payout_links/{id}/cancel:
+    post:
+      summary: Cancel an unclaimed payout link
+      tags:
+      - payout_links
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/checkout/payout_links/{tenant_id}/{token}:
+    get:
+      summary: Public payout link details for the recipient
+      tags:
+      - checkout
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant:
+                    type:
+                    - string
+                    - 'null'
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  purpose: {}
+                  status:
+                    type: string
+                  expires_at:
+                    type:
+                    - string
+                    - 'null'
+                  name_required: {}
+                  methods: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+  /v1/checkout/payout_links/{tenant_id}/{token}/claim:
+    post:
+      summary: 'Public: the recipient enters bank or UPI details on a payout link'
+      tags:
+      - checkout
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  payout_status: {}
+                  amount_minor:
+                    type: integer
+                  currency:
+                    type: string
+                  simulated: {}
+                  message:
+                    type:
+                    - string
+                    - 'null'
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Claim'
 components:
   securitySchemes:
     bearer:
@@ -14100,6 +15136,38 @@ components:
       - instalments
       - first_due_date
       - number_prefix
+    VerifyVpa:
+      type: object
+      x-generated: true
+      properties:
+        vpa:
+          type: string
+        name:
+          type: string
+      required:
+      - vpa
+    VerifyBank:
+      type: object
+      x-generated: true
+      properties:
+        account_number:
+          type: string
+        ifsc:
+          type: string
+        name:
+          type: string
+      required:
+      - account_number
+      - ifsc
+    VerifyListQuery:
+      type: object
+      x-generated: true
+      properties:
+        kind:
+          type: string
+        limit:
+          type: integer
+          format: int64
     VendorVerifyIn:
       type: object
       x-generated: true
@@ -14886,6 +15954,116 @@ components:
         days:
           type: integer
           format: int64
+    PinTierBody:
+      type: object
+      x-generated: true
+      properties:
+        pin_prefix:
+          type: string
+        tier:
+          type: string
+      required:
+      - pin_prefix
+      - tier
+    OrderScoreBody:
+      type: object
+      x-generated: true
+      properties:
+        pin_code:
+          type: string
+        order_value_minor:
+          type: integer
+          format: int64
+        repeat_customer:
+          type: boolean
+        prior_refusals:
+          type: integer
+          format: int32
+        order_ref:
+          type: string
+        review_at:
+          type: integer
+          format: int64
+        decline_at:
+          type: integer
+          format: int64
+      required:
+      - pin_code
+      - order_value_minor
+    NewRiskRule:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        params: {}
+        action:
+          type: string
+      required:
+      - name
+      - kind
+      - params
+      - action
+    NewEntry:
+      type: object
+      x-generated: true
+      properties:
+        list:
+          type: string
+        dimension:
+          type: string
+        value:
+          type: string
+        note:
+          type: string
+        expires_at:
+          type: object
+      required:
+      - list
+      - dimension
+      - value
+    RiskEngineListQuery:
+      type: object
+      x-generated: true
+      properties:
+        list:
+          type: string
+    EvalBody:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        method:
+          type: string
+        customer_id:
+          type: string
+        device:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        ip:
+          type: string
+        card:
+          type: string
+        vpa:
+          type: string
+      required:
+      - amount_minor
+    DecisionQuery:
+      type: object
+      x-generated: true
+      properties:
+        subject_id:
+          type: string
+        limit:
+          type: integer
+          format: int64
     RemindersListQuery:
       type: object
       x-generated: true
@@ -15213,6 +16391,59 @@ components:
       required:
       - vendor_id
       - kind
+    NewPayoutLink:
+      type: object
+      x-generated: true
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        purpose:
+          type: string
+        expected_name:
+          type: string
+        external_ref:
+          type: string
+        expires_in_hours:
+          type: integer
+          format: int64
+      required:
+      - amount_minor
+      - purpose
+    Claim:
+      type: object
+      x-generated: true
+      properties:
+        name:
+          type: string
+        bank_account:
+          $ref: '#/components/schemas/BankIn'
+        upi:
+          $ref: '#/components/schemas/UpiIn'
+    UpiIn:
+      type: object
+      x-generated: true
+      properties:
+        vpa:
+          type: string
+      required:
+      - vpa
+    BankIn:
+      type: object
+      x-generated: true
+      properties:
+        holder_name:
+          type: string
+        ifsc:
+          type: string
+        account_number:
+          type: string
+      required:
+      - holder_name
+      - ifsc
+      - account_number
     RetryIn:
       type: object
       x-generated: true
@@ -15533,20 +16764,6 @@ components:
       required:
       - kind
       - reference
-    BankIn:
-      type: object
-      x-generated: true
-      properties:
-        holder_name:
-          type: string
-        ifsc:
-          type: string
-        account_number:
-          type: string
-      required:
-      - holder_name
-      - ifsc
-      - account_number
     SetMoneyMode:
       type: object
       x-generated: true
@@ -15646,6 +16863,104 @@ components:
             type: string
       required:
       - csv
+    LinkCreate:
+      type: object
+      x-generated: true
+      properties:
+        amount_mode:
+          type: string
+        suggested_amount_minor:
+          type: integer
+          format: int64
+        instrument_rules:
+          type: object
+        description:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        invoice_id:
+          type: string
+        customer_id:
+          type: string
+        branch_id:
+          type: string
+        counter_id:
+          type: string
+        open_amount:
+          type: boolean
+        min_amount_minor:
+          type: integer
+          format: int64
+        max_amount_minor:
+          type: integer
+          format: int64
+        max_uses:
+          type: integer
+          format: int32
+        expires_at:
+          type: string
+          format: date-time
+        splits:
+          type: array
+          items:
+            type: object
+        convenience_fee_bp:
+          type: integer
+          format: int32
+        remind_before_expiry:
+          type: boolean
+        message:
+          type: string
+        thank_you:
+          type: string
+        return_url:
+          type: string
+        use_branding:
+          type: boolean
+        allowed_methods:
+          type: array
+          items:
+            type: string
+        external_ref:
+          type: string
+        allow_partial:
+          type: boolean
+        min_part_minor:
+          type: integer
+          format: int64
+        balance_reminder_days:
+          type: integer
+          format: int32
+    InfoQuery:
+      type: object
+      x-generated: true
+      properties:
+        coupon:
+          type: string
+    SetRules:
+      type: object
+      x-generated: true
+      properties:
+        allowed_banks:
+          type: array
+          items:
+            type: string
+        allowed_vpa_handles:
+          type: array
+          items:
+            type: string
+    ChecksQuery:
+      type: object
+      x-generated: true
+      properties:
+        result:
+          type: string
+        limit:
+          type: integer
+          format: int64
     InstallmentsNewPlan:
       type: object
       x-generated: true

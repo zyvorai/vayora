@@ -67,6 +67,21 @@ DeletePlatformRotaDaysOffByIdResponse = TypedDict("DeletePlatformRotaDaysOffById
     "deleted": "bool",
 })
 
+DeleteRiskListsByIdResponse = TypedDict("DeleteRiskListsByIdResponse", {
+    "id": "str",
+    "deleted": "bool",
+})
+
+DeleteRiskPinTiersByPinPrefixResponse = TypedDict("DeleteRiskPinTiersByPinPrefixResponse", {
+    "pin_prefix": "str",
+    "deleted": "bool",
+})
+
+DeleteRiskRulesByIdResponse = TypedDict("DeleteRiskRulesByIdResponse", {
+    "id": "str",
+    "deleted": "bool",
+})
+
 DeleteSavedViewsByIdResponse = TypedDict("DeleteSavedViewsByIdResponse", {
     "ok": "bool",
 })
@@ -332,6 +347,20 @@ GetCheckoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutLinksByTenantI
     "brand": "Any",
     "allowed_methods": "Any",
     "partial": "Any",
+    "amount_mode": "str",
+    "suggested_amount_minor": "Optional[int]",
+    "amount_rule": "str",
+})
+
+GetCheckoutPayoutLinksByTenantIdByTokenResponse = TypedDict("GetCheckoutPayoutLinksByTenantIdByTokenResponse", {
+    "merchant": "Optional[str]",
+    "amount_minor": "int",
+    "currency": "str",
+    "purpose": "Any",
+    "status": "str",
+    "expires_at": "Optional[str]",
+    "name_required": "Any",
+    "methods": "Any",
 })
 
 GetClosingsResponse = TypedDict("GetClosingsResponse", {
@@ -862,6 +891,22 @@ GetInstallmentPlansByIdResponse = TypedDict("GetInstallmentPlansByIdResponse", {
     "invoices": "List[Any]",
 })
 
+GetInstrumentChecksResponse = TypedDict("GetInstrumentChecksResponse", {
+    "data": "List[GetInstrumentChecksResponseDataItem]",
+})
+
+GetInstrumentChecksResponseDataItem = TypedDict("GetInstrumentChecksResponseDataItem", {
+    "attempt_id": "str",
+    "intent_id": "str",
+    "link_id": "Optional[str]",
+    "result": "str",
+    "payer_bank": "Optional[str]",
+    "payer_vpa_handle": "Optional[str]",
+    "refund_id": "Optional[str]",
+    "detail": "str",
+    "checked_at": "Any",
+})
+
 GetInvoicesByIdEinvoiceResponse = TypedDict("GetInvoicesByIdEinvoiceResponse", {
     "draft": "bool",
     "note": "str",
@@ -1115,6 +1160,25 @@ GetPaymentLinksByIdAnalyticsResponse = TypedDict("GetPaymentLinksByIdAnalyticsRe
     "notes": "Any",
 })
 
+GetPaymentLinksByIdLifecycleResponse = TypedDict("GetPaymentLinksByIdLifecycleResponse", {
+    "id": "str",
+    "status": "str",
+    "recorded_status": "Optional[str]",
+    "payable": "Any",
+    "paid_minor": "int",
+    "payments": "Any",
+    "checkouts_started": "Any",
+    "allowed_next": "Any",
+    "history": "List[GetPaymentLinksByIdLifecycleResponseHistoryItem]",
+})
+
+GetPaymentLinksByIdLifecycleResponseHistoryItem = TypedDict("GetPaymentLinksByIdLifecycleResponseHistoryItem", {
+    "from": "Optional[str]",
+    "to": "str",
+    "reason": "str",
+    "at": "str",
+})
+
 GetPaymentLinksByIdShareResponse = TypedDict("GetPaymentLinksByIdShareResponse", {
     "id": "str",
     "url": "Any",
@@ -1127,11 +1191,45 @@ GetPaymentLinksByIdShareResponse = TypedDict("GetPaymentLinksByIdShareResponse",
     "sms_mode": "Any",
 })
 
-GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
+GetPaymentLinksLifecycleResponse = TypedDict("GetPaymentLinksLifecycleResponse", {
     "data": "List[Any]",
+    "precedence": "Any",
+    "note": "str",
+})
+
+GetPaymentLinksResponse = TypedDict("GetPaymentLinksResponse", {
+    "data": "List[GetPaymentLinksResponseDataItem]",
+})
+
+GetPaymentLinksResponseDataItem = TypedDict("GetPaymentLinksResponseDataItem", {
+    "id": "str",
+    "status": "str",
+    "lifecycle_status": "str",
+    "payable": "bool",
+    "paid_minor": "int",
+    "amount_mode": "str",
 })
 
 GetPayoutBatchesResponse = TypedDict("GetPayoutBatchesResponse", {
+    "data": "Any",
+})
+
+GetPayoutLinksByIdResponse = TypedDict("GetPayoutLinksByIdResponse", {
+    "id": "str",
+    "amount_minor": "int",
+    "currency": "str",
+    "purpose": "Any",
+    "external_ref": "Optional[str]",
+    "status": "str",
+    "expires_at": "Optional[str]",
+    "failed_attempts": "Any",
+    "payout_id": "Optional[str]",
+    "payout_status": "Any",
+    "created_by": "Any",
+    "created_at": "Optional[str]",
+})
+
+GetPayoutLinksResponse = TypedDict("GetPayoutLinksResponse", {
     "data": "Any",
 })
 
@@ -1358,6 +1456,72 @@ GetRefundsResponse = TypedDict("GetRefundsResponse", {
     "has_more": "bool",
 })
 
+GetRiskDecisionsResponse = TypedDict("GetRiskDecisionsResponse", {
+    "data": "List[GetRiskDecisionsResponseDataItem]",
+})
+
+GetRiskDecisionsResponseDataItem = TypedDict("GetRiskDecisionsResponseDataItem", {
+    "id": "str",
+    "subject_type": "str",
+    "subject_id": "str",
+    "action": "str",
+    "score": "Optional[int]",
+    "fired": "Any",
+    "created_at": "Any",
+})
+
+GetRiskListsResponse = TypedDict("GetRiskListsResponse", {
+    "data": "List[GetRiskListsResponseDataItem]",
+})
+
+GetRiskListsResponseDataItem = TypedDict("GetRiskListsResponseDataItem", {
+    "id": "str",
+    "list": "str",
+    "dimension": "str",
+    "label": "str",
+    "created_by": "str",
+    "expires_at": "Any",
+    "created_at": "Any",
+})
+
+GetRiskPinTiersResponse = TypedDict("GetRiskPinTiersResponse", {
+    "data": "List[GetRiskPinTiersResponseDataItem]",
+})
+
+GetRiskPinTiersResponseDataItem = TypedDict("GetRiskPinTiersResponseDataItem", {
+    "pin_prefix": "str",
+    "tier": "str",
+})
+
+GetRiskReviewQueueResponse = TypedDict("GetRiskReviewQueueResponse", {
+    "data": "List[GetRiskReviewQueueResponseDataItem]",
+})
+
+GetRiskReviewQueueResponseDataItem = TypedDict("GetRiskReviewQueueResponseDataItem", {
+    "case_id": "str",
+    "kind": "str",
+    "status": "str",
+    "subject_type": "str",
+    "subject_id": "str",
+    "explanation": "str",
+    "assignee": "Optional[str]",
+    "created_at": "Any",
+})
+
+GetRiskRulesResponse = TypedDict("GetRiskRulesResponse", {
+    "data": "List[GetRiskRulesResponseDataItem]",
+})
+
+GetRiskRulesResponseDataItem = TypedDict("GetRiskRulesResponseDataItem", {
+    "id": "str",
+    "name": "str",
+    "kind": "str",
+    "params": "Any",
+    "action": "str",
+    "enabled": "bool",
+    "created_at": "Any",
+})
+
 GetRoutingAutomationResponse = TypedDict("GetRoutingAutomationResponse", {
     "settings": "Any",
     "effective": "Any",
@@ -1570,6 +1734,37 @@ GetVendorsByIdDocumentsResponse = TypedDict("GetVendorsByIdDocumentsResponse", {
 
 GetVendorsResponse = TypedDict("GetVendorsResponse", {
     "data": "List[Any]",
+})
+
+GetVerificationsByIdResponse = TypedDict("GetVerificationsByIdResponse", {
+    "id": "str",
+    "kind": "str",
+    "subject": "Any",
+    "ifsc": "Any",
+    "outcome": "str",
+    "name_match": "Any",
+    "safe_to_pay": "Any",
+    "provider": "str",
+    "simulated": "Any",
+    "detail": "Any",
+    "created_at": "Optional[str]",
+})
+
+GetVerificationsResponse = TypedDict("GetVerificationsResponse", {
+    "data": "List[GetVerificationsResponseDataItem]",
+})
+
+GetVerificationsResponseDataItem = TypedDict("GetVerificationsResponseDataItem", {
+    "id": "str",
+    "kind": "str",
+    "subject": "str",
+    "ifsc": "Optional[str]",
+    "outcome": "str",
+    "name_match": "str",
+    "provider": "str",
+    "simulated": "bool",
+    "created_by": "str",
+    "created_at": "Any",
 })
 
 IntentRow = TypedDict("IntentRow", {
@@ -1803,6 +1998,15 @@ PostCheckoutLinksByTenantIdByTokenStartResponse = TypedDict("PostCheckoutLinksBy
     "amount_minor": "int",
     "currency": "str",
     "path": "str",
+})
+
+PostCheckoutPayoutLinksByTenantIdByTokenClaimResponse = TypedDict("PostCheckoutPayoutLinksByTenantIdByTokenClaimResponse", {
+    "status": "str",
+    "payout_status": "Any",
+    "amount_minor": "int",
+    "currency": "str",
+    "simulated": "Any",
+    "message": "Optional[str]",
 })
 
 PostClosingsByIdSignoffResponse = TypedDict("PostClosingsByIdSignoffResponse", {
@@ -2644,6 +2848,7 @@ PostPaymentLinksBulkResponse = TypedDict("PostPaymentLinksBulkResponse", {
 PostPaymentLinksByIdCancelResponse = TypedDict("PostPaymentLinksByIdCancelResponse", {
     "id": "str",
     "status": "str",
+    "lifecycle_status": "str",
 })
 
 PostPaymentLinksByIdSendResponse = TypedDict("PostPaymentLinksByIdSendResponse", {
@@ -2665,6 +2870,8 @@ PostPaymentLinksResponse = TypedDict("PostPaymentLinksResponse", {
     "max_uses": "Optional[int]",
     "expires_at": "Optional[str]",
     "existing": "Any",
+    "amount_mode": "str",
+    "lifecycle_status": "str",
 })
 
 PostPayoutBatchesByIdApproveResponse = TypedDict("PostPayoutBatchesByIdApproveResponse", {
@@ -2695,6 +2902,19 @@ PostPayoutBatchesByIdSendResponse = TypedDict("PostPayoutBatchesByIdSendResponse
     "action": "Any",
     "attempted": "int",
     "outcomes": "Any",
+})
+
+PostPayoutLinksByIdCancelResponse = TypedDict("PostPayoutLinksByIdCancelResponse", {
+    "id": "str",
+    "status": "str",
+})
+
+PostPayoutLinksResponse = TypedDict("PostPayoutLinksResponse", {
+    "id": "str",
+    "existing": "bool",
+    "token": "Any",
+    "expires_at": "Optional[str]",
+    "note": "str",
 })
 
 PostPayoutSchedulesRunResponse = TypedDict("PostPayoutSchedulesRunResponse", {
@@ -2943,6 +3163,41 @@ PostRefundsByIdRetryResponse = TypedDict("PostRefundsByIdRetryResponse", {
     "failure_reason": "Optional[str]",
     "created_at": "str",
     "updated_at": "str",
+})
+
+PostRiskEvaluateResponse = TypedDict("PostRiskEvaluateResponse", {
+    "dry_run": "bool",
+    "decision": "Any",
+})
+
+PostRiskListsResponse = TypedDict("PostRiskListsResponse", {
+    "id": "str",
+    "list": "str",
+    "dimension": "Any",
+    "label": "bool",
+    "expires_at": "Any",
+})
+
+PostRiskOrderScoreResponse = TypedDict("PostRiskOrderScoreResponse", {
+    "score": "Any",
+    "band": "Any",
+    "action": "Any",
+    "advice": "Any",
+    "contributions": "Any",
+    "review_at": "Optional[str]",
+    "decline_at": "Optional[str]",
+    "formula": "Any",
+    "pin_tier": "Optional[str]",
+    "case_id": "Optional[str]",
+})
+
+PostRiskRulesResponse = TypedDict("PostRiskRulesResponse", {
+    "id": "str",
+    "name": "str",
+    "kind": "str",
+    "params": "Any",
+    "action": "Any",
+    "enabled": "bool",
 })
 
 PostRoutingAutomationPauseResponse = TypedDict("PostRoutingAutomationPauseResponse", {
@@ -3220,6 +3475,36 @@ PostVendorsResponse = TypedDict("PostVendorsResponse", {
     "name": "str",
 })
 
+PostVerifyBankAccountResponse = TypedDict("PostVerifyBankAccountResponse", {
+    "id": "str",
+    "kind": "str",
+    "subject": "Any",
+    "ifsc": "Any",
+    "outcome": "str",
+    "name_match": "Any",
+    "safe_to_pay": "Any",
+    "provider": "str",
+    "simulated": "Any",
+    "detail": "Any",
+    "reused": "Any",
+    "note": "Optional[str]",
+})
+
+PostVerifyVpaResponse = TypedDict("PostVerifyVpaResponse", {
+    "id": "str",
+    "kind": "str",
+    "subject": "Any",
+    "ifsc": "Any",
+    "outcome": "str",
+    "name_match": "Any",
+    "safe_to_pay": "Any",
+    "provider": "str",
+    "simulated": "Any",
+    "detail": "Any",
+    "reused": "Any",
+    "note": "Optional[str]",
+})
+
 PostWebhooksByProviderByTenantIdResponse = TypedDict("PostWebhooksByProviderByTenantIdResponse", {
     "status": "str",
 })
@@ -3317,6 +3602,16 @@ PutOnboardingResponse = TypedDict("PutOnboardingResponse", {
     "status": "str",
 })
 
+PutPaymentIntentsByIdInstrumentRulesResponse = TypedDict("PutPaymentIntentsByIdInstrumentRulesResponse", {
+    "id": "str",
+    "instrument_rules": "Any",
+})
+
+PutPaymentLinksByIdInstrumentRulesResponse = TypedDict("PutPaymentLinksByIdInstrumentRulesResponse", {
+    "id": "str",
+    "instrument_rules": "Any",
+})
+
 PutPlatformMeResponse = TypedDict("PutPlatformMeResponse", {
     "id": "str",
     "name": "str",
@@ -3340,6 +3635,11 @@ PutProviderAccountsByProviderResponse = TypedDict("PutProviderAccountsByProvider
     "provider": "str",
     "enabled": "bool",
     "replaced": "Any",
+})
+
+PutRiskPinTiersResponse = TypedDict("PutRiskPinTiersResponse", {
+    "pin_prefix": "Any",
+    "tier": "str",
 })
 
 PutRoutingAutomationResponse = TypedDict("PutRoutingAutomationResponse", {

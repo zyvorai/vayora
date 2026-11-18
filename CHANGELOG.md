@@ -5,6 +5,19 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Link rules, verification primitives, risk rules engine, payout links (simulators and mocks only)
+**Payment links**
+- Amount modes: `exact`, `minimum`, `up_to`, `pay_what_you_want` (bounds, suggested amount), enforced on the server when the payer starts a checkout; the public link details add `amount_mode`, `suggested_amount_minor` and `amount_rule`. Links made before this read as before.
+- A normalised lifecycle (`created`, `active`, `partially_paid`, `paid`, `expired`, `cancelled`, `failed`) computed from the link and its payments, a closed transition table, recorded history, seven `payment_link.*` events, `GET /v1/payment_links/lifecycle` and `GET /v1/payment_links/{id}/lifecycle`. The older `status` field is unchanged.
+- Payer-instrument rules (allowed payer banks and UPI handles) on a link or payment. A payment from another instrument is refunded after capture; where the provider does not report who paid, the check says `unverifiable` and the payment is kept. Razorpay and Cashfree readings were checked against mocks only.
+**Verification and risk**
+- `POST /v1/verify/vpa` and `/v1/verify/bank_account` (penny drop) through the KYC abstraction, labelled `simulated` for the simulator, a conservative name comparison (`match` / `review` / `mismatch`), results stored masked, rate limited. Live mode refuses the simulator.
+- Risk rules engine: velocity rules per customer, device token, phone, email, IP, card or VPA, amount rules, allow/block lists, `review` (opens a case, payment goes ahead) or `decline`, explainable decisions, a dry run, signals kept only as keyed hashes for seven days.
+- COD order risk score with a documented formula (`order-risk-v1`) from pin-code tier, order value, repeat customer and prior refusals, and a review case per order reference.
+**Payout links**
+- A fixed-amount, single-use, expiring link lets a recipient enter bank or UPI details; they are verified (penny drop, name must match) and then a payout is requested through the existing flow with the link's creator as requester, so a second person still approves.
+- Migration 0087. New scopes `verify:write`, `risk:read`, `risk:write`. OpenAPI and SDK types regenerated (the generator gained response overrides for the four wrapped payment-link operations). See [PAYMENT_LINK_RULES.md](docs/zyvor/PAYMENT_LINK_RULES.md), [RISK_ENGINE.md](docs/zyvor/RISK_ENGINE.md), [PAYOUT_LINKS.md](docs/zyvor/PAYOUT_LINKS.md). The checkout page shows the amount rule (a floor, a cap or both, in six languages) and prefills a suggested amount. Not built: refusing a disallowed instrument before payment, a Cashfree UPI id check, console pages, a recipient page for payout links (API only), hand-written SDK methods.
+
 ## 18 November 2026 — Vendor onboarding, commission rules, payout batches and schedules (simulators only)
 **Vendors, commission and bulk or scheduled payouts, on top of the existing payouts, splits, risk and bank matching**
 - **Vendor workflow:** invited → details → bank account → verified by a different person (loose name comparison, a written reason for a mismatch, the simulated bank check when a provider is configured) → active, with suspend and reactivate, optional encrypted documents, and per-vendor hold days, minimum payout and default commission rule. Only an active vendor can be given a share or be paid; vendors made the old way stay active. Changing an active vendor's bank account puts it back to `bank_added`.
@@ -52,6 +65,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - `GET /v1/exports/gst_summary`: sales and credit notes by supply type and rate, with net.
 - New scopes `cash:read`, `cash:write`, `exports:read`, `exports:write` (finance role has all four, the read-only role `cash:read`). Migration 0085 (additive). OpenAPI and generated SDK types updated; no new SDK methods. See [CASH_VISIBILITY.md](docs/zyvor/CASH_VISIBILITY.md) and [EXPORTS.md](docs/zyvor/EXPORTS.md).
 - Tested against simulators and hand-built synthetic histories only. The Tally layout follows Tally's public sample but was never run against Tally.
+
 ## 18 November 2026 — Seller page, school fees, society dues and donations (simulators only)
 **A hosted seller page ("link in bio")**
 - A public page per business at a slug (`/s/{slug}` in the checkout app) with a title, description, optional logo and items (name, description, price in paise, optional uploaded image, optional stock, active flag). A visitor chooses quantities and pays through the ordinary payment-intent checkout; prices always come from the page. Orders record buyer name, mobile, optional email and a delivery note.
@@ -288,6 +302,7 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 - Console pages for Branches and counters (30-day collected per counter, switch a counter off) and Daily closing (record cash, close the day, second-person sign-off); Node SDK `branches`, `cash` and `closings`.
 - Daily closing: cash entries (never edited), a per-branch IST-day closing comparing expected cash and captured digital totals with the counted cash, second-person sign-off. Records only: cash is not posted to the ledger.
 - Fix: a payment link, an invoice, a counter or a cash entry could name another tenant's customer or branch id, because foreign keys are checked without row-level security. They now check the id belongs to the caller; a regression test covers every create path that takes a customer, invoice, vendor or branch id.
+
 ## Release 2
 
 **Console**

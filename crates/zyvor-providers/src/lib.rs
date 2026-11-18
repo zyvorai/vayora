@@ -317,6 +317,67 @@ pub fn bank_reference(provider: &str, raw: &Value) -> Option<String> {
     }
 }
 
+/// Who paid, as far as the provider says: the payer's UPI id (VPA) and/or bank. Used for payer-instrument rules
+/// (`instrument.rs`). Either may be missing, and many providers do not report either; then the check cannot be made
+/// and must say so rather than guess.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PayerInstrument {
+    pub vpa: Option<String>,
+    pub bank: Option<String>,
+}
+
+/// The payer's VPA and bank from a provider's own payment record or webhook body.
+/// Field names: Razorpay's payment entity has `vpa` (UPI) and `bank` (net banking, a bank code); Cashfree's payment has
+/// `payment_method.upi.upi_id` and `payment_method.netbanking.netbanking_bank_code`; the simulator sets `payer_vpa` and
+/// `payer_bank` itself, and the bank is only a guess from the handle (it says so with `payer_instrument_simulated`).
+/// Other adapters report none. These names come from the providers' public API references, not from a live account,
+/// and the Razorpay and Cashfree readers have only been run against this repository's mocks.
+pub fn payer_instrument(provider: &str, raw: &Value) -> Option<PayerInstrument> {
+    let text = |v: &Value| {
+        v.as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 80)
+            .map(str::to_string)
+    };
+    let (vpa, bank) = match provider {
+        "razorpay" => {
+            let e = if raw["payload"]["payment"]["entity"].is_object() {
+                &raw["payload"]["payment"]["entity"]
+            } else {
+                raw
+            };
+            (text(&e["vpa"]), text(&e["bank"]))
+        }
+        "cashfree" => {
+            let p = if raw["data"]["payment"].is_object() {
+                &raw["data"]["payment"]
+            } else {
+                raw
+            };
+            (
+                text(&p["payment_method"]["upi"]["upi_id"]),
+                text(&p["payment_method"]["netbanking"]["netbanking_bank_code"]),
+            )
+        }
+        "sim" => (text(&raw["payer_vpa"]), text(&raw["payer_bank"])),
+        _ => return None,
+    };
+    (vpa.is_some() || bank.is_some()).then_some(PayerInstrument { vpa, bank })
+}
+
+/// The simulator's guess at a payer's bank from the handle of their UPI id. Only the simulator uses this, to have
+/// something to report; a real provider reports the bank itself or nothing.
+pub fn sim_bank_for_handle(handle: &str) -> Option<&'static str> {
+    Some(match handle.to_lowercase().as_str() {
+        "okhdfcbank" | "hdfcbank" => "HDFC",
+        "oksbi" | "sbi" => "SBI",
+        "okicici" | "icici" => "ICIC",
+        "okaxis" | "axisbank" => "UTIB",
+        "ybl" | "ibl" => "YESB",
+        _ => return None,
+    })
+}
+
 pub type Headers = BTreeMap<String, String>;
 
 // ---- UPI AutoPay mandates -------------------------------------------------------------------------------

@@ -134,11 +134,58 @@ impl Kyc {
                 registered_name: Some("SOMEONE ELSE ENTIRELY".into()),
                 ..check(Outcome::Pass, "account exists")
             },
+            // the holder name at the bank has more words than the one given: a person decides (see `verify`)
+            Kyc::Simulator if account.ends_with("2222") => Check {
+                registered_name: Some(format!("{holder} SHARMA")),
+                ..check(Outcome::Pass, "account exists")
+            },
+            // the bank did not answer
+            Kyc::Simulator if account.ends_with("3333") => {
+                check(Outcome::Inconclusive, "the bank did not answer")
+            }
             Kyc::Simulator => Check {
                 registered_name: Some(holder.to_string()),
                 ..check(Outcome::Pass, "account verified by penny drop")
             },
         }
+    }
+
+    /// Is this UPI id (VPA) live, and whose is it? Used by `POST /v1/verify/vpa`. The simulator answers from the
+    /// shape of the id only: a name part ending `invalid` is not found, one ending `timeout` gets no answer, one
+    /// starting `other` belongs to someone else, one ending `review` has a longer holder name than the one given;
+    /// anything else is live and held by the name given. Cashfree is not wired for this check, and says so: the
+    /// answer is inconclusive, never a pass.
+    pub async fn verify_vpa(&self, vpa: &str, holder: &str) -> Check {
+        let local = vpa.split('@').next().unwrap_or("").to_lowercase();
+        match self {
+            Kyc::Cashfree(_) => check(
+                Outcome::Inconclusive,
+                "this provider adapter has no UPI id check wired in; a person must confirm the id",
+            ),
+            Kyc::Simulator if local.ends_with("invalid") => {
+                check(Outcome::Fail, "UPI id not found")
+            }
+            Kyc::Simulator if local.ends_with("timeout") => {
+                check(Outcome::Inconclusive, "the UPI network did not answer")
+            }
+            Kyc::Simulator if local.starts_with("other") => Check {
+                registered_name: Some("SOMEONE ELSE ENTIRELY".into()),
+                ..check(Outcome::Pass, "UPI id is live")
+            },
+            Kyc::Simulator if local.ends_with("review") => Check {
+                registered_name: Some(format!("{holder} SHARMA")),
+                ..check(Outcome::Pass, "UPI id is live")
+            },
+            Kyc::Simulator => Check {
+                registered_name: (!holder.trim().is_empty()).then(|| holder.to_string()),
+                ..check(Outcome::Pass, "UPI id is live")
+            },
+        }
+    }
+
+    /// True for the simulator: nothing it says was checked with a bank or a payment network.
+    pub fn is_simulated(&self) -> bool {
+        matches!(self, Kyc::Simulator)
     }
 
     /// Is this GSTIN real and the business's own? Always checks locally that it carries the PAN; Cashfree also

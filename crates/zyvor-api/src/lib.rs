@@ -39,9 +39,13 @@ pub mod health;
 pub mod idempotency;
 pub mod insights;
 pub mod installments;
+pub mod instrument;
+pub mod keyed;
 pub mod kyc;
 pub mod kyc_cashfree;
+pub mod link_amount;
 pub mod link_bulk;
+pub mod link_lifecycle;
 pub mod link_stats;
 pub mod logo;
 pub mod mail;
@@ -52,6 +56,7 @@ pub mod outbox;
 pub mod payment_links;
 pub mod payments;
 pub mod payout_batches;
+pub mod payout_links;
 pub mod payout_schedules;
 pub mod payouts;
 pub mod pdf;
@@ -85,6 +90,7 @@ pub mod timeline;
 pub mod unsubscribe;
 pub mod uploads;
 pub mod vendors;
+pub mod verify;
 pub mod verticals;
 pub mod webhooks_in;
 pub mod worker;
@@ -169,6 +175,7 @@ pub struct AppState {
 pub use crypto::Crypto;
 pub mod ratelimit;
 pub mod risk;
+pub mod risk_engine;
 pub mod splits;
 pub mod ssrf;
 
@@ -880,8 +887,60 @@ pub fn app(state: AppState) -> Router {
         // payment links
         .route(
             "/payment_links",
-            post(payment_links::create_link).get(payment_links::list_links),
+            post(link_amount::create_link).get(link_lifecycle::list),
         )
+        .route("/payment_links/lifecycle", get(link_lifecycle::model))
+        .route("/payment_links/{id}/lifecycle", get(link_lifecycle::get))
+        .route(
+            "/payment_links/{id}/instrument_rules",
+            axum::routing::put(instrument::set_link_rules),
+        )
+        .route(
+            "/payment_intents/{id}/instrument_rules",
+            axum::routing::put(instrument::set_intent_rules),
+        )
+        .route("/instrument_checks", get(instrument::list_checks))
+        // verification primitives
+        .route("/verify/vpa", post(verify::verify_vpa))
+        .route("/verify/bank_account", post(verify::verify_bank))
+        .route("/verifications", get(verify::list))
+        .route("/verifications/{id}", get(verify::get))
+        // risk rules engine
+        .route(
+            "/risk/rules",
+            post(risk_engine::create_rule).get(risk_engine::list_rules),
+        )
+        .route(
+            "/risk/rules/{id}",
+            axum::routing::delete(risk_engine::delete_rule),
+        )
+        .route(
+            "/risk/lists",
+            post(risk_engine::add_entry).get(risk_engine::list_entries),
+        )
+        .route(
+            "/risk/lists/{id}",
+            axum::routing::delete(risk_engine::delete_entry),
+        )
+        .route("/risk/evaluate", post(risk_engine::evaluate_dry))
+        .route("/risk/decisions", get(risk_engine::list_decisions))
+        .route("/risk/review_queue", get(risk_engine::review_queue))
+        .route(
+            "/risk/pin_tiers",
+            axum::routing::put(risk_engine::set_pin_tier).get(risk_engine::list_pin_tiers),
+        )
+        .route(
+            "/risk/pin_tiers/{pin_prefix}",
+            axum::routing::delete(risk_engine::delete_pin_tier),
+        )
+        .route("/risk/order_score", post(risk_engine::order_score))
+        // payout links
+        .route(
+            "/payout_links",
+            post(payout_links::create).get(payout_links::list),
+        )
+        .route("/payout_links/{id}", get(payout_links::get))
+        .route("/payout_links/{id}/cancel", post(payout_links::cancel))
         .route(
             "/coupons",
             post(coupons::create_coupon).get(coupons::list_coupons),
@@ -1097,10 +1156,7 @@ pub fn app(state: AppState) -> Router {
         .route("/onboarding/submit", post(onboarding::submit))
         .route("/onboarding/review", post(onboarding::review))
         .route("/payment_links/{id}/qr.svg", get(payment_links::link_qr))
-        .route(
-            "/payment_links/{id}/cancel",
-            post(payment_links::cancel_link),
-        )
+        .route("/payment_links/{id}/cancel", post(link_lifecycle::cancel))
         .route("/payment_links/{id}/send", post(payment_links::send_link))
         .route(
             "/payment_links/{id}/send_sms",
@@ -1119,11 +1175,19 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/checkout/links/{tenant_id}/{token}",
-            get(payment_links::link_info),
+            get(link_amount::link_info),
         )
         .route(
             "/checkout/links/{tenant_id}/{token}/start",
             post(payment_links::link_start),
+        )
+        .route(
+            "/checkout/payout_links/{tenant_id}/{token}",
+            get(payout_links::info),
+        )
+        .route(
+            "/checkout/payout_links/{tenant_id}/{token}/claim",
+            post(payout_links::claim),
         )
         // public checkout: authorised by the intent's client secret, not an API key
         .route("/checkout/{tenant_id}/{intent_id}", get(checkout::session))

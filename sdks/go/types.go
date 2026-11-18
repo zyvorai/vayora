@@ -83,6 +83,21 @@ type DeletePlatformRotaDaysOffByIdResponse struct {
 	Deleted bool   `json:"deleted"`
 }
 
+type DeleteRiskListsByIdResponse struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
+type DeleteRiskPinTiersByPinPrefixResponse struct {
+	PinPrefix string `json:"pin_prefix"`
+	Deleted   bool   `json:"deleted"`
+}
+
+type DeleteRiskRulesByIdResponse struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
 type DeleteSavedViewsByIdResponse struct {
 	Ok bool `json:"ok"`
 }
@@ -332,22 +347,36 @@ type GetCheckoutByTenantIdByIntentIdResponse struct {
 }
 
 type GetCheckoutLinksByTenantIdByTokenResponse struct {
-	Merchant       *string `json:"merchant"`
-	Description    *string `json:"description"`
-	AmountMinor    int64   `json:"amount_minor"`
-	DiscountMinor  int64   `json:"discount_minor"`
-	FeeMinor       int64   `json:"fee_minor"`
-	TotalMinor     int64   `json:"total_minor"`
-	CouponApplied  any     `json:"coupon_applied"`
-	Currency       string  `json:"currency"`
-	Status         string  `json:"status"`
-	OpenAmount     any     `json:"open_amount"`
-	MinAmountMinor int64   `json:"min_amount_minor"`
-	MaxAmountMinor int64   `json:"max_amount_minor"`
-	Message        *string `json:"message"`
-	Brand          any     `json:"brand"`
-	AllowedMethods any     `json:"allowed_methods"`
-	Partial        any     `json:"partial"`
+	Merchant             *string `json:"merchant"`
+	Description          *string `json:"description"`
+	AmountMinor          int64   `json:"amount_minor"`
+	DiscountMinor        int64   `json:"discount_minor"`
+	FeeMinor             int64   `json:"fee_minor"`
+	TotalMinor           int64   `json:"total_minor"`
+	CouponApplied        any     `json:"coupon_applied"`
+	Currency             string  `json:"currency"`
+	Status               string  `json:"status"`
+	OpenAmount           any     `json:"open_amount"`
+	MinAmountMinor       int64   `json:"min_amount_minor"`
+	MaxAmountMinor       int64   `json:"max_amount_minor"`
+	Message              *string `json:"message"`
+	Brand                any     `json:"brand"`
+	AllowedMethods       any     `json:"allowed_methods"`
+	Partial              any     `json:"partial"`
+	AmountMode           string  `json:"amount_mode"`
+	SuggestedAmountMinor *int64  `json:"suggested_amount_minor"`
+	AmountRule           string  `json:"amount_rule"`
+}
+
+type GetCheckoutPayoutLinksByTenantIdByTokenResponse struct {
+	Merchant     *string `json:"merchant"`
+	AmountMinor  int64   `json:"amount_minor"`
+	Currency     string  `json:"currency"`
+	Purpose      any     `json:"purpose"`
+	Status       string  `json:"status"`
+	ExpiresAt    *string `json:"expires_at"`
+	NameRequired any     `json:"name_required"`
+	Methods      any     `json:"methods"`
 }
 
 type GetClosingsResponse struct {
@@ -878,6 +907,22 @@ type GetInstallmentPlansByIdResponse struct {
 	Invoices       []any   `json:"invoices"`
 }
 
+type GetInstrumentChecksResponse struct {
+	Data []GetInstrumentChecksResponseDataItem `json:"data"`
+}
+
+type GetInstrumentChecksResponseDataItem struct {
+	AttemptID      string  `json:"attempt_id"`
+	IntentID       string  `json:"intent_id"`
+	LinkID         *string `json:"link_id"`
+	Result         string  `json:"result"`
+	PayerBank      *string `json:"payer_bank"`
+	PayerVPAHandle *string `json:"payer_vpa_handle"`
+	RefundID       *string `json:"refund_id"`
+	Detail         string  `json:"detail"`
+	CheckedAt      any     `json:"checked_at"`
+}
+
 type GetInvoicesByIdEinvoiceResponse struct {
 	Draft      bool   `json:"draft"`
 	Note       string `json:"note"`
@@ -1131,6 +1176,25 @@ type GetPaymentLinksByIdAnalyticsResponse struct {
 	Notes  any `json:"notes"`
 }
 
+type GetPaymentLinksByIdLifecycleResponse struct {
+	ID               string                                            `json:"id"`
+	Status           string                                            `json:"status"`
+	RecordedStatus   *string                                           `json:"recorded_status"`
+	Payable          any                                               `json:"payable"`
+	PaidMinor        int64                                             `json:"paid_minor"`
+	Payments         any                                               `json:"payments"`
+	CheckoutsStarted any                                               `json:"checkouts_started"`
+	AllowedNext      any                                               `json:"allowed_next"`
+	History          []GetPaymentLinksByIdLifecycleResponseHistoryItem `json:"history"`
+}
+
+type GetPaymentLinksByIdLifecycleResponseHistoryItem struct {
+	From   *string `json:"from"`
+	To     string  `json:"to"`
+	Reason string  `json:"reason"`
+	At     string  `json:"at"`
+}
+
 type GetPaymentLinksByIdShareResponse struct {
 	ID           string `json:"id"`
 	URL          any    `json:"url"`
@@ -1143,11 +1207,45 @@ type GetPaymentLinksByIdShareResponse struct {
 	SmsMode      any    `json:"sms_mode"`
 }
 
+type GetPaymentLinksLifecycleResponse struct {
+	Data       []any  `json:"data"`
+	Precedence any    `json:"precedence"`
+	Note       string `json:"note"`
+}
+
 type GetPaymentLinksResponse struct {
-	Data []any `json:"data"`
+	Data []GetPaymentLinksResponseDataItem `json:"data"`
+}
+
+type GetPaymentLinksResponseDataItem struct {
+	ID              string `json:"id"`
+	Status          string `json:"status"`
+	LifecycleStatus string `json:"lifecycle_status"`
+	Payable         bool   `json:"payable"`
+	PaidMinor       int64  `json:"paid_minor"`
+	AmountMode      string `json:"amount_mode"`
 }
 
 type GetPayoutBatchesResponse struct {
+	Data any `json:"data"`
+}
+
+type GetPayoutLinksByIdResponse struct {
+	ID             string  `json:"id"`
+	AmountMinor    int64   `json:"amount_minor"`
+	Currency       string  `json:"currency"`
+	Purpose        any     `json:"purpose"`
+	ExternalRef    *string `json:"external_ref"`
+	Status         string  `json:"status"`
+	ExpiresAt      *string `json:"expires_at"`
+	FailedAttempts any     `json:"failed_attempts"`
+	PayoutID       *string `json:"payout_id"`
+	PayoutStatus   any     `json:"payout_status"`
+	CreatedBy      any     `json:"created_by"`
+	CreatedAt      *string `json:"created_at"`
+}
+
+type GetPayoutLinksResponse struct {
 	Data any `json:"data"`
 }
 
@@ -1374,6 +1472,72 @@ type GetRefundsResponse struct {
 	HasMore bool        `json:"has_more"`
 }
 
+type GetRiskDecisionsResponse struct {
+	Data []GetRiskDecisionsResponseDataItem `json:"data"`
+}
+
+type GetRiskDecisionsResponseDataItem struct {
+	ID          string `json:"id"`
+	SubjectType string `json:"subject_type"`
+	SubjectID   string `json:"subject_id"`
+	Action      string `json:"action"`
+	Score       *int64 `json:"score"`
+	Fired       any    `json:"fired"`
+	CreatedAt   any    `json:"created_at"`
+}
+
+type GetRiskListsResponse struct {
+	Data []GetRiskListsResponseDataItem `json:"data"`
+}
+
+type GetRiskListsResponseDataItem struct {
+	ID        string `json:"id"`
+	List      string `json:"list"`
+	Dimension string `json:"dimension"`
+	Label     string `json:"label"`
+	CreatedBy string `json:"created_by"`
+	ExpiresAt any    `json:"expires_at"`
+	CreatedAt any    `json:"created_at"`
+}
+
+type GetRiskPinTiersResponse struct {
+	Data []GetRiskPinTiersResponseDataItem `json:"data"`
+}
+
+type GetRiskPinTiersResponseDataItem struct {
+	PinPrefix string `json:"pin_prefix"`
+	Tier      string `json:"tier"`
+}
+
+type GetRiskReviewQueueResponse struct {
+	Data []GetRiskReviewQueueResponseDataItem `json:"data"`
+}
+
+type GetRiskReviewQueueResponseDataItem struct {
+	CaseID      string  `json:"case_id"`
+	Kind        string  `json:"kind"`
+	Status      string  `json:"status"`
+	SubjectType string  `json:"subject_type"`
+	SubjectID   string  `json:"subject_id"`
+	Explanation string  `json:"explanation"`
+	Assignee    *string `json:"assignee"`
+	CreatedAt   any     `json:"created_at"`
+}
+
+type GetRiskRulesResponse struct {
+	Data []GetRiskRulesResponseDataItem `json:"data"`
+}
+
+type GetRiskRulesResponseDataItem struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Params    any    `json:"params"`
+	Action    string `json:"action"`
+	Enabled   bool   `json:"enabled"`
+	CreatedAt any    `json:"created_at"`
+}
+
 type GetRoutingAutomationResponse struct {
 	Settings  any `json:"settings"`
 	Effective any `json:"effective"`
@@ -1586,6 +1750,37 @@ type GetVendorsByIdDocumentsResponse struct {
 
 type GetVendorsResponse struct {
 	Data []any `json:"data"`
+}
+
+type GetVerificationsByIdResponse struct {
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Subject   any     `json:"subject"`
+	Ifsc      any     `json:"ifsc"`
+	Outcome   string  `json:"outcome"`
+	NameMatch any     `json:"name_match"`
+	SafeToPay any     `json:"safe_to_pay"`
+	Provider  string  `json:"provider"`
+	Simulated any     `json:"simulated"`
+	Detail    any     `json:"detail"`
+	CreatedAt *string `json:"created_at"`
+}
+
+type GetVerificationsResponse struct {
+	Data []GetVerificationsResponseDataItem `json:"data"`
+}
+
+type GetVerificationsResponseDataItem struct {
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Subject   string  `json:"subject"`
+	Ifsc      *string `json:"ifsc"`
+	Outcome   string  `json:"outcome"`
+	NameMatch string  `json:"name_match"`
+	Provider  string  `json:"provider"`
+	Simulated bool    `json:"simulated"`
+	CreatedBy string  `json:"created_by"`
+	CreatedAt any     `json:"created_at"`
 }
 
 type IntentRow struct {
@@ -1819,6 +2014,15 @@ type PostCheckoutLinksByTenantIdByTokenStartResponse struct {
 	AmountMinor  int64  `json:"amount_minor"`
 	Currency     string `json:"currency"`
 	Path         string `json:"path"`
+}
+
+type PostCheckoutPayoutLinksByTenantIdByTokenClaimResponse struct {
+	Status       string  `json:"status"`
+	PayoutStatus any     `json:"payout_status"`
+	AmountMinor  int64   `json:"amount_minor"`
+	Currency     string  `json:"currency"`
+	Simulated    any     `json:"simulated"`
+	Message      *string `json:"message"`
 }
 
 type PostClosingsByIdSignoffResponse struct {
@@ -2658,8 +2862,9 @@ type PostPaymentLinksBulkResponse struct {
 }
 
 type PostPaymentLinksByIdCancelResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID              string `json:"id"`
+	Status          string `json:"status"`
+	LifecycleStatus string `json:"lifecycle_status"`
 }
 
 type PostPaymentLinksByIdSendResponse struct {
@@ -2674,13 +2879,15 @@ type PostPaymentLinksByIdSendSmsResponse struct {
 }
 
 type PostPaymentLinksResponse struct {
-	ID        string  `json:"id"`
-	Token     any     `json:"token"`
-	Currency  string  `json:"currency"`
-	Path      string  `json:"path"`
-	MaxUses   *int64  `json:"max_uses"`
-	ExpiresAt *string `json:"expires_at"`
-	Existing  any     `json:"existing"`
+	ID              string  `json:"id"`
+	Token           any     `json:"token"`
+	Currency        string  `json:"currency"`
+	Path            string  `json:"path"`
+	MaxUses         *int64  `json:"max_uses"`
+	ExpiresAt       *string `json:"expires_at"`
+	Existing        any     `json:"existing"`
+	AmountMode      string  `json:"amount_mode"`
+	LifecycleStatus string  `json:"lifecycle_status"`
 }
 
 type PostPayoutBatchesByIdApproveResponse struct {
@@ -2711,6 +2918,19 @@ type PostPayoutBatchesByIdSendResponse struct {
 	Action    any   `json:"action"`
 	Attempted int64 `json:"attempted"`
 	Outcomes  any   `json:"outcomes"`
+}
+
+type PostPayoutLinksByIdCancelResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type PostPayoutLinksResponse struct {
+	ID        string  `json:"id"`
+	Existing  bool    `json:"existing"`
+	Token     any     `json:"token"`
+	ExpiresAt *string `json:"expires_at"`
+	Note      string  `json:"note"`
 }
 
 type PostPayoutSchedulesRunResponse struct {
@@ -2959,6 +3179,41 @@ type PostRefundsByIdRetryResponse struct {
 	FailureReason     *string `json:"failure_reason"`
 	CreatedAt         string  `json:"created_at"`
 	UpdatedAt         string  `json:"updated_at"`
+}
+
+type PostRiskEvaluateResponse struct {
+	DryRun   bool `json:"dry_run"`
+	Decision any  `json:"decision"`
+}
+
+type PostRiskListsResponse struct {
+	ID        string `json:"id"`
+	List      string `json:"list"`
+	Dimension any    `json:"dimension"`
+	Label     bool   `json:"label"`
+	ExpiresAt any    `json:"expires_at"`
+}
+
+type PostRiskOrderScoreResponse struct {
+	Score         any     `json:"score"`
+	Band          any     `json:"band"`
+	Action        any     `json:"action"`
+	Advice        any     `json:"advice"`
+	Contributions any     `json:"contributions"`
+	ReviewAt      *string `json:"review_at"`
+	DeclineAt     *string `json:"decline_at"`
+	Formula       any     `json:"formula"`
+	PinTier       *string `json:"pin_tier"`
+	CaseID        *string `json:"case_id"`
+}
+
+type PostRiskRulesResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Params  any    `json:"params"`
+	Action  any    `json:"action"`
+	Enabled bool   `json:"enabled"`
 }
 
 type PostRoutingAutomationPauseResponse struct {
@@ -3236,6 +3491,36 @@ type PostVendorsResponse struct {
 	Name string `json:"name"`
 }
 
+type PostVerifyBankAccountResponse struct {
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Subject   any     `json:"subject"`
+	Ifsc      any     `json:"ifsc"`
+	Outcome   string  `json:"outcome"`
+	NameMatch any     `json:"name_match"`
+	SafeToPay any     `json:"safe_to_pay"`
+	Provider  string  `json:"provider"`
+	Simulated any     `json:"simulated"`
+	Detail    any     `json:"detail"`
+	Reused    any     `json:"reused"`
+	Note      *string `json:"note"`
+}
+
+type PostVerifyVpaResponse struct {
+	ID        string  `json:"id"`
+	Kind      string  `json:"kind"`
+	Subject   any     `json:"subject"`
+	Ifsc      any     `json:"ifsc"`
+	Outcome   string  `json:"outcome"`
+	NameMatch any     `json:"name_match"`
+	SafeToPay any     `json:"safe_to_pay"`
+	Provider  string  `json:"provider"`
+	Simulated any     `json:"simulated"`
+	Detail    any     `json:"detail"`
+	Reused    any     `json:"reused"`
+	Note      *string `json:"note"`
+}
+
 type PostWebhooksByProviderByTenantIdResponse struct {
 	Status string `json:"status"`
 }
@@ -3333,6 +3618,16 @@ type PutOnboardingResponse struct {
 	Status string `json:"status"`
 }
 
+type PutPaymentIntentsByIdInstrumentRulesResponse struct {
+	ID              string `json:"id"`
+	InstrumentRules any    `json:"instrument_rules"`
+}
+
+type PutPaymentLinksByIdInstrumentRulesResponse struct {
+	ID              string `json:"id"`
+	InstrumentRules any    `json:"instrument_rules"`
+}
+
 type PutPlatformMeResponse struct {
 	ID    string  `json:"id"`
 	Name  string  `json:"name"`
@@ -3356,6 +3651,11 @@ type PutProviderAccountsByProviderResponse struct {
 	Provider string `json:"provider"`
 	Enabled  bool   `json:"enabled"`
 	Replaced any    `json:"replaced"`
+}
+
+type PutRiskPinTiersResponse struct {
+	PinPrefix any    `json:"pin_prefix"`
+	Tier      string `json:"tier"`
 }
 
 type PutRoutingAutomationResponse struct {

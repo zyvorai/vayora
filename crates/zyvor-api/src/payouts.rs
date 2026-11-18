@@ -185,7 +185,7 @@ async fn fetch(tx: &mut sqlx::PgConnection, id: &str, lock: bool) -> Result<Row,
 }
 
 /// Create one payout inside the caller's transaction. A repeated `external_ref` returns the original.
-async fn create_one(
+pub(crate) async fn create_one(
     tx: &mut sqlx::PgConnection,
     crypto: &crate::Crypto,
     auth: &Auth,

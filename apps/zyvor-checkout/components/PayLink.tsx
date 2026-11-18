@@ -5,7 +5,7 @@ import { cardProps, money, safeHttps, type Brand } from "@/lib/checkout";
 import type { Key } from "@/lib/i18n";
 
 type Partial = { total_minor: number; paid_minor: number; balance_minor: number; available_minor: number; min_part_minor: number | null };
-type Info = { merchant: string | null; description: string | null; message?: string | null; brand?: Brand | null; partial?: Partial | null; open_amount?: boolean; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" | "in_progress" };
+type Info = { merchant: string | null; description: string | null; message?: string | null; brand?: Brand | null; partial?: Partial | null; open_amount?: boolean; amount_mode?: "exact" | "minimum" | "up_to" | "pay_what_you_want"; suggested_amount_minor?: number | null; min_amount_minor?: number | null; max_amount_minor?: number | null; amount_minor: number; discount_minor: number; fee_minor: number; total_minor: number; coupon_applied: boolean; currency: string; status: "active" | "expired" | "used_up" | "canceled" | "paid" | "in_progress" };
 
 const GONE: Record<string, Key> = { expired: "goneExpired", used_up: "goneUsed", canceled: "goneCanceled", paid: "gonePaid", in_progress: "goneBusy" };
 /** Server error codes the payer can act on, mapped to the words for them. */
@@ -59,8 +59,12 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
     if (part && !prefilled.current) {
       prefilled.current = true;
       setTyped((part.available_minor / 100).toFixed(2));
+    } else if (!part && info?.open_amount && info.suggested_amount_minor && !prefilled.current) {
+      // the amount the merchant suggests, as a starting point the payer can change
+      prefilled.current = true;
+      setTyped((info.suggested_amount_minor / 100).toFixed(2));
     }
-  }, [part]);
+  }, [part, info]);
   const chosenMinor = Math.round(Number(typed.replace(/,/g, "")) * 100);
   const lo = part ? Math.min(part.min_part_minor ?? 1, part.available_minor) : (info?.min_amount_minor ?? 1);
   const hi = part ? part.available_minor : (info?.max_amount_minor ?? 1_000_000_000_000);
@@ -89,6 +93,9 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
   const logo = safeHttps(info.brand?.logo_url);
   const card = cardProps(info.brand) as React.HTMLAttributes<HTMLElement>;
   const rangeErr = typing && !!typed && !amountOk;
+  /** The rule for an open amount in the payer's language: a floor, a cap, both, or nothing to say. */
+  const hasLo = !part && info?.min_amount_minor != null, hasHi = !part && info?.max_amount_minor != null;
+  const rule = !info || part ? null : hasLo && hasHi ? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) }) : hasLo ? t("amountMin", { min: money(lo, info.currency) }) : hasHi ? t("amountMax", { max: money(hi, info.currency) }) : null;
   return (
     <div {...card}>
       {logo && <img className="brandlogo" src={logo} alt="" height={40} referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
@@ -125,7 +132,7 @@ export function PayLink({ tenant, token }: { tenant: string; token: string }) {
               <label className="f" htmlFor="amt">{t("enterAmount")}</label>
               <input id="amt" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" autoComplete="off" aria-invalid={rangeErr} aria-describedby="amt-help" />
               <p id="amt-help" className={rangeErr ? "err" : "desc"} role={rangeErr ? "alert" : undefined} style={{ margin: "6px 2px 0", textAlign: "left" }}>
-                {rangeErr ? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) }) : part ? t("partialHint", { min: money(lo, info.currency), max: money(hi, info.currency) }) : ""}
+                {rangeErr ? (rule ?? t("amountRange", { min: money(lo, info.currency), max: money(hi, info.currency) })) : part ? t("partialHint", { min: money(lo, info.currency), max: money(hi, info.currency) }) : (rule ?? "")}
               </p>
             </>
           )}

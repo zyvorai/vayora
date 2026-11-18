@@ -656,6 +656,25 @@ pub(crate) async fn start_attempt_with(
             ));
         }
     }
+    // the rules engine (velocity, amount, allow and block lists): after the hard limits, never instead of them
+    if refuse.is_none()
+        && let Some((rule, detail)) = crate::risk_engine::screen_attempt(
+            s,
+            &mut tx,
+            tenant_id,
+            headers,
+            intent_id,
+            customer_id.as_deref(),
+            b.vpa.as_deref(),
+            b.card_token_id.as_deref(),
+            amount_minor,
+            method.as_str(),
+        )
+        .await?
+    {
+        drop(tx);
+        return Err(crate::risk::blocked(s, tenant_id, actor, &rule, detail).await);
+    }
     if let Some((rule, detail)) = refuse {
         drop(tx);
         return Err(crate::risk::blocked(s, tenant_id, actor, rule, detail).await);

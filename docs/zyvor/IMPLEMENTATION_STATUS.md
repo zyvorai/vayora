@@ -44,6 +44,16 @@ thresholds are not tuned on real traffic. The decline classifier recognises only
 and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
 (minutes-long window on the database clock). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
 
+## Link rules, verification, risk engine and payout links (migration 0087)
+
+Built and tested against the simulator and local mocks only; nothing ran against a live provider. Payment link amount modes (`exact`,
+`minimum`, `up_to`, `pay_what_you_want`), a normalised link lifecycle with events, and payer-instrument rules with auto-refund are in
+[PAYMENT_LINK_RULES.md](PAYMENT_LINK_RULES.md); VPA and bank-account verification, the risk rules engine and the COD order score in
+[RISK_ENGINE.md](RISK_ENGINE.md); payout links in [PAYOUT_LINKS.md](PAYOUT_LINKS.md). Not done: payer-instrument rules cannot refuse
+before payment (adapters do not allow it) and only work where the provider reports the payer; Cashfree has no UPI id check here;
+`review` is a review after the fact, not a hold; no console pages, no recipient page for payout links (the public endpoints exist; the checkout app has no page for them) and no hand-written SDK methods yet (generated response types
+only); the weights of the order score are unmeasured.
+
 ## Delivered in this slice: routing automation (shadow mode, soft retry, cost-aware routing, kill switch, scorecard)
 | Behaviour | Evidence |
 |---|---|

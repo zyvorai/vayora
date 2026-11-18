@@ -418,7 +418,12 @@ impl Provider for SimProvider {
             provider_order_ref: Some(req.attempt_id.clone()),
             provider_payment_ref: Some(new_id("simpay")),
             failure_reason: reason,
-            raw: json!({ "sim": true, "amount_minor": req.amount_minor, "bank_reference": sim_rrn(&req.attempt_id) }),
+            raw: json!({
+                "sim": true, "amount_minor": req.amount_minor, "bank_reference": sim_rrn(&req.attempt_id),
+                "payer_vpa": req.vpa,
+                "payer_bank": req.vpa.as_deref().and_then(|v| v.split_once('@')).and_then(|(_, h)| crate::sim_bank_for_handle(h)),
+                "payer_instrument_simulated": req.vpa.is_some(),
+            }),
         };
         self.payments
             .lock()
