@@ -9,7 +9,7 @@ Legend: ✅ built and tested · 🟡 built, verified only against local simulato
 |---|---|---|
 | Payment intents, attempts, refunds, customers | ✅ | Amounts are integer minor units. Raw provider responses kept per attempt (`raw`). |
 | Authorisation / capture | 🟡 | Manual capture endpoint; relies on provider support (`manual_capture` in the capability matrix). |
-| Payment links | ✅ | Fixed or open amount, caps, expiry, cancel, reminders, QR, console page and checkout landing. |
+| Payment links | ✅ | Fixed or open amount, caps, expiry, cancel, reminders, QR, console page and checkout landing. Also: bulk creation from CSV (dry run, all or nothing, repeatable by reference, export with addresses), per-link message / thank-you / return address / brand / allowed methods, paying in parts with balance tracking and email/SMS reminders, privacy-safe analytics (opened and started are estimates; paid, failed, expired come from the payments), a share text, an SMS hook (off by default; sandbox logs only). Simulators and local stand-ins only; no real SMS was sent and the Hindi/Marathi/Tamil/Telugu/Bengali strings are machine-assisted. No console page or SDK methods for the new endpoints yet. [PAYMENT_LINKS.md](PAYMENT_LINKS.md) |
 | Signed webhooks (outbound) | ✅ | HMAC-SHA256 `Zyvor-Signature` with timestamp; retries with backoff; dead-lettering; replay endpoint; per-attempt delivery history (`GET /v1/outbox/{id}/deliveries`). |
 | Razorpay adapter | 🟡 | Orders + hosted checkout, capture, refunds, lookup by receipt, settlements recon, webhook verification. Built from public docs. |
 | Cashfree adapter | 🟡 | Orders, server-initiated UPI collect, refunds, lookup by `order_id`, settlement recon, webhook verification. Built from public docs. |

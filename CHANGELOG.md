@@ -5,6 +5,15 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## 18 November 2026 — Payment link upgrades (simulators only)
+- **Bulk creation**: `POST /v1/payment_links/bulk` reads a CSV strictly (every problem with its line and column), checks it with `dry_run`, creates all links or none, and is safe to send twice (each row's `reference`, or one derived from its contents, is the link's new per-business `external_ref`). `GET /v1/payment_links/imports/{id}/export.csv` lists the links with their addresses (spreadsheet formulas defused).
+- **Per link**: a note, a thank-you, a return address (checked against `return_url_origins`), the business's logo and colour (colour used only when readable), and allowed methods (enforced before any provider is called).
+- **Paying in parts**: `allow_partial` and `min_part_minor`; the link is paid only when captured parts add up (fixed links) or the invoice is settled (invoice links); 30-minute hold against concurrent payers; balance reminders by email and SMS, at most three.
+- **Analytics**: `GET /v1/payment_links/analytics` and `/{id}/analytics`, per day, with a funnel. Opened and started count a coarse visitor token once a day and ignore crawlers (estimates, limits documented); paid, failed and expired are read from the payments. No personal data in any counter; hashed tokens are deleted after two days.
+- **Sharing**: `GET /v1/payment_links/{id}/share` (plain, honest text), `POST /v1/payment_links/{id}/send_sms` and a provider-agnostic SMS hook (`ZYVOR_SMS_MODE`: off by default, `sandbox` logs only, `hook` posts to your URL). No SMS provider is built in.
+- **Checkout**: clearer expired / used / cancelled / paid / busy states, accessible amount errors, and new strings in six languages (the non-English ones are machine-assisted drafts).
+- Migration 0083 (additive; row-level security on every new table). OpenAPI and generated SDK types updated. See [docs/zyvor/PAYMENT_LINKS.md](docs/zyvor/PAYMENT_LINKS.md). Tested against simulators and a local stand-in SMS receiver; no console page yet.
+
 ## 18 November 2026 — Reproducible benchmark harness (simulator only)
 - `bench/run.sh` runs five scenarios against the local provider mock with fixed seeds and writes JSON plus a markdown table: success during an outage and a seeded brown-out (baseline pinned to one provider vs Vayora failover and breaker), a double-charge audit under timeouts, retries, concurrency and replays (checked in the platform's records and in the provider's), reconciliation of synthetic statements in eight layouts with injected errors (auto-confirmed wrong matches reported), fee-variance precision and recall, and developer time to first payment from a clean checkout with checkout page weight.
 - `bench/check-repro.mjs` compares two runs against documented tolerances; `bench/ci.sh` runs everything twice and applies hard gates (not wired into a workflow).

@@ -39,6 +39,8 @@ pub mod insights;
 pub mod installments;
 pub mod kyc;
 pub mod kyc_cashfree;
+pub mod link_bulk;
+pub mod link_stats;
 pub mod logo;
 pub mod mail;
 pub mod mandates;
@@ -65,6 +67,7 @@ pub mod signup;
 pub mod sim_circle;
 pub mod sim_mandate;
 pub mod sim_pay;
+pub mod sms;
 pub mod softretry;
 pub mod state_machine;
 pub mod suggestions;
@@ -149,6 +152,8 @@ pub struct AppState {
     pub review_timezone: Option<chrono_tz::Tz>,
     /// Give each new request and change to an on-duty reviewer, the one holding the fewest (`ZYVOR_REVIEW_AUTO_ASSIGN`).
     pub review_auto_assign: bool,
+    /// Outbound SMS (`ZYVOR_SMS_MODE`: off, sandbox or hook); off by default. See `sms`.
+    pub sms: sms::Mode,
 }
 
 pub use crypto::Crypto;
@@ -187,6 +192,7 @@ impl AppState {
             review_utc_offset_minutes: 330,
             review_timezone: None,
             review_auto_assign: false,
+            sms: sms::Mode::Off,
         }
     }
 
@@ -194,6 +200,7 @@ impl AppState {
     /// (`ZYVOR_CHECKOUT_PUBLIC_URL`) and the unsubscribe link (`ZYVOR_PUBLIC_API_URL` with `ZYVOR_UNSUBSCRIBE_SECRET`).
     /// Both the API and the worker call this, since the worker is what sends the mail and raises the invoices.
     pub fn mail_links_from_env(&mut self) {
+        self.sms = sms::Mode::from_env();
         self.checkout_public_url = std::env::var("ZYVOR_CHECKOUT_PUBLIC_URL")
             .ok()
             .filter(|u| u.starts_with("http"));
@@ -917,6 +924,21 @@ pub fn app(state: AppState) -> Router {
             post(payment_links::cancel_link),
         )
         .route("/payment_links/{id}/send", post(payment_links::send_link))
+        .route(
+            "/payment_links/{id}/send_sms",
+            post(payment_links::send_link_sms),
+        )
+        .route("/payment_links/{id}/share", get(payment_links::share_link))
+        .route(
+            "/payment_links/{id}/analytics",
+            get(link_stats::link_analytics),
+        )
+        .route("/payment_links/analytics", get(link_stats::summary))
+        .route("/payment_links/bulk", post(link_bulk::bulk_create))
+        .route(
+            "/payment_links/imports/{id}/export.csv",
+            get(link_bulk::export_import),
+        )
         .route(
             "/checkout/links/{tenant_id}/{token}",
             get(payment_links::link_info),

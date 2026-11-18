@@ -1,6 +1,7 @@
 // Checkout text in the languages most payers here read. English is the source; every other language
 // must provide every key and keep every {placeholder} (a test enforces both). These translations have
-// not been reviewed by native speakers yet: have each one checked before relying on it in production.
+// not been reviewed by native speakers yet: have each one checked before relying on it in production. The strings added
+// for payment-link upgrades (goneBusy through errGone) are machine-assisted drafts and need the same review.
 export const LANGS = { en: "English", hi: "हिन्दी", mr: "मराठी", ta: "தமிழ்", te: "తెలుగు", bn: "বাংলা" } as const;
 export type Lang = keyof typeof LANGS;
 
@@ -64,6 +65,18 @@ const en = {
   goneUsed: "This payment link has reached its limit.",
   goneCanceled: "This payment link is no longer active.",
   gonePaid: "Nothing is due. This has already been paid.",
+  goneBusy: "Other payments on this link are in progress. Please try again in a few minutes.",
+  goneAsk: "Ask {merchant} for a new link if you still need to pay.",
+  goneAskPlain: "Ask the business for a new link if you still need to pay.",
+  partialHint: "You can pay in parts. Pay at least {min} now, up to {max}.",
+  partialPaid: "Paid so far",
+  partialLeft: "Still to pay",
+  partialMore: "{left} is still left to pay. Use the same link to pay the rest.",
+  returnTo: "Back to {merchant}",
+  returnToPlain: "Back to the business",
+  errBusy: "Other payments on this link are in progress. Please try again in a few minutes.",
+  errAmount: "That amount is not allowed. Check the range and try again.",
+  errGone: "This link can no longer be paid. Ask the business for a new one.",
   language: "Language",
 };
 export type Key = keyof typeof en;
@@ -128,6 +141,18 @@ const hi: Record<Key, string> = {
   goneUsed: "इस भुगतान लिंक की सीमा पूरी हो चुकी है।",
   goneCanceled: "यह भुगतान लिंक अब सक्रिय नहीं है।",
   gonePaid: "कुछ भी देय नहीं है। इसका भुगतान हो चुका है।",
+  goneBusy: "इस लिंक पर दूसरे भुगतान चल रहे हैं। कृपया कुछ मिनट बाद फिर कोशिश करें।",
+  goneAsk: "यदि आपको अब भी भुगतान करना है, तो {merchant} से नया लिंक माँगें।",
+  goneAskPlain: "यदि आपको अब भी भुगतान करना है, तो व्यापारी से नया लिंक माँगें।",
+  partialHint: "आप किस्तों में भुगतान कर सकते हैं। अभी कम से कम {min}, अधिकतम {max} दें।",
+  partialPaid: "अब तक चुकाया",
+  partialLeft: "अभी देय",
+  partialMore: "{left} का भुगतान अभी बाकी है। शेष चुकाने के लिए यही लिंक इस्तेमाल करें।",
+  returnTo: "{merchant} पर वापस जाएँ",
+  returnToPlain: "व्यापारी पर वापस जाएँ",
+  errBusy: "इस लिंक पर दूसरे भुगतान चल रहे हैं। कृपया कुछ मिनट बाद फिर कोशिश करें।",
+  errAmount: "यह राशि मान्य नहीं है। सीमा जाँचकर फिर कोशिश करें।",
+  errGone: "इस लिंक से अब भुगतान नहीं हो सकता। व्यापारी से नया लिंक माँगें।",
   language: "भाषा",
 };
 
@@ -191,6 +216,18 @@ const mr: Record<Key, string> = {
   goneUsed: "या पेमेंट लिंकची मर्यादा पूर्ण झाली आहे.",
   goneCanceled: "ही पेमेंट लिंक आता सक्रिय नाही.",
   gonePaid: "काहीही देय नाही. याचे पेमेंट आधीच झाले आहे.",
+  goneBusy: "या लिंकवर इतर पेमेंट सुरू आहेत. कृपया काही मिनिटांनी पुन्हा प्रयत्न करा.",
+  goneAsk: "तुम्हाला अजूनही पेमेंट करायचे असल्यास {merchant} कडून नवीन लिंक मागवा.",
+  goneAskPlain: "तुम्हाला अजूनही पेमेंट करायचे असल्यास व्यापाऱ्याकडून नवीन लिंक मागवा.",
+  partialHint: "तुम्ही हप्त्यांमध्ये पेमेंट करू शकता. आता किमान {min}, कमाल {max} भरा.",
+  partialPaid: "आतापर्यंत भरलेले",
+  partialLeft: "अजून भरायचे",
+  partialMore: "{left} चे पेमेंट अजून बाकी आहे. उरलेले भरण्यासाठी हीच लिंक वापरा.",
+  returnTo: "{merchant} कडे परत जा",
+  returnToPlain: "व्यापाऱ्याकडे परत जा",
+  errBusy: "या लिंकवर इतर पेमेंट सुरू आहेत. कृपया काही मिनिटांनी पुन्हा प्रयत्न करा.",
+  errAmount: "ही रक्कम चालणार नाही. मर्यादा तपासून पुन्हा प्रयत्न करा.",
+  errGone: "या लिंकद्वारे आता पेमेंट करता येत नाही. व्यापाऱ्याकडून नवीन लिंक मागवा.",
   language: "भाषा",
 };
 
@@ -254,6 +291,18 @@ const ta: Record<Key, string> = {
   goneUsed: "இந்தக் கட்டண இணைப்பு அதன் வரம்பை அடைந்துவிட்டது.",
   goneCanceled: "இந்தக் கட்டண இணைப்பு இனி செயலில் இல்லை.",
   gonePaid: "செலுத்த வேண்டியது எதுவுமில்லை. இது ஏற்கனவே செலுத்தப்பட்டுவிட்டது.",
+  goneBusy: "இந்த இணைப்பில் வேறு கட்டணங்கள் நடந்துகொண்டிருக்கின்றன. சில நிமிடங்களில் மீண்டும் முயற்சிக்கவும்.",
+  goneAsk: "நீங்கள் இன்னும் செலுத்த வேண்டுமானால், {merchant} இடம் புதிய இணைப்பைக் கேளுங்கள்.",
+  goneAskPlain: "நீங்கள் இன்னும் செலுத்த வேண்டுமானால், வணிகரிடம் புதிய இணைப்பைக் கேளுங்கள்.",
+  partialHint: "நீங்கள் பகுதிகளாகச் செலுத்தலாம். இப்போது குறைந்தது {min}, அதிகபட்சம் {max} செலுத்துங்கள்.",
+  partialPaid: "இதுவரை செலுத்தியது",
+  partialLeft: "இன்னும் செலுத்த வேண்டியது",
+  partialMore: "{left} இன்னும் செலுத்த வேண்டியுள்ளது. மீதியைச் செலுத்த இதே இணைப்பைப் பயன்படுத்துங்கள்.",
+  returnTo: "{merchant} பக்கத்திற்குத் திரும்பு",
+  returnToPlain: "வணிகர் பக்கத்திற்குத் திரும்பு",
+  errBusy: "இந்த இணைப்பில் வேறு கட்டணங்கள் நடந்துகொண்டிருக்கின்றன. சில நிமிடங்களில் மீண்டும் முயற்சிக்கவும்.",
+  errAmount: "அந்தத் தொகை அனுமதிக்கப்படவில்லை. வரம்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.",
+  errGone: "இந்த இணைப்பு மூலம் இனி செலுத்த முடியாது. வணிகரிடம் புதிய இணைப்பைக் கேளுங்கள்.",
   language: "மொழி",
 };
 
@@ -317,6 +366,18 @@ const te: Record<Key, string> = {
   goneUsed: "ఈ చెల్లింపు లింక్ పరిమితిని చేరుకుంది.",
   goneCanceled: "ఈ చెల్లింపు లింక్ ఇప్పుడు క్రియాశీలంగా లేదు.",
   gonePaid: "చెల్లించాల్సినది ఏమీ లేదు. ఇది ఇప్పటికే చెల్లించబడింది.",
+  goneBusy: "ఈ లింక్‌పై ఇతర చెల్లింపులు జరుగుతున్నాయి. దయచేసి కొన్ని నిమిషాల తర్వాత మళ్లీ ప్రయత్నించండి.",
+  goneAsk: "మీరు ఇంకా చెల్లించాల్సి ఉంటే, {merchant}ని కొత్త లింక్ అడగండి.",
+  goneAskPlain: "మీరు ఇంకా చెల్లించాల్సి ఉంటే, వ్యాపారిని కొత్త లింక్ అడగండి.",
+  partialHint: "మీరు భాగాలుగా చెల్లించవచ్చు. ఇప్పుడు కనీసం {min}, గరిష్టంగా {max} చెల్లించండి.",
+  partialPaid: "ఇప్పటివరకు చెల్లించినది",
+  partialLeft: "ఇంకా చెల్లించాల్సినది",
+  partialMore: "{left} ఇంకా చెల్లించాల్సి ఉంది. మిగిలినది చెల్లించడానికి ఇదే లింక్‌ను ఉపయోగించండి.",
+  returnTo: "{merchant}కి తిరిగి వెళ్లండి",
+  returnToPlain: "వ్యాపారి వద్దకు తిరిగి వెళ్లండి",
+  errBusy: "ఈ లింక్‌పై ఇతర చెల్లింపులు జరుగుతున్నాయి. దయచేసి కొన్ని నిమిషాల తర్వాత మళ్లీ ప్రయత్నించండి.",
+  errAmount: "ఆ మొత్తం అనుమతించబడదు. పరిధిని సరిచూసి మళ్లీ ప్రయత్నించండి.",
+  errGone: "ఈ లింక్‌తో ఇక చెల్లించలేరు. వ్యాపారిని కొత్త లింక్ అడగండి.",
   language: "భాష",
 };
 
@@ -380,6 +441,18 @@ const bn: Record<Key, string> = {
   goneUsed: "এই পেমেন্ট লিঙ্কের সীমা পূর্ণ হয়ে গেছে।",
   goneCanceled: "এই পেমেন্ট লিঙ্ক আর সক্রিয় নেই।",
   gonePaid: "কিছু প্রদেয় নেই। এটি ইতিমধ্যে পরিশোধ করা হয়েছে।",
+  goneBusy: "এই লিঙ্কে অন্য পেমেন্ট চলছে। অনুগ্রহ করে কয়েক মিনিট পরে আবার চেষ্টা করুন।",
+  goneAsk: "আপনার এখনও পেমেন্ট করার প্রয়োজন হলে {merchant}-এর কাছে নতুন লিঙ্ক চান।",
+  goneAskPlain: "আপনার এখনও পেমেন্ট করার প্রয়োজন হলে ব্যবসায়ীর কাছে নতুন লিঙ্ক চান।",
+  partialHint: "আপনি কিস্তিতে পেমেন্ট করতে পারেন। এখন কমপক্ষে {min}, সর্বোচ্চ {max} দিন।",
+  partialPaid: "এখন পর্যন্ত পরিশোধিত",
+  partialLeft: "এখনও পরিশোধ্য",
+  partialMore: "{left} এখনও পরিশোধ করা বাকি। বাকিটা দিতে এই একই লিঙ্ক ব্যবহার করুন।",
+  returnTo: "{merchant}-এ ফিরে যান",
+  returnToPlain: "ব্যবসায়ীর কাছে ফিরে যান",
+  errBusy: "এই লিঙ্কে অন্য পেমেন্ট চলছে। অনুগ্রহ করে কয়েক মিনিট পরে আবার চেষ্টা করুন।",
+  errAmount: "ওই পরিমাণ অনুমোদিত নয়। সীমা দেখে আবার চেষ্টা করুন।",
+  errGone: "এই লিঙ্ক দিয়ে আর পেমেন্ট করা যাবে না। ব্যবসায়ীর কাছে নতুন লিঙ্ক চান।",
   language: "ভাষা",
 };
 

@@ -65,6 +65,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 /* screens move focus to their heading when they change; it is not a control, so it gets no ring */
 [data-announce]:focus { outline: none; }
 
+/* payment links: the business's logo, its note, and (in light mode only) its own colour on the pay button */
+.brandlogo { display: block; margin: 0 auto 10px; max-height: 40px; max-width: 160px; object-fit: contain; }
+.note { white-space: pre-line; background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: .9375rem; margin: 0 0 16px; text-align: left; color: var(--fg); }
+@media (prefers-color-scheme: light) { .card.branded { --accent: var(--brand); } .card.branded .pay { color: var(--brand-on); } }
 /* event pages: tiers, stepper, tickets */
 .evt-title { font-size: 1.625rem; letter-spacing: -.02em; text-align: center; margin: 6px 0 4px; }
 .evt-h { font-size: 1.0625rem; margin: 22px 0 10px; }
