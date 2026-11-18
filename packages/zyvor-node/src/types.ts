@@ -132,6 +132,21 @@ export interface GetAuditEventsVerifyResponse {
   reason: unknown;
 }
 
+export interface GetBankStatementsImportsResponse {
+  data: unknown[];
+}
+
+export interface GetBankStatementsLayoutsResponse {
+  name: string;
+  about: unknown;
+  mapping: unknown;
+  date_formats: unknown;
+}
+
+export interface GetBankStatementsLinesResponse {
+  data: unknown[];
+}
+
 export interface GetBranchesByIdSummaryResponse {
   branch: unknown;
   from: unknown;
@@ -797,6 +812,14 @@ export interface GetProviderAccountsResponse {
   data: unknown;
 }
 
+export interface GetReconAgeingResponse {
+  bucket_days: unknown;
+  open: unknown;
+  unassigned: unknown;
+  oldest_days: unknown;
+  by_kind: unknown;
+}
+
 export interface GetReconCasesByIdSuggestionsResponse {
   case_id: string;
   kind: string;
@@ -903,6 +926,8 @@ export interface GetSettlementsByIdExplainResponse {
   difference_minor: number;
   difference_breakdown: unknown;
   bank_match: unknown;
+  bank_difference: unknown;
+  suggested_bank_matches: unknown;
   cases: unknown[];
   narrative: boolean;
 }
@@ -1052,7 +1077,49 @@ export interface PostAuditEventsSealResponse {
 
 export interface PostBankStatementsImportResponse {
   added: number;
+  duplicates: unknown;
+  rows: unknown;
   settlements_rechecked: number;
+  matched: unknown;
+  cases_opened: unknown;
+}
+
+export interface PostBankStatementsMatchesByIdConfirmResponse {
+  id: string;
+  status: string;
+  bank_line_id: string | null;
+  subject_type: unknown;
+  subject_id: string | null;
+  rule: unknown;
+  decided_by: unknown;
+}
+
+export interface PostBankStatementsMatchesByIdRejectResponse {
+  id: string;
+  status: string;
+}
+
+export interface PostBankStatementsPreviewResponse {
+  ok: boolean;
+  layout: unknown;
+  header_line: unknown;
+  rows: number;
+  new_rows: unknown;
+  duplicate_rows: number;
+  credits: unknown;
+  debits: unknown;
+  period_from: unknown;
+  period_to: unknown;
+  already_imported_as: number | null;
+  errors: unknown;
+  warnings: unknown;
+  sample: unknown[];
+}
+
+export interface PostBankStatementsRematchResponse {
+  settlements_rechecked: number;
+  matched: unknown;
+  cases_opened: unknown;
 }
 
 export interface PostBillingRunResponse {
@@ -1867,6 +1934,8 @@ export interface PostReconCasesByIdResolveResponse {
 
 export interface PostReconScanResponse {
   new_cases: number;
+  settlements_without_bank_credit: unknown;
+  payouts_without_bank_debit: unknown;
 }
 
 export interface PostRefundsByIdApproveResponse {
@@ -1988,7 +2057,11 @@ export interface PostSettlementsByIdFeeCheckResponse {
 
 export interface PostSettlementsByIdSimulateBankResponse {
   added: number;
+  duplicates: unknown;
+  rows: unknown;
   settlements_rechecked: number;
+  matched: unknown;
+  cases_opened: unknown;
 }
 
 export interface PostSettlementsImportResponse {
@@ -2004,6 +2077,8 @@ export interface PostSettlementsImportResponse {
   difference_minor: number;
   difference_breakdown: unknown;
   bank_match: unknown;
+  bank_difference: unknown;
+  suggested_bank_matches: unknown;
   cases: unknown[];
   narrative: boolean;
 }

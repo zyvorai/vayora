@@ -24,6 +24,15 @@ use zyvor_core::{Currency, new_id};
 
 use crate::*;
 
+/// The made-up bank reference of a simulated payment: twelve digits, like a real UPI RRN, the same every time for
+/// the same attempt. It points at nothing at any bank.
+pub fn sim_rrn(attempt_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(format!("sim-rrn:{attempt_id}").as_bytes());
+    let n = u64::from_be_bytes(h[..8].try_into().expect("8 bytes")) % 1_000_000_000_000;
+    format!("{n:012}")
+}
+
 #[derive(Default)]
 pub struct SimProvider {
     mandates: Mutex<HashMap<String, SimMandate>>,
@@ -345,7 +354,7 @@ impl Provider for SimProvider {
                 provider_order_ref: Some(req.attempt_id.clone()),
                 provider_payment_ref: Some(new_id("simpay")),
                 failure_reason: fail.then(|| "simulated_token_decline".into()),
-                raw: json!({ "sim": true, "flow": "network_token", "network_token_ref": nref }),
+                raw: json!({ "sim": true, "flow": "network_token", "network_token_ref": nref, "bank_reference": sim_rrn(&req.attempt_id) }),
             };
             self.payments
                 .lock()
@@ -365,7 +374,7 @@ impl Provider for SimProvider {
                 provider_order_ref: Some(req.attempt_id.clone()),
                 provider_payment_ref: Some(new_id("simpay")),
                 failure_reason: None,
-                raw: json!({ "sim": true, "flow": "upi_intent", "amount_minor": req.amount_minor }),
+                raw: json!({ "sim": true, "flow": "upi_intent", "amount_minor": req.amount_minor, "bank_reference": sim_rrn(&req.attempt_id) }),
             };
             self.payments
                 .lock()
@@ -408,7 +417,7 @@ impl Provider for SimProvider {
             provider_order_ref: Some(req.attempt_id.clone()),
             provider_payment_ref: Some(new_id("simpay")),
             failure_reason: reason,
-            raw: json!({ "sim": true, "amount_minor": req.amount_minor }),
+            raw: json!({ "sim": true, "amount_minor": req.amount_minor, "bank_reference": sim_rrn(&req.attempt_id) }),
         };
         self.payments
             .lock()

@@ -1104,6 +1104,21 @@ pub async fn apply_provider_state(
         return Ok(Applied::Ignored);
     }
 
+    // The bank-side reference (RRN) the provider reports for a payment that went through: kept for matching the
+    // bank statement. Informational, so it is recorded whatever the state machine does with the status.
+    if matches!(inc.status, Attempt::Captured | Attempt::Authorized)
+        && let Some(r) = inc
+            .raw
+            .as_ref()
+            .and_then(|raw| zyvor_providers::bank_reference(&provider, raw))
+    {
+        sqlx::query("UPDATE payment_attempts SET bank_reference = $2 WHERE id = $1 AND bank_reference IS NULL")
+            .bind(attempt_id)
+            .bind(r)
+            .execute(&mut *conn)
+            .await?;
+    }
+
     let same_payment = cur_ref.is_none()
         || inc.provider_payment_ref.is_none()
         || cur_ref == inc.provider_payment_ref;

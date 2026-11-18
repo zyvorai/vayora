@@ -10,6 +10,7 @@ pub mod audit;
 pub mod auth;
 pub mod bankcsv;
 pub mod bankfmt;
+pub mod bankmatch;
 pub mod billing;
 pub mod cards;
 pub mod cases;
@@ -358,6 +359,21 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/bank_statements/import", post(recon::import_bank))
         .route("/bank_statements/import_csv", post(bankcsv::import_csv))
+        .route("/bank_statements/preview", post(bankcsv::preview_csv))
+        .route("/bank_statements/layouts", get(bankcsv::layouts))
+        .route("/bank_statements/imports", get(bankmatch::list_imports))
+        .route("/bank_statements/lines", get(bankmatch::list_lines))
+        .route("/bank_statements/lines/{id}", get(bankmatch::get_line))
+        .route(
+            "/bank_statements/matches/{id}/confirm",
+            post(bankmatch::confirm),
+        )
+        .route(
+            "/bank_statements/matches/{id}/reject",
+            post(bankmatch::reject),
+        )
+        .route("/bank_statements/rematch", post(bankmatch::rematch))
+        .route("/recon/ageing", get(bankmatch::ageing))
         .route("/bank_statements/import_mt940", post(bankfmt::import_mt940))
         .route("/bank_statements/import_camt", post(bankfmt::import_camt))
         .route("/recon/cases", get(recon::list_cases))
