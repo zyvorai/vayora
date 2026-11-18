@@ -387,6 +387,113 @@ export interface GetEscrowProofResponse {
   balanced: unknown;
 }
 
+export interface GetEventsByIdAttendeesResponse {
+  data: unknown[];
+  has_more: boolean;
+}
+
+export interface GetEventsByIdCheckinExportResponse {
+  event: unknown;
+  generated_at: string | null;
+  count: number;
+  tickets: unknown[];
+}
+
+export interface GetEventsByIdCheckinStatsResponse {
+  checked_in: unknown;
+  expected: unknown;
+  refunded: unknown;
+  void: unknown;
+  recent_duplicates: GetEventsByIdCheckinStatsResponseRecentDuplicatesItem[];
+}
+
+export interface GetEventsByIdCheckinStatsResponseRecentDuplicatesItem {
+  code: string;
+  scanned_by: string;
+  scanned_at: string;
+}
+
+export interface GetEventsByIdOrdersByOrderIdResponse {
+  id: string;
+  code: string;
+  status: string;
+  tier_id: string | null;
+}
+
+export interface GetEventsByIdOrdersResponse {
+  data: unknown;
+  has_more: boolean;
+}
+
+export interface GetEventsByIdRefundBatchesByBatchIdResponse {
+  id: string;
+  event_id: string | null;
+  kind: string;
+  reason: unknown;
+  requested_by: unknown;
+  created_at: string | null;
+  orders: unknown;
+  queued: unknown;
+  requested: unknown;
+  errors: unknown;
+  refunds_by_status: unknown;
+  amount_minor_by_status: unknown;
+  finished: unknown;
+  needs_attention: unknown;
+}
+
+export interface GetEventsByIdRefundReportResponse {
+  event_id: string;
+  currency: string;
+  orders_to_refund: number;
+  amount_minor: number;
+  processed: unknown;
+  in_progress: unknown;
+  awaiting_approval: unknown;
+  failed_or_rejected: unknown;
+  not_yet_sent: unknown;
+  errors: unknown;
+  batches: unknown;
+  items: GetEventsByIdRefundReportResponseItemsItem[];
+}
+
+export interface GetEventsByIdRefundReportResponseItemsItem {
+  order_id: string;
+  buyer_name: string;
+  buyer_email: string;
+  amount_minor: number;
+  state: string;
+  refund_id: string | null;
+  refund_status: string | null;
+  error: string | null;
+  failure_reason: string | null;
+}
+
+export interface GetEventsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
 export interface GetEventsCatalogueResponse {
   data: GetEventsCatalogueResponseDataItem[];
 }
@@ -394,6 +501,11 @@ export interface GetEventsCatalogueResponse {
 export interface GetEventsCatalogueResponseDataItem {
   type: unknown;
   description: string | null;
+}
+
+export interface GetEventsResponse {
+  data: unknown[];
+  has_more: boolean;
 }
 
 export interface GetExportsAccountMappingsResponse {
@@ -911,6 +1023,67 @@ export interface GetProviderAccountsResponse {
   data: unknown;
 }
 
+export interface GetPublicEventsByTenantIdByEventIdResponse {
+  id: string;
+  merchant: unknown;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  on_sale: unknown;
+  hold_minutes: unknown;
+  tiers: unknown[];
+  form_fields: GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem[];
+}
+
+export interface GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem {
+  key: string;
+  label: unknown;
+  kind: string;
+  required: unknown;
+  options: unknown;
+  min_len: unknown;
+  max_len: unknown;
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponse {
+  order_id: string | null;
+  status: string;
+  merchant: unknown;
+  event: unknown;
+  buyer: unknown;
+  quantity: number;
+  subtotal_minor: number;
+  discount_minor: number;
+  total_minor: number;
+  currency: string;
+  intent_id: string | null;
+  hold_expires_at: string | null;
+  paid_at: string | null;
+  lines: GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem[];
+  tickets: GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem[];
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem {
+  tier: string;
+  quantity: number;
+  unit_price_minor: number;
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem {
+  id: string;
+  code: string;
+  status: string;
+  tier: string;
+  checked_in_at: string | null;
+  qr_payload: unknown;
+  qr_path: string;
+}
+
 export interface GetReconAgeingResponse {
   bucket_days: unknown;
   open: unknown;
@@ -957,7 +1130,7 @@ export interface GetRefundsResponse {
 
 export interface GetRoutingHealthResponse {
   config: unknown;
-  routing_health_rule: string;
+  routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
 }
@@ -1441,6 +1614,131 @@ export interface PostDisputesResponse {
   id: string;
   status: string;
   amount_minor: number;
+}
+
+export interface PostEventsByIdCancelResponse {
+  event_id: string;
+  status: string;
+  already_cancelled: boolean;
+  refund_batch: unknown;
+}
+
+export interface PostEventsByIdCheckinResponse {
+  result: unknown;
+  valid: boolean;
+  code: string;
+  manual_entry: unknown;
+  ticket: unknown;
+  checked_in_at: string | null;
+  checked_in_by: unknown;
+  message: string | null;
+}
+
+export interface PostEventsByIdCheckinSyncResponse {
+  counts: unknown;
+  results: unknown;
+}
+
+export interface PostEventsByIdOrdersByOrderIdCancelResponse {
+  order: unknown;
+  refund_batch: unknown;
+}
+
+export interface PostEventsByIdRefundBatchesByBatchIdProcessResponse {
+  id: string;
+  event_id: string | null;
+  kind: string;
+  reason: unknown;
+  requested_by: unknown;
+  created_at: string | null;
+  orders: unknown;
+  queued: unknown;
+  requested: unknown;
+  errors: unknown;
+  refunds_by_status: unknown;
+  amount_minor_by_status: unknown;
+  finished: unknown;
+  needs_attention: unknown;
+}
+
+export interface PostEventsByIdStatusResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsByIdTiersByTierIdArchiveResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsByIdTiersResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsResponse {
+  vendor_id: string | null;
+  share_bp: unknown;
 }
 
 export interface PostExportsAccountMappingsResponse {
@@ -2048,6 +2346,11 @@ export interface PostProviderAccountsResponse {
   webhook_url: string;
 }
 
+export interface PostPublicEventsByTenantIdOrdersByOrderIdCancelResponse {
+  order_id: string | null;
+  status: string;
+}
+
 export interface PostReconCasesByIdAssignResponse {
   id: string;
   status: string;
@@ -2337,6 +2640,81 @@ export interface PostWebhooksByProviderByTenantIdResponse {
 export interface PutAcquireKycResponse {
   organisation_id: string | null;
   acquire_kyc_status: string;
+}
+
+export interface PutEventsByIdFormFieldsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PutEventsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PutEventsByIdTiersByTierIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
 }
 
 export interface PutMoneyModeResponse {

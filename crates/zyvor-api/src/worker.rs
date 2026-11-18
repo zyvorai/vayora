@@ -114,6 +114,10 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3b3. ticketing: release unpaid orders whose hold ran out, send queued bulk refunds, email tickets
+        if let Err(e) = crate::ticketing::run_worker(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "ticketing jobs failed");
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;

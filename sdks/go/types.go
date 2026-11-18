@@ -407,6 +407,113 @@ type GetEscrowProofResponse struct {
 	Balanced           any   `json:"balanced"`
 }
 
+type GetEventsByIdAttendeesResponse struct {
+	Data    []any `json:"data"`
+	HasMore bool  `json:"has_more"`
+}
+
+type GetEventsByIdCheckinExportResponse struct {
+	Event       any     `json:"event"`
+	GeneratedAt *string `json:"generated_at"`
+	Count       int64   `json:"count"`
+	Tickets     []any   `json:"tickets"`
+}
+
+type GetEventsByIdCheckinStatsResponse struct {
+	CheckedIn        any                                                     `json:"checked_in"`
+	Expected         any                                                     `json:"expected"`
+	Refunded         any                                                     `json:"refunded"`
+	Void             any                                                     `json:"void"`
+	RecentDuplicates []GetEventsByIdCheckinStatsResponseRecentDuplicatesItem `json:"recent_duplicates"`
+}
+
+type GetEventsByIdCheckinStatsResponseRecentDuplicatesItem struct {
+	Code      string `json:"code"`
+	ScannedBy string `json:"scanned_by"`
+	ScannedAt string `json:"scanned_at"`
+}
+
+type GetEventsByIdOrdersByOrderIdResponse struct {
+	ID     string  `json:"id"`
+	Code   string  `json:"code"`
+	Status string  `json:"status"`
+	TierID *string `json:"tier_id"`
+}
+
+type GetEventsByIdOrdersResponse struct {
+	Data    any  `json:"data"`
+	HasMore bool `json:"has_more"`
+}
+
+type GetEventsByIdRefundBatchesByBatchIdResponse struct {
+	ID                  string  `json:"id"`
+	EventID             *string `json:"event_id"`
+	Kind                string  `json:"kind"`
+	Reason              any     `json:"reason"`
+	RequestedBy         any     `json:"requested_by"`
+	CreatedAt           *string `json:"created_at"`
+	Orders              any     `json:"orders"`
+	Queued              any     `json:"queued"`
+	Requested           any     `json:"requested"`
+	Errors              any     `json:"errors"`
+	RefundsByStatus     any     `json:"refunds_by_status"`
+	AmountMinorByStatus any     `json:"amount_minor_by_status"`
+	Finished            any     `json:"finished"`
+	NeedsAttention      any     `json:"needs_attention"`
+}
+
+type GetEventsByIdRefundReportResponse struct {
+	EventID          string                                       `json:"event_id"`
+	Currency         string                                       `json:"currency"`
+	OrdersToRefund   int64                                        `json:"orders_to_refund"`
+	AmountMinor      int64                                        `json:"amount_minor"`
+	Processed        any                                          `json:"processed"`
+	InProgress       any                                          `json:"in_progress"`
+	AwaitingApproval any                                          `json:"awaiting_approval"`
+	FailedOrRejected any                                          `json:"failed_or_rejected"`
+	NotYetSent       any                                          `json:"not_yet_sent"`
+	Errors           any                                          `json:"errors"`
+	Batches          any                                          `json:"batches"`
+	Items            []GetEventsByIdRefundReportResponseItemsItem `json:"items"`
+}
+
+type GetEventsByIdRefundReportResponseItemsItem struct {
+	OrderID       string  `json:"order_id"`
+	BuyerName     string  `json:"buyer_name"`
+	BuyerEmail    string  `json:"buyer_email"`
+	AmountMinor   int64   `json:"amount_minor"`
+	State         string  `json:"state"`
+	RefundID      *string `json:"refund_id"`
+	RefundStatus  *string `json:"refund_status"`
+	Error         *string `json:"error"`
+	FailureReason *string `json:"failure_reason"`
+}
+
+type GetEventsByIdResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
 type GetEventsCatalogueResponse struct {
 	Data []GetEventsCatalogueResponseDataItem `json:"data"`
 }
@@ -414,6 +521,11 @@ type GetEventsCatalogueResponse struct {
 type GetEventsCatalogueResponseDataItem struct {
 	Type        any     `json:"type"`
 	Description *string `json:"description"`
+}
+
+type GetEventsResponse struct {
+	Data    []any `json:"data"`
+	HasMore bool  `json:"has_more"`
 }
 
 type GetExportsAccountMappingsResponse struct {
@@ -931,6 +1043,67 @@ type GetProviderAccountsResponse struct {
 	Data any `json:"data"`
 }
 
+type GetPublicEventsByTenantIdByEventIdResponse struct {
+	ID          string                                                     `json:"id"`
+	Merchant    any                                                        `json:"merchant"`
+	Name        string                                                     `json:"name"`
+	Description *string                                                    `json:"description"`
+	Mode        any                                                        `json:"mode"`
+	Venue       any                                                        `json:"venue"`
+	StartsAt    *string                                                    `json:"starts_at"`
+	EndsAt      *string                                                    `json:"ends_at"`
+	Status      string                                                     `json:"status"`
+	Currency    string                                                     `json:"currency"`
+	OnSale      any                                                        `json:"on_sale"`
+	HoldMinutes any                                                        `json:"hold_minutes"`
+	Tiers       []any                                                      `json:"tiers"`
+	FormFields  []GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem `json:"form_fields"`
+}
+
+type GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem struct {
+	Key      string `json:"key"`
+	Label    any    `json:"label"`
+	Kind     string `json:"kind"`
+	Required any    `json:"required"`
+	Options  any    `json:"options"`
+	MinLen   any    `json:"min_len"`
+	MaxLen   any    `json:"max_len"`
+}
+
+type GetPublicEventsByTenantIdOrdersByOrderIdResponse struct {
+	OrderID       *string                                                       `json:"order_id"`
+	Status        string                                                        `json:"status"`
+	Merchant      any                                                           `json:"merchant"`
+	Event         any                                                           `json:"event"`
+	Buyer         any                                                           `json:"buyer"`
+	Quantity      int64                                                         `json:"quantity"`
+	SubtotalMinor int64                                                         `json:"subtotal_minor"`
+	DiscountMinor int64                                                         `json:"discount_minor"`
+	TotalMinor    int64                                                         `json:"total_minor"`
+	Currency      string                                                        `json:"currency"`
+	IntentID      *string                                                       `json:"intent_id"`
+	HoldExpiresAt *string                                                       `json:"hold_expires_at"`
+	PaidAt        *string                                                       `json:"paid_at"`
+	Lines         []GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem   `json:"lines"`
+	Tickets       []GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem `json:"tickets"`
+}
+
+type GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem struct {
+	Tier           string `json:"tier"`
+	Quantity       int64  `json:"quantity"`
+	UnitPriceMinor int64  `json:"unit_price_minor"`
+}
+
+type GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	Status      string  `json:"status"`
+	Tier        string  `json:"tier"`
+	CheckedInAt *string `json:"checked_in_at"`
+	QrPayload   any     `json:"qr_payload"`
+	QrPath      string  `json:"qr_path"`
+}
+
 type GetReconAgeingResponse struct {
 	BucketDays any `json:"bucket_days"`
 	Open       any `json:"open"`
@@ -976,10 +1149,10 @@ type GetRefundsResponse struct {
 }
 
 type GetRoutingHealthResponse struct {
-	Config            any    `json:"config"`
-	RoutingHealthRule string `json:"routing_health_rule"`
-	Providers         any    `json:"providers"`
-	RecentChanges     []any  `json:"recent_changes"`
+	Config            any   `json:"config"`
+	RoutingHealthRule any   `json:"routing_health_rule"`
+	Providers         any   `json:"providers"`
+	RecentChanges     []any `json:"recent_changes"`
 }
 
 type GetSavedViewsResponse struct {
@@ -1461,6 +1634,131 @@ type PostDisputesResponse struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	AmountMinor int64  `json:"amount_minor"`
+}
+
+type PostEventsByIdCancelResponse struct {
+	EventID          string `json:"event_id"`
+	Status           string `json:"status"`
+	AlreadyCancelled bool   `json:"already_cancelled"`
+	RefundBatch      any    `json:"refund_batch"`
+}
+
+type PostEventsByIdCheckinResponse struct {
+	Result      any     `json:"result"`
+	Valid       bool    `json:"valid"`
+	Code        string  `json:"code"`
+	ManualEntry any     `json:"manual_entry"`
+	Ticket      any     `json:"ticket"`
+	CheckedInAt *string `json:"checked_in_at"`
+	CheckedInBy any     `json:"checked_in_by"`
+	Message     *string `json:"message"`
+}
+
+type PostEventsByIdCheckinSyncResponse struct {
+	Counts  any `json:"counts"`
+	Results any `json:"results"`
+}
+
+type PostEventsByIdOrdersByOrderIdCancelResponse struct {
+	Order       any `json:"order"`
+	RefundBatch any `json:"refund_batch"`
+}
+
+type PostEventsByIdRefundBatchesByBatchIdProcessResponse struct {
+	ID                  string  `json:"id"`
+	EventID             *string `json:"event_id"`
+	Kind                string  `json:"kind"`
+	Reason              any     `json:"reason"`
+	RequestedBy         any     `json:"requested_by"`
+	CreatedAt           *string `json:"created_at"`
+	Orders              any     `json:"orders"`
+	Queued              any     `json:"queued"`
+	Requested           any     `json:"requested"`
+	Errors              any     `json:"errors"`
+	RefundsByStatus     any     `json:"refunds_by_status"`
+	AmountMinorByStatus any     `json:"amount_minor_by_status"`
+	Finished            any     `json:"finished"`
+	NeedsAttention      any     `json:"needs_attention"`
+}
+
+type PostEventsByIdStatusResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
+type PostEventsByIdTiersByTierIdArchiveResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
+type PostEventsByIdTiersResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
+type PostEventsResponse struct {
+	VendorID *string `json:"vendor_id"`
+	ShareBp  any     `json:"share_bp"`
 }
 
 type PostExportsAccountMappingsResponse struct {
@@ -2068,6 +2366,11 @@ type PostProviderAccountsResponse struct {
 	WebhookURL string `json:"webhook_url"`
 }
 
+type PostPublicEventsByTenantIdOrdersByOrderIdCancelResponse struct {
+	OrderID *string `json:"order_id"`
+	Status  string  `json:"status"`
+}
+
 type PostReconCasesByIdAssignResponse struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
@@ -2357,6 +2660,81 @@ type PostWebhooksByProviderByTenantIdResponse struct {
 type PutAcquireKycResponse struct {
 	OrganisationID   *string `json:"organisation_id"`
 	AcquireKycStatus string  `json:"acquire_kyc_status"`
+}
+
+type PutEventsByIdFormFieldsResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
+type PutEventsByIdResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
+}
+
+type PutEventsByIdTiersByTierIdResponse struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	Mode           any     `json:"mode"`
+	Venue          any     `json:"venue"`
+	OnlineURL      any     `json:"online_url"`
+	StartsAt       *string `json:"starts_at"`
+	EndsAt         *string `json:"ends_at"`
+	Status         string  `json:"status"`
+	Currency       string  `json:"currency"`
+	Capacity       any     `json:"capacity"`
+	HoldMinutes    any     `json:"hold_minutes"`
+	SeatsHeld      any     `json:"seats_held"`
+	SeatsSold      any     `json:"seats_sold"`
+	SeatsAvailable any     `json:"seats_available"`
+	Splits         any     `json:"splits"`
+	CreatedAt      *string `json:"created_at"`
+	CancelledAt    *string `json:"cancelled_at"`
+	Tiers          any     `json:"tiers"`
+	FormFields     any     `json:"form_fields"`
+	Tickets        any     `json:"tickets"`
+	Orders         any     `json:"orders"`
 }
 
 type PutMoneyModeResponse struct {

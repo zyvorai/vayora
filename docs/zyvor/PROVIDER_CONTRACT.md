@@ -15,16 +15,16 @@ The JSON API your own gateway implements so Zyvor's generic `custom` adapter can
 ```json
 { "attempt_id": "att_01H…", "amount_minor": 49900, "currency": "INR", "method": "upi",
   "vpa": "asha@okzyvor", "customer_id": null, "customer_phone": null,
-  "capture_automatic": true, "return_url": null }
+  "capture_automatic": true, "return_url": null, "upi_intent": false }
 ```
-`method` is one of `upi`, `card`, `netbanking`, `wallet`. Respond:
+`method` is one of `upi`, `card`, `netbanking`, `wallet`. `upi_intent` is `true` only when the adapter was built with `upi_intent` capability and the payer has no UPI ID: answer with `{"type":"upi_intent","uri":"upi://pay?..."}`. A gateway that does not support it can ignore the field. Respond:
 ```json
 { "status": "pending", "provider_payment_ref": "gw_123",
   "action": { "type": "upi_collect", "vpa": "asha@okzyvor" } }
 ```
 - `status`: `pending`, `authorized`, `captured` or `failed`. Anything else is treated as an unknown outcome, never as success or failure.
 - `failure_reason` (optional string) explains a `failed`.
-- `action` tells the payer's device what to do next: `{"type":"none"}`, `{"type":"upi_collect","vpa":"…"}`, or `{"type":"hosted_checkout","params":{…}}` to open your hosted page. Card data must stay on your side.
+- `action` tells the payer's device what to do next: `{"type":"none"}`, `{"type":"upi_collect","vpa":"…"}`, `{"type":"upi_intent","uri":"upi://pay?…"}` (only when the request asked for it), or `{"type":"hosted_checkout","params":{…}}` to open your hosted page. Card data must stay on your side.
 
 ### `GET /payments/{attempt_id}` looks a payment up by our reference
 Same response as above. Return **404 if you never saw it**: Zyvor reads that as a definite `failed` and unblocks the payment. This is how a lost response is resolved.
@@ -42,7 +42,7 @@ Body `{ "attempt_id": "…", "amount_minor": 49900, "currency": "INR" }`. Respon
 Respond `{ "status": "pending" | "processed" | "failed", "provider_refund_ref": "rf_9", "failure_reason": null }`. `refund_id` is Zyvor's, and is the key to look the refund up again.
 
 ### `GET /refunds/{refund_id}`
-Same response shape.
+Same response shape. Return **404 if you never saw it**: as for payments, Zyvor reads that as a definite `failed` (reason `not_found`).
 
 ## Settlements
 
@@ -88,4 +88,4 @@ const sig = createHmac("sha256", process.env.WEBHOOK_SECRET).update(`${ts}.${bod
 The router decides where to send a payment from what the adapter declares. The generic adapter defaults to UPI and card in INR with partial refunds; if your gateway differs, change it where the adapter is built (`Custom::with_capabilities`). Declaring something you cannot do sends real payments to a gateway that will fail them.
 
 ## Status
-Verified only against the local stub, never a live gateway. Run your own gateway through your provider's sandbox before you rely on it.
+Verified only against the local stub, never a live gateway. The stub in [`tests/conformance/gateway.rs`](../../crates/zyvor-providers/tests/conformance/gateway.rs) also runs the adapter through the shared conformance suite ([ADD_A_PROVIDER.md](ADD_A_PROVIDER.md)). Run your own gateway through your provider's sandbox before you rely on it.

@@ -69,6 +69,8 @@ pub mod suggestions;
 pub mod telemetry;
 pub mod tenant;
 pub mod testdata;
+pub mod ticket_orders;
+pub mod ticketing;
 pub mod timeline;
 pub mod unsubscribe;
 pub mod uploads;
@@ -778,6 +780,69 @@ pub fn app(state: AppState) -> Router {
             post(coupons::create_coupon).get(coupons::list_coupons),
         )
         .route("/coupons/{id}/deactivate", post(coupons::deactivate_coupon))
+        // events and ticketing (organiser side)
+        .route(
+            "/events",
+            post(ticketing::create_event).get(ticketing::list_events),
+        )
+        .route(
+            "/events/{id}",
+            get(ticketing::get_event).put(ticketing::edit_event),
+        )
+        .route("/events/{id}/status", post(ticketing::set_status))
+        .route("/events/{id}/tiers", post(ticketing::add_tier))
+        .route("/events/{id}/tiers/{tier_id}", put(ticketing::edit_tier))
+        .route(
+            "/events/{id}/tiers/{tier_id}/archive",
+            post(ticketing::archive_tier),
+        )
+        .route("/events/{id}/form_fields", put(ticketing::put_form_fields))
+        .route("/events/{id}/orders", get(ticketing::list_orders))
+        .route("/events/{id}/orders/{order_id}", get(ticketing::get_order))
+        .route(
+            "/events/{id}/orders/{order_id}/cancel",
+            post(ticketing::cancel_order),
+        )
+        .route("/events/{id}/cancel", post(ticketing::cancel_event))
+        .route("/events/{id}/attendees", get(ticketing::list_attendees))
+        .route("/events/{id}/attendees.csv", get(ticketing::attendees_csv))
+        .route("/events/{id}/checkin", post(ticketing::checkin))
+        .route("/events/{id}/checkin/sync", post(ticketing::checkin_sync))
+        .route(
+            "/events/{id}/checkin/export",
+            get(ticketing::checkin_export),
+        )
+        .route("/events/{id}/checkin/stats", get(ticketing::checkin_stats))
+        .route("/events/{id}/refund_report", get(ticketing::refund_report))
+        .route(
+            "/events/{id}/refund_batches/{batch_id}",
+            get(ticketing::get_batch),
+        )
+        .route(
+            "/events/{id}/refund_batches/{batch_id}/process",
+            post(ticketing::process_batch),
+        )
+        // events and ticketing (public: event page, order, ticket)
+        .route(
+            "/public/events/{tenant_id}/{event_id}",
+            get(ticket_orders::event_page),
+        )
+        .route(
+            "/public/events/{tenant_id}/{event_id}/orders",
+            post(ticket_orders::create_order),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}",
+            get(ticket_orders::order_page),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}/cancel",
+            post(ticket_orders::buyer_cancel),
+        )
+        .route(
+            "/public/events/{tenant_id}/orders/{order_id}/tickets/{ticket_id}/qr.svg",
+            get(ticket_orders::ticket_qr),
+        )
         // counters and branch summaries
         .route(
             "/counters",
