@@ -29,7 +29,7 @@ use zyvor_providers::{
     router::{self, Candidate, Decision, NoRoute, Rule},
 };
 
-use crate::{ApiError, AppState, auth::Auth, instrument, registry, tenant};
+use crate::{ApiError, AppState, auth::Auth, instrument_hint, registry, tenant};
 
 pub const KNOWN_PROVIDERS: &[&str] = &[
     "razorpay",
@@ -278,11 +278,14 @@ pub fn validate(rules: &[BuilderRule], accounts: &[(String, bool)]) -> Report {
             }
         }
         for n in &w.card_networks {
-            if !instrument::NETWORKS.contains(&n.as_str()) {
+            if !instrument_hint::NETWORKS.contains(&n.as_str()) {
                 r.errors.push(p(
                     at,
                     "when.card_networks",
-                    format!("{n:?} is not one of {}", instrument::NETWORKS.join(", ")),
+                    format!(
+                        "{n:?} is not one of {}",
+                        instrument_hint::NETWORKS.join(", ")
+                    ),
                 ));
             }
         }
@@ -406,7 +409,19 @@ pub async fn select(
     intent_id: &str,
     ctx: &RuleCtx<'_>,
     legacy: &[Rule],
+    automation_paused: bool,
 ) -> Result<Selection, ApiError> {
+    // The routing kill switch (`routing_auto`): no rule set and no experiment while it is on. Payments are routed by
+    // the older rules in the settings and the lowest configured fee, as before any automation existed.
+    if automation_paused {
+        return Ok(Selection {
+            rules: legacy.to_vec(),
+            fallback: None,
+            version: None,
+            matched: Vec::new(),
+            experiment: None,
+        });
+    }
     let active = active_version(&mut *conn).await?;
     let control = |rules: Option<Vec<BuilderRule>>| match rules {
         Some(r) => compile(&r, ctx),
@@ -828,12 +843,12 @@ pub async fn dry_run(
             "amount_minor must be a positive integer within the supported limit",
         ));
     }
-    let hint = instrument::InstrumentIn {
+    let hint = instrument_hint::InstrumentIn {
         card_network: b.card_network.clone(),
         card_bin: b.card_bin.clone(),
         ..Default::default()
     };
-    let ins = instrument::build(Some(&hint), None, None)?;
+    let ins = instrument_hint::build(Some(&hint), None, None)?;
     if let Some(sg) = &b.segment
         && !matches!(sg.as_str(), "new" | "returning")
     {
@@ -868,6 +883,7 @@ pub async fn dry_run(
         at: b.at.unwrap_or_else(Utc::now),
     };
     let routing = registry::routing(&mut tx, &auth.tenant_id).await?;
+    let auto = crate::routing_auto::load(&mut tx, &auth.tenant_id).await?;
     let mut experiment = Value::Null;
     let (sel, source): (Selection, Value) = if let Some(rules) = &b.rules {
         let acc = accounts(&mut tx).await?;
@@ -905,7 +921,7 @@ pub async fn dry_run(
     } else {
         // the same selection a real payment gets, including an experiment's arm
         let intent = b.intent_id.clone().unwrap_or_else(|| "dry-run".into());
-        let mut sel = select(&mut tx, &intent, &ctx, &routing.rules).await?;
+        let mut sel = select(&mut tx, &intent, &ctx, &routing.rules, auto.paused).await?;
         if let (Some(forced), Some((id, _))) = (b.arm.as_deref(), sel.experiment.clone()) {
             let exp = crate::experiments::running(&mut tx)
                 .await?
@@ -951,7 +967,28 @@ pub async fn dry_run(
     let mut candidates =
         registry::candidates(&s, &mut tx, &auth.tenant_id, &auth.env, &routing).await?;
     let cfg = crate::health::load_config(&mut tx, &auth.tenant_id).await?;
-    crate::health::attach_signals(&mut tx, &auth.tenant_id, &cfg, method, &mut candidates).await?;
+    crate::health::attach_signals(
+        &mut tx,
+        &auth.tenant_id,
+        &cfg,
+        auto.paused,
+        method,
+        &mut candidates,
+    )
+    .await?;
+    let cost_policy = auto.cost_policy();
+    if cost_policy.is_some() {
+        crate::routing_auto::attach_costs(
+            &mut tx,
+            &auth.tenant_id,
+            &auto,
+            &routing,
+            method,
+            b.amount_minor,
+            &mut candidates,
+        )
+        .await?;
+    }
     let req = router::Request {
         method,
         amount_minor: b.amount_minor,
@@ -959,12 +996,14 @@ pub async fn dry_run(
         allowed: None,
         upi_intent: false,
         avoid: Vec::new(),
+        cost: cost_policy,
     };
     let (decision, fell_back) = choose_with(&sel, &req, &candidates)
         .map_err(|e| ApiError::invalid("no_route", e.to_string()))?;
     let skipped: Vec<Value> = rules_not_matched(&b, &ctx, &mut tx, &sel).await?;
     Ok(Json(json!({
         "dry_run": true,
+        "automation_paused": auto.paused,
         "provider": decision.provider,
         "explanation": decision.explanation,
         "would_probe": decision.probe,
@@ -974,7 +1013,11 @@ pub async fn dry_run(
         "unmatched_rules": skipped,
         "experiment": experiment,
         "fell_back_to_control": fell_back,
-        "notes": ["Nothing was created. No circuit-breaker probe was claimed; a real payment decides that at the moment it is made."],
+        "notes": if auto.paused {
+            json!(["Nothing was created. The routing kill switch is on, so saved rule sets and experiments are not applied to real payments: they are routed by the older rules in the settings (unsaved `rules` and a `version` you name are still tried here).", "No circuit-breaker probe was claimed."])
+        } else {
+            json!(["Nothing was created. No circuit-breaker probe was claimed; a real payment decides that at the moment it is made."])
+        },
     })))
 }
 

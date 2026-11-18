@@ -100,12 +100,12 @@ pub async fn list_vendors(State(s): State<AppState>, auth: Auth) -> Result<Json<
     auth.require("payments:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT id, name, external_ref, account_last4, ifsc, vpa_masked, archived_at FROM vendors ORDER BY name LIMIT 500",
+    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<DateTime<Utc>>, String)> = sqlx::query_as(
+        "SELECT id, name, external_ref, account_last4, ifsc, vpa_masked, archived_at, status FROM vendors ORDER BY name LIMIT 500",
     )
     .fetch_all(&mut *tx)
     .await?;
-    let data: Vec<Value> = rows.into_iter().map(|(id, name, ext, last4, ifsc, vpa, arch)| json!({ "id": id, "name": name, "external_ref": ext, "account_last4": last4, "ifsc": ifsc, "vpa": vpa, "archived": arch.is_some() })).collect();
+    let data: Vec<Value> = rows.into_iter().map(|(id, name, ext, last4, ifsc, vpa, arch, status)| json!({ "id": id, "name": name, "external_ref": ext, "account_last4": last4, "ifsc": ifsc, "vpa": vpa, "archived": arch.is_some(), "status": status })).collect();
     Ok(Json(json!({ "data": data })))
 }
 
@@ -185,8 +185,9 @@ async fn fetch(tx: &mut sqlx::PgConnection, id: &str, lock: bool) -> Result<Row,
 }
 
 /// Create one payout inside the caller's transaction. A repeated `external_ref` returns the original.
-async fn create_one(
+pub(crate) async fn create_one(
     tx: &mut sqlx::PgConnection,
+    crypto: &crate::Crypto,
     auth: &Auth,
     b: &NewPayout,
 ) -> Result<(StatusCode, Value), ApiError> {
@@ -217,34 +218,24 @@ async fn create_one(
             return Ok((StatusCode::OK, row_json(fetch(tx, &id, false).await?)));
         }
     }
-    // lock the vendor so two payouts cannot both spend the same balance
-    let vendor_ok: Option<Option<DateTime<Utc>>> =
-        sqlx::query_scalar("SELECT archived_at FROM vendors WHERE id = $1 FOR UPDATE")
-            .bind(&b.vendor_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    match vendor_ok {
-        None => return Err(ApiError::not_found("vendor")),
-        Some(Some(_)) => {
-            return Err(ApiError::conflict(
-                "vendor_archived",
-                "this vendor is archived",
-            ));
-        }
-        Some(None) => {}
-    }
+    // lock the vendor so two payouts cannot both spend the same balance, then apply the vendor and tenant rules
+    let vendor = crate::payout_batches::lock_vendor(tx, &b.vendor_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("vendor"))?;
     let from_balance = b.from_balance.unwrap_or(false);
-    if from_balance {
-        let (_, free) = crate::splits::available(tx, &b.vendor_id, ccy.code()).await?;
-        if b.amount_minor > free {
-            return Err(ApiError::conflict(
-                "insufficient_balance",
-                format!(
-                    "this vendor has {} free to pay out; the rest of what they are owed is already promised to other payouts",
-                    crate::ai::money(free.max(0), ccy.code())
-                ),
-            ));
-        }
+    let gate = crate::payout_batches::Gate::load(tx, crypto).await?;
+    let found = crate::payout_batches::problems(
+        tx,
+        &gate,
+        &vendor,
+        b.amount_minor,
+        ccy.code(),
+        from_balance,
+        crate::payout_batches::Mode::New { already_minor: 0 },
+    )
+    .await?;
+    if let Some((code, message)) = found.into_iter().next() {
+        return Err(ApiError::conflict(code, message));
     }
     let threshold: i64 = sqlx::query_scalar(
         "SELECT payout_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1",
@@ -281,7 +272,7 @@ pub async fn create_payout(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     auth.require("payouts:write")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let (code, out) = create_one(&mut tx, &auth, &b).await?;
+    let (code, out) = create_one(&mut tx, &s.crypto, &auth, &b).await?;
     tx.commit().await?;
     Ok((code, Json(out)))
 }
@@ -322,13 +313,15 @@ pub async fn create_bulk(
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let (mut created, mut existing, mut total) = (Vec::new(), 0, 0i64);
     for (i, p) in b.payouts.iter().enumerate() {
-        let (code, row) = create_one(&mut tx, &auth, p).await.map_err(|e| {
-            ApiError::new(
-                e.status,
-                e.code,
-                format!("payout {} of {}: {}", i + 1, b.payouts.len(), e.message),
-            )
-        })?;
+        let (code, row) = create_one(&mut tx, &s.crypto, &auth, p)
+            .await
+            .map_err(|e| {
+                ApiError::new(
+                    e.status,
+                    e.code,
+                    format!("payout {} of {}: {}", i + 1, b.payouts.len(), e.message),
+                )
+            })?;
         if code == StatusCode::CREATED {
             total += p.amount_minor;
         } else {
@@ -390,6 +383,22 @@ async fn decide(
             "not_pending_approval",
             format!("payout is {}", r.4),
         ));
+    }
+    crate::payout_batches::refuse_if_batched(&mut tx, id).await?;
+    if approve {
+        // a vendor suspended or archived since the request is not paid
+        let ok: bool = sqlx::query_scalar(
+            "SELECT status = 'active' AND archived_at IS NULL FROM vendors WHERE id = $1",
+        )
+        .bind(&r.1)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !ok {
+            return Err(ApiError::conflict(
+                "vendor_not_active",
+                "this vendor is no longer active; reactivate it or reject the payout",
+            ));
+        }
     }
     if r.7 == auth.actor {
         return Err(ApiError::new(
@@ -458,23 +467,18 @@ pub struct Paid {
     bank_ref: String,
 }
 
-/// Record that the transfer was made: posts Dr payouts / Cr bank, once.
-pub async fn mark_paid(
-    State(s): State<AppState>,
-    auth: Auth,
-    Path(id): Path<String>,
-    Json(b): Json<Paid>,
-) -> Result<Json<Value>, ApiError> {
-    auth.require("payouts:write")?;
-    let bank_ref = b.bank_ref.trim().to_string();
-    if bank_ref.len() < 6 || bank_ref.len() > 40 {
-        return Err(ApiError::invalid(
-            "invalid_bank_ref",
-            "bank_ref (the UTR) must be 6-40 characters",
-        ));
-    }
-    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
-    let r = fetch(&mut tx, &id, true).await?;
+/// Mark an approved payout paid and post it to the ledger, once: Dr payouts (or the vendor's payable, for a payout
+/// from their balance) / Cr bank. The one place that does it, for `mark_paid` and for batches. The caller holds the
+/// transaction; the ledger reference `payout:{id}` makes a second posting fail rather than count twice.
+pub(crate) async fn finalize_paid(
+    tx: &mut sqlx::PgConnection,
+    tenant_id: &str,
+    actor: &str,
+    id: &str,
+    bank_ref: &str,
+    rail: Option<&str>,
+) -> Result<Row, ApiError> {
+    let r = fetch(tx, id, true).await?;
     if r.4 != "approved" {
         return Err(ApiError::conflict(
             "not_approved",
@@ -483,11 +487,11 @@ pub async fn mark_paid(
     }
     let ccy: Currency = r.3.parse().map_err(|_| ApiError::internal())?;
     let source: String = sqlx::query_scalar("SELECT source FROM payouts WHERE id = $1")
-        .bind(&id)
+        .bind(id)
         .fetch_one(&mut *tx)
         .await?;
     sqlx::query("UPDATE payouts SET status = 'paid', paid_by = $2, bank_ref = $3, updated_at = now() WHERE id = $1")
-        .bind(&id).bind(&auth.actor).bind(&bank_ref)
+        .bind(id).bind(actor).bind(bank_ref)
         .execute(&mut *tx).await
         .map_err(|e| match e {
             sqlx::Error::Database(d) if d.is_unique_violation() => ApiError::conflict("bank_ref_used", "that bank reference is already recorded against another payout"),
@@ -504,25 +508,47 @@ pub async fn mark_paid(
         Entry::credit(accounts::BANK, r.2, ccy),
     ])
     .map_err(zyvor_ledger::StoreError::from)?
-    .post(&mut tx, &auth.tenant_id, &format!("payout:{id}"), None)
+    .post(&mut *tx, tenant_id, &format!("payout:{id}"), None)
     .await?;
     tenant::audit(
-        &mut tx,
-        &auth.tenant_id,
-        &auth.actor,
+        tx,
+        tenant_id,
+        actor,
         "payout.paid",
-        Some(&id),
+        Some(id),
         json!({ "amount_minor": r.2, "bank_ref": bank_ref }),
     )
     .await?;
-    tenant::emit(
-        &mut tx,
-        &auth.tenant_id,
-        "payout.paid",
-        json!({ "payout_id": id, "amount_minor": r.2, "currency": r.3, "bank_ref": bank_ref }),
-    )
-    .await?;
-    let out = row_json(fetch(&mut tx, &id, false).await?);
+    let mut event =
+        json!({ "payout_id": id, "amount_minor": r.2, "currency": r.3, "bank_ref": bank_ref });
+    if let Some(rail) = rail {
+        event["rail"] = json!(rail);
+    }
+    tenant::emit(tx, tenant_id, "payout.paid", event).await?;
+    crate::payout_batches::after_paid(tx, tenant_id, id).await?;
+    fetch(tx, id, false).await
+}
+
+/// Record that the transfer was made: posts Dr payouts / Cr bank, once.
+pub async fn mark_paid(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<Paid>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payouts:write")?;
+    let bank_ref = b.bank_ref.trim().to_string();
+    if bank_ref.len() < 6 || bank_ref.len() > 40 {
+        return Err(ApiError::invalid(
+            "invalid_bank_ref",
+            "bank_ref (the UTR) must be 6-40 characters",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    // while a batch is sending this payout to the rail, a person must not also pay it by hand
+    crate::payout_batches::refuse_if_sending(&mut tx, &id).await?;
+    let out =
+        row_json(finalize_paid(&mut tx, &auth.tenant_id, &auth.actor, &id, &bank_ref, None).await?);
     tx.commit().await?;
     Ok(Json(out))
 }
@@ -541,6 +567,7 @@ pub async fn cancel_payout(
             format!("payout is {}", r.4),
         ));
     }
+    crate::payout_batches::refuse_cancel_if_batched(&mut tx, &id).await?;
     sqlx::query("UPDATE payouts SET status = 'canceled', updated_at = now() WHERE id = $1")
         .bind(&id)
         .execute(&mut *tx)

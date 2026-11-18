@@ -50,12 +50,18 @@ pub struct Config {
     pub hold_seconds: i32,
     pub flap_window_seconds: i32,
     pub email_to: Option<String>,
+    /// Set for one sweep while the routing kill switch is on: alerts are recorded (row and audit entry) but no case,
+    /// event or email is made. Not stored.
+    #[sqlx(skip)]
+    #[serde(skip)]
+    pub quiet: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // opt-in: a business that never asked for downtime alerts gets none, and no new event type
+            enabled: false,
             min_samples: 20,
             open_failure_pct: 50,
             resolve_failure_pct: 20,
@@ -63,6 +69,7 @@ impl Default for Config {
             hold_seconds: 300,
             flap_window_seconds: 900,
             email_to: None,
+            quiet: false,
         }
     }
 }
@@ -251,6 +258,9 @@ async fn notify(
     body: &str,
     data: Value,
 ) -> Result<(), ApiError> {
+    if cfg.quiet {
+        return Ok(());
+    }
     tenant::emit(conn, tenant_id, event, data).await?;
     if let Some(to) = &cfg.email_to {
         crate::mail::enqueue_once_as(conn, tenant_id, dedupe, to, subject, body, true).await?;
@@ -278,11 +288,13 @@ pub async fn sweep_tenant(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Sweep,
 }
 
 pub async fn sweep(conn: &mut PgConnection, tenant_id: &str) -> Result<Sweep, ApiError> {
-    let cfg = load_config(conn).await?;
+    let mut cfg = load_config(conn).await?;
     let mut out = Sweep::default();
     if !cfg.enabled {
         return Ok(out);
     }
+    // the routing kill switch: record what is seen, take no automated action
+    cfg.quiet = crate::routing_auto::load(conn, tenant_id).await?.paused;
     let now: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
         .fetch_one(&mut *conn)
         .await?;
@@ -487,8 +499,10 @@ async fn raise(
     if inserted == 0 {
         return Ok(()); // another worker opened it first
     }
-    tenant::audit(conn, tenant_id, "system", "provider_alert.opened", Some(&id), json!({ "provider": k.provider, "method": k.method, "dimension": k.dimension, "value": k.value, "failure_pct": c.failure_pct(), "samples": c.samples() })).await?;
-    open_case(conn, tenant_id, "provider_alert", "provider_alert", &id, None, None, &format!("Possible downtime: {reason}. Routing health and the circuit breaker show what routing is doing about it."), json!({ "provider": k.provider, "method": k.method, "dimension": k.dimension, "value": k.value })).await?;
+    tenant::audit(conn, tenant_id, "system", "provider_alert.opened", Some(&id), json!({ "provider": k.provider, "method": k.method, "dimension": k.dimension, "value": k.value, "failure_pct": c.failure_pct(), "samples": c.samples(), "notifications_suppressed": cfg.quiet })).await?;
+    if !cfg.quiet {
+        open_case(conn, tenant_id, "provider_alert", "provider_alert", &id, None, None, &format!("Possible downtime: {reason}. Routing health and the circuit breaker show what routing is doing about it."), json!({ "provider": k.provider, "method": k.method, "dimension": k.dimension, "value": k.value })).await?;
+    }
     let subject = format!("Possible downtime: {}", label(k));
     let body = format!(
         "{reason}.\n\nThis alert opened because at least {}% of the last {} minutes' payments failed (at least {} attempts were needed). It resolves on its own when the failure rate falls to {}% or less.\n\nSee Routing in the console for what routing is doing about it.",

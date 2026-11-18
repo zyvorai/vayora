@@ -59,7 +59,34 @@ and no real provider code was verified. Transitions are recorded when a payment 
 **Limits.** Simulators, the local provider mock and seeded history only; no real provider, bank or money. Offers are
 merchant-funded only; the card network, UPI app or bank is the caller's claim and is not verified; the discount is not a
 ledger entry; no console page. Experiment and alert thresholds are reasoned defaults, not tuned on real traffic.
-Details in [OFFERS.md](OFFERS.md) and [ROUTING.md](ROUTING.md) sections 6 to 8.
+Details in [OFFERS.md](OFFERS.md) and [ROUTING.md](ROUTING.md) sections 7 to 9.
+## Link rules, verification, risk engine and payout links (migration 0087)
+
+Built and tested against the simulator and local mocks only; nothing ran against a live provider. Payment link amount modes (`exact`,
+`minimum`, `up_to`, `pay_what_you_want`), a normalised link lifecycle with events, and payer-instrument rules with auto-refund are in
+[PAYMENT_LINK_RULES.md](PAYMENT_LINK_RULES.md); VPA and bank-account verification, the risk rules engine and the COD order score in
+[RISK_ENGINE.md](RISK_ENGINE.md); payout links in [PAYOUT_LINKS.md](PAYOUT_LINKS.md). Not done: payer-instrument rules cannot refuse
+before payment (adapters do not allow it) and only work where the provider reports the payer; Cashfree has no UPI id check here;
+`review` is a review after the fact, not a hold; no console pages, no recipient page for payout links (the public endpoints exist; the checkout app has no page for them) and no hand-written SDK methods yet (generated response types
+only); the weights of the order score are unmeasured.
+
+## Delivered in this slice: routing automation (shadow mode, soft retry, cost-aware routing, kill switch, scorecard)
+| Behaviour | Evidence |
+|---|---|
+| Everything off by default; settings validated, scoped (`payments:read` to read, `admin` to change), audited per switch; isolated by row-level security | `automation_settings_are_validated_scoped_audited_and_isolated` |
+| Shadow mode records the candidate policy's decision next to the applied one, never changes routing, never calls a provider; the report gives agreement, differences, estimated fee difference and outcomes | `shadow_records_what_a_candidate_policy_would_do_next_to_what_was_applied_and_changes_nothing` |
+| Cost-aware routing: fee rules and observed fees feed the cost; a provider below the success floor is never chosen for being cheaper; minimum samples; per-business switch; the sentence says what was traded | `cost_aware_routing_uses_fee_rules_and_observed_fees_and_never_picks_a_provider_below_the_floor_for_being_cheaper`, `observed_fees_from_settlements_beat_a_fee_rule_once_there_are_enough_samples`, router unit tests (`cost_*`, `a_cheaper_provider_below_the_success_floor_...`), cost model unit tests |
+| Soft retry only after `provider_fault` / `provider_rejected`, once, on another non-degraded provider, within limits | `a_refused_payment_is_retried_once_on_the_other_provider_and_never_twice`, `only_provider_faults_and_refusals_are_retried_never_payer_declines_unknown_causes_or_unresolved_payments`, `limits_alternates_degraded_providers_and_the_window_stop_a_retry_and_the_decision_is_recorded_once` |
+| No path creates a second live attempt while the first is unresolved; concurrent retriers and manual attempts create one | `many_callers_racing_to_retry_one_failure_create_exactly_one_attempt_and_never_two_live`, `a_retry_that_itself_goes_unknown_blocks_every_further_attempt`, `a_late_answer_from_the_resolver_starts_the_retry_after_the_unknown_is_settled`, `a_provider_webhook_and_the_worker_start_retries_but_a_decline_with_no_known_cause_does_not` |
+| The checkout says "trying another way" while a retry is due and never offers a second payment | `the_checkout_says_trying_another_way_while_a_retry_is_due_and_never_offers_a_second_payment`, `lib/checkout.test.ts` |
+| The kill switch stops every automation at once, is idempotent, audited and per business | `the_kill_switch_stops_every_automation_at_once_is_audited_and_is_per_business` |
+| Scorecard excludes payer declines, shows failure classes, unresolved, median time, observed fee, last degrade | `the_scorecard_excludes_payer_declines_and_shows_classes_unresolved_and_the_last_degrade` |
+
+**Limits.** Simulators and the local provider mock only. Defaults (retry limits, success floor, premium, minimum fee
+samples) are not tuned on real traffic. Shadow mode compares decisions, not outcomes. Retry depends on the decline
+classes, which were not verified against a live provider. The new console sections were built and
+unit-tested but not looked at in a browser. Checkout translations of the new message are
+not reviewed by native speakers. Details in [ROUTING.md](ROUTING.md) section 6.
 
 ## Gaps against the specification
 This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.
@@ -70,8 +97,15 @@ This list comes from a scan of the repository, not a line-by-line audit; items m
 | Bank statement import and UTR/RRN matching | Level 1: CSV layouts + custom mapping, all-or-nothing import with line errors and a dry run, fingerprint de-duplication, reference matches confirmed with evidence, amount/date matches suggestion-only, aged cases. Tested on synthetic statements and simulated providers only, never on a real bank export. Provider RRN field names (Razorpay `acquirer_data.rrn`, Cashfree `bank_reference`) are from public docs, not a live account. See [BANK_RECONCILIATION.md](BANK_RECONCILIATION.md) |
 | OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
 | UPI AutoPay mandates | Level 1: simulator + Cashfree and Razorpay adapters from docs (local mocks only). Sponsor UPI declares mandates. See [MANDATES_LIVE.md](MANDATES_LIVE.md) |
+| Events and ticketing | Level 1: events, tiers, registration form, seat holds with worker release, tickets issued after a verified capture, signed-QR check-in (duplicate detection, offline export and sync), attendee list and CSV, event and order cancellation with bulk refunds and a refund report, all on top of the existing intents, coupons, refunds and splits. Concurrent-purchase tests show no oversell; tested against simulators only. QR scanning was not tried on a device and the public pages were not run in a browser. No partial payments. See [EVENTS.md](EVENTS.md) |
+| Seller page ("link in bio") | Level 1: public page per slug, items with optional stock, orders paid through the existing intent checkout, stock taken exactly in the order transaction (concurrency test), lapsing holds, seller order list with fulfil, cancel and refund. Simulators only; the visitor page was not run in a browser. See [STOREFRONT.md](STOREFRONT.md) |
+| School fees, society dues and donations | Level 1: data model, API, CSV import and export, reports, reminders and PDF receipts built on invoices, instalment plans, payment intents and mandates. Simulators only; no console pages. See [VERTICALS.md](VERTICALS.md) |
 | Settlement fee checks | Level 1: per-merchant fee rules (percentage, flat, cap, GST on fee, effective dates, refund fee return, tolerance) compared with observed deductions per payment; findings become owned reconciliation cases and appear in the settlement explanation. No rates are shipped; tested against simulators and hand-built settlements only, never against a real provider statement. See [FEE_CHECKS.md](FEE_CHECKS.md) |
+| Payment link upgrades | Bulk CSV creation (strict line-level errors, dry run, all or nothing, repeatable by reference, CSV export with addresses); per-link note, thank-you, return address (checked against the return-URL origin list), brand with contrast checks, allowed methods; paying in parts (balance from captured intents or the invoice's settled amount, 30-minute hold against concurrent payers, balance reminders by email and SMS, at most three); per-link and aggregate analytics (opened/started per coarse visitor token per day, bots ignored; paid/failed/expired read from payments); share text; an SMS hook off by default (sandbox logs, hook posts to a URL you configure). Tested against simulators and a stand-in SMS receiver only; no real SMS, provider or traffic. See [PAYMENT_LINKS.md](PAYMENT_LINKS.md) |
+| Cash visibility, refund analytics | Dashboard by provider; observed settlement lag (median, p10/p90, minimum samples) and a per-day credit forecast with a range; delay alerts as reconciliation cases plus one `settlement.delayed` event per subject, against the provider's own observed range or the lag the merchant stated (no provider SLA is built in); refund rate, time to refund, SLA breaches, fee-not-returned leakage and duplicate refunds blocked. Tested against simulators and hand-built synthetic histories only. See [CASH_VISIBILITY.md](CASH_VISIBILITY.md) |
+| Accounting exports | Paged, deterministic, audited journal CSV with per-tenant account codes (every voucher balances), Tally-style CSV/XML (envelope and sign convention taken from Tally's public sample; Journal vouchers inferred; never run against Tally) and a GST summary. See [EXPORTS.md](EXPORTS.md) |
 | Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |
+| Vendor onboarding, commission rules, payout batches, schedules | Level 1 (simulators only): vendor workflow with a second person verifying the bank account, commission rules applied through splits, CSV/list/balance payout batches approved as a batch, sent once per item through the rail, retries and unknown handling, schedules proposed by the worker. No real rail or bank; no console page ([PAYOUT_BATCHES.md](PAYOUT_BATCHES.md)) |
 | Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, auto-enrol into settlement batches, worker T+N release, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
 | Network card tokens | Level 1: store/revoke + charge via `card_token_id` on attempts (sim/stub vault). No live PCI vault |
 | Store plugins | Shopify + WooCommerce + Magento 2: payment links + HMAC webhooks that mark orders paid (`plugins/`); Woo/Shopify release zips via `scripts/package-*-plugin.sh` |

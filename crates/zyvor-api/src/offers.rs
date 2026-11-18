@@ -35,7 +35,7 @@ use crate::{
     ApiError, AppState,
     auth::Auth,
     coupons::half_up,
-    instrument::{self, Instrument, InstrumentIn},
+    instrument_hint::{self, Instrument, InstrumentIn},
     tenant,
 };
 
@@ -994,7 +994,7 @@ fn validate(b: &NewOffer, now: DateTime<Utc>) -> Result<Validated, ApiError> {
     if let Some(n) = b.card_networks.as_ref().filter(|n| !n.is_empty()) {
         let mut out: Vec<String> = Vec::new();
         for x in n {
-            let v = instrument::normalise_network(x).map_err(|e| bad(e.message.clone()))?;
+            let v = instrument_hint::normalise_network(x).map_err(|e| bad(e.message.clone()))?;
             if !out.contains(&v) {
                 out.push(v);
             }
@@ -1387,7 +1387,7 @@ pub async fn preview(
         .method
         .parse()
         .map_err(|e: String| ApiError::invalid("invalid_method", e))?;
-    let ins = instrument::build(b.instrument.as_ref(), b.vpa.as_deref(), None)?;
+    let ins = instrument_hint::build(b.instrument.as_ref(), b.vpa.as_deref(), None)?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     if let Some(c) = &b.customer_id
         && !sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM customers WHERE id = $1)")

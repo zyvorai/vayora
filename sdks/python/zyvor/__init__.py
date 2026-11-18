@@ -921,6 +921,30 @@ class Zyvor:
         """Change thresholds (admin scope); fields left out keep their value: breaker_enabled, failover_enabled, window_attempts, window_minutes, min_samples, degrade_failure_pct, recover_failure_pct, cooldown_seconds."""
         return self._req("PUT", "/v1/routing/health/settings", fields)
 
+    # ---- routing automation: shadow mode, soft retry, cost-aware routing, kill switch, scorecard ----
+    def routing_automation(self) -> types.GetRoutingAutomationResponse:
+        """Shadow mode, soft retry, cost-aware routing and the kill switch for this business (all off by default), with what is in force now."""
+        return self._req("GET", "/v1/routing/automation")
+
+    def update_routing_automation(self, **fields) -> types.PutRoutingAutomationResponse:
+        """Change automation settings (admin scope); fields left out keep their value: shadow_enabled, shadow_policy, soft_retry_enabled, soft_retry_max_attempts, soft_retry_window_seconds, cost_aware_enabled, cost_success_floor_bps, cost_premium_bps, cost_min_fee_samples."""
+        return self._req("PUT", "/v1/routing/automation", fields)
+
+    def pause_routing_automation(self, reason: Optional[str] = None) -> types.PostRoutingAutomationPauseResponse:
+        """The kill switch: every routing automation stops acting at once (admin scope, idempotent, audited)."""
+        return self._req("POST", "/v1/routing/automation/pause", {"reason": reason} if reason else {})
+
+    def resume_routing_automation(self) -> types.PostRoutingAutomationResumeResponse:
+        """Release the kill switch (admin scope, idempotent, audited)."""
+        return self._req("POST", "/v1/routing/automation/resume", {})
+
+    def routing_shadow_report(self, days: Optional[int] = None, method: Optional[str] = None) -> types.GetRoutingShadowReportResponse:
+        """Shadow decisions against what was applied over the last `days` (default 7): agreement, differences, estimated fee difference, outcomes. Read only."""
+        return self._req("GET", "/v1/routing/shadow/report" + self._qs({"days": days, "method": method}))
+
+    def routing_scorecard(self, days: Optional[int] = None, method: Optional[str] = None) -> types.GetRoutingScorecardResponse:
+        """Per provider and method: success rate (payer declines excluded), failure classes, median time to resolve, unresolved, observed fee, last degrade and recovery."""
+        return self._req("GET", "/v1/routing/scorecard" + self._qs({"days": days, "method": method}))
     # ---- offers (merchant-funded discounts, judged when a payment attempt is created)
     def list_offers(self, *, status: Optional[str] = None) -> types.GetOffersResponse:
         return self._req("GET", "/v1/offers" + self._qs({"status": status}))

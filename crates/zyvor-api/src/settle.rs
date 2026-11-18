@@ -173,7 +173,13 @@ pub async fn auto_release_due(s: &AppState, tenant_id: &str) -> Result<usize, Ap
 }
 
 /// Prefer `ZYVOR_PAYOUT_RAIL_URL` + `ZYVOR_PAYOUT_RAIL_KEY` (sponsor HTTP rail); otherwise the sim rail.
-async fn rail_send(insn: &PayoutInstruction) -> Result<PayoutResult, RailError> {
+pub(crate) async fn rail_send(
+    s: &AppState,
+    insn: &PayoutInstruction,
+) -> Result<PayoutResult, RailError> {
+    if let Some(rail) = &s.payout_rail {
+        return rail.send(insn).await;
+    }
     let url = std::env::var("ZYVOR_PAYOUT_RAIL_URL")
         .ok()
         .filter(|u| !u.is_empty());
@@ -185,6 +191,25 @@ async fn rail_send(insn: &PayoutInstruction) -> Result<PayoutResult, RailError> 
                 .await
         }
         None => SimPayoutRail.send(insn).await,
+    }
+}
+
+/// Ask the rail what became of a payout it was given (never sends anything).
+pub(crate) async fn rail_fetch(s: &AppState, payout_id: &str) -> Result<PayoutResult, RailError> {
+    if let Some(rail) = &s.payout_rail {
+        return rail.fetch(payout_id).await;
+    }
+    let url = std::env::var("ZYVOR_PAYOUT_RAIL_URL")
+        .ok()
+        .filter(|u| !u.is_empty());
+    let key = std::env::var("ZYVOR_PAYOUT_RAIL_KEY").unwrap_or_default();
+    match url {
+        Some(base) => {
+            HttpPayoutRail::new(base, key, std::time::Duration::from_secs(30))
+                .fetch(payout_id)
+                .await
+        }
+        None => SimPayoutRail.fetch(payout_id).await,
     }
 }
 
@@ -588,7 +613,7 @@ async fn release_batch_inner(
         vpa: None,
         beneficiary_name: org.clone(),
     };
-    let result = rail_send(&insn)
+    let result = rail_send(s, &insn)
         .await
         .map_err(|e| ApiError::conflict("rail_failed", e.to_string()))?;
 
@@ -716,6 +741,8 @@ pub async fn send_payout_rail(
             format!("payout is {}", r.4),
         ));
     }
+    // a payout inside a payout batch is sent from the batch, which keeps the record of each attempt
+    crate::payout_batches::refuse_if_batched(&mut tx, &payout_id).await?;
     let currency: Currency = r.3.parse().map_err(|_| ApiError::internal())?;
     let amount_minor = r.2;
     let vendor_id = r.1.clone();
@@ -731,7 +758,7 @@ pub async fn send_payout_rail(
         vpa: b.vpa,
         beneficiary_name: b.beneficiary_name.unwrap_or_else(|| vendor_id.clone()),
     };
-    let result = rail_send(&insn)
+    let result = rail_send(&s, &insn)
         .await
         .map_err(|e| ApiError::conflict("rail_failed", e.to_string()))?;
     if !matches!(

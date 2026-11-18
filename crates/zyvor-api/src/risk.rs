@@ -2,6 +2,9 @@
 //! Hard limits: ceiling on one payment, cap on tries, failed-try velocity, blocked VPAs.
 //! Score (0–100): velocity / amount / VPA-handle heuristics — not card-network fraud intelligence.
 //! Every refusal is audited and raises `payment.risk_blocked`.
+//!
+//! The rules engine (velocity, amount, allow/block lists, review queue) is in `risk_engine.rs` and runs after
+//! these hard limits; this file also holds the order-risk score for cash-on-delivery orders (`order_score`).
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -148,6 +151,188 @@ pub async fn blocked(
     )
 }
 
+/// What a rule decides. Severity runs allow < review < decline; when several rules fire the highest wins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    Allow,
+    Review,
+    Decline,
+}
+
+impl Action {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Action::Allow => "allow",
+            Action::Review => "review",
+            Action::Decline => "decline",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "allow" => Action::Allow,
+            "review" => Action::Review,
+            "decline" => Action::Decline,
+            _ => return None,
+        })
+    }
+}
+
+// ---- order risk score (cash on delivery) ----------------------------------------------------------------------
+
+/// What the merchant tells us about an order. Nothing here is looked up or inferred about the buyer.
+#[derive(Debug, Clone, Default)]
+pub struct OrderInput {
+    /// Six digits, first not zero.
+    pub pin_code: String,
+    pub order_value_minor: i64,
+    /// The buyer has ordered from this merchant before and received it.
+    pub repeat_customer: bool,
+    /// How many earlier orders this buyer refused at the door or returned undelivered.
+    pub prior_refusals: u32,
+    /// The merchant's own tier for this area, from `risk_pin_tiers`, when they have one.
+    pub pin_tier: Option<PinTier>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinTier {
+    Low,
+    Medium,
+    High,
+}
+
+impl PinTier {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "low" => PinTier::Low,
+            "medium" => PinTier::Medium,
+            "high" => PinTier::High,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Contribution {
+    pub factor: &'static str,
+    pub points: i64,
+    pub why: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrderScore {
+    /// 0 (least risky) to 100 (most risky). Note the direction: it is the opposite of the payment score above.
+    pub score: i64,
+    pub band: &'static str,
+    pub action: Action,
+    pub contributions: Vec<Contribution>,
+    pub review_at: i64,
+    pub decline_at: i64,
+    pub formula: &'static str,
+}
+
+pub const ORDER_FORMULA: &str = "order-risk-v1";
+pub const DEFAULT_REVIEW_AT: i64 = 40;
+pub const DEFAULT_DECLINE_AT: i64 = 75;
+
+pub fn valid_pin_code(p: &str) -> bool {
+    p.len() == 6 && p.chars().all(|c| c.is_ascii_digit()) && !p.starts_with('0')
+}
+
+/// The score, as a sum of listed contributions, clamped to 0-100:
+///
+/// - order value (₹ 500 = 50,000 minor units): under ₹500 +0, under ₹2,000 +10, under ₹5,000 +20, otherwise +30;
+/// - prior refusals by this buyer: none +0, one +25, two +40, three or more +55;
+/// - repeat customer with no refusals: -15 (a buyer who has received orders before; no credit when they have refused any);
+/// - area, from the merchant's own tier for the longest matching pin-code prefix: high +20, medium +10, low +0,
+///   and +5 when the merchant has no tier for it ("unknown area", not "risky area").
+///
+/// `review_at` (default 40) and `decline_at` (default 75) turn the score into an action: below `review_at` allow,
+/// from `review_at` review, from `decline_at` decline. The bands are 0-29 low, 30-59 medium, 60 and over high.
+/// Fixed arithmetic on four inputs, no learning, no hidden features; the weights are judgement, not measured, and
+/// the merchant should tune the thresholds to their own returns.
+pub fn order_score(i: &OrderInput, review_at: i64, decline_at: i64) -> OrderScore {
+    let mut c: Vec<Contribution> = Vec::new();
+    let mut add = |factor: &'static str, points: i64, why: String| {
+        c.push(Contribution {
+            factor,
+            points,
+            why,
+        })
+    };
+    let v = i.order_value_minor;
+    let (p, why) = if v < 50_000 {
+        (0, "order under ₹500")
+    } else if v < 200_000 {
+        (10, "order of ₹500 to ₹1,999")
+    } else if v < 500_000 {
+        (20, "order of ₹2,000 to ₹4,999")
+    } else {
+        (30, "order of ₹5,000 or more")
+    };
+    add("order_value", p, why.to_string());
+    let (p, why) = match i.prior_refusals {
+        0 => (0, "no earlier refusals".to_string()),
+        1 => (25, "one earlier refused or undelivered order".to_string()),
+        2 => (40, "two earlier refused or undelivered orders".to_string()),
+        n => (55, format!("{n} earlier refused or undelivered orders")),
+    };
+    add("prior_refusals", p, why);
+    if i.repeat_customer && i.prior_refusals == 0 {
+        add(
+            "repeat_customer",
+            -15,
+            "has received orders before and never refused one".to_string(),
+        );
+    } else if i.repeat_customer {
+        add(
+            "repeat_customer",
+            0,
+            "repeat customer, but no credit because of earlier refusals".to_string(),
+        );
+    } else {
+        add(
+            "repeat_customer",
+            0,
+            "no earlier orders on record".to_string(),
+        );
+    }
+    let (p, why) = match i.pin_tier {
+        Some(PinTier::High) => (20, "area marked high risk by the merchant"),
+        Some(PinTier::Medium) => (10, "area marked medium risk by the merchant"),
+        Some(PinTier::Low) => (0, "area marked low risk by the merchant"),
+        None => (
+            5,
+            "no tier on file for this area (unknown, not necessarily risky)",
+        ),
+    };
+    add("area", p, why.to_string());
+    let score = c.iter().map(|x| x.points).sum::<i64>().clamp(0, 100);
+    let band = if score < 30 {
+        "low"
+    } else if score < 60 {
+        "medium"
+    } else {
+        "high"
+    };
+    let action = if score >= decline_at {
+        Action::Decline
+    } else if score >= review_at {
+        Action::Review
+    } else {
+        Action::Allow
+    };
+    OrderScore {
+        score,
+        band,
+        action,
+        contributions: c,
+        review_at,
+        decline_at,
+        formula: ORDER_FORMULA,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +404,62 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    fn order(value: i64, refusals: u32, repeat: bool, tier: Option<PinTier>) -> OrderInput {
+        OrderInput {
+            pin_code: "560001".into(),
+            order_value_minor: value,
+            repeat_customer: repeat,
+            prior_refusals: refusals,
+            pin_tier: tier,
+        }
+    }
+
+    #[test]
+    fn order_score_is_the_sum_of_its_listed_parts() {
+        // small order, new buyer, unknown area: 0 + 0 + 0 + 5
+        let s = order_score(&order(30_000, 0, false, None), 40, 75);
+        assert_eq!(s.score, 5);
+        assert_eq!(s.action, Action::Allow);
+        assert_eq!(s.contributions.iter().map(|c| c.points).sum::<i64>(), 5);
+        // large order, one refusal, high-risk area: 30 + 25 + 0 + 20
+        let s = order_score(&order(600_000, 1, false, Some(PinTier::High)), 40, 75);
+        assert_eq!(s.score, 75);
+        assert_eq!(s.action, Action::Decline);
+        assert_eq!(s.band, "high");
+        // a repeat buyer with a clean record is credited, never below zero
+        let s = order_score(&order(10_000, 0, true, Some(PinTier::Low)), 40, 75);
+        assert_eq!(s.score, 0);
+        let s = order_score(&order(300_000, 0, true, Some(PinTier::Medium)), 40, 75);
+        assert_eq!(s.score, 20 - 15 + 10);
+    }
+
+    #[test]
+    fn a_repeat_buyer_who_refused_gets_no_credit() {
+        let with = order_score(&order(100_000, 2, true, None), 40, 75);
+        let without = order_score(&order(100_000, 2, false, None), 40, 75);
+        assert_eq!(with.score, without.score);
+        assert_eq!(with.score, 10 + 40 + 5);
+        assert_eq!(with.action, Action::Review);
+    }
+
+    #[test]
+    fn thresholds_decide_the_action_and_the_score_is_capped() {
+        let i = order(600_000, 5, false, Some(PinTier::High));
+        let s = order_score(&i, 40, 75);
+        assert_eq!(s.score, 100);
+        assert_eq!(order_score(&i, 40, 101).action, Action::Review);
+        assert_eq!(order_score(&i, 101, 101).action, Action::Allow);
+        assert_eq!(
+            order_score(&order(100_000, 1, false, None), 40, 75).action,
+            Action::Review
+        );
+    }
+
+    #[test]
+    fn pin_codes_are_six_digits_not_starting_with_zero() {
+        assert!(valid_pin_code("560001") && valid_pin_code("110001"));
+        assert!(!valid_pin_code("060001") && !valid_pin_code("56001") && !valid_pin_code("56000a"));
     }
 }

@@ -138,6 +138,19 @@ pub const CATALOGUE: &[(&str, &str)] = &[
     ),
     ("payout.rejected", "A payout was rejected."),
     (
+        "payout_batch.approval_required",
+        "A batch of payouts was proposed (from a file, balances or a schedule) and needs a second person's approval.",
+    ),
+    (
+        "payout_batch.approved",
+        "A batch of payouts was approved; its payouts can be sent or paid from your bank.",
+    ),
+    ("payout_batch.rejected", "A batch of payouts was rejected."),
+    (
+        "payout_batch.completed",
+        "Every payout of an approved batch that was not left out is paid or closed.",
+    ),
+    (
         "closing.signed_off",
         "A branch's end-of-day closing was signed off.",
     ),
@@ -183,8 +196,65 @@ pub const CATALOGUE: &[(&str, &str)] = &[
         "A payout was recorded as paid, with its bank reference.",
     ),
     (
+        "settlement.delayed",
+        "Captured payments are still unsettled, or a settlement arrived, later than the provider's own observed range or the lag you set; a reconciliation case was opened.",
+    ),
+    (
+        "ticket_order.paid",
+        "An event ticket order was paid and its tickets were issued.",
+    ),
+    (
+        "ticket_order.expired",
+        "An unpaid event ticket order ran out of hold time and its seats were released.",
+    ),
+    (
+        "ticket_order.needs_refund",
+        "A payment arrived for a ticket order whose seats were no longer free; a refund is queued.",
+    ),
+    (
+        "event.cancelled",
+        "An event was cancelled; refunds for its paid orders are queued as one batch.",
+    ),
+    (
         "settlement_batch.released",
         "An acquire-mode settlement batch was released to the merchant bank via the payout rail.",
+    ),
+    (
+        "payment_link.created",
+        "A payment link was created (lifecycle status `created`).",
+    ),
+    (
+        "payment_link.activated",
+        "The first payer opened a checkout on a payment link (status `active`).",
+    ),
+    (
+        "payment_link.partially_paid",
+        "A payment link has received some of what it expects, not all of it.",
+    ),
+    (
+        "payment_link.paid",
+        "A payment link has received everything it expects.",
+    ),
+    (
+        "payment_link.expired",
+        "A payment link passed its expiry without being paid in full.",
+    ),
+    ("payment_link.cancelled", "A payment link was cancelled."),
+    (
+        "payment_link.failed",
+        "Every checkout started on a payment link failed and none are left to try.",
+    ),
+    (
+        "payment.instrument_refused",
+        "A payment arrived from a payer bank or UPI handle your instrument rule does not allow; it is being refunded.",
+    ),
+    (
+        "risk.review_required",
+        "A risk rule asked for a person to review a payment or an order; a case was opened.",
+    ),
+    (
+        "payout_link.claimed",
+        "A recipient entered verified details on a payout link; a payout was requested.",
     ),
 ];
 

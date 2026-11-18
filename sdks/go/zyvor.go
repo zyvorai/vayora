@@ -2011,6 +2011,54 @@ func (c *Client) UpdateRoutingHealthSettings(body map[string]any) (map[string]an
 	return c.call("PUT", "/v1/routing/health/settings", body)
 }
 
+// RoutingAutomation returns shadow mode, soft retry, cost-aware routing and the kill switch for this business (all off
+// by default) and what is in force now.
+func (c *Client) RoutingAutomation() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/automation", nil)
+}
+
+// UpdateRoutingAutomation changes automation settings (admin scope); fields not sent keep their value: shadow_enabled,
+// shadow_policy, soft_retry_enabled, soft_retry_max_attempts, soft_retry_window_seconds, cost_aware_enabled,
+// cost_success_floor_bps, cost_premium_bps, cost_min_fee_samples.
+func (c *Client) UpdateRoutingAutomation(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/automation", body)
+}
+
+// PauseRoutingAutomation pulls the kill switch: every routing automation stops acting at once (admin scope,
+// idempotent, audited). reason may be empty.
+func (c *Client) PauseRoutingAutomation(reason string) (map[string]any, error) {
+	body := map[string]any{}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return c.call("POST", "/v1/routing/automation/pause", body)
+}
+
+// ResumeRoutingAutomation releases the kill switch (admin scope, idempotent, audited).
+func (c *Client) ResumeRoutingAutomation() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/automation/resume", map[string]any{})
+}
+
+// RoutingShadowReport compares shadow decisions with what was applied over the last days (0 = the default of 7).
+// method "" means all. Read only.
+func (c *Client) RoutingShadowReport(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/shadow/report", q), nil)
+}
+
+// RoutingScorecard returns per provider and method the success rate (payer declines excluded), failure classes,
+// median time to resolve, unresolved payments, observed fee and the last degrade and recovery. Read only.
+func (c *Client) RoutingScorecard(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/scorecard", q), nil)
+}
+
 // ListOffers lists merchant-funded offers; status "" means all.
 func (c *Client) ListOffers(status string) (map[string]any, error) {
 	return c.call("GET", withQuery("/v1/offers", map[string]any{"status": status}), nil)

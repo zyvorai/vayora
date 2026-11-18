@@ -1,236 +1,545 @@
-//! What the payer used, as far as offers, routing rules and the downtime alerts care: a card network class, a UPI
-//! handle or app, a bank. Never a card number: only the first six or eight digits (the BIN) may be sent, and only to
-//! work out a network class and match an offer's BIN range; the BIN itself is not stored.
+//! Payer-instrument rules: only let a listed payer bank or UPI handle pay, and refund a payment that came from
+//! anywhere else.
 //!
-//! Where it comes from, and how far to trust it (`source`):
-//! - `card_token`: the brand of a saved card token in our own database;
-//! - `vpa`: the handle of the UPI ID the payer typed (what is after the `@`);
-//! - `caller_hint`: what the caller said (an API client, or the public checkout page). Nothing checks it against the
-//!   provider, so an offer keyed on a hint is a pricing nudge and not enforcement. See docs/zyvor/OFFERS.md.
+//! A rule is `{ "allowed_banks": ["HDFC", "SBI"], "allowed_vpa_handles": ["okhdfcbank"] }` on a payment link
+//! (`instrument_rules`, or `PUT /v1/payment_links/{id}/instrument_rules`) or on a payment intent
+//! (`PUT /v1/payment_intents/{id}/instrument_rules`). An intent's own rule wins over its link's.
+//!
+//! **What this can and cannot do.** The rule is applied after the money has been captured, not before: the
+//! payer's bank or UPI id is only known when the provider says so on the payment record or webhook, and no
+//! provider adapter here lets us refuse a payer's UPI id before they pay. So a disallowed payment is captured,
+//! then refunded through the normal refund flow (the merchant's refund approval threshold applies, and the refund
+//! is requested by `system:instrument_rules`), a reconciliation case is opened, and `payment.instrument_refused`
+//! is raised. Whether a refund returns to the payer's own account is the bank's business.
+//!
+//! **When the provider does not say who paid**, nothing can be checked. The result is `unverifiable`, the payment
+//! is kept, and that is visible in `GET /v1/instrument_checks`. It is never a silent pass presented as a check.
+//! Today Razorpay (`vpa`, `bank`) and Cashfree (`payment_method.upi.upi_id`,
+//! `payment_method.netbanking.netbanking_bank_code`) are read from their documented payment fields, and the
+//! simulator reports a VPA and a guessed bank; PayU, PhonePe and custom providers report nothing here. The
+//! Razorpay and Cashfree readings were checked against this repository's mocks only, not a live account.
+//!
+//! **How the two lists combine.** Each list is applied only to the attribute the provider reported. If it
+//! reported a VPA, the VPA handle must be on `allowed_vpa_handles` (when that list is set). If it reported a
+//! bank, the bank must be on `allowed_banks` (when that list is set). A payment is disallowed when any applicable
+//! list rejects it, allowed when at least one list was applicable and all accepted, and unverifiable otherwise.
+//! A payer paying by UPI from a bank not on `allowed_banks` is only caught if the provider reports the bank.
+//!
+//! The worker runs `sweep_tenant` every cycle; a payment is checked once.
 
-use serde::Deserialize;
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::HeaderMap,
+};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use zyvor_providers::PayerInstrument;
 
-use crate::error::ApiError;
+use crate::{ApiError, AppState, auth::Auth, cases::open_case, tenant};
 
-pub const NETWORKS: &[&str] = &["visa", "mastercard", "rupay", "amex", "diners", "other"];
-
-/// What a caller may send with an attempt (all optional).
-#[derive(Debug, Deserialize, Default, Clone)]
-pub struct InstrumentIn {
-    /// One of visa, mastercard, rupay, amex, diners, other.
+#[derive(Deserialize, Serialize, Default, Clone, Debug, PartialEq, Eq)]
+pub struct Rules {
+    /// Bank codes or names as your provider reports them, like `HDFC` or `SBI`. Compared ignoring case.
     #[serde(default)]
-    pub card_network: Option<String>,
-    /// The first 6 or 8 digits of the card (the BIN), to class the card. Anything longer is refused.
+    pub allowed_banks: Vec<String>,
+    /// UPI handles (the part after the `@`), like `okhdfcbank`. A leading `@` is accepted. Compared ignoring case.
     #[serde(default)]
-    pub card_bin: Option<String>,
-    /// A UPI app the payer chose, for example `gpay` or `phonepe`.
-    #[serde(default)]
-    pub upi_app: Option<String>,
-    /// The bank for a netbanking payment, for example `hdfc`.
-    #[serde(default)]
-    pub bank: Option<String>,
+    pub allowed_vpa_handles: Vec<String>,
 }
 
-/// The cleaned facts. `bin6` lives only in memory for one evaluation; it is never put into `to_json`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Instrument {
-    pub card_network: Option<String>,
-    pub bin6: Option<String>,
-    pub upi_app: Option<String>,
-    pub upi_handle: Option<String>,
-    pub bank: Option<String>,
-    pub source: Option<&'static str>,
-}
-
-/// The network class of a BIN, from the well-known issuer prefixes. Anything else is `other`.
-pub fn network_of_bin(bin: &str) -> &'static str {
-    let n = |k: usize| bin.get(..k).and_then(|p| p.parse::<u32>().ok());
-    match (n(1), n(2), n(3), n(4)) {
-        (Some(4), ..) => "visa",
-        (_, Some(51..=55), ..) | (_, _, _, Some(2221..=2720)) => "mastercard",
-        (_, Some(34 | 37), ..) => "amex",
-        (_, Some(36 | 38), ..) | (_, _, Some(300..=305), _) => "diners",
-        // RuPay ranges: 60, 65, 81, 82, 508
-        (_, Some(60 | 65 | 81 | 82), ..) | (_, _, Some(508), _) => "rupay",
-        _ => "other",
+impl Rules {
+    pub fn is_empty(&self) -> bool {
+        self.allowed_banks.is_empty() && self.allowed_vpa_handles.is_empty()
+    }
+    /// The lists as they are stored: trimmed, lower-case, handles without `@`, no duplicates.
+    pub fn normalised(&self) -> Rules {
+        let clean = |v: &Vec<String>, at: bool| {
+            let mut out: Vec<String> = v
+                .iter()
+                .map(|x| {
+                    let x = x.trim().to_lowercase();
+                    if at {
+                        x.trim_start_matches('@').to_string()
+                    } else {
+                        x
+                    }
+                })
+                .collect();
+            out.sort();
+            out.dedup();
+            out
+        };
+        Rules {
+            allowed_banks: clean(&self.allowed_banks, false),
+            allowed_vpa_handles: clean(&self.allowed_vpa_handles, true),
+        }
     }
 }
 
-fn word(v: &str, what: &str, max: usize) -> Result<String, ApiError> {
-    let w = v.trim().to_lowercase();
-    if w.is_empty()
-        || w.len() > max
-        || !w
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-    {
-        return Err(ApiError::invalid(
-            "invalid_instrument",
-            format!("{what} must be 1-{max} letters, digits, - _ or ."),
-        ));
+pub fn validate(r: &Rules) -> Result<(), ApiError> {
+    let bad = |m: &str| Err(ApiError::invalid("invalid_instrument_rules", m.to_string()));
+    if r.allowed_banks.len() > 50 || r.allowed_vpa_handles.len() > 50 {
+        return bad("at most 50 entries in each list");
     }
-    Ok(w)
+    let n = r.normalised();
+    if n.allowed_banks.iter().any(|b| {
+        b.is_empty()
+            || b.len() > 40
+            || !b
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '&' | '.'))
+    }) {
+        return bad("a bank is a code or name of letters and digits, up to 40 characters");
+    }
+    if n.allowed_vpa_handles.iter().any(|h| {
+        h.len() < 2 || h.len() > 30 || !h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.')
+    }) {
+        return bad("a UPI handle is the part after the @, like okhdfcbank");
+    }
+    Ok(())
 }
 
-pub fn normalise_network(v: &str) -> Result<String, ApiError> {
-    let w = v.trim().to_lowercase().replace(' ', "");
-    let w = match w.as_str() {
-        "master" | "mc" => "mastercard".to_string(),
-        "americanexpress" => "amex".to_string(),
-        "dinersclub" => "diners".to_string(),
-        other => other.to_string(),
+#[derive(Debug, PartialEq, Eq)]
+pub enum Verdict {
+    Allowed,
+    Disallowed(String),
+    Unverifiable,
+}
+
+/// Apply the rules to what the provider reported. Pure; see the module docs for how the lists combine.
+pub fn evaluate(rules: &Rules, payer: Option<&PayerInstrument>) -> Verdict {
+    let r = rules.normalised();
+    let Some(p) = payer else {
+        return Verdict::Unverifiable;
     };
-    if NETWORKS.contains(&w.as_str()) {
-        Ok(w)
-    } else {
-        Err(ApiError::invalid(
-            "invalid_instrument",
-            format!("card_network must be one of {}", NETWORKS.join(", ")),
-        ))
-    }
-}
-
-/// The handle of a UPI ID, lower case, with the `@` (`name@okaxis` gives `@okaxis`).
-pub fn upi_handle(vpa: &str) -> Option<String> {
-    vpa.split_once('@')
-        .map(|(_, h)| h.trim().to_lowercase())
-        .filter(|h| !h.is_empty())
-        .map(|h| format!("@{h}"))
-}
-
-/// Build the facts for one attempt. A saved card token's brand wins over a hint.
-pub fn build(
-    hint: Option<&InstrumentIn>,
-    vpa: Option<&str>,
-    token_brand: Option<&str>,
-) -> Result<Instrument, ApiError> {
-    let mut i = Instrument::default();
-    if let Some(h) = hint {
-        if let Some(bin) = h.card_bin.as_deref() {
-            let bin = bin.trim();
-            if !(6..=8).contains(&bin.len()) || !bin.chars().all(|c| c.is_ascii_digit()) {
-                return Err(ApiError::invalid(
-                    "invalid_instrument",
-                    "card_bin must be the first 6 to 8 digits only. Never send a full card number",
-                ));
-            }
-            i.bin6 = Some(bin[..6].to_string());
-            i.card_network = Some(network_of_bin(bin).to_string());
-        }
-        if let Some(n) = h.card_network.as_deref() {
-            let n = normalise_network(n)?;
-            // a BIN and a network that disagree is a mistake, not something to guess about
-            if i.card_network
-                .as_deref()
-                .is_some_and(|b| b != n && b != "other")
-            {
-                return Err(ApiError::invalid(
-                    "invalid_instrument",
-                    "card_network does not match the card_bin",
-                ));
-            }
-            i.card_network = Some(n);
-        }
-        if let Some(a) = h.upi_app.as_deref() {
-            i.upi_app = Some(word(a, "upi_app", 24)?);
-        }
-        if let Some(b) = h.bank.as_deref() {
-            i.bank = Some(word(b, "bank", 32)?);
-        }
-        i.source = Some("caller_hint");
-    }
-    if let Some(h) = vpa.and_then(upi_handle) {
-        i.upi_handle = Some(h);
-        i.source.get_or_insert("vpa");
-    }
-    if let Some(b) = token_brand
-        && let Ok(n) = normalise_network(b)
+    let mut applicable = false;
+    if !r.allowed_vpa_handles.is_empty()
+        && let Some(v) = &p.vpa
     {
-        i.card_network = Some(n);
-        i.bin6 = None;
-        i.source = Some("card_token");
+        applicable = true;
+        let handle = v
+            .rsplit_once('@')
+            .map(|(_, h)| h.to_lowercase())
+            .unwrap_or_default();
+        if !r.allowed_vpa_handles.contains(&handle) {
+            return Verdict::Disallowed(format!("UPI handle @{handle} is not on the allowed list"));
+        }
     }
-    Ok(i)
+    if !r.allowed_banks.is_empty()
+        && let Some(b) = &p.bank
+    {
+        applicable = true;
+        if !r.allowed_banks.contains(&b.trim().to_lowercase()) {
+            return Verdict::Disallowed(format!("payer bank {b} is not on the allowed list"));
+        }
+    }
+    if applicable {
+        Verdict::Allowed
+    } else {
+        Verdict::Unverifiable
+    }
 }
 
-impl Instrument {
-    /// What is stored on the attempt and shown: no BIN, no card number.
-    pub fn to_json(&self) -> Value {
-        let mut m = serde_json::Map::new();
-        for (k, v) in [
-            ("card_network", &self.card_network),
-            ("upi_app", &self.upi_app),
-            ("upi_handle", &self.upi_handle),
-            ("bank", &self.bank),
-        ] {
-            if let Some(v) = v {
-                m.insert(k.into(), json!(v));
+/// The payer's instrument from everything a payment attempt has recorded: its creation response and each
+/// polled or webhook body kept under the source's name.
+pub fn payer_from_attempt_raw(provider: &str, raw: &Value) -> Option<PayerInstrument> {
+    let mut found = PayerInstrument::default();
+    let mut take = |v: &Value| {
+        if let Some(p) = zyvor_providers::payer_instrument(provider, v) {
+            found.vpa = found.vpa.take().or(p.vpa);
+            found.bank = found.bank.take().or(p.bank);
+        }
+    };
+    take(raw);
+    if let Some(o) = raw.as_object() {
+        for v in o.values().filter(|v| v.is_object()) {
+            take(v);
+        }
+    }
+    (found.vpa.is_some() || found.bank.is_some()).then_some(found)
+}
+
+fn handle_of(v: &str) -> Option<String> {
+    v.rsplit_once('@').map(|(_, h)| h.to_lowercase())
+}
+
+#[derive(Debug, Default)]
+pub struct Swept {
+    pub checked: usize,
+    pub refused: usize,
+    pub unverifiable: usize,
+}
+
+/// One pass for a business: check captured payments that fall under a rule and have not been checked, and finish the
+/// refund of any disallowed one whose refund did not get made (a provider outage, a restart).
+pub async fn sweep_tenant(s: &AppState, tenant_id: &str, env: &str) -> Result<Swept, ApiError> {
+    let mut out = Swept::default();
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    #[allow(clippy::type_complexity)]
+    let todo: Vec<(String, String, String, Value, Value, Option<String>)> = sqlx::query_as(
+        "SELECT a.id, a.intent_id, a.provider, a.raw, COALESCE(i.instrument_rules, l.instrument_rules), l.id
+           FROM payment_attempts a
+           JOIN payment_intents i ON i.id = a.intent_id
+           LEFT JOIN payment_links l ON l.id = i.metadata->>'payment_link'
+          WHERE a.status = 'captured' AND a.updated_at > now() - interval '7 days'
+            AND COALESCE(i.instrument_rules, l.instrument_rules) IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM instrument_checks c WHERE c.attempt_id = a.id)
+          ORDER BY a.updated_at LIMIT 50",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for (attempt_id, intent_id, provider, raw, rules, link_id) in todo {
+        let rules: Rules = serde_json::from_value(rules).unwrap_or_default();
+        let payer = payer_from_attempt_raw(&provider, &raw);
+        let verdict = evaluate(&rules, payer.as_ref());
+        let (result, detail) = match &verdict {
+            Verdict::Allowed => ("allowed", String::new()),
+            Verdict::Unverifiable => (
+                "unverifiable",
+                "the provider did not report the payer's bank or UPI id, so the rule could not be applied".to_string(),
+            ),
+            Verdict::Disallowed(why) => ("disallowed", why.clone()),
+        };
+        // the handle only, never the name part of the UPI id
+        sqlx::query("INSERT INTO instrument_checks (tenant_id, attempt_id, intent_id, link_id, result, payer_bank, payer_vpa_handle, detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING")
+            .bind(tenant_id)
+            .bind(&attempt_id)
+            .bind(&intent_id)
+            .bind(&link_id)
+            .bind(result)
+            .bind(payer.as_ref().and_then(|p| p.bank.clone()))
+            .bind(payer.as_ref().and_then(|p| p.vpa.as_deref()).and_then(handle_of))
+            .bind(&detail)
+            .execute(&mut *tx)
+            .await?;
+        out.checked += 1;
+        match verdict {
+            Verdict::Unverifiable => out.unverifiable += 1,
+            Verdict::Allowed => {}
+            Verdict::Disallowed(why) => {
+                out.refused += 1;
+                open_case(
+                    &mut tx,
+                    tenant_id,
+                    "disallowed_instrument",
+                    "payment_attempt",
+                    &attempt_id,
+                    None,
+                    None,
+                    &format!("A payment came from a payer bank or UPI handle your rule does not allow ({why}). It is being refunded."),
+                    json!({ "intent_id": intent_id, "link_id": link_id }),
+                )
+                .await?;
+                tenant::emit(
+                    &mut tx,
+                    tenant_id,
+                    "payment.instrument_refused",
+                    json!({ "intent_id": intent_id, "attempt_id": attempt_id, "reason": why }),
+                )
+                .await?;
+                tenant::audit(
+                    &mut tx,
+                    tenant_id,
+                    "system:instrument_rules",
+                    "payment.instrument_refused",
+                    Some(&attempt_id),
+                    json!({ "reason": why }),
+                )
+                .await?;
             }
         }
-        if let (false, Some(s)) = (m.is_empty(), self.source) {
-            m.insert("source".into(), json!(s));
-        }
-        Value::Object(m)
     }
+    tx.commit().await?;
+    finish_refunds(s, tenant_id, env).await?;
+    Ok(out)
+}
+
+/// Refund every disallowed payment that has no refund yet. Safe to repeat: the refund carries a fixed idempotency key
+/// and the reference `instrument:<attempt>`.
+async fn finish_refunds(s: &AppState, tenant_id: &str, env: &str) -> Result<(), ApiError> {
+    let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+    let pending: Vec<(String, String)> = sqlx::query_as(
+        "SELECT attempt_id, intent_id FROM instrument_checks WHERE result = 'disallowed' AND refund_id IS NULL ORDER BY checked_at LIMIT 50",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    drop(tx);
+    for (attempt_id, intent_id) in pending {
+        let auth = Auth {
+            tenant_id: tenant_id.to_string(),
+            key_id: "system:instrument_rules".into(),
+            env: env.to_string(),
+            scopes: vec!["refunds:write".into()],
+            actor: "system:instrument_rules".into(),
+            branch_id: None,
+        };
+        let reference = format!("instrument:{attempt_id}");
+        let mut h = HeaderMap::new();
+        if let Ok(v) = reference.parse() {
+            h.insert("idempotency-key", v);
+        }
+        let body: Option<Json<crate::refunds::CreateRefund>> = serde_json::from_value(
+            json!({ "reason": "payer instrument not allowed", "external_ref": reference }),
+        )
+        .ok()
+        .map(Json);
+        match crate::refunds::create_refund(
+            State(s.clone()),
+            auth,
+            Path(intent_id.clone()),
+            h,
+            body,
+        )
+        .await
+        {
+            Ok(_) => {
+                let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+                sqlx::query("UPDATE instrument_checks SET refund_id = (SELECT id FROM refunds WHERE intent_id = $2 AND external_ref = $3 LIMIT 1) WHERE attempt_id = $1")
+                    .bind(&attempt_id)
+                    .bind(&intent_id)
+                    .bind(&reference)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+            }
+            Err(e) => {
+                tracing::warn!(attempt = %attempt_id, error = ?e.message, "refund of a disallowed payer instrument not made yet; will retry");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct SetRules {
+    /// Empty lists remove the rule.
+    #[serde(default)]
+    allowed_banks: Vec<String>,
+    #[serde(default)]
+    allowed_vpa_handles: Vec<String>,
+}
+
+fn into_rules(b: SetRules) -> Result<(Rules, Option<Value>), ApiError> {
+    let r = Rules {
+        allowed_banks: b.allowed_banks,
+        allowed_vpa_handles: b.allowed_vpa_handles,
+    };
+    validate(&r)?;
+    let n = r.normalised();
+    let stored = (!n.is_empty()).then(|| json!(n));
+    Ok((n, stored))
+}
+
+/// `PUT /v1/payment_links/{id}/instrument_rules`
+pub async fn set_link_rules(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<SetRules>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:write")?;
+    let (rules, stored) = into_rules(b)?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let n = sqlx::query("UPDATE payment_links SET instrument_rules = $2 WHERE id = $1")
+        .bind(&id)
+        .bind(&stored)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n == 0 {
+        return Err(ApiError::not_found("payment link"));
+    }
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "payment_link.instrument_rules_set",
+        Some(&id),
+        json!({ "banks": rules.allowed_banks.len(), "handles": rules.allowed_vpa_handles.len() }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "id": id, "instrument_rules": stored })))
+}
+
+/// `PUT /v1/payment_intents/{id}/instrument_rules`: only while the payment has not succeeded.
+pub async fn set_intent_rules(
+    State(s): State<AppState>,
+    auth: Auth,
+    Path(id): Path<String>,
+    Json(b): Json<SetRules>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:write")?;
+    let (rules, stored) = into_rules(b)?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM payment_intents WHERE id = $1 FOR UPDATE")
+            .bind(&id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    match status.as_deref() {
+        None => return Err(ApiError::not_found("payment intent")),
+        Some("requires_payment_method" | "processing") => {}
+        Some(other) => {
+            return Err(ApiError::conflict(
+                "intent_not_open",
+                format!("the payment is {other}; a rule can only be set before it succeeds"),
+            ));
+        }
+    }
+    sqlx::query("UPDATE payment_intents SET instrument_rules = $2 WHERE id = $1")
+        .bind(&id)
+        .bind(&stored)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "payment_intent.instrument_rules_set",
+        Some(&id),
+        json!({ "banks": rules.allowed_banks.len(), "handles": rules.allowed_vpa_handles.len() }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "id": id, "instrument_rules": stored })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct ChecksQuery {
+    result: Option<String>,
+    limit: Option<i64>,
+}
+
+/// `GET /v1/instrument_checks`: what was checked, including payments that could not be (`unverifiable`).
+pub async fn list_checks(
+    State(s): State<AppState>,
+    auth: Auth,
+    Query(q): Query<ChecksQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("payments:read")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(String, String, Option<String>, String, Option<String>, Option<String>, Option<String>, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT attempt_id, intent_id, link_id, result, payer_bank, payer_vpa_handle, refund_id, detail, checked_at
+           FROM instrument_checks WHERE ($1::text IS NULL OR result = $1) ORDER BY checked_at DESC LIMIT $2",
+    )
+    .bind(&q.result)
+    .bind(q.limit.unwrap_or(50).clamp(1, 200))
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(Json(
+        json!({ "data": rows.into_iter().map(|(a, i, l, r, b, h, rf, d, at)| json!({
+        "attempt_id": a, "intent_id": i, "link_id": l, "result": r, "payer_bank": b,
+        "payer_vpa_handle": h, "refund_id": rf, "detail": d, "checked_at": at })).collect::<Vec<_>>() }),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn bins_are_classed_by_prefix() {
-        assert_eq!(network_of_bin("411111"), "visa");
-        assert_eq!(network_of_bin("555555"), "mastercard");
-        assert_eq!(network_of_bin("222100"), "mastercard");
-        assert_eq!(network_of_bin("272099"), "mastercard");
-        assert_eq!(network_of_bin("378282"), "amex");
-        assert_eq!(network_of_bin("606000"), "rupay");
-        assert_eq!(network_of_bin("508500"), "rupay");
-        assert_eq!(network_of_bin("360000"), "diners");
-        assert_eq!(network_of_bin("999999"), "other");
+    fn rules(banks: &[&str], handles: &[&str]) -> Rules {
+        Rules {
+            allowed_banks: banks.iter().map(|s| s.to_string()).collect(),
+            allowed_vpa_handles: handles.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+    fn payer(vpa: Option<&str>, bank: Option<&str>) -> Option<PayerInstrument> {
+        Some(PayerInstrument {
+            vpa: vpa.map(str::to_string),
+            bank: bank.map(str::to_string),
+        })
     }
 
     #[test]
-    fn a_card_number_is_refused_and_the_bin_is_not_stored() {
-        let long = InstrumentIn {
-            card_bin: Some("4111111111111111".into()),
-            ..Default::default()
-        };
-        assert!(build(Some(&long), None, None).is_err());
-        let ok = InstrumentIn {
-            card_bin: Some("411111".into()),
-            ..Default::default()
-        };
-        let i = build(Some(&ok), None, None).unwrap();
-        assert_eq!(i.card_network.as_deref(), Some("visa"));
-        assert_eq!(i.bin6.as_deref(), Some("411111"));
-        assert!(!i.to_json().to_string().contains("411111"));
+    fn a_listed_handle_or_bank_passes_and_others_do_not() {
+        let r = rules(&[], &["@okhdfcbank", "OKSBI"]);
+        assert_eq!(
+            evaluate(&r, payer(Some("a@OKHDFCBANK"), None).as_ref()),
+            Verdict::Allowed
+        );
+        assert!(matches!(
+            evaluate(&r, payer(Some("a@ybl"), None).as_ref()),
+            Verdict::Disallowed(_)
+        ));
+        let b = rules(&["HDFC", "sbi"], &[]);
+        assert_eq!(
+            evaluate(&b, payer(None, Some("hdfc")).as_ref()),
+            Verdict::Allowed
+        );
+        assert!(matches!(
+            evaluate(&b, payer(None, Some("ICIC")).as_ref()),
+            Verdict::Disallowed(_)
+        ));
     }
 
     #[test]
-    fn conflicting_network_and_bin_is_refused_and_a_token_wins() {
-        let bad = InstrumentIn {
-            card_bin: Some("411111".into()),
-            card_network: Some("rupay".into()),
-            ..Default::default()
-        };
-        assert!(build(Some(&bad), None, None).is_err());
-        let hint = InstrumentIn {
-            card_network: Some("rupay".into()),
-            ..Default::default()
-        };
-        let i = build(Some(&hint), None, Some("Visa")).unwrap();
-        assert_eq!(i.card_network.as_deref(), Some("visa"));
-        assert_eq!(i.source, Some("card_token"));
+    fn what_the_provider_did_not_report_cannot_be_checked() {
+        let r = rules(&["HDFC"], &["okhdfcbank"]);
+        assert_eq!(evaluate(&r, None), Verdict::Unverifiable);
+        assert_eq!(
+            evaluate(&r, payer(None, None).as_ref()),
+            Verdict::Unverifiable
+        );
+        // a bank rule alone and a payer known only by VPA: nothing applicable
+        assert_eq!(
+            evaluate(&rules(&["HDFC"], &[]), payer(Some("a@ybl"), None).as_ref()),
+            Verdict::Unverifiable
+        );
     }
 
     #[test]
-    fn upi_handle_comes_from_the_vpa() {
-        let i = build(None, Some("Asha@OkAxis"), None).unwrap();
-        assert_eq!(i.upi_handle.as_deref(), Some("@okaxis"));
-        assert_eq!(i.source, Some("vpa"));
-        assert_eq!(build(None, None, None).unwrap().to_json(), json!({}));
+    fn every_applicable_list_must_accept() {
+        let r = rules(&["HDFC"], &["okhdfcbank"]);
+        assert_eq!(
+            evaluate(&r, payer(Some("a@okhdfcbank"), Some("HDFC")).as_ref()),
+            Verdict::Allowed
+        );
+        assert!(matches!(
+            evaluate(&r, payer(Some("a@okhdfcbank"), Some("ICIC")).as_ref()),
+            Verdict::Disallowed(_)
+        ));
+        assert!(matches!(
+            evaluate(&r, payer(Some("a@ybl"), Some("HDFC")).as_ref()),
+            Verdict::Disallowed(_)
+        ));
+    }
+
+    #[test]
+    fn rules_are_validated_and_normalised() {
+        assert!(validate(&rules(&["HDFC"], &["@okhdfcbank"])).is_ok());
+        assert!(validate(&rules(&["bad;bank"], &[])).is_err());
+        assert!(validate(&rules(&[], &["x"])).is_err());
+        assert!(validate(&rules(&[], &["has space"])).is_err());
+        let long = vec!["HDFC".to_string(); 51];
+        assert!(
+            validate(&Rules {
+                allowed_banks: long,
+                ..Default::default()
+            })
+            .is_err()
+        );
+        let n = rules(&["HDFC", "hdfc "], &["@OkHdfc", "okhdfc"]).normalised();
+        assert_eq!(n.allowed_banks, vec!["hdfc"]);
+        assert_eq!(n.allowed_vpa_handles, vec!["okhdfc"]);
+    }
+
+    #[test]
+    fn the_payer_is_read_from_any_recorded_body() {
+        let raw = json!({ "webhook": { "payload": { "payment": { "entity": { "vpa": "x@okhdfcbank", "bank": null } } } }, "sim": true });
+        let p = payer_from_attempt_raw("razorpay", &raw).unwrap();
+        assert_eq!(p.vpa.as_deref(), Some("x@okhdfcbank"));
+        assert!(payer_from_attempt_raw("razorpay", &json!({ "id": "pay_1" })).is_none());
+        assert!(payer_from_attempt_raw("phonepe", &raw).is_none());
+        let cf = json!({ "poll": { "data": { "payment": { "payment_method": { "upi": { "upi_id": "y@ybl" } } } } } });
+        assert_eq!(
+            payer_from_attempt_raw("cashfree", &cf)
+                .unwrap()
+                .vpa
+                .as_deref(),
+            Some("y@ybl")
+        );
     }
 }

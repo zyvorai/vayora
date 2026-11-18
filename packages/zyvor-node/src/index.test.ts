@@ -231,6 +231,12 @@ describe("fee checks, bank statements and routing health", () => {
     await c.routing.health("upi");
     await c.routing.healthSettings();
     await c.routing.updateHealthSettings({ minSamples: 20, failoverEnabled: false });
+    await c.routing.automation();
+    await c.routing.updateAutomation({ softRetryEnabled: true, costSuccessFloorBps: 8500 });
+    await c.routing.pauseAutomation("provider talks");
+    await c.routing.resumeAutomation();
+    await c.routing.shadowReport({ days: 3, method: "upi" });
+    await c.routing.scorecard({ days: 14 });
     const seen = (f.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]);
     expect(seen).toEqual([
       ["GET", "/v1/fee_rules", undefined],
@@ -256,6 +262,12 @@ describe("fee checks, bank statements and routing health", () => {
       ["GET", "/v1/routing/health?method=upi", undefined],
       ["GET", "/v1/routing/health/settings", undefined],
       ["PUT", "/v1/routing/health/settings", { min_samples: 20, failover_enabled: false }],
+      ["GET", "/v1/routing/automation", undefined],
+      ["PUT", "/v1/routing/automation", { soft_retry_enabled: true, cost_success_floor_bps: 8500 }],
+      ["POST", "/v1/routing/automation/pause", { reason: "provider talks" }],
+      ["POST", "/v1/routing/automation/resume", {}],
+      ["GET", "/v1/routing/shadow/report?days=3&method=upi", undefined],
+      ["GET", "/v1/routing/scorecard?days=14", undefined],
     ]);
   });
 

@@ -34,6 +34,15 @@ export interface DebitRow {
   created_at: string;
 }
 
+export interface DeleteCashLagRulesByIdResponse {
+  deleted: boolean;
+}
+
+export interface DeleteExportsAccountMappingsByIdResponse {
+  deleted: boolean;
+  ledger_account: string | null;
+}
+
 export interface DeleteFeeRulesByIdResponse {
   id: string;
   deleted: boolean;
@@ -50,6 +59,21 @@ export interface DeleteOnboardingUploadsByIdResponse {
 }
 
 export interface DeletePlatformRotaDaysOffByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
+export interface DeleteRiskListsByIdResponse {
+  id: string;
+  deleted: boolean;
+}
+
+export interface DeleteRiskPinTiersByPinPrefixResponse {
+  pin_prefix: string;
+  deleted: boolean;
+}
+
+export interface DeleteRiskRulesByIdResponse {
   id: string;
   deleted: boolean;
 }
@@ -77,6 +101,45 @@ export interface GetAcquireKycResponse {
 export interface GetAnalyticsCostResponse {
   by_provider_method: unknown[];
   suggestions: unknown;
+}
+
+export interface GetAnalyticsRefundsResponse {
+  from: unknown;
+  to: unknown;
+  bucket: unknown;
+  currency: string;
+  series: GetAnalyticsRefundsResponseSeriesItem[];
+  totals: unknown;
+  time_to_refund: unknown;
+  sla: GetAnalyticsRefundsResponseSlaItem[];
+  leakage: GetAnalyticsRefundsResponseLeakageItem[];
+  note: string;
+}
+
+export interface GetAnalyticsRefundsResponseLeakageItem {
+  provider: string;
+  method: string;
+  lines: number;
+  settlements: number;
+  amount_minor: number;
+}
+
+export interface GetAnalyticsRefundsResponseSeriesItem {
+  starts: string;
+  captured_count: unknown;
+  captured_minor: number;
+  refunds_requested_count: unknown;
+  refunds_requested_minor: number;
+  refunds_processed_count: unknown;
+  refunds_processed_minor: number;
+  refund_rate_bps: unknown;
+}
+
+export interface GetAnalyticsRefundsResponseSlaItem {
+  status: string;
+  count: number;
+  amount_minor: number;
+  oldest_hours: unknown;
 }
 
 export interface GetApiKeysResponse {
@@ -167,10 +230,91 @@ export interface GetCardTokensResponse {
   tokens: unknown[];
 }
 
+export interface GetCashDashboardResponse {
+  as_of: string | null;
+  currency: string;
+  matched_window_days: unknown;
+  by_provider: unknown;
+  totals: unknown;
+  payouts_pending: GetCashDashboardResponsePayoutsPendingItem[];
+  paid_payouts_without_bank_debit_match: unknown;
+  note: string;
+}
+
+export interface GetCashDashboardResponsePayoutsPendingItem {
+  status: string;
+  count: number;
+  amount_minor: number;
+}
+
+export interface GetCashForecastResponse {
+  as_of: string | null;
+  currency: string;
+  horizon_days: unknown;
+  days: GetCashForecastResponseDaysItem[];
+  overdue: unknown;
+  expected_after_horizon_minor: number;
+  expected_without_range_minor: number;
+  not_forecast: GetCashForecastResponseNotForecastItem[];
+  basis: unknown[];
+  note: string;
+}
+
+export interface GetCashForecastResponseDaysItem {
+  date: unknown;
+  expected_minor: number;
+  cumulative_low_minor: number;
+  cumulative_expected_minor: number;
+  cumulative_high_minor: number;
+}
+
+export interface GetCashForecastResponseNotForecastItem {
+  provider: string;
+  method: unknown;
+  payments: unknown;
+  amount_minor: number;
+  status: string;
+}
+
+export interface GetCashLagResponse {
+  as_of: string | null;
+  lookback_days: unknown;
+  min_samples: unknown;
+  data: unknown[];
+  tenant_rules: GetCashLagResponseTenantRulesItem[];
+  note: string;
+}
+
+export interface GetCashLagResponseTenantRulesItem {
+  provider: string;
+  method: unknown;
+  expected_lag_days: unknown;
+}
+
+export interface GetCashLagRulesResponse {
+  data: GetCashLagRulesResponseDataItem[];
+}
+
+export interface GetCashLagRulesResponseDataItem {
+  id: string;
+  provider: string;
+  method: string;
+  expected_lag_days: number;
+  note: string;
+  created_by: string;
+}
+
+export interface GetCashSettingsResponse {
+  min_samples: unknown;
+  alert_grace_days: unknown;
+  refund_sla_hours: unknown;
+}
+
 export interface GetCheckoutByTenantIdByIntentIdEventsResponse {
   id: string;
   method: unknown;
   status: string;
+  amount_minor: number;
   failure_reason: unknown;
   action: unknown;
 }
@@ -179,6 +323,7 @@ export interface GetCheckoutByTenantIdByIntentIdResponse {
   id: string;
   method: unknown;
   status: string;
+  amount_minor: number;
   failure_reason: unknown;
   action: unknown;
 }
@@ -193,9 +338,27 @@ export interface GetCheckoutLinksByTenantIdByTokenResponse {
   coupon_applied: unknown;
   currency: string;
   status: string;
-  open_amount: boolean;
-  min_amount_minor: number | null;
-  max_amount_minor: number | null;
+  open_amount: unknown;
+  min_amount_minor: number;
+  max_amount_minor: number;
+  message: string | null;
+  brand: unknown;
+  allowed_methods: unknown;
+  partial: unknown;
+  amount_mode: string;
+  suggested_amount_minor: number | null;
+  amount_rule: string;
+}
+
+export interface GetCheckoutPayoutLinksByTenantIdByTokenResponse {
+  merchant: string | null;
+  amount_minor: number;
+  currency: string;
+  purpose: unknown;
+  status: string;
+  expires_at: string | null;
+  name_required: unknown;
+  methods: unknown;
 }
 
 export interface GetClosingsResponse {
@@ -215,6 +378,27 @@ export interface GetCollectionsDraftsResponse {
 
 export interface GetCollectionsPromisesResponse {
   data: unknown[];
+}
+
+export interface GetCommissionRulesByIdResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
+}
+
+export interface GetCommissionRulesResponse {
+  data: unknown;
 }
 
 export interface GetConsoleBranchesResponse {
@@ -308,10 +492,222 @@ export interface GetDisputesResponseDataItem {
   evidence_count: number;
 }
 
+export interface GetDonateByTenantIdByCampaignIdResponse {
+  merchant: string | null;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  currency: string;
+  recurring_enabled: unknown;
+}
+
+export interface GetDonationsCampaignsByIdSummaryResponse {
+  campaign_id: string;
+  paid_count: number;
+  paid_minor: number;
+  refunded_minor: number;
+  net_minor: number;
+  pending_count: number;
+  goal_minor: number | null;
+  recurring_pledges: number;
+}
+
+export interface GetDonationsCampaignsResponse {
+  data: unknown;
+}
+
+export interface GetDonationsResponse {
+  data: GetDonationsResponseDataItem[];
+}
+
+export interface GetDonationsResponseDataItem {
+  id: string;
+  campaign_id: string | null;
+  intent_id: string | null;
+  amount_minor: number;
+  status: string;
+  donor: unknown;
+  anonymous: unknown;
+  receipt_no: unknown;
+  created_at: string | null;
+  paid_at: string | null;
+  refunded_minor: number;
+}
+
+export interface GetDuesByKindGroupsResponse {
+  data: GetDuesByKindGroupsResponseDataItem[];
+}
+
+export interface GetDuesByKindGroupsResponseDataItem {
+  id: string;
+  name: string;
+  members: number;
+  heads_total_minor: number;
+}
+
+export interface GetDuesByKindHeadsResponse {
+  data: GetDuesByKindHeadsResponseDataItem[];
+}
+
+export interface GetDuesByKindHeadsResponseDataItem {
+  id: string;
+  group_id: string;
+  name: string;
+  amount_minor: number;
+}
+
+export interface GetDuesByKindMembersResponse {
+  data: GetDuesByKindMembersResponseDataItem[];
+}
+
+export interface GetDuesByKindMembersResponseDataItem {
+  id: string;
+  group_id: string | null;
+  group: unknown;
+  member_ref: unknown;
+  name: string;
+  active: unknown;
+  payer: GetDuesByKindMembersResponseDataItemPayerItem[];
+}
+
+export interface GetDuesByKindMembersResponseDataItemPayerItem {
+  name: string;
+  email: string;
+  phone: string | null;
+}
+
+export interface GetDuesByKindReportCsvResponse {
+  kind: string;
+  as_of: string | null;
+  totals: unknown;
+  data: unknown;
+}
+
+export interface GetDuesByKindReportResponse {
+  kind: string;
+  as_of: string | null;
+  totals: unknown;
+  data: unknown;
+}
+
+export interface GetDuesByKindSettingsResponse {
+  kind: string;
+  receipt_note: string;
+}
+
 export interface GetEscrowProofResponse {
   escrow_available_net: number;
   open_payables_net: number;
   balanced: unknown;
+}
+
+export interface GetEventsByIdAttendeesResponse {
+  data: unknown[];
+  has_more: boolean;
+}
+
+export interface GetEventsByIdCheckinExportResponse {
+  event: unknown;
+  generated_at: string | null;
+  count: number;
+  tickets: unknown[];
+}
+
+export interface GetEventsByIdCheckinStatsResponse {
+  checked_in: unknown;
+  expected: unknown;
+  refunded: unknown;
+  void: unknown;
+  recent_duplicates: GetEventsByIdCheckinStatsResponseRecentDuplicatesItem[];
+}
+
+export interface GetEventsByIdCheckinStatsResponseRecentDuplicatesItem {
+  code: string;
+  scanned_by: string;
+  scanned_at: string;
+}
+
+export interface GetEventsByIdOrdersByOrderIdResponse {
+  id: string;
+  code: string;
+  status: string;
+  tier_id: string | null;
+}
+
+export interface GetEventsByIdOrdersResponse {
+  data: unknown;
+  has_more: boolean;
+}
+
+export interface GetEventsByIdRefundBatchesByBatchIdResponse {
+  id: string;
+  event_id: string | null;
+  kind: string;
+  reason: unknown;
+  requested_by: unknown;
+  created_at: string | null;
+  orders: unknown;
+  queued: unknown;
+  requested: unknown;
+  errors: unknown;
+  refunds_by_status: unknown;
+  amount_minor_by_status: unknown;
+  finished: unknown;
+  needs_attention: unknown;
+}
+
+export interface GetEventsByIdRefundReportResponse {
+  event_id: string;
+  currency: string;
+  orders_to_refund: number;
+  amount_minor: number;
+  processed: unknown;
+  in_progress: unknown;
+  awaiting_approval: unknown;
+  failed_or_rejected: unknown;
+  not_yet_sent: unknown;
+  errors: unknown;
+  batches: unknown;
+  items: GetEventsByIdRefundReportResponseItemsItem[];
+}
+
+export interface GetEventsByIdRefundReportResponseItemsItem {
+  order_id: string;
+  buyer_name: string;
+  buyer_email: string;
+  amount_minor: number;
+  state: string;
+  refund_id: string | null;
+  refund_status: string | null;
+  error: string | null;
+  failure_reason: string | null;
+}
+
+export interface GetEventsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
 }
 
 export interface GetEventsCatalogueResponse {
@@ -321,6 +717,40 @@ export interface GetEventsCatalogueResponse {
 export interface GetEventsCatalogueResponseDataItem {
   type: unknown;
   description: string | null;
+}
+
+export interface GetEventsResponse {
+  data: unknown[];
+  has_more: boolean;
+}
+
+export interface GetExportsAccountMappingsResponse {
+  defaults: GetExportsAccountMappingsResponseDefaultsItem[];
+  overrides: GetExportsAccountMappingsResponseOverridesItem[];
+  effective: GetExportsAccountMappingsResponseEffectiveItem[];
+  unmapped_code: unknown;
+  note: string;
+}
+
+export interface GetExportsAccountMappingsResponseDefaultsItem {
+  ledger_account: unknown;
+  code: string;
+  name: string;
+}
+
+export interface GetExportsAccountMappingsResponseEffectiveItem {
+  ledger_account: unknown;
+  code: string;
+  name: string;
+  mapped: unknown;
+}
+
+export interface GetExportsAccountMappingsResponseOverridesItem {
+  id: number;
+  ledger_account: string;
+  code: string;
+  name: string;
+  updated_by: string;
 }
 
 export interface GetFeeChecksFindingsResponse {
@@ -457,6 +887,22 @@ export interface GetInstallmentPlansByIdResponse {
   settled_minor: number;
   remaining_minor: number;
   invoices: unknown[];
+}
+
+export interface GetInstrumentChecksResponse {
+  data: GetInstrumentChecksResponseDataItem[];
+}
+
+export interface GetInstrumentChecksResponseDataItem {
+  attempt_id: string;
+  intent_id: string;
+  link_id: string | null;
+  result: string;
+  payer_bank: string | null;
+  payer_vpa_handle: string | null;
+  refund_id: string | null;
+  detail: string;
+  checked_at: unknown;
 }
 
 export interface GetInvoicesByIdEinvoiceResponse {
@@ -713,7 +1159,98 @@ export interface GetPaymentIntentsResponse {
   has_more: boolean;
 }
 
+export interface GetPaymentLinksAnalyticsResponse {
+  from: unknown;
+  to: unknown;
+  totals: unknown;
+  daily: unknown;
+  funnel: unknown;
+  notes: unknown;
+}
+
+export interface GetPaymentLinksByIdAnalyticsResponse {
+  from: unknown;
+  to: unknown;
+  totals: unknown;
+  daily: unknown;
+  funnel: unknown;
+  notes: unknown;
+}
+
+export interface GetPaymentLinksByIdLifecycleResponse {
+  id: string;
+  status: string;
+  recorded_status: string | null;
+  payable: unknown;
+  paid_minor: number;
+  payments: unknown;
+  checkouts_started: unknown;
+  allowed_next: unknown;
+  history: GetPaymentLinksByIdLifecycleResponseHistoryItem[];
+}
+
+export interface GetPaymentLinksByIdLifecycleResponseHistoryItem {
+  from: string | null;
+  to: string;
+  reason: string;
+  at: string;
+}
+
+export interface GetPaymentLinksByIdShareResponse {
+  id: string;
+  url: unknown;
+  text: unknown;
+  sms_text: unknown;
+  email_subject: unknown;
+  qr_path: string;
+  can_email: unknown;
+  can_sms: unknown;
+  sms_mode: unknown;
+}
+
+export interface GetPaymentLinksLifecycleResponse {
+  data: unknown[];
+  precedence: unknown;
+  note: string;
+}
+
 export interface GetPaymentLinksResponse {
+  data: GetPaymentLinksResponseDataItem[];
+}
+
+export interface GetPaymentLinksResponseDataItem {
+  id: string;
+  status: string;
+  lifecycle_status: string;
+  payable: boolean;
+  paid_minor: number;
+  amount_mode: string;
+}
+
+export interface GetPayoutBatchesResponse {
+  data: unknown;
+}
+
+export interface GetPayoutLinksByIdResponse {
+  id: string;
+  amount_minor: number;
+  currency: string;
+  purpose: unknown;
+  external_ref: string | null;
+  status: string;
+  expires_at: string | null;
+  failed_attempts: unknown;
+  payout_id: string | null;
+  payout_status: unknown;
+  created_by: unknown;
+  created_at: string | null;
+}
+
+export interface GetPayoutLinksResponse {
+  data: unknown;
+}
+
+export interface GetPayoutSchedulesResponse {
   data: unknown[];
 }
 
@@ -831,6 +1368,67 @@ export interface GetProviderAccountsResponse {
   data: unknown;
 }
 
+export interface GetPublicEventsByTenantIdByEventIdResponse {
+  id: string;
+  merchant: unknown;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  on_sale: unknown;
+  hold_minutes: unknown;
+  tiers: unknown[];
+  form_fields: GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem[];
+}
+
+export interface GetPublicEventsByTenantIdByEventIdResponseFormFieldsItem {
+  key: string;
+  label: unknown;
+  kind: string;
+  required: unknown;
+  options: unknown;
+  min_len: unknown;
+  max_len: unknown;
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponse {
+  order_id: string | null;
+  status: string;
+  merchant: unknown;
+  event: unknown;
+  buyer: unknown;
+  quantity: number;
+  subtotal_minor: number;
+  discount_minor: number;
+  total_minor: number;
+  currency: string;
+  intent_id: string | null;
+  hold_expires_at: string | null;
+  paid_at: string | null;
+  lines: GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem[];
+  tickets: GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem[];
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponseLinesItem {
+  tier: string;
+  quantity: number;
+  unit_price_minor: number;
+}
+
+export interface GetPublicEventsByTenantIdOrdersByOrderIdResponseTicketsItem {
+  id: string;
+  code: string;
+  status: string;
+  tier: string;
+  checked_in_at: string | null;
+  qr_payload: unknown;
+  qr_path: string;
+}
+
 export interface GetReconAgeingResponse {
   bucket_days: unknown;
   open: unknown;
@@ -875,6 +1473,72 @@ export interface GetRefundsResponse {
   has_more: boolean;
 }
 
+export interface GetRiskDecisionsResponse {
+  data: GetRiskDecisionsResponseDataItem[];
+}
+
+export interface GetRiskDecisionsResponseDataItem {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  action: string;
+  score: number | null;
+  fired: unknown;
+  created_at: unknown;
+}
+
+export interface GetRiskListsResponse {
+  data: GetRiskListsResponseDataItem[];
+}
+
+export interface GetRiskListsResponseDataItem {
+  id: string;
+  list: string;
+  dimension: string;
+  label: string;
+  created_by: string;
+  expires_at: unknown;
+  created_at: unknown;
+}
+
+export interface GetRiskPinTiersResponse {
+  data: GetRiskPinTiersResponseDataItem[];
+}
+
+export interface GetRiskPinTiersResponseDataItem {
+  pin_prefix: string;
+  tier: string;
+}
+
+export interface GetRiskReviewQueueResponse {
+  data: GetRiskReviewQueueResponseDataItem[];
+}
+
+export interface GetRiskReviewQueueResponseDataItem {
+  case_id: string;
+  kind: string;
+  status: string;
+  subject_type: string;
+  subject_id: string;
+  explanation: string;
+  assignee: string | null;
+  created_at: unknown;
+}
+
+export interface GetRiskRulesResponse {
+  data: GetRiskRulesResponseDataItem[];
+}
+
+export interface GetRiskRulesResponseDataItem {
+  id: string;
+  name: string;
+  kind: string;
+  params: unknown;
+  action: string;
+  enabled: boolean;
+  created_at: unknown;
+}
+
 export interface GetRoutingAlertsByIdResponse {
   alert: unknown;
   case: unknown;
@@ -883,6 +1547,11 @@ export interface GetRoutingAlertsByIdResponse {
 export interface GetRoutingAlertsResponse {
   open: number;
   data: unknown[];
+}
+
+export interface GetRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
 }
 
 export interface GetRoutingExperimentsByIdResponse {
@@ -902,6 +1571,7 @@ export interface GetRoutingExperimentsByIdResponse {
   left_out_fell_back_to_control: number;
   verdict: unknown;
   would_auto_stop: unknown;
+  automation_paused: unknown;
 }
 
 export interface GetRoutingExperimentsResponse {
@@ -910,6 +1580,7 @@ export interface GetRoutingExperimentsResponse {
 
 export interface GetRoutingHealthResponse {
   config: unknown;
+  automation_paused: unknown;
   routing_health_rule: unknown;
   providers: unknown;
   recent_changes: unknown[];
@@ -931,6 +1602,63 @@ export interface GetRoutingRuleSetsResponse {
   activated_by: unknown;
   source: string;
   data: unknown[];
+}
+
+export interface GetRoutingScorecardResponse {
+  window_days: unknown;
+  method: unknown;
+  success_rate_rule: string;
+  median_rule: string;
+  scorecard: unknown;
+}
+
+export interface GetRoutingShadowReportResponse {
+  window_days: unknown;
+  method: unknown;
+  shadow: unknown;
+  decisions: number;
+  agreed: number;
+  differed: unknown;
+  no_route_in_shadow: number;
+  agreement_rate_bps: unknown;
+  differences: GetRoutingShadowReportResponseDifferencesItem[];
+  outcome_by_provider: GetRoutingShadowReportResponseOutcomeByProviderItem[];
+  recent_differences: GetRoutingShadowReportResponseRecentDifferencesItem[];
+  limits: string;
+}
+
+export interface GetRoutingShadowReportResponseDifferencesItem {
+  method: string;
+  applied_provider: string;
+  shadow_provider: string | null;
+  decisions: number;
+  fee_comparable: number;
+  estimated_fee_difference_minor: number;
+}
+
+export interface GetRoutingShadowReportResponseOutcomeByProviderItem {
+  provider: string;
+  method: string;
+  payments_sent: number;
+  succeeded: number;
+  provider_failures: number;
+  payer_declines: number;
+  unresolved: number;
+  of_which_shadow_would_have_chosen_another: number;
+}
+
+export interface GetRoutingShadowReportResponseRecentDifferencesItem {
+  attempt_id: string;
+  method: string;
+  amount_minor: number;
+  applied_provider: string;
+  shadow_provider: string | null;
+  applied_explanation: string | null;
+  shadow_explanation: string | null;
+  applied_fee_minor: number | null;
+  shadow_fee_minor: number | null;
+  attempt_status: string;
+  at: string;
 }
 
 export interface GetSavedViewsResponse {
@@ -1020,6 +1748,21 @@ export interface GetSettlementsResponse {
   data: unknown[];
 }
 
+export interface GetStorefrontItemsResponse {
+  data: unknown;
+}
+
+export interface GetStorefrontOrdersByIdResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
+export interface GetStorefrontOrdersResponse {
+  data: unknown;
+}
+
 export interface GetSubscriptionsResponse {
   data: GetSubscriptionsResponseDataItem[];
 }
@@ -1054,8 +1797,43 @@ export interface GetVendorsByIdDetailsResponse {
   details: unknown;
 }
 
+export interface GetVendorsByIdDocumentsResponse {
+  data: unknown[];
+}
+
 export interface GetVendorsResponse {
   data: unknown[];
+}
+
+export interface GetVerificationsByIdResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  created_at: string | null;
+}
+
+export interface GetVerificationsResponse {
+  data: GetVerificationsResponseDataItem[];
+}
+
+export interface GetVerificationsResponseDataItem {
+  id: string;
+  kind: string;
+  subject: string;
+  ifsc: string | null;
+  outcome: string;
+  name_match: string;
+  provider: string;
+  simulated: boolean;
+  created_by: string;
+  created_at: unknown;
 }
 
 export interface IntentRow {
@@ -1141,6 +1919,20 @@ export interface PatchCustomersByIdResponse {
   pincode: string | null;
 }
 
+export interface PatchDonationsCampaignsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  goal_minor: number;
+  receipt_fields: unknown;
+  recurring_enabled: unknown;
+  status: string;
+  created_at: string | null;
+}
+
 export interface PatchPlansByIdResponse {
   id: string;
   name: string;
@@ -1150,6 +1942,17 @@ export interface PatchPlansByIdResponse {
   included_units: unknown;
   included_per_seat: unknown;
   subscribers_kept_on_old_price: unknown;
+}
+
+export interface PatchStorefrontItemsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  price_minor: number;
+  image_id: string | null;
+  stock: unknown;
+  active: unknown;
+  position: unknown;
 }
 
 export interface PostApiKeysByIdRevokeResponse {
@@ -1250,8 +2053,28 @@ export interface PostCardTokensResponse {
   exp_year: unknown;
 }
 
+export interface PostCashAlertsScanResponse {
+  pending_cases_opened: unknown;
+  late_cases_opened: unknown;
+  case_kinds: unknown;
+}
+
 export interface PostCashEntriesResponse {
   id: string;
+}
+
+export interface PostCashLagRulesResponse {
+  id: string;
+  provider: string;
+  method: unknown;
+  expected_lag_days: number;
+  note: string | null;
+}
+
+export interface PostCashSettingsResponse {
+  min_samples: unknown;
+  alert_grace_days: unknown;
+  refund_sla_hours: unknown;
 }
 
 export interface PostCheckoutByTenantIdByIntentIdAttemptsResponse {
@@ -1295,6 +2118,15 @@ export interface PostCheckoutLinksByTenantIdByTokenStartResponse {
   path: string;
 }
 
+export interface PostCheckoutPayoutLinksByTenantIdByTokenClaimResponse {
+  status: string;
+  payout_status: unknown;
+  amount_minor: number;
+  currency: string;
+  simulated: unknown;
+  message: string | null;
+}
+
 export interface PostClosingsByIdSignoffResponse {
   id: string;
   status: string;
@@ -1329,6 +2161,54 @@ export interface PostCollectionsDunningRunResponse {
 export interface PostCollectionsPromisesByIdCancelResponse {
   id: string;
   status: string;
+}
+
+export interface PostCommissionRulesByIdRetireResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
+}
+
+export interface PostCommissionRulesPreviewResponse {
+  ok: boolean;
+  problems: unknown;
+  on: unknown;
+  currency: string;
+  amount_minor: number;
+  parties: unknown;
+  vendors_total_minor: number;
+  commission_total_minor: number;
+  refund_minor: number;
+  merchant_keeps_after_refund_minor: number;
+  rounding: string;
+}
+
+export interface PostCommissionRulesResponse {
+  id: string;
+  name: string;
+  vendor_id: string | null;
+  payment_link_id: string | null;
+  event_ref: unknown;
+  currency: string;
+  basis_points: unknown;
+  flat_minor: number;
+  min_commission_minor: number;
+  cap_minor: number;
+  effective_from: unknown;
+  effective_to: unknown;
+  status: string;
+  scope: unknown;
 }
 
 export interface PostConsoleAuthenticateResponse {
@@ -1441,6 +2321,204 @@ export interface PostDisputesResponse {
   id: string;
   status: string;
   amount_minor: number;
+}
+
+export interface PostDonateByTenantIdByCampaignIdStartResponse {
+  donation_id: string | null;
+  intent_id: string | null;
+  client_secret: string;
+  amount_minor: number;
+  currency: string;
+  path: string;
+}
+
+export interface PostDonationsCampaignsByIdPledgesResponse {
+  id: string;
+  customer_id: string | null;
+  mandate: unknown;
+}
+
+export interface PostDonationsCampaignsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  suggested_minor: number;
+  min_minor: number;
+  max_minor: number;
+  goal_minor: number;
+  receipt_fields: unknown;
+  recurring_enabled: unknown;
+  status: string;
+  created_at: string | null;
+}
+
+export interface PostDuesByKindAssignResponse {
+  created: unknown;
+  already_assigned: unknown;
+  skipped_no_payer: unknown;
+  skipped_no_fee_heads: unknown;
+}
+
+export interface PostDuesByKindGroupsResponse {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export interface PostDuesByKindHeadsResponse {
+  id: string;
+  group_id: string;
+  name: string;
+  amount_minor: number;
+}
+
+export interface PostDuesByKindMembersImportResponse {
+  saved: boolean;
+  rows: number;
+  problems: unknown;
+}
+
+export interface PostDuesByKindMembersResponse {
+  id: string;
+  created: unknown;
+}
+
+export interface PostDuesByKindRemindersResponse {
+  queued: unknown;
+  skipped_no_email: unknown;
+  skipped_already_sent_today: unknown;
+}
+
+export interface PostEventsByIdCancelResponse {
+  event_id: string;
+  status: string;
+  already_cancelled: boolean;
+  refund_batch: unknown;
+}
+
+export interface PostEventsByIdCheckinResponse {
+  result: unknown;
+  valid: boolean;
+  code: string;
+  manual_entry: unknown;
+  ticket: unknown;
+  checked_in_at: string | null;
+  checked_in_by: unknown;
+  message: string | null;
+}
+
+export interface PostEventsByIdCheckinSyncResponse {
+  counts: unknown;
+  results: unknown;
+}
+
+export interface PostEventsByIdOrdersByOrderIdCancelResponse {
+  order: unknown;
+  refund_batch: unknown;
+}
+
+export interface PostEventsByIdRefundBatchesByBatchIdProcessResponse {
+  id: string;
+  event_id: string | null;
+  kind: string;
+  reason: unknown;
+  requested_by: unknown;
+  created_at: string | null;
+  orders: unknown;
+  queued: unknown;
+  requested: unknown;
+  errors: unknown;
+  refunds_by_status: unknown;
+  amount_minor_by_status: unknown;
+  finished: unknown;
+  needs_attention: unknown;
+}
+
+export interface PostEventsByIdStatusResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsByIdTiersByTierIdArchiveResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsByIdTiersResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PostEventsResponse {
+  vendor_id: string | null;
+  share_bp: unknown;
+}
+
+export interface PostExportsAccountMappingsResponse {
+  id: number;
+  ledger_account: string;
+  code: string;
+  name: string;
 }
 
 export interface PostFeeChecksRunResponse {
@@ -1892,14 +2970,32 @@ export interface PostPaymentIntentsResponse {
   client_secret: string;
 }
 
+export interface PostPaymentLinksBulkResponse {
+  import_id: string | null;
+  repeat: boolean;
+  dry_run: boolean;
+  rows: number;
+  created: unknown;
+  existing: unknown;
+  links: unknown;
+  export_path: string;
+}
+
 export interface PostPaymentLinksByIdCancelResponse {
   id: string;
   status: string;
+  lifecycle_status: string;
 }
 
 export interface PostPaymentLinksByIdSendResponse {
   id: string;
   queued: boolean;
+}
+
+export interface PostPaymentLinksByIdSendSmsResponse {
+  id: string;
+  queued: boolean;
+  mode: unknown;
 }
 
 export interface PostPaymentLinksResponse {
@@ -1909,6 +3005,62 @@ export interface PostPaymentLinksResponse {
   path: string;
   max_uses: number | null;
   expires_at: string | null;
+  existing: unknown;
+  amount_mode: string;
+  lifecycle_status: string;
+}
+
+export interface PostPayoutBatchesByIdApproveResponse {
+  error: unknown;
+}
+
+export interface PostPayoutBatchesByIdCancelResponse {
+  batch_id: string | null;
+}
+
+export interface PostPayoutBatchesByIdRejectResponse {
+  batch_id: string | null;
+}
+
+export interface PostPayoutBatchesByIdResolveResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutBatchesByIdRetryResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutBatchesByIdSendResponse {
+  action: unknown;
+  attempted: number;
+  outcomes: unknown;
+}
+
+export interface PostPayoutLinksByIdCancelResponse {
+  id: string;
+  status: string;
+}
+
+export interface PostPayoutLinksResponse {
+  id: string;
+  existing: boolean;
+  token: unknown;
+  expires_at: string | null;
+  note: string;
+}
+
+export interface PostPayoutSchedulesRunResponse {
+  date: unknown;
+  due: number;
+  batch_id: string | null;
+  proposed_items: unknown;
+  total_minor: number;
+  auto_approved: unknown;
+  schedules: unknown;
 }
 
 export interface PostPayoutsBulkResponse {
@@ -2059,6 +3211,11 @@ export interface PostProviderAccountsResponse {
   webhook_url: string;
 }
 
+export interface PostPublicEventsByTenantIdOrdersByOrderIdCancelResponse {
+  order_id: string | null;
+  status: string;
+}
+
 export interface PostReconCasesByIdAssignResponse {
   id: string;
   status: string;
@@ -2144,13 +3301,59 @@ export interface PostRefundsByIdRetryResponse {
   updated_at: string;
 }
 
+export interface PostRiskEvaluateResponse {
+  dry_run: boolean;
+  decision: unknown;
+}
+
+export interface PostRiskListsResponse {
+  id: string;
+  list: string;
+  dimension: unknown;
+  label: boolean;
+  expires_at: unknown;
+}
+
+export interface PostRiskOrderScoreResponse {
+  score: unknown;
+  band: unknown;
+  action: unknown;
+  advice: unknown;
+  contributions: unknown;
+  review_at: string | null;
+  decline_at: string | null;
+  formula: unknown;
+  pin_tier: string | null;
+  case_id: string | null;
+}
+
+export interface PostRiskRulesResponse {
+  id: string;
+  name: string;
+  kind: string;
+  params: unknown;
+  action: unknown;
+  enabled: boolean;
+}
+
 export interface PostRoutingAlertsByIdAckResponse {
   id: string;
   acknowledged_by: unknown;
 }
 
+export interface PostRoutingAutomationPauseResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
+export interface PostRoutingAutomationResumeResponse {
+  settings: unknown;
+  effective: unknown;
+}
+
 export interface PostRoutingDryRunResponse {
   dry_run: boolean;
+  automation_paused: unknown;
   provider: string;
   explanation: unknown;
   would_probe: unknown;
@@ -2180,6 +3383,7 @@ export interface PostRoutingExperimentsByIdEvaluateResponse {
   left_out_fell_back_to_control: number;
   verdict: unknown;
   would_auto_stop: unknown;
+  automation_paused: unknown;
 }
 
 export interface PostRoutingExperimentsByIdStopResponse {
@@ -2199,6 +3403,7 @@ export interface PostRoutingExperimentsByIdStopResponse {
   left_out_fell_back_to_control: number;
   verdict: unknown;
   would_auto_stop: unknown;
+  automation_paused: unknown;
 }
 
 export interface PostRoutingExperimentsResponse {
@@ -2218,6 +3423,7 @@ export interface PostRoutingExperimentsResponse {
   left_out_fell_back_to_control: number;
   verdict: unknown;
   would_auto_stop: unknown;
+  automation_paused: unknown;
 }
 
 export interface PostRoutingRuleSetsByVersionActivateResponse {
@@ -2369,6 +3575,49 @@ export interface PostSimPayResponse {
   status: string;
 }
 
+export interface PostStoreBySlugOrdersResponse {
+  order_id: string | null;
+  code: string;
+  intent_id: string | null;
+  client_secret: string;
+  amount_minor: number;
+  currency: string;
+  tenant_id: string | null;
+  path: string;
+  hold_minutes: unknown;
+}
+
+export interface PostStorefrontImagesResponse {
+  id: string;
+  content_type: unknown;
+  size_bytes: number;
+}
+
+export interface PostStorefrontItemsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  price_minor: number;
+  image_id: string | null;
+  stock: unknown;
+  active: unknown;
+  position: unknown;
+}
+
+export interface PostStorefrontOrdersByIdCancelResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
+export interface PostStorefrontOrdersByIdFulfillResponse {
+  item_id: string | null;
+  name: string;
+  unit_minor: number;
+  quantity: number;
+}
+
 export interface PostSubscriptionsByIdCancelResponse {
   id: string;
   status: string;
@@ -2434,9 +3683,64 @@ export interface PostUsersResponse {
   role: string;
 }
 
+export interface PostVendorsByIdActivateResponse {
+  from: unknown;
+  reason: unknown;
+}
+
+export interface PostVendorsByIdDocumentsResponse {
+  id: string;
+  vendor_id: string;
+  kind: string;
+  filename: unknown;
+  content_type: unknown;
+  size_bytes: number;
+  sha256: unknown;
+}
+
+export interface PostVendorsByIdReactivateResponse {
+  from: unknown;
+  reason: unknown;
+}
+
+export interface PostVendorsByIdSuspendResponse {
+  from: unknown;
+  reason: unknown;
+}
+
 export interface PostVendorsResponse {
   id: string;
   name: string;
+}
+
+export interface PostVerifyBankAccountResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  reused: unknown;
+  note: string | null;
+}
+
+export interface PostVerifyVpaResponse {
+  id: string;
+  kind: string;
+  subject: unknown;
+  ifsc: unknown;
+  outcome: string;
+  name_match: unknown;
+  safe_to_pay: unknown;
+  provider: string;
+  simulated: unknown;
+  detail: unknown;
+  reused: unknown;
+  note: string | null;
 }
 
 export interface PostWebhooksByProviderByTenantIdResponse {
@@ -2448,12 +3752,102 @@ export interface PutAcquireKycResponse {
   acquire_kyc_status: string;
 }
 
+export interface PutDuesByKindSettingsResponse {
+  kind: string;
+  receipt_note: unknown;
+}
+
+export interface PutEventsByIdFormFieldsResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PutEventsByIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
+export interface PutEventsByIdTiersByTierIdResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  mode: unknown;
+  venue: unknown;
+  online_url: unknown;
+  starts_at: string | null;
+  ends_at: string | null;
+  status: string;
+  currency: string;
+  capacity: unknown;
+  hold_minutes: unknown;
+  seats_held: unknown;
+  seats_sold: unknown;
+  seats_available: unknown;
+  splits: unknown;
+  created_at: string | null;
+  cancelled_at: string | null;
+  tiers: unknown;
+  form_fields: unknown;
+  tickets: unknown;
+  orders: unknown;
+}
+
 export interface PutMoneyModeResponse {
   money_mode: unknown;
 }
 
 export interface PutOnboardingResponse {
   status: string;
+}
+
+export interface PutPaymentIntentsByIdInstrumentRulesResponse {
+  id: string;
+  instrument_rules: unknown;
+}
+
+export interface PutPaymentLinksByIdInstrumentRulesResponse {
+  id: string;
+  instrument_rules: unknown;
 }
 
 export interface PutPlatformMeResponse {
@@ -2479,6 +3873,16 @@ export interface PutProviderAccountsByProviderResponse {
   provider: string;
   enabled: boolean;
   replaced: unknown;
+}
+
+export interface PutRiskPinTiersResponse {
+  pin_prefix: unknown;
+  tier: string;
+}
+
+export interface PutRoutingAutomationResponse {
+  settings: unknown;
+  effective: unknown;
 }
 
 export interface RefundRow {

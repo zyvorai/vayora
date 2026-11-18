@@ -171,7 +171,8 @@ CREATE INDEX IF NOT EXISTS routing_experiment_assignments_exp_idx ON routing_exp
 -- ---------------------------------------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS provider_alert_config (
     tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    -- opt-in per business: without a row, or with enabled false, no alert is raised
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
     min_samples INT NOT NULL DEFAULT 20 CHECK (min_samples BETWEEN 5 AND 10000),
     open_failure_pct INT NOT NULL DEFAULT 50 CHECK (open_failure_pct BETWEEN 1 AND 100),
     resolve_failure_pct INT NOT NULL DEFAULT 20 CHECK (resolve_failure_pct BETWEEN 0 AND 99),

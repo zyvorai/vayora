@@ -73,7 +73,7 @@ async fn alerts(t: &T, tn: &Tenant, status: &str) -> Vec<Value> {
 }
 
 fn fast() -> Value {
-    json!({ "min_samples": 5, "hold_seconds": 0, "flap_window_seconds": 900, "email_to": "ops@example.com" })
+    json!({ "enabled": true, "min_samples": 5, "hold_seconds": 0, "flap_window_seconds": 900, "email_to": "ops@example.com" })
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -238,7 +238,12 @@ async fn a_failing_bank_or_upi_handle_alerts_on_its_own_and_payer_declines_do_no
 ) {
     let t = setup(pool).await;
     let a = &t.a;
-    settings(&t, a, json!({ "min_samples": 5, "hold_seconds": 0 })).await;
+    settings(
+        &t,
+        a,
+        json!({ "enabled": true, "min_samples": 5, "hold_seconds": 0 }),
+    )
+    .await;
     // UPI: one handle is failing, another is fine, and overall the provider is mostly fine
     seed(
         &t,
@@ -491,7 +496,12 @@ async fn flap_control_reopens_quietly_and_does_not_count_old_failures_twice(pool
 async fn an_alert_with_no_traffic_for_a_day_resolves_and_a_hold_time_is_respected(pool: PgPool) {
     let t = setup(pool).await;
     let a = &t.a;
-    settings(&t, a, json!({ "min_samples": 5, "hold_seconds": 3600 })).await;
+    settings(
+        &t,
+        a,
+        json!({ "enabled": true, "min_samples": 5, "hold_seconds": 3600 }),
+    )
+    .await;
     seed(&t, a, "cashfree", "card", json!({}), FAIL, 10, 1).await;
     assert_eq!(evaluate(&t, a).await["opened"], 1);
     // good numbers arrive but the alert has not been open for its hold time
@@ -578,7 +588,12 @@ async fn alerts_belong_to_one_business_and_need_the_routing_scope(pool: PgPool) 
         Value::Null
     );
     // B has its own outage, with its own (empty) thresholds: one alert there, none for A's email
-    settings(&t, b, json!({ "min_samples": 5, "hold_seconds": 0 })).await;
+    settings(
+        &t,
+        b,
+        json!({ "enabled": true, "min_samples": 5, "hold_seconds": 0 }),
+    )
+    .await;
     seed(&t, b, "cashfree", "upi", json!({}), FAIL, 10, 1).await;
     assert_eq!(evaluate(&t, b).await["opened"], 1);
     assert_eq!(alerts(&t, a, "open").await.len(), 1);

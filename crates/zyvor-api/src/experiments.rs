@@ -269,7 +269,14 @@ fn verdict_json(v: &Verdict) -> Value {
     }
 }
 
-async fn results_body(conn: &mut PgConnection, e: &Exp) -> Result<Value, ApiError> {
+async fn results_body(
+    conn: &mut PgConnection,
+    tenant_id: &str,
+    e: &Exp,
+) -> Result<Value, ApiError> {
+    let paused = crate::routing_auto::load(&mut *conn, tenant_id)
+        .await?
+        .paused;
     let (c, v) = arm_stats(conn, &e.id).await?;
     let verdict = judge(
         &c,
@@ -312,6 +319,7 @@ async fn results_body(conn: &mut PgConnection, e: &Exp) -> Result<Value, ApiErro
         "left_out_fell_back_to_control": fell_back,
         "verdict": verdict_json(&verdict),
         "would_auto_stop": e.status == "running" && matches!(verdict, Verdict::VariantWorse { .. }),
+        "automation_paused": paused,
     }))
 }
 
@@ -374,6 +382,10 @@ pub async fn evaluate_and_apply(
 /// Worker step: check the business's running experiment, if any.
 pub async fn sweep_tenant(pool: &sqlx::PgPool, tenant_id: &str) -> Result<bool, ApiError> {
     let mut tx = tenant::begin(pool, tenant_id).await?;
+    // the routing kill switch: no experiment traffic is split while it is on, so there is nothing new to judge
+    if crate::routing_auto::load(&mut tx, tenant_id).await?.paused {
+        return Ok(false);
+    }
     let Some(r) = running(&mut tx).await? else {
         return Ok(false);
     };
@@ -471,7 +483,7 @@ pub async fn create(
     })?;
     tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "routing_experiment.started", Some(&id), json!({ "control_version": control, "variant_version": b.variant_version, "variant_percent": b.variant_percent, "method": b.method })).await?;
     let e = load(&mut tx, &id, false).await?;
-    let body = results_body(&mut tx, &e).await?;
+    let body = results_body(&mut tx, &auth.tenant_id, &e).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(body)))
 }
@@ -499,7 +511,7 @@ pub async fn results(
     auth.require("routing:read")?;
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let e = load(&mut tx, &id, false).await?;
-    Ok(Json(results_body(&mut tx, &e).await?))
+    Ok(Json(results_body(&mut tx, &auth.tenant_id, &e).await?))
 }
 
 pub async fn stop(
@@ -532,7 +544,7 @@ pub async fn stop(
     .await?;
     tenant::emit(&mut tx, &auth.tenant_id, "routing.experiment_stopped", json!({ "experiment_id": id, "name": e.name, "reason": "stopped by a person", "auto": false })).await?;
     let e = load(&mut tx, &id, false).await?;
-    let body = results_body(&mut tx, &e).await?;
+    let body = results_body(&mut tx, &auth.tenant_id, &e).await?;
     tx.commit().await?;
     Ok(Json(body))
 }
@@ -548,7 +560,7 @@ pub async fn evaluate(
     load(&mut tx, &id, false).await?;
     let stopped = evaluate_and_apply(&mut tx, &auth.tenant_id, &id).await?;
     let e = load(&mut tx, &id, false).await?;
-    let mut body = results_body(&mut tx, &e).await?;
+    let mut body = results_body(&mut tx, &auth.tenant_id, &e).await?;
     body["auto_stopped_now"] = json!(stopped.is_some());
     tx.commit().await?;
     Ok(Json(body))

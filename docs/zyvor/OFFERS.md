@@ -5,10 +5,10 @@ bank or money is involved. An offer here is a discount the **merchant** gives. N
 reports an offer that a bank or a payment provider funds; if a provider ever supplies one, it needs its own field and its
 own evidence. Every offer and every redemption carries `funded_by: merchant`, and the database refuses any other value.
 
-Code: `crates/zyvor-api/src/offers.rs` (engine and API), `crates/zyvor-api/src/instrument.rs` (what the payer used),
+Code: `crates/zyvor-api/src/offers.rs` (engine and API), `crates/zyvor-api/src/instrument_hint.rs` (what the payer used; not `instrument_hint.rs`, which holds the payer-instrument rules),
 hooks in `payments.rs` (`start_attempt`, `apply_provider_state`), `refunds.rs` (`apply_refund_result`) and
 `checkout.rs`. Migration `0086_offers_rules_alerts.sql`. Tests: `crates/zyvor-api/tests/offers.rs` and unit tests in
-`offers.rs` and `instrument.rs`.
+`offers.rs` and `instrument_hint.rs`.
 
 ## What already existed
 
@@ -78,6 +78,17 @@ with each other: at most one per `stack_group` (the best), highest `priority` fi
 left after the one before. The payer gets whichever way gives the larger discount; a tie goes to the single offer. A
 discount never takes the whole price. Offers that were left out say why in the preview (`outranked`, `budget_exhausted`,
 `redemption_limit_reached`, ...).
+
+## Soft retry on another provider
+
+Offers are provider-agnostic, so they survive a soft retry (see ROUTING.md section 6, `softretry.rs`). When the first
+attempt fails definitively its redemption is **released** (the cap is given back), and the retry on another provider
+creates a new attempt that judges the offers again under the same locks, so a capped offer is never counted twice (tested:
+a cap of one, a provider that refuses the request, a retry on the other provider: one use in the end). The stored request
+the retry repeats includes the instrument hint (a BIN of at most 8 digits, never a card number) and the offer codes, so
+the retry is priced on the same facts, and they are cleared with it. **A retry never charges a different amount than the
+attempt it repeats**: if the offers now price it differently (for example the offer was used up in between), no
+automatic retry is made, the skip is recorded, and the payer simply sees the failure and can pay again at the price shown.
 
 ## Refunds
 

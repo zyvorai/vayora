@@ -58,10 +58,35 @@ pub async fn fetch_refund(conn: &mut PgConnection, id: &str) -> Result<RefundRow
 #[derive(Deserialize, Default)]
 pub struct CreateRefund {
     /// Omit to refund whatever is still refundable.
-    amount_minor: Option<i64>,
-    reason: Option<String>,
+    pub(crate) amount_minor: Option<i64>,
+    pub(crate) reason: Option<String>,
     /// The business record behind the refund, e.g. a pharmacy return id.
-    external_ref: Option<String>,
+    pub(crate) external_ref: Option<String>,
+}
+
+/// Count a refund request that was stopped as a duplicate (never blocks the request if the write fails).
+async fn record_block(
+    s: &AppState,
+    tenant_id: &str,
+    intent_id: &str,
+    reason: &str,
+    amount: Option<i64>,
+) {
+    let r = async {
+        let mut tx = tenant::begin(&s.pool, tenant_id).await?;
+        sqlx::query("INSERT INTO refund_blocks (tenant_id, intent_id, reason, amount_minor) VALUES ($1, $2, $3, $4)")
+            .bind(tenant_id)
+            .bind(intent_id)
+            .bind(reason)
+            .bind(amount)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await
+    }
+    .await;
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "could not count a blocked refund");
+    }
 }
 
 pub async fn create_refund(
@@ -95,6 +120,14 @@ pub async fn create_refund(
             body,
             resource_id,
         } => {
+            record_block(
+                &s,
+                &auth.tenant_id,
+                &intent_id,
+                "idempotent_replay",
+                b.amount_minor,
+            )
+            .await;
             let body = match resource_id {
                 Some(id) => serde_json::to_value(fetch_refund(&mut tx, &id).await?).unwrap(),
                 None => body.unwrap_or(Value::Null),
@@ -104,60 +137,40 @@ pub async fn create_refund(
         Begin::Proceed(k) => k,
     };
 
-    // The attempt row lock serialises concurrent refunds of the same payment.
-    let (attempt_id, total, refunded, reserved, ccy): (String, i64, i64, i64, String) = sqlx::query_as(
-        "SELECT id, amount_minor, refunded_minor, reserved_refund_minor, currency FROM payment_attempts WHERE intent_id = $1 AND status = 'captured' FOR UPDATE",
+    let reserved = match reserve_refund(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        &intent_id,
+        b.amount_minor,
+        b.reason.as_deref(),
+        b.external_ref.as_deref(),
     )
-    .bind(&intent_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::conflict("payment_not_captured", "only captured payments can be refunded"))?;
-    let remaining = total - refunded - reserved;
-    let amount = b.amount_minor.unwrap_or(remaining);
-    if amount <= 0 || amount > remaining {
-        return Err(ApiError::invalid(
-            "refund_exceeds_refundable",
-            format!(
-                "refundable amount remaining is {remaining} minor units (including refunds already in progress)"
-            ),
-        ));
-    }
-    let threshold: i64 = sqlx::query_scalar(
-        "SELECT refund_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1",
-    )
-    .bind(&auth.tenant_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .unwrap_or(5_000_000);
-    let needs_approval = amount > threshold;
-
-    sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor + $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *tx).await?;
-    let refund_id = new_id("rf");
-    sqlx::query(
-        "INSERT INTO refunds (id, tenant_id, attempt_id, intent_id, amount_minor, currency, status, reason, external_ref, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-    )
-    .bind(&refund_id)
-    .bind(&auth.tenant_id)
-    .bind(&attempt_id)
-    .bind(&intent_id)
-    .bind(amount)
-    .bind(&ccy)
-    .bind(if needs_approval { "pending_approval" } else { "processing" })
-    .bind(&b.reason)
-    .bind(&b.external_ref)
-    .bind(&auth.actor)
-    .execute(&mut *tx)
-    .await?;
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            if e.code == "refund_exceeds_refundable" {
+                // the transaction is about to roll back, so the count is written on its own
+                record_block(
+                    &s,
+                    &auth.tenant_id,
+                    &intent_id,
+                    "exceeds_refundable",
+                    b.amount_minor,
+                )
+                .await;
+            }
+            return Err(e);
+        }
+    };
+    let Reserved {
+        refund_id,
+        needs_approval,
+        ..
+    } = reserved;
     key.set_resource(&mut tx, &refund_id).await?;
-    tenant::audit(&mut tx, &auth.tenant_id, &auth.actor, "refund.requested", Some(&refund_id), json!({ "amount_minor": amount, "needs_approval": needs_approval, "external_ref": b.external_ref })).await?;
     if needs_approval {
-        tenant::emit(
-            &mut tx,
-            &auth.tenant_id,
-            "refund.approval_required",
-            json!({ "refund_id": refund_id, "amount_minor": amount }),
-        )
-        .await?;
         let row = fetch_refund(&mut tx, &refund_id).await?;
         let res = key.finish(&mut tx, StatusCode::CREATED, &row).await?;
         tx.commit().await?;
@@ -171,6 +184,88 @@ pub async fn create_refund(
     let res = key.finish(&mut tx, StatusCode::CREATED, &row).await?;
     tx.commit().await?;
     Ok(res)
+}
+
+/// A refund that has been recorded and its amount reserved against the payment.
+pub struct Reserved {
+    pub refund_id: String,
+    pub amount_minor: i64,
+    /// Above the tenant's approval threshold: the refund waits as `pending_approval` for a second person.
+    pub needs_approval: bool,
+}
+
+/// Reserve a refund against a captured payment inside the caller's transaction: lock the attempt, check the
+/// over-refund limit (including refunds already in progress), apply the approval threshold and record the refund as
+/// `processing` or `pending_approval`. The caller commits, then calls `run_provider_refund` when it is `processing`.
+/// Shared by the refund endpoint and by bulk refunds (event cancellation), so both obey the same protections.
+pub async fn reserve_refund(
+    tx: &mut PgConnection,
+    tenant_id: &str,
+    actor: &str,
+    intent_id: &str,
+    amount_minor: Option<i64>,
+    reason: Option<&str>,
+    external_ref: Option<&str>,
+) -> Result<Reserved, ApiError> {
+    // The attempt row lock serialises concurrent refunds of the same payment.
+    let (attempt_id, total, refunded, reserved, ccy): (String, i64, i64, i64, String) = sqlx::query_as(
+        "SELECT id, amount_minor, refunded_minor, reserved_refund_minor, currency FROM payment_attempts WHERE intent_id = $1 AND status = 'captured' FOR UPDATE",
+    )
+    .bind(intent_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::conflict("payment_not_captured", "only captured payments can be refunded"))?;
+    let remaining = total - refunded - reserved;
+    let amount = amount_minor.unwrap_or(remaining);
+    if amount <= 0 || amount > remaining {
+        return Err(ApiError::invalid(
+            "refund_exceeds_refundable",
+            format!(
+                "refundable amount remaining is {remaining} minor units (including refunds already in progress)"
+            ),
+        ));
+    }
+    let threshold: i64 = sqlx::query_scalar(
+        "SELECT refund_approval_threshold_minor FROM tenant_settings WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(5_000_000);
+    let needs_approval = amount > threshold;
+
+    sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor + $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *tx).await?;
+    let refund_id = new_id("rf");
+    sqlx::query(
+        "INSERT INTO refunds (id, tenant_id, attempt_id, intent_id, amount_minor, currency, status, reason, external_ref, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+    )
+    .bind(&refund_id)
+    .bind(tenant_id)
+    .bind(&attempt_id)
+    .bind(intent_id)
+    .bind(amount)
+    .bind(&ccy)
+    .bind(if needs_approval { "pending_approval" } else { "processing" })
+    .bind(reason)
+    .bind(external_ref)
+    .bind(actor)
+    .execute(&mut *tx)
+    .await?;
+    tenant::audit(&mut *tx, tenant_id, actor, "refund.requested", Some(&refund_id), json!({ "amount_minor": amount, "needs_approval": needs_approval, "external_ref": external_ref })).await?;
+    if needs_approval {
+        tenant::emit(
+            &mut *tx,
+            tenant_id,
+            "refund.approval_required",
+            json!({ "refund_id": refund_id, "amount_minor": amount }),
+        )
+        .await?;
+    }
+    Ok(Reserved {
+        refund_id,
+        amount_minor: amount,
+        needs_approval,
+    })
 }
 
 /// Send a `processing` refund to the provider and record the result, including "unknown".
@@ -322,6 +417,7 @@ pub async fn apply_refund_result(
             refresh_invoice_status(conn, &inv).await?;
         }
         tenant::emit(conn, tenant_id, "refund.processed", json!({ "refund_id": refund_id, "intent_id": intent_id, "attempt_id": attempt_id, "amount_minor": amount })).await?;
+        crate::ticketing::on_refund_processed(conn, tenant_id, &intent_id).await?;
         queue_refund_receipt(conn, tenant_id, refund_id, &intent_id, amount, currency).await?;
     } else {
         sqlx::query("UPDATE payment_attempts SET reserved_refund_minor = reserved_refund_minor - $2, updated_at = now() WHERE id = $1").bind(&attempt_id).bind(amount).execute(&mut *conn).await?;

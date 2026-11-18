@@ -114,6 +114,51 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 }
             }
         }
+        // 3b3. balance reminders on payment links that are being paid in parts, and the SMS hook
+        if let Some(base) = &s.checkout_public_url
+            && !crate::platform::live_frozen(&s.pool, &tid).await?
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            let today = crate::clock::today(&mut tx).await?;
+            match crate::payment_links::remind_balances(&mut tx, &tid, base, today, &s.sms).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "payment link balance reminders failed")
+                }
+            }
+        }
+        if let Err(e) = crate::sms::drain_tenant(s, client, &tid).await {
+            tracing::warn!(tenant = %tid, error = %e, "SMS delivery pass failed");
+        }
+        if let Err(e) = crate::link_stats::purge_tenant(&s.pool, &tid).await {
+            tracing::warn!(tenant = %tid, error = %e, "link visitor hash cleanup failed");
+        }
+        // 3b3. ticketing: release unpaid orders whose hold ran out, send queued bulk refunds, email tickets
+        if let Err(e) = crate::ticketing::run_worker(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "ticketing jobs failed");
+        }
+        // 3b4. payout schedules that are due become proposed batches (never paid without approval unless the tenant's
+        // policy says so), and payouts whose rail outcome is unknown are asked about. Not for a business whose live
+        // mode was taken away.
+        if !crate::platform::live_frozen(&s.pool, &tid).await? {
+            if let Err(e) = crate::payout_schedules::run_due(s, &tid).await {
+                tracing::warn!(tenant = %tid, error = ?e.message, "payout schedules failed");
+            }
+            if let Err(e) = crate::payout_batches::sweep(s, &tid).await {
+                tracing::warn!(tenant = %tid, error = ?e.message, "payout batch sweep failed");
+            }
+        }
+        // 3b5. payment link lifecycle changes, payer-instrument rules (refund anything from a disallowed instrument),
+        // and the risk engine's signal retention
+        if let Err(e) = crate::link_lifecycle::sweep_tenant(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "payment link lifecycle sweep failed");
+        }
+        if let Err(e) = crate::instrument::sweep_tenant(s, &tid, &env).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "payer instrument sweep failed");
+        }
+        if let Err(e) = crate::risk_engine::sweep_tenant(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "risk signal cleanup failed");
+        }
         // 3c. seal the audit trail so tampering is detectable
         {
             let mut tx = tenant::begin(&s.pool, &tid).await?;
@@ -132,10 +177,36 @@ pub async fn run_cycle(s: &AppState, client: &reqwest::Client) -> Result<Stats, 
                 tracing::warn!(tenant = %tid, error = ?e.message, "provider health sweep failed")
             }
         }
-        // 3f. downtime alerts (provider, bank, UPI handle) and the running routing experiment's guardrail
+        // 3f. settlement delay alerts: later than the provider's own observed range or the lag the merchant set
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::cash::scan_alerts(&mut tx, &tid, 14).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "settlement delay scan failed")
+                }
+            }
+        }
+        // 3g. soft retry: failures nobody has handled yet go to another provider (off unless the business turned it on)
+        if let Err(e) = crate::softretry::sweep(s, &tid).await {
+            tracing::warn!(tenant = %tid, error = ?e.message, "soft retry sweep failed");
+        }
+        // 3h. seller pages: give back the stock of unpaid orders whose hold has lapsed
+        {
+            let mut tx = tenant::begin(&s.pool, &tid).await?;
+            match crate::storefront::release_lapsed(&mut tx, None).await {
+                Ok(_) => tx.commit().await?,
+                Err(e) => {
+                    tracing::warn!(tenant = %tid, error = ?e.message, "storefront stock release failed")
+                }
+            }
+        }
+        // 3i. downtime alerts (provider, bank, UPI handle): off unless the business opted in; recorded only while the
+        // routing kill switch is on
         if let Err(e) = crate::alerts::sweep_tenant(&s.pool, &tid).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "downtime alert sweep failed");
         }
+        // 3j. the running routing experiment's guardrail (skipped while the routing kill switch is on)
         if let Err(e) = crate::experiments::sweep_tenant(&s.pool, &tid).await {
             tracing::warn!(tenant = %tid, error = ?e.message, "routing experiment check failed");
         }
