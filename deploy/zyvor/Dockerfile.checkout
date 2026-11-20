@@ -1,0 +1,17 @@
+FROM node:22-slim AS build
+WORKDIR /src
+RUN corepack enable
+# Next bakes rewrites at build time, so the API URL must be known here.
+ARG ZYVOR_API_URL=http://api:8080
+ENV ZYVOR_API_URL=$ZYVOR_API_URL
+COPY . .
+RUN pnpm install --frozen-lockfile && pnpm --filter @zyvor/checkout build
+
+FROM node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000
+COPY --from=build /src /app
+USER node
+EXPOSE 3000
+WORKDIR /app/apps/zyvor-checkout
+CMD ["node_modules/.bin/next", "start", "-p", "3000"]

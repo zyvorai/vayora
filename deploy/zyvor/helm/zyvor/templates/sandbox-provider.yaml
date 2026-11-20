@@ -1,0 +1,29 @@
+{{- if .Values.sandbox.providerMock.enabled }}
+# SIMULATED Razorpay + Cashfree. Sandbox only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-provider-mock
+  labels: {{- include "zyvor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: provider-mock } }
+  template:
+    metadata: { labels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: provider-mock } }
+    spec:
+      {{- include "zyvor.podSecurity" . | nindent 6 }}
+      containers:
+        - name: mock
+          image: {{ include "zyvor.image" . }}
+          command: ["zyvor-provider-mock"]
+          env: [{ name: PORT, value: "9090" }]
+          ports: [{ containerPort: 9090 }]
+          {{- include "zyvor.containerSecurity" . | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: {{ .Release.Name }}-provider-mock }
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, component: provider-mock }
+  ports: [{ port: 9090 }]
+{{- end }}

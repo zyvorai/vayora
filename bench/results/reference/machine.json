@@ -1,0 +1,12 @@
+{
+  "platform": "darwin 27.3.0 arm64",
+  "cpu_model": "Apple M6",
+  "cpu_cores_logical": 12,
+  "memory_gb": 16,
+  "node": "v26.11.1",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "postgres": "PostgreSQL 14.24 (Homebrew)",
+  "git_commit": "52b0ea1",
+  "git_tree_clean": true,
+  "note": "everything runs on this one machine: API, simulated provider mock, Postgres, load generator and (for scenario 5) the browser"
+}

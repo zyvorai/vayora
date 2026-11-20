@@ -1,0 +1,58 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import { Act } from "@/components/Act";
+import { Chip } from "@/components/Chip";
+import { CouponForm, LinkForm } from "@/components/LinkForm";
+import { ShareSheet } from "@/components/ShareSheet";
+import { cancelLink, deactivateCoupon, emailLink } from "@/lib/actions";
+import { inr } from "@/lib/format";
+import { api } from "@/lib/zyvor";
+
+const base = () => (process.env.CHECKOUT_PUBLIC_URL ?? "http://localhost:3002").replace(/\/$/, "");
+
+export default async function Links() {
+  const z = await api();
+  const [page, coupons, counters, branches, customers] = await Promise.all([z.paymentLinks.list(), z.coupons.list(), z.counters.list(), z.branches.list(), z.customers.list()]);
+  const branchName = new Map(branches.data.map((b) => [b.id, b.name]));
+  return (
+    <>
+      <div className="head"><div><h1>Payment links</h1><p className="lede">One URL, many payers. Each person who opens it gets their own checkout, so a link can collect a fee from a whole class.</p></div></div>
+      <LinkForm base={base()} customers={customers.data.filter((c) => c.email?.includes("@")).map((c) => ({ id: c.id, name: c.name, email: c.email as string }))} counters={counters.data.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, branch: branchName.get(c.branch_id) ?? "" }))} />
+      <div className="tablewrap">
+        <table>
+          <thead><tr><th>Link</th><th className="num">Amount</th><th className="num">Used</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {page.data.length === 0 && <tr><td colSpan={5} className="empty">No payment links yet.</td></tr>}
+            {page.data.map((l) => (
+              <tr key={l.id}>
+                <td><div>{l.description ?? <span className="muted">Untitled</span>}</div><a className="mono muted" title={base() + l.path} href={base() + l.path} target="_blank" rel="noreferrer">{base().replace(/^https?:\/\//, "")}/pay/link/…{l.path.slice(-10)}</a></td>
+                <td className="num">{l.amount_minor ? inr(l.amount_minor) : <span className="muted">{l.invoice_id ? "invoice balance" : "payer chooses"}</span>}</td>
+                <td className="num">{l.uses}{l.max_uses ? ` / ${l.max_uses}` : ""}</td>
+                <td><Chip status={l.status} /></td>
+                <td style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>{l.status === "active" && <><ShareSheet id={l.id} url={base() + l.path} title={l.description ?? "Payment link"} />{l.can_email && <Act action={emailLink} id={l.id} label="Email" showOk />}<Act action={cancelLink} id={l.id} label="Cancel" /></>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2 style={{ marginTop: 32 }}>Coupons</h2>
+      <CouponForm />
+      <div className="tablewrap">
+        <table>
+          <thead><tr><th>Code</th><th>Takes off</th><th className="num">Used</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {coupons.data.length === 0 && <tr><td colSpan={5} className="empty">No coupons yet.</td></tr>}
+            {coupons.data.map((c) => (
+              <tr key={c.id}>
+                <td className="mono">{c.code}</td><td>{c.kind === "percent" ? `${c.value / 100}%` : inr(c.value)}</td>
+                <td className="num">{c.uses}{c.max_uses ? ` / ${c.max_uses}` : ""}</td><td><Chip status={c.status} /></td>
+                <td>{c.status === "active" && <Act action={deactivateCoupon} id={c.id} label="Deactivate" />}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}

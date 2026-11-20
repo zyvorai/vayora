@@ -1,0 +1,2211 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+// Package zyvor is a minimal Go client for Zyvor Payments. Amounts are integer minor units (paise).
+package zyvor
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Error is returned for any non-2xx API response.
+type Error struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+func (e *Error) Error() string { return fmt.Sprintf("%d %s: %s", e.Status, e.Code, e.Message) }
+
+type Client struct {
+	APIKey  string
+	BaseURL string
+	// Actor attributes writes to a person (audit trail, approval separation of duties).
+	Actor string
+	HTTP  *http.Client
+}
+
+func New(apiKey, baseURL string) *Client {
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	return &Client{APIKey: apiKey, BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &http.Client{Timeout: 30 * time.Second}}
+}
+
+func newKey() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (c *Client) do(method, path string, body any, idem string, out any) error {
+	var rdr io.Reader
+	rawBody := false // bytes go as they are (an image), anything else as JSON
+	if bs, ok := body.([]byte); ok {
+		rawBody = true
+		rdr = bytes.NewReader(bs)
+	} else if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.BaseURL+path, rdr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if rawBody {
+		req.Header.Set("Content-Type", "application/octet-stream")
+	} else if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if idem != "" {
+		req.Header.Set("Idempotency-Key", idem)
+	}
+	if c.Actor != "" {
+		req.Header.Set("Zyvor-Actor", c.Actor)
+	}
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 300 {
+		var e struct {
+			Error struct{ Code, Message string }
+		}
+		_ = json.Unmarshal(raw, &e)
+		return &Error{res.StatusCode, e.Error.Code, e.Error.Message}
+	}
+	if b, ok := out.(*[]byte); ok { // a file, not JSON
+		*b = raw
+		return nil
+	}
+	if out != nil {
+		return json.Unmarshal(raw, out)
+	}
+	return nil
+}
+
+type Intent struct {
+	ID           string `json:"id"`
+	AmountMinor  int64  `json:"amount_minor"`
+	Currency     string `json:"currency"`
+	Status       string `json:"status"`
+	ClientSecret string `json:"client_secret,omitempty"`
+}
+
+type Attempt struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Method   string `json:"method"`
+	// Status "unknown" means the provider's outcome is unknown; no new attempt can start until it resolves.
+	Status string `json:"status"`
+}
+
+type Refund struct {
+	ID          string `json:"id"`
+	AmountMinor int64  `json:"amount_minor"`
+	Status      string `json:"status"`
+}
+
+// CreateIntent creates a payment intent. Pass the same idempotencyKey when retrying; "" generates one.
+func (c *Client) CreateIntent(amountMinor int64, currency, idempotencyKey string) (*Intent, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("amountMinor must be a positive integer (paise)")
+	}
+	if currency == "" {
+		currency = "INR"
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	var out Intent
+	err := c.do("POST", "/v1/payment_intents", map[string]any{"amount_minor": amountMinor, "currency": currency}, idempotencyKey, &out)
+	return &out, err
+}
+
+// CreateIntentAt is CreateIntent attributed to a branch and/or a counter within it (either may be empty).
+func (c *Client) CreateIntentAt(amountMinor int64, currency, branchID, counterID, idempotencyKey string) (*Intent, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("amountMinor must be a positive integer (paise)")
+	}
+	if currency == "" {
+		currency = "INR"
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	body := map[string]any{"amount_minor": amountMinor, "currency": currency}
+	if branchID != "" {
+		body["branch_id"] = branchID
+	}
+	if counterID != "" {
+		body["counter_id"] = counterID
+	}
+	var out Intent
+	err := c.do("POST", "/v1/payment_intents", body, idempotencyKey, &out)
+	return &out, err
+}
+
+func (c *Client) CreateAttempt(intentID, method, vpa, idempotencyKey string) (*Attempt, error) {
+	return c.CreateAttemptOpts(intentID, method, AttemptOpts{VPA: vpa}, idempotencyKey)
+}
+
+// AttemptOpts are optional fields for CreateAttemptOpts (network token charge, return URL, UPI flow).
+type AttemptOpts struct {
+	VPA         string
+	ReturnURL   string
+	UpiFlow     string
+	CardTokenID string
+	// Instrument is what the payer used, never a card number: card_network or card_bin (first 6-8 digits), upi_app, bank.
+	Instrument map[string]any
+	// OfferCodes are codes the payer typed.
+	OfferCodes []string
+}
+
+func (c *Client) CreateAttemptOpts(intentID, method string, opts AttemptOpts, idempotencyKey string) (*Attempt, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	body := map[string]any{"method": method}
+	if opts.VPA != "" {
+		body["vpa"] = opts.VPA
+	}
+	if opts.ReturnURL != "" {
+		body["return_url"] = opts.ReturnURL
+	}
+	if opts.UpiFlow != "" {
+		body["upi_flow"] = opts.UpiFlow
+	}
+	if opts.CardTokenID != "" {
+		body["card_token_id"] = opts.CardTokenID
+	}
+	if len(opts.Instrument) > 0 {
+		body["instrument"] = opts.Instrument
+	}
+	if len(opts.OfferCodes) > 0 {
+		body["offer_codes"] = opts.OfferCodes
+	}
+	var out Attempt
+	err := c.do("POST", "/v1/payment_intents/"+intentID+"/attempts", body, idempotencyKey, &out)
+	return &out, err
+}
+
+// Refund refunds amountMinor (0 = everything still refundable).
+func (c *Client) Refund(intentID string, amountMinor int64, idempotencyKey string) (*Refund, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	body := map[string]any{}
+	if amountMinor > 0 {
+		body["amount_minor"] = amountMinor
+	}
+	var out Refund
+	err := c.do("POST", "/v1/payment_intents/"+intentID+"/refunds", body, idempotencyKey, &out)
+	return &out, err
+}
+
+// Subscribe starts a subscription. startDate is YYYY-MM-DD ("" = today).
+func (c *Client) Subscribe(customerID, planID string, quantity int, startDate string) (map[string]any, error) {
+	body := map[string]any{"customer_id": customerID, "plan_id": planID}
+	if quantity > 0 {
+		body["quantity"] = quantity
+	}
+	if startDate != "" {
+		body["start_date"] = startDate
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions", body, "", &out)
+	return out, err
+}
+
+// ChangePlan upgrades are prorated for the rest of the period; downgrades apply from the next invoice. Optional
+// keys in opts: quantity, and follow_plan_price (true, same plan: end a kept price, the plan's current price
+// applies from the next invoice).
+func (c *Client) ChangePlan(subscriptionID, planID string, opts ...map[string]any) (map[string]any, error) {
+	body := map[string]any{"plan_id": planID}
+	for _, o := range opts {
+		for k, v := range o {
+			body[k] = v
+		}
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/change_plan", body, "", &out)
+	return out, err
+}
+
+// ChangeTrial ends a running free trial early (endsOn today) or moves its end, for one subscriber. endsOn is
+// YYYY-MM-DD. Only a subscription still in its trial can change.
+func (c *Client) ChangeTrial(subscriptionID, endsOn string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/trial", map[string]any{"ends_on": endsOn}, "", &out)
+	return out, err
+}
+
+// RecordUsage is retry-safe when reference is set: the same reference is recorded once.
+func (c *Client) RecordUsage(subscriptionID string, quantity int64, reference string) (map[string]any, error) {
+	body := map[string]any{"quantity": quantity}
+	if reference != "" {
+		body["reference"] = reference
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/subscriptions/"+subscriptionID+"/usage", body, "", &out)
+	return out, err
+}
+
+func (c *Client) CreditNote(invoiceID string, amountMinor int64, reason string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/credit_notes", map[string]any{"amount_minor": amountMinor, "reason": reason}, "", &out)
+	return out, err
+}
+
+// Ageing reports unpaid invoices by days past due. asOf is YYYY-MM-DD ("" = today).
+func (c *Client) Ageing(asOf string) (map[string]any, error) {
+	path := "/v1/collections/ageing"
+	if asOf != "" {
+		path += "?as_of=" + asOf
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+// SetFxRate records the INR-per-dollar rate you use for a day, e.g. "83.2150" (asOf "" = today). One per day; never edited.
+func (c *Client) SetFxRate(rate, asOf string) (map[string]any, error) {
+	body := map[string]any{"currency": "USD", "rate": rate}
+	if asOf != "" {
+		body["as_of"] = asOf
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/fx/rates", body, "", &out)
+	return out, err
+}
+
+// UpdateCustomer corrects a customer. Keys: name, email, phone, gstin, address1, location, pincode. A key left out
+// stays; an empty string clears it.
+func (c *Client) UpdateCustomer(customerID string, fields map[string]string) (map[string]any, error) {
+	body := map[string]any{}
+	for k, v := range fields {
+		body[k] = v
+	}
+	var out map[string]any
+	err := c.do("PATCH", "/v1/customers/"+customerID, body, "", &out)
+	return out, err
+}
+
+// EinvoiceDraft returns a DRAFT e-invoice (IRP schema 1.1) for a B2B tax invoice. Not submitted, no IRN, not checked against the portal.
+func (c *Client) EinvoiceDraft(invoiceID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("GET", "/v1/invoices/"+invoiceID+"/einvoice", nil, "", &out)
+	return out, err
+}
+
+// Gstr1 returns GSTR-1 preparation totals for period (YYYY-MM). Zyvor does not file the return.
+func (c *Client) Gstr1(period string) (map[string]any, error) {
+	return c.call("GET", "/v1/gst/gstr1?period="+url.QueryEscape(period), nil)
+}
+
+// ImportBankCsv imports a bank statement CSV for reconciliation. The optional map may hold filename, layout, mapping,
+// date_format and delimiter (see BankStatementLayouts).
+func (c *Client) ImportBankCsv(csv string, options ...map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_csv", withCSV(csv, options))
+}
+
+func withCSV(csv string, options []map[string]any) map[string]any {
+	body := map[string]any{}
+	for _, o := range options {
+		for k, v := range o {
+			body[k] = v
+		}
+	}
+	body["csv"] = csv
+	return body
+}
+
+// withQuery appends the non-empty options as a query string.
+func withQuery(path string, opts map[string]any) string {
+	v := url.Values{}
+	for k, x := range opts {
+		if x != nil && fmt.Sprint(x) != "" {
+			v.Set(k, fmt.Sprint(x))
+		}
+	}
+	if len(v) > 0 {
+		return path + "?" + v.Encode()
+	}
+	return path
+}
+
+// ImportBankMt940 imports a SWIFT MT940 bank statement.
+func (c *Client) ImportBankMt940(text string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_mt940", map[string]any{"text": text})
+}
+
+// ImportBankCamt imports an ISO 20022 CAMT.053 bank statement.
+func (c *Client) ImportBankCamt(text string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/import_camt", map[string]any{"text": text})
+}
+
+// ListConsoleUsers lists named console users for this organisation.
+func (c *Client) ListConsoleUsers() (map[string]any, error) {
+	return c.call("GET", "/v1/console/users", nil)
+}
+
+// AssignableBranches lists branches a person can be tied to (home environment).
+func (c *Client) AssignableBranches() (map[string]any, error) {
+	return c.call("GET", "/v1/console/branches", nil)
+}
+
+// MfaBegin starts TOTP enrolment for a console user.
+func (c *Client) MfaBegin(userID string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/begin", map[string]any{})
+}
+
+// MfaConfirm confirms TOTP enrolment with a code from the authenticator app.
+func (c *Client) MfaConfirm(userID, otp string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/confirm", map[string]any{"otp": otp})
+}
+
+// MfaReset clears a console user's second factor (admin).
+func (c *Client) MfaReset(userID string) (map[string]any, error) {
+	return c.call("POST", "/v1/console/users/"+userID+"/mfa/reset", map[string]any{})
+}
+
+// ListOutboxDeliveries returns per-attempt delivery history for one outbound webhook event.
+func (c *Client) ListOutboxDeliveries(eventID string) (map[string]any, error) {
+	return c.call("GET", "/v1/outbox/"+eventID+"/deliveries", nil)
+}
+
+// ListInbox lists provider webhooks Zyvor received (inbound inspector).
+func (c *Client) ListInbox(limit int) (map[string]any, error) {
+	path := "/v1/inbox"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateMandate asks the payer to approve a UPI AutoPay mandate. frequency is daily, weekly, fortnightly, monthly,
+// bimonthly, quarterly, half_yearly, yearly or as_presented; endDate is YYYY-MM-DD. idempotencyKey "" makes a new one.
+func (c *Client) CreateMandate(customerID string, maxAmountMinor int64, frequency, endDate, idempotencyKey string) (map[string]any, error) {
+	if maxAmountMinor <= 0 {
+		return nil, fmt.Errorf("maxAmountMinor must be a positive integer (paise)")
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates", map[string]any{"customer_id": customerID, "max_amount_minor": maxAmountMinor, "frequency": frequency, "end_date": endDate}, idempotencyKey, &out)
+	return out, err
+}
+
+// GetMandate returns a mandate with its recent debits.
+func (c *Client) GetMandate(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("GET", "/v1/mandates/"+id, nil, "", &out)
+	return out, err
+}
+
+// SimulatePaymentEvent (test organisations only) settles a pending simulated payment as "captured" or "failed",
+// like a provider's late update.
+func (c *Client) SimulatePaymentEvent(attemptID, outcome string) (map[string]any, error) {
+	if outcome != "captured" && outcome != "failed" {
+		return nil, fmt.Errorf("outcome must be captured or failed")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_attempts/"+attemptID+"/simulate_event", map[string]any{"outcome": outcome}, "", &out)
+	return out, err
+}
+
+// SendTestEvent queues a webhook.test event to the webhook URL set in Settings (admin key).
+func (c *Client) SendTestEvent() (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/outbox/test", map[string]any{}, "", &out)
+	return out, err
+}
+
+// SyncSettlements pulls a provider's settlement file for a day (YYYY-MM-DD). On a test organisation, provider "sim"
+// builds one from the simulated payments.
+func (c *Client) SyncSettlements(provider, date string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/settlements/sync", map[string]any{"provider": provider, "date": date}, "", &out)
+	return out, err
+}
+
+// SimulateBankCredit (test organisations only) posts a simulated bank credit for a simulated settlement,
+// shortMinor less than due when positive.
+func (c *Client) SimulateBankCredit(id string, shortMinor int64) (map[string]any, error) {
+	if shortMinor < 0 {
+		return nil, fmt.Errorf("shortMinor cannot be negative")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/settlements/"+id+"/simulate_bank", map[string]any{"short_minor": shortMinor}, "", &out)
+	return out, err
+}
+
+// MandateAction is "refresh" (ask the provider where it stands), "pause", "resume" or "revoke".
+func (c *Client) MandateAction(id, action string) (map[string]any, error) {
+	switch action {
+	case "refresh", "pause", "resume", "revoke":
+	default:
+		return nil, fmt.Errorf("action must be refresh, pause, resume or revoke")
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates/"+id+"/"+action, map[string]any{}, "", &out)
+	return out, err
+}
+
+// ScheduleDebit schedules a debit for dueDate (YYYY-MM-DD, India time), far enough ahead for the payer's notice.
+func (c *Client) ScheduleDebit(mandateID string, amountMinor int64, dueDate, idempotencyKey string) (map[string]any, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("amountMinor must be a positive integer (paise)")
+	}
+	if idempotencyKey == "" {
+		idempotencyKey = newKey()
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/mandates/"+mandateID+"/debits", map[string]any{"amount_minor": amountMinor, "due_date": dueDate}, idempotencyKey, &out)
+	return out, err
+}
+
+// ListPayments returns payments newest first. status and q are optional; q matches a payment id exactly, or part of
+// its reference or description. limit 0 uses the server default.
+func (c *Client) ListPayments(status, q string, limit int) (map[string]any, error) {
+	v := url.Values{}
+	if status != "" {
+		v.Set("status", status)
+	}
+	if q != "" {
+		v.Set("q", q)
+	}
+	if limit > 0 {
+		v.Set("limit", fmt.Sprint(limit))
+	}
+	path := "/v1/payment_intents"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+// ListPaymentsInRange is ListPayments limited to payments created from createdFrom to createdTo, days in IST as
+// YYYY-MM-DD ("" = no limit on that side).
+func (c *Client) ListPaymentsInRange(status, q string, limit int, createdFrom, createdTo string) (map[string]any, error) {
+	v := url.Values{}
+	if status != "" {
+		v.Set("status", status)
+	}
+	if q != "" {
+		v.Set("q", q)
+	}
+	if limit > 0 {
+		v.Set("limit", fmt.Sprint(limit))
+	}
+	if createdFrom != "" {
+		v.Set("created_from", createdFrom)
+	}
+	if createdTo != "" {
+		v.Set("created_to", createdTo)
+	}
+	path := "/v1/payment_intents"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+// ListSavedViews returns your saved Payments views and the ones shared with the environment.
+func (c *Client) ListSavedViews() (map[string]any, error) {
+	return c.call("GET", "/v1/saved_views?scope=payments", nil)
+}
+
+// CreateSavedView saves Payments filters (status, q, from, to as YYYY-MM-DD). Sharing needs payments:write.
+func (c *Client) CreateSavedView(name string, query map[string]any, shared bool) (map[string]any, error) {
+	return c.call("POST", "/v1/saved_views", map[string]any{"scope": "payments", "name": name, "query": query, "shared": shared})
+}
+
+// DeleteSavedView deletes a view you own (an admin can delete any).
+func (c *Client) DeleteSavedView(id string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/saved_views/"+id, nil)
+}
+
+// FxExposure values open dollar invoices at the rate when raised and at asOf ("" = today). Reporting only.
+func (c *Client) FxExposure(asOf string) (map[string]any, error) {
+	path := "/v1/fx/exposure"
+	if asOf != "" {
+		path += "?as_of=" + asOf
+	}
+	var out map[string]any
+	err := c.do("GET", path, nil, "", &out)
+	return out, err
+}
+
+func (c *Client) PromiseToPay(invoiceID string, promisedMinor int64, promisedDate string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/promises", map[string]any{"promised_minor": promisedMinor, "promised_date": promisedDate}, "", &out)
+	return out, err
+}
+
+// DraftReminder makes a reminder for a person to review; useAI asks the optional assistant to word it.
+func (c *Client) DraftReminder(invoiceID, channel string, useAI bool) (map[string]any, error) {
+	body := map[string]any{}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if useAI {
+		body["ai"] = true
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+invoiceID+"/reminders/draft", body, "", &out)
+	return out, err
+}
+
+// ApproveDraft logs the reminder and emits invoice.reminder. A non-empty message replaces the drafted text.
+func (c *Client) ApproveDraft(draftID, message string) (map[string]any, error) {
+	body := map[string]any{}
+	if message != "" {
+		body["message"] = message
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/drafts/"+draftID+"/approve", body, "", &out)
+	return out, err
+}
+
+func (c *Client) RejectDraft(draftID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/drafts/"+draftID+"/reject", map[string]any{}, "", &out)
+	return out, err
+}
+
+// RunDunning reminds every overdue invoice with no live promise and no recent reminder. Safe to repeat.
+// Empty channel and zero days use the server defaults.
+func (c *Client) RunDunning(channel string, minDaysOverdue, repeatAfterDays int) (map[string]any, error) {
+	body := map[string]any{}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if minDaysOverdue > 0 {
+		body["min_days_overdue"] = minDaysOverdue
+	}
+	if repeatAfterDays > 0 {
+		body["repeat_after_days"] = repeatAfterDays
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/dunning/run", body, "", &out)
+	return out, err
+}
+
+// RunDunningAsOf is RunDunning as if it were the given day (YYYY-MM-DD); test organisations only.
+func (c *Client) RunDunningAsOf(asOf, channel string, minDaysOverdue, repeatAfterDays int) (map[string]any, error) {
+	if _, err := time.Parse("2006-01-02", asOf); err != nil {
+		return nil, fmt.Errorf("asOf must be YYYY-MM-DD")
+	}
+	body := map[string]any{"as_of": asOf}
+	if channel != "" {
+		body["channel"] = channel
+	}
+	if minDaysOverdue > 0 {
+		body["min_days_overdue"] = minDaysOverdue
+	}
+	if repeatAfterDays > 0 {
+		body["repeat_after_days"] = repeatAfterDays
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/collections/dunning/run", body, "", &out)
+	return out, err
+}
+
+// RunBilling invoices every subscription that is due (safe to repeat). A non-empty asOf (YYYY-MM-DD) runs as if it
+// were that day; test organisations only.
+func (c *Client) RunBilling(asOf string) (map[string]any, error) {
+	body := map[string]any{}
+	if asOf != "" {
+		if _, err := time.Parse("2006-01-02", asOf); err != nil {
+			return nil, fmt.Errorf("asOf must be YYYY-MM-DD")
+		}
+		body["as_of"] = asOf
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/billing/run", body, "", &out)
+	return out, err
+}
+
+// PaymentLinkOptions are the optional extras of CreatePaymentLinkFor.
+type PaymentLinkOptions struct {
+	// CustomerID ties the link to a customer, so it can be emailed to them.
+	CustomerID string
+	// ExpiresAt is when the link stops working (zero: never).
+	ExpiresAt time.Time
+	// RemindBeforeExpiry emails the customer once in the last day before ExpiresAt. Needs CustomerID and ExpiresAt.
+	RemindBeforeExpiry bool
+}
+
+// CreatePaymentLink makes one URL many payers can open. Pass amountMinor or invoiceID (the other zero/empty).
+func (c *Client) CreatePaymentLink(amountMinor int64, invoiceID, description string, maxUses int) (map[string]any, error) {
+	return c.CreatePaymentLinkFor(amountMinor, invoiceID, description, maxUses, PaymentLinkOptions{})
+}
+
+// CreatePaymentLinkFor is CreatePaymentLink with a customer, an expiry and a one-time reminder before it.
+func (c *Client) CreatePaymentLinkFor(amountMinor int64, invoiceID, description string, maxUses int, o PaymentLinkOptions) (map[string]any, error) {
+	if (amountMinor > 0) == (invoiceID != "") {
+		return nil, fmt.Errorf("give exactly one of amountMinor or invoiceID")
+	}
+	if o.RemindBeforeExpiry && (o.CustomerID == "" || o.ExpiresAt.IsZero()) {
+		return nil, fmt.Errorf("RemindBeforeExpiry needs CustomerID and ExpiresAt")
+	}
+	body := map[string]any{}
+	if o.CustomerID != "" {
+		body["customer_id"] = o.CustomerID
+	}
+	if !o.ExpiresAt.IsZero() {
+		body["expires_at"] = o.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if o.RemindBeforeExpiry {
+		body["remind_before_expiry"] = true
+	}
+	if amountMinor > 0 {
+		body["amount_minor"] = amountMinor
+	}
+	if invoiceID != "" {
+		body["invoice_id"] = invoiceID
+	}
+	if description != "" {
+		body["description"] = description
+	}
+	if maxUses > 0 {
+		body["max_uses"] = maxUses
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links", body, "", &out)
+	return out, err
+}
+
+func (c *Client) CancelPaymentLink(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links/"+id+"/cancel", map[string]any{}, "", &out)
+	return out, err
+}
+
+// SendInvoice emails an invoice to its customer: what it is made of, what is owed and by when (once per invoice per
+// day; it must still be owed, and the customer needs an email address).
+func (c *Client) SendInvoice(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/invoices/"+id+"/send", map[string]any{}, "", &out)
+	return out, err
+}
+
+// SendPaymentLink emails an active link to the customer it was made for (once per link per day).
+func (c *Client) SendPaymentLink(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/payment_links/"+id+"/send", map[string]any{}, "", &out)
+	return out, err
+}
+
+// RotateKey mints a replacement; the old key keeps working for overlapHours (0 = server default of 24).
+func (c *Client) RotateKey(keyID string, overlapHours int) (map[string]any, error) {
+	body := map[string]any{}
+	if overlapHours > 0 {
+		body["overlap_hours"] = overlapHours
+	}
+	var out map[string]any
+	err := c.do("POST", "/v1/api_keys/"+keyID+"/rotate", body, "", &out)
+	return out, err
+}
+
+// call is the shared shape of the merchant-operations methods below.
+func (c *Client) call(method, path string, body any) (map[string]any, error) {
+	if body == nil {
+		body = map[string]any{}
+	}
+	var out map[string]any
+	err := c.do(method, path, body, "", &out)
+	return out, err
+}
+
+// PaymentTimeline is one ordered story of the payment with a plain sentence on where it stands.
+func (c *Client) PaymentTimeline(intentID string) (map[string]any, error) {
+	return c.call("GET", "/v1/payment_intents/"+intentID+"/timeline", nil)
+}
+
+// Onboarding returns the merchant's onboarding status, documents and bank accounts (PAN masked).
+func (c *Client) Onboarding() (map[string]any, error) { return c.call("GET", "/v1/onboarding", nil) }
+
+// SaveProfile stores the merchant profile (draft or rejected onboarding only). gstin may be empty.
+func (c *Client) SaveProfile(legalName, businessType, pan, address, gstin string) (map[string]any, error) {
+	b := map[string]any{"legal_name": legalName, "business_type": businessType, "pan": pan, "address": address}
+	if gstin != "" {
+		b["gstin"] = gstin
+	}
+	return c.call("PUT", "/v1/onboarding", b)
+}
+
+// RequestProfileChange asks Zyvor to change business details that were already approved. Nothing changes, and live
+// payouts are held, until a Zyvor reviewer decides; one request can wait at a time. The PAN is checked and only its
+// last four digits are kept. gstin may be empty.
+func (c *Client) RequestProfileChange(legalName, businessType, pan, address, gstin, reason string) (map[string]any, error) {
+	b := map[string]any{"legal_name": legalName, "business_type": businessType, "pan": pan, "address": address, "reason": reason}
+	if gstin != "" {
+		b["gstin"] = gstin
+	}
+	return c.call("POST", "/v1/onboarding/profile_change", b)
+}
+
+// AddOnboardingDocument records where a document is kept; Zyvor stores only the reference.
+func (c *Client) AddOnboardingDocument(kind, reference string) (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/documents", map[string]any{"kind": kind, "reference": reference})
+}
+
+// ListOnboardingUploads lists uploaded document files, what was read from each and how it compares with the profile.
+func (c *Client) ListOnboardingUploads() (map[string]any, error) {
+	return c.call("GET", "/v1/onboarding/uploads", nil)
+}
+
+// UploadOnboardingDocument uploads a PDF, PNG or JPEG (up to 5 MB): stored encrypted, read, and compared with the profile.
+func (c *Client) UploadOnboardingDocument(kind, filename string, data []byte) (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/uploads", map[string]any{"kind": kind, "filename": filename, "data_base64": base64.StdEncoding.EncodeToString(data)})
+}
+
+// DeleteOnboardingUpload removes an uploaded document (only while the profile is a draft or was sent back).
+func (c *Client) DeleteOnboardingUpload(id string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/onboarding/uploads/"+id, nil)
+}
+
+// DownloadOnboardingUpload returns the stored file.
+func (c *Client) DownloadOnboardingUpload(id string) ([]byte, error) {
+	var out []byte
+	err := c.do("GET", "/v1/onboarding/uploads/"+id+"/file", nil, "", &out)
+	return out, err
+}
+
+// AddBankAccount stores the holder, IFSC and the last four digits of the account number.
+func (c *Client) AddBankAccount(holderName, ifsc, accountNumber string) (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/bank_accounts", map[string]any{"holder_name": holderName, "ifsc": ifsc, "account_number": accountNumber})
+}
+
+// VerifyBankAccount must be done by a different person from whoever added the account.
+func (c *Client) VerifyBankAccount(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/bank_accounts/"+id+"/verify", nil)
+}
+
+// SubmitOnboarding sends the profile for review (needs a PAN document and a bank account).
+func (c *Client) SubmitOnboarding() (map[string]any, error) {
+	return c.call("POST", "/v1/onboarding/submit", nil)
+}
+
+// ReviewOnboarding approves or rejects ("approve" or "reject"; a note is required to reject).
+func (c *Client) ReviewOnboarding(decision, note string) (map[string]any, error) {
+	b := map[string]any{"decision": decision}
+	if note != "" {
+		b["note"] = note
+	}
+	return c.call("POST", "/v1/onboarding/review", b)
+}
+
+// CreateCounter adds a till, desk or stall to a branch.
+func (c *Client) CreateCounter(branchID, name string) (map[string]any, error) {
+	return c.call("POST", "/v1/counters", map[string]any{"branch_id": branchID, "name": name})
+}
+
+// DeactivateCounter switches a counter off and cancels its QR links.
+func (c *Client) DeactivateCounter(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/counters/"+id+"/deactivate", nil)
+}
+
+// BranchSummary is captured money per IST day, counter and method, net of refunds. Dates are YYYY-MM-DD or empty.
+func (c *Client) BranchSummary(branchID, from, to string) (map[string]any, error) {
+	q := ""
+	for _, kv := range [][2]string{{"from", from}, {"to", to}} {
+		if kv[1] != "" {
+			if q != "" {
+				q += "&"
+			}
+			q += kv[0] + "=" + kv[1]
+		}
+	}
+	if q != "" {
+		q = "?" + q
+	}
+	return c.call("GET", "/v1/branches/"+branchID+"/summary"+q, nil)
+}
+
+// AddCash records cash taken ("sale"), handed back ("refund") or put in the till ("float"). Entries are never edited.
+func (c *Client) AddCash(branchID, kind string, amountMinor int64) (map[string]any, error) {
+	return c.call("POST", "/v1/cash_entries", map[string]any{"branch_id": branchID, "kind": kind, "amount_minor": amountMinor})
+}
+
+// CloseDay compares expected cash and digital totals with the counted cash for an IST day.
+func (c *Client) CloseDay(branchID, day string, countedCashMinor int64) (map[string]any, error) {
+	return c.call("POST", "/v1/closings", map[string]any{"branch_id": branchID, "day": day, "counted_cash_minor": countedCashMinor})
+}
+
+// SignOffClosing must be done by a different person from whoever counted.
+func (c *Client) SignOffClosing(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/closings/"+id+"/signoff", nil)
+}
+
+// Cashflow is what is owed by due week. A schedule, not a prediction.
+func (c *Client) Cashflow() (map[string]any, error) {
+	return c.call("GET", "/v1/insights/cashflow", nil)
+}
+
+// VerifyWebhook checks a `Zyvor-Signature: t=<unix>,v1=<hex>` header against the RAW body.
+// Delivery is at-least-once: also de-duplicate on the event id.
+func VerifyWebhook(secret, header string, rawBody []byte, tolerance time.Duration, now time.Time) bool {
+	var t int64
+	var sig []byte
+	haveT := false
+	for _, p := range strings.Split(header, ",") {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "t":
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return false
+			}
+			t, haveT = n, true
+		case "v1":
+			b, err := hex.DecodeString(v)
+			if err != nil {
+				return false
+			}
+			sig = b
+		}
+	}
+	if !haveT || sig == nil {
+		return false
+	}
+	if d := now.Sub(time.Unix(t, 0)); d > tolerance || d < -tolerance {
+		return false
+	}
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte(strconv.FormatInt(t, 10) + "."))
+	m.Write(rawBody)
+	return hmac.Equal(m.Sum(nil), sig)
+}
+
+// ---- more of the API, one method each (the Python SDK has the same set) ----
+
+// GetAttempt: One payment attempt.
+func (c *Client) GetAttempt(attemptId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_attempts/" + attemptId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RefreshAttempt: Ask the provider where an attempt stands now.
+func (c *Client) RefreshAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/refresh", body)
+}
+
+// CancelAttempt: Cancel an attempt that has not been paid.
+func (c *Client) CancelAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/cancel", body)
+}
+
+// CaptureAttempt: Capture an authorised attempt (manual capture).
+func (c *Client) CaptureAttempt(attemptId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payment_attempts/"+attemptId+"/capture", body)
+}
+
+// ListRefunds: Refunds, optionally by status (for example pending_approval).
+func (c *Client) ListRefunds(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/refunds"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ApproveRefund: Approve a refund waiting for a second person.
+func (c *Client) ApproveRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/approve", body)
+}
+
+// RejectRefund: Reject a refund waiting for approval.
+func (c *Client) RejectRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/reject", body)
+}
+
+// RetryRefund: Retry a failed refund.
+func (c *Client) RetryRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/retry", body)
+}
+
+// RefreshRefund: Ask the provider where a refund stands.
+func (c *Client) RefreshRefund(refundId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/refunds/"+refundId+"/refresh", body)
+}
+
+// ListSettlements: Settlements imported from providers.
+func (c *Client) ListSettlements() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settlements"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListCases: Reconciliation cases.
+func (c *Client) ListCases(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/recon/cases"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CaseSuggestions: Evidence and next steps for a case (read only). Pass ai=true to add a
+// plain-words ai_summary from the model (null when the answer is refused).
+func (c *Client) CaseSuggestions(caseId string, ai ...bool) (map[string]any, error) {
+	v := url.Values{}
+	if len(ai) > 0 && ai[0] {
+		v.Set("ai", "true")
+	}
+	path := "/v1/recon/cases/" + caseId + "/suggestions"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// AssignCase: Give a case to someone.
+func (c *Client) AssignCase(caseId string, assignee string) (map[string]any, error) {
+	body := map[string]any{}
+	body["assignee"] = assignee
+	return c.call("POST", "/v1/recon/cases/"+caseId+"/assign", body)
+}
+
+// ResolveCase: Close a case with what was done.
+func (c *Client) ResolveCase(caseId string, resolution string) (map[string]any, error) {
+	body := map[string]any{}
+	body["resolution"] = resolution
+	return c.call("POST", "/v1/recon/cases/"+caseId+"/resolve", body)
+}
+
+// ScanCases: Open cases for captured payments still missing a settlement.
+func (c *Client) ScanCases(olderThanDays ...int) (map[string]any, error) {
+	v := url.Values{}
+	if len(olderThanDays) > 0 {
+		v.Set("older_than_days", fmt.Sprint(olderThanDays[0]))
+	}
+	path := "/v1/recon/scan"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("POST", path, nil)
+}
+
+// Me: Who this key is (tenant, env, scopes, actor).
+func (c *Client) Me() (map[string]any, error) {
+	return c.call("GET", "/v1/me", nil)
+}
+
+// ListApiRequests: Recent authenticated API calls (admin). No bodies.
+func (c *Client) ListApiRequests() (map[string]any, error) {
+	return c.call("GET", "/v1/api_requests", nil)
+}
+
+// FailNextSimRefund: Test mode; the next in-process simulator refund fails once.
+func (c *Client) FailNextSimRefund() (map[string]any, error) {
+	return c.call("POST", "/v1/sim/fail_next_refund", nil)
+}
+
+// ListPlans: Billing plans.
+func (c *Client) ListPlans() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/plans"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListSubscriptions: Subscriptions.
+func (c *Client) ListSubscriptions() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/subscriptions"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// PauseSubscription: Pause a subscription.
+func (c *Client) PauseSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/pause", body)
+}
+
+// ResumeSubscription: Resume a paused subscription.
+func (c *Client) ResumeSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/resume", body)
+}
+
+// CancelSubscription: Cancel a subscription.
+func (c *Client) CancelSubscription(subscriptionId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/subscriptions/"+subscriptionId+"/cancel", body)
+}
+
+// ListInvoices: Invoices, optionally by status.
+func (c *Client) ListInvoices(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/invoices"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// GetInvoice: One invoice.
+func (c *Client) GetInvoice(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateInvoice: Raise an invoice: give amount_minor, or GST lines and the server computes tax and total.
+func (c *Client) CreateInvoice(number string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["number"] = number
+	return c.call("POST", "/v1/invoices", body)
+}
+
+// VoidInvoice: Void an invoice nothing has been paid or credited against.
+func (c *Client) VoidInvoice(invoiceId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/invoices/"+invoiceId+"/void", body)
+}
+
+// InvoiceLines: An invoice's GST lines.
+func (c *Client) InvoiceLines(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId + "/lines"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListReminders: Reminders sent for an invoice.
+func (c *Client) ListReminders(invoiceId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/invoices/" + invoiceId + "/reminders"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListPromises: Promises to pay, optionally by status (open, kept, broken, canceled).
+func (c *Client) ListPromises(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/collections/promises"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CancelPromise: Cancel a promise to pay.
+func (c *Client) CancelPromise(promiseId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/collections/promises/"+promiseId+"/cancel", body)
+}
+
+// CreateVendor: Add someone you pay out to.
+func (c *Client) CreateVendor(name string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	return c.call("POST", "/v1/vendors", body)
+}
+
+// ListVendors: Vendors (account numbers masked).
+func (c *Client) ListVendors() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// VendorDetails: Full bank details of a vendor; needs payouts:approve and is audited.
+func (c *Client) VendorDetails(vendorId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors/" + vendorId + "/details"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// VendorBalance: What a vendor is owed from split payments and how much is free to pay out.
+func (c *Client) VendorBalance(vendorId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/vendors/" + vendorId + "/balance"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreatePayout: Request a payout. Repeating the same external_ref returns the original.
+func (c *Client) CreatePayout(vendorId string, amountMinor int64, purpose string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["vendor_id"] = vendorId
+	body["amount_minor"] = amountMinor
+	body["purpose"] = purpose
+	return c.call("POST", "/v1/payouts", body)
+}
+
+// CreatePayoutsBulk: Up to 200 payouts, all created or none; each item has vendor_id, amount_minor, purpose and optionally external_ref, from_balance.
+func (c *Client) CreatePayoutsBulk(payouts []any) (map[string]any, error) {
+	body := map[string]any{}
+	body["payouts"] = payouts
+	return c.call("POST", "/v1/payouts/bulk", body)
+}
+
+// ListPayouts: Payouts, optionally by status.
+func (c *Client) ListPayouts(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/payouts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ApprovePayout: Approve a payout (a different person from the requester).
+func (c *Client) ApprovePayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/approve", body)
+}
+
+// RejectPayout: Reject a payout waiting for approval.
+func (c *Client) RejectPayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/reject", body)
+}
+
+// CancelPayout: Cancel a payout that has not been paid.
+func (c *Client) CancelPayout(payoutId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/cancel", body)
+}
+
+// MarkPayoutPaid: Record the bank reference once the transfer is made.
+func (c *Client) MarkPayoutPaid(payoutId string, bankRef string) (map[string]any, error) {
+	body := map[string]any{}
+	body["bank_ref"] = bankRef
+	return c.call("POST", "/v1/payouts/"+payoutId+"/mark_paid", body)
+}
+
+// SendPayoutRail: Acquire mode — send an approved payout over the sponsor rail.
+func (c *Client) SendPayoutRail(payoutId string, body map[string]any) (map[string]any, error) {
+	if body == nil {
+		body = map[string]any{}
+	}
+	return c.call("POST", "/v1/payouts/"+payoutId+"/send_rail", body)
+}
+
+// GetMoneyMode: Organisation money mode (orchestrate or acquire).
+func (c *Client) GetMoneyMode() (map[string]any, error) {
+	return c.call("GET", "/v1/money_mode", nil)
+}
+
+// SetMoneyMode: Set organisation money mode.
+func (c *Client) SetMoneyMode(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/money_mode", body)
+}
+
+// GetAcquireKyc: Acquire-mode KYC/AML status.
+func (c *Client) GetAcquireKyc() (map[string]any, error) {
+	return c.call("GET", "/v1/acquire_kyc", nil)
+}
+
+// SetAcquireKyc: Set acquire-mode KYC/AML status.
+func (c *Client) SetAcquireKyc(status string) (map[string]any, error) {
+	return c.call("PUT", "/v1/acquire_kyc", map[string]any{"status": status})
+}
+
+// ListSettlementBatches: List acquire-mode settlement batches.
+func (c *Client) ListSettlementBatches() (map[string]any, error) {
+	return c.call("GET", "/v1/settlement_batches", nil)
+}
+
+// GetSettlementBatch: One settlement batch with its items.
+func (c *Client) GetSettlementBatch(batchId string) (map[string]any, error) {
+	return c.call("GET", "/v1/settlement_batches/"+batchId, nil)
+}
+
+// OpenSettlementBatch: Open an acquire-mode settlement batch.
+func (c *Client) OpenSettlementBatch(currency string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches", map[string]any{"currency": currency})
+}
+
+// AddSettlementBatchItem: Add a line to a settlement batch.
+func (c *Client) AddSettlementBatchItem(batchId string, kind string, reference string, amountMinor int64) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches/"+batchId+"/items", map[string]any{
+		"kind": kind, "reference": reference, "amount_minor": amountMinor,
+	})
+}
+
+// ReleaseSettlementBatch: Release a settlement batch via the payout rail.
+func (c *Client) ReleaseSettlementBatch(batchId string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlement_batches/"+batchId+"/release", map[string]any{})
+}
+
+// EscrowProof: Escrow available vs open payables proof.
+func (c *Client) EscrowProof() (map[string]any, error) {
+	return c.call("GET", "/v1/escrow/proof", nil)
+}
+
+// ListCardTokens: List network card tokens (no PAN).
+func (c *Client) ListCardTokens() (map[string]any, error) {
+	return c.call("GET", "/v1/card_tokens", nil)
+}
+
+// StoreCardToken: Store a network card token. Never send PAN or CVV.
+func (c *Client) StoreCardToken(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/card_tokens", body)
+}
+
+// RevokeCardToken: Revoke a network card token.
+func (c *Client) RevokeCardToken(tokenId string) (map[string]any, error) {
+	return c.call("POST", "/v1/card_tokens/"+tokenId+"/revoke", map[string]any{})
+}
+
+// ListCustomers: Customers, optionally by your own reference.
+func (c *Client) ListCustomers(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/customers"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// GetCustomer: One customer.
+func (c *Client) GetCustomer(customerId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/customers/" + customerId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateCustomer: Add a customer.
+func (c *Client) CreateCustomer(name string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	return c.call("POST", "/v1/customers", body)
+}
+
+// RefreshMandate: Ask the provider where a mandate stands.
+func (c *Client) RefreshMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/refresh", body)
+}
+
+// PauseMandate: Pause a mandate.
+func (c *Client) PauseMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/pause", body)
+}
+
+// ResumeMandate: Resume a paused mandate.
+func (c *Client) ResumeMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/resume", body)
+}
+
+// RevokeMandate: Revoke a mandate for good.
+func (c *Client) RevokeMandate(mandateId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/"+mandateId+"/revoke", body)
+}
+
+// RunMandates: Present every mandate debit that is due.
+func (c *Client) RunMandates() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/mandates/run", body)
+}
+
+// GetSettings: Organisation settings.
+func (c *Client) GetSettings() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settings"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateCoupon: A coupon: kind percent takes value in basis points (1000 = 10%), flat in minor units.
+func (c *Client) CreateCoupon(code string, kind string, value int64, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["code"] = code
+	body["kind"] = kind
+	body["value"] = value
+	return c.call("POST", "/v1/coupons", body)
+}
+
+// ListCoupons: Coupons.
+func (c *Client) ListCoupons() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/coupons"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// DeactivateCoupon: Stop a coupon being redeemed.
+func (c *Client) DeactivateCoupon(couponId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/coupons/"+couponId+"/deactivate", body)
+}
+
+// ListMilestones: Milestones.
+func (c *Client) ListMilestones() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/milestones"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateMilestone: A milestone that raises an invoice when completed.
+func (c *Client) CreateMilestone(customerId string, name string, amountMinor int64, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["customer_id"] = customerId
+	body["name"] = name
+	body["amount_minor"] = amountMinor
+	return c.call("POST", "/v1/milestones", body)
+}
+
+// CancelMilestone: Cancel a milestone that is not complete.
+func (c *Client) CancelMilestone(milestoneId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/milestones/"+milestoneId+"/cancel", body)
+}
+
+// CreateInstallmentPlan: Split an agreed total into dated invoices; idempotent by external_ref.
+func (c *Client) CreateInstallmentPlan(customerId string, name string, totalMinor int64, instalments int64, firstDueDate string, numberPrefix string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["customer_id"] = customerId
+	body["name"] = name
+	body["total_minor"] = totalMinor
+	body["instalments"] = instalments
+	body["first_due_date"] = firstDueDate
+	body["number_prefix"] = numberPrefix
+	return c.call("POST", "/v1/installment_plans", body)
+}
+
+// GetInstallmentPlan: One instalment plan.
+func (c *Client) GetInstallmentPlan(planId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/installment_plans/" + planId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// OpenDispute: Open a dispute; it holds the amount so it cannot also be refunded.
+func (c *Client) OpenDispute(attemptId string, reason string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["attempt_id"] = attemptId
+	body["reason"] = reason
+	return c.call("POST", "/v1/disputes", body)
+}
+
+// ListDisputes: Disputes, optionally by status (open, under_review, won, lost).
+func (c *Client) ListDisputes(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/disputes"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// AddDisputeEvidence: Attach evidence to a dispute.
+func (c *Client) AddDisputeEvidence(disputeId string, note string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["note"] = note
+	return c.call("POST", "/v1/disputes/"+disputeId+"/evidence", body)
+}
+
+// ResolveDispute: Record the outcome, won or lost.
+func (c *Client) ResolveDispute(disputeId string, outcome string) (map[string]any, error) {
+	body := map[string]any{}
+	body["outcome"] = outcome
+	return c.call("POST", "/v1/disputes/"+disputeId+"/resolve", body)
+}
+
+// ListBranches: Branches.
+func (c *Client) ListBranches() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/branches"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateBranch: Add a branch.
+func (c *Client) CreateBranch(name string) (map[string]any, error) {
+	body := map[string]any{}
+	body["name"] = name
+	return c.call("POST", "/v1/branches", body)
+}
+
+// VerifyAudit: Check the audit trail's seals are unbroken.
+func (c *Client) VerifyAudit() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/audit_events/verify"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// SealAudit: Seal the audit events so far.
+func (c *Client) SealAudit() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/audit_events/seal", body)
+}
+
+// ListKeys: API keys (never the secret).
+func (c *Client) ListKeys() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/api_keys"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreateKey: Mint an API key; the secret is shown once.
+func (c *Client) CreateKey(name string, scopes []any, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	body["scopes"] = scopes
+	return c.call("POST", "/v1/api_keys", body)
+}
+
+// RevokeKey: Revoke an API key.
+func (c *Client) RevokeKey(keyId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/api_keys/"+keyId+"/revoke", body)
+}
+
+// ListProviders: Connected payment providers.
+func (c *Client) ListProviders() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/provider_accounts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CheckProvider: Test a provider's credentials.
+func (c *Client) CheckProvider(provider string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/provider_accounts/"+provider+"/check", body)
+}
+
+// SetProviderEnabled: Turn a provider on or off for routing.
+func (c *Client) SetProviderEnabled(provider string, enabled bool) (map[string]any, error) {
+	body := map[string]any{}
+	body["enabled"] = enabled
+	return c.call("POST", "/v1/provider_accounts/"+provider+"/enabled", body)
+}
+
+// LiveAccessStatus: Where your request for live mode stands.
+func (c *Client) LiveAccessStatus() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/live_access"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RequestLiveAccess: Ask Zyvor to open live mode (the onboarding review must be approved).
+func (c *Client) RequestLiveAccess() (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/live_access", body)
+}
+
+// EventCatalogue: Every webhook event type and what it means.
+func (c *Client) EventCatalogue() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/events/catalogue"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListOutbox: Webhook events and their delivery state.
+func (c *Client) ListOutbox(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/outbox"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ReplayEvent: Queue a webhook event again.
+func (c *Client) ReplayEvent(eventId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/outbox/"+eventId+"/replay", body)
+}
+
+// GetIntent: One payment with its attempts.
+func (c *Client) GetIntent(intentId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_intents/" + intentId
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ExplainSettlement: A settlement explained in words and amounts.
+func (c *Client) ExplainSettlement(settlementId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/settlements/" + settlementId + "/explain"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CreatePlan: A billing plan.
+func (c *Client) CreatePlan(name string, amountMinor int64, intervalUnit string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["name"] = name
+	body["amount_minor"] = amountMinor
+	body["interval_unit"] = intervalUnit
+	return c.call("POST", "/v1/plans", body)
+}
+
+// UpdatePlan renames a plan (name), changes its price (amount_minor, from each subscriber's next invoice) or archives it
+// (active: false). With a new price, keep_existing: true leaves today's subscribers on the price they pay now.
+// A free trial for new subscribers is trial_days; free units per period on a metered plan, included_units. Keys left out stay as they are.
+func (c *Client) UpdatePlan(planID string, fields map[string]any) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("PATCH", "/v1/plans/"+planID, fields, "", &out)
+	return out, err
+}
+
+// Statement: A customer's statement.
+func (c *Client) Statement(customerId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/customers/" + customerId + "/statement"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// CompleteMilestone: Complete a milestone; it raises its invoice.
+func (c *Client) CompleteMilestone(milestoneId string) (map[string]any, error) {
+	body := map[string]any{}
+	return c.call("POST", "/v1/milestones/"+milestoneId+"/complete", body)
+}
+
+// FxRates: Dollar rates you have set.
+func (c *Client) FxRates() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/fx/rates"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// FxConvert: Convert an amount at the rate for a day.
+func (c *Client) FxConvert(amountMinor int64, fromCurrency string, toCurrency string, opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	v.Set("amount_minor", fmt.Sprint(amountMinor))
+	v.Set("from", fmt.Sprint(fromCurrency))
+	v.Set("to", fmt.Sprint(toCurrency))
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/fx/convert"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListMandates: Mandates.
+func (c *Client) ListMandates(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/mandates"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListMandateDebits: A mandate's debits.
+func (c *Client) ListMandateDebits(mandateId string) (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/mandates/" + mandateId + "/debits"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListPaymentLinks: Payment links.
+func (c *Client) ListPaymentLinks() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/payment_links"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// Remind: Record a reminder you sent for an invoice.
+func (c *Client) Remind(invoiceId string, channel string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, x := range opts {
+		body[k] = x
+	}
+	body["channel"] = channel
+	return c.call("POST", "/v1/invoices/"+invoiceId+"/reminders", body)
+}
+
+// ReminderDrafts: Reminder drafts waiting for a person.
+func (c *Client) ReminderDrafts(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/collections/drafts"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// ListCounters: Counters, optionally for one branch.
+func (c *Client) ListCounters(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/counters"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// Closings: Day closings.
+func (c *Client) Closings(opts map[string]any) (map[string]any, error) {
+	v := url.Values{}
+	for k, x := range opts {
+		v.Set(k, fmt.Sprint(x))
+	}
+	path := "/v1/closings"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// RefundAnomalies: Unusual refund activity (flags only; nothing is blocked).
+func (c *Client) RefundAnomalies() (map[string]any, error) {
+	v := url.Values{}
+	path := "/v1/insights/refund_anomalies"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// MailSuppressions lists the addresses that asked (through the unsubscribe link) to stop automatic emails.
+func (c *Client) MailSuppressions() (map[string]any, error) {
+	return c.call("GET", "/v1/mail_suppressions", nil)
+}
+
+// RemoveMailSuppression sends automatic emails to the address again.
+func (c *Client) RemoveMailSuppression(email string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/mail_suppressions/"+url.PathEscape(email), nil)
+}
+
+// TestClock returns the date a test environment sees and whether its test clock is set.
+func (c *Client) TestClock() (map[string]any, error) {
+	return c.call("GET", "/v1/test_clock", nil)
+}
+
+// SetTestClock moves a test environment's clock forward; body is {"date": "YYYY-MM-DD"} or {"advance_days": n}.
+func (c *Client) SetTestClock(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/test_clock", body)
+}
+
+// ClearTestClock puts a test environment back on real time.
+func (c *Client) ClearTestClock() (map[string]any, error) {
+	return c.call("DELETE", "/v1/test_clock", nil)
+}
+
+// UploadEmailLogo uses a PNG, JPEG, GIF or WebP image (up to 200 KB) as the logo in payer emails. The server needs
+// ZYVOR_PUBLIC_API_URL set.
+func (c *Client) UploadEmailLogo(image []byte) (map[string]any, error) {
+	var out map[string]any
+	err := c.do("POST", "/v1/settings/logo", image, "", &out)
+	return out, err
+}
+
+// RemoveEmailLogo removes the uploaded email logo and its address.
+func (c *Client) RemoveEmailLogo() (map[string]any, error) {
+	return c.call("DELETE", "/v1/settings/logo", nil)
+}
+
+// ResetTestData clears a test environment's payments, invoices, customers and ledger, keeping its setup. Refused in live.
+func (c *Client) ResetTestData() (map[string]any, error) {
+	return c.call("POST", "/v1/test_data/reset", map[string]any{"confirm": "reset test data"})
+}
+
+// UpdateSettings changes organisation settings; send only the fields to change (see GetSettings for the shape).
+func (c *Client) UpdateSettings(patch map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/settings", patch)
+}
+
+// ListFeeRules lists fee rules (rates you entered from your own contract).
+func (c *Client) ListFeeRules() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_rules", nil)
+}
+
+// CreateFeeRule adds a rule: bps is the percentage in basis points (200 = 2%), effectiveFrom is YYYY-MM-DD. opts may
+// hold flat_minor, cap_minor, gst_bps, refund_returns_fee and note.
+func (c *Client) CreateFeeRule(provider, method string, bps int64, effectiveFrom string, opts map[string]any) (map[string]any, error) {
+	body := map[string]any{}
+	for k, v := range opts {
+		body[k] = v
+	}
+	body["provider"], body["method"], body["bps"], body["effective_from"] = provider, method, bps, effectiveFrom
+	return c.call("POST", "/v1/fee_rules", body)
+}
+
+// DeleteFeeRule removes a rule; findings already recorded keep the rule they were checked against.
+func (c *Client) DeleteFeeRule(ruleId string) (map[string]any, error) {
+	return c.call("DELETE", "/v1/fee_rules/"+url.PathEscape(ruleId), nil)
+}
+
+// FeeCheckSettings returns the fee check tolerance (paise) and who owns new findings.
+func (c *Client) FeeCheckSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_checks/settings", nil)
+}
+
+// UpdateFeeCheckSettings sets tolerance_minor and/or owner; fields left out keep their value.
+func (c *Client) UpdateFeeCheckSettings(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/fee_checks/settings", body)
+}
+
+// FeeCheckSummary returns open fee findings, total variance, by provider and method.
+func (c *Client) FeeCheckSummary() (map[string]any, error) {
+	return c.call("GET", "/v1/fee_checks/summary", nil)
+}
+
+// ListFeeFindings lists payments whose deducted fee differs from your rule; opts: status, provider, method, limit.
+func (c *Client) ListFeeFindings(opts map[string]any) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/fee_checks/findings", opts), nil)
+}
+
+// RunFeeCheck re-checks settlements against the current rules; body may hold since (YYYY-MM-DD) and limit.
+func (c *Client) RunFeeCheck(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/fee_checks/run", body)
+}
+
+// SettlementFeeCheck says what the fee check finds on one settlement. Writes nothing.
+func (c *Client) SettlementFeeCheck(settlementId string) (map[string]any, error) {
+	return c.call("GET", "/v1/settlements/"+url.PathEscape(settlementId)+"/fee_check", nil)
+}
+
+// RecheckSettlementFee re-checks one settlement and records the finding.
+func (c *Client) RecheckSettlementFee(settlementId string) (map[string]any, error) {
+	return c.call("POST", "/v1/settlements/"+url.PathEscape(settlementId)+"/fee_check", nil)
+}
+
+// PreviewBankStatement is a dry run of a CSV import: line-level problems, totals and duplicates; nothing is stored.
+func (c *Client) PreviewBankStatement(csv string, options ...map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/preview", withCSV(csv, options))
+}
+
+// BankStatementLayouts lists the supported statement layouts, date and amount formats.
+func (c *Client) BankStatementLayouts() (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/layouts", nil)
+}
+
+// ListBankImports lists imported bank statement files.
+func (c *Client) ListBankImports() (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/imports", nil)
+}
+
+// ListBankLines lists statement lines with their match status; opts: status, direction, from, to (YYYY-MM-DD),
+// import_id, limit.
+func (c *Client) ListBankLines(opts map[string]any) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/bank_statements/lines", opts), nil)
+}
+
+// GetBankLine returns one statement line with every match it has had and its cases.
+func (c *Client) GetBankLine(lineId int64) (map[string]any, error) {
+	return c.call("GET", "/v1/bank_statements/lines/"+fmt.Sprint(lineId), nil)
+}
+
+// RematchBank looks again at every unmatched settlement and bank line.
+func (c *Client) RematchBank() (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/rematch", nil)
+}
+
+// ConfirmBankMatch accepts a suggested match; note is optional.
+func (c *Client) ConfirmBankMatch(matchId int64, note string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/matches/"+fmt.Sprint(matchId)+"/confirm", noteBody(note))
+}
+
+// RejectBankMatch rejects a suggested match; it is not suggested again. note is optional.
+func (c *Client) RejectBankMatch(matchId int64, note string) (map[string]any, error) {
+	return c.call("POST", "/v1/bank_statements/matches/"+fmt.Sprint(matchId)+"/reject", noteBody(note))
+}
+
+func noteBody(note string) map[string]any {
+	if note == "" {
+		return nil
+	}
+	return map[string]any{"note": note}
+}
+
+// ReconAgeing returns open reconciliation cases by age and kind.
+func (c *Client) ReconAgeing() (map[string]any, error) {
+	return c.call("GET", "/v1/recon/ageing", nil)
+}
+
+// RoutingHealth reads per provider and method the recent success rate, circuit-breaker state, thresholds and recent
+// events. method "" means all. Read only.
+func (c *Client) RoutingHealth(method string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/routing/health", map[string]any{"method": method}), nil)
+}
+
+// RoutingHealthSettings returns the provider-health thresholds.
+func (c *Client) RoutingHealthSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/health/settings", nil)
+}
+
+// UpdateRoutingHealthSettings changes thresholds (admin scope); fields not sent keep their value: breaker_enabled,
+// failover_enabled, window_attempts, window_minutes, min_samples, degrade_failure_pct, recover_failure_pct,
+// cooldown_seconds.
+func (c *Client) UpdateRoutingHealthSettings(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/health/settings", body)
+}
+
+// RoutingAutomation returns shadow mode, soft retry, cost-aware routing and the kill switch for this business (all off
+// by default) and what is in force now.
+func (c *Client) RoutingAutomation() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/automation", nil)
+}
+
+// UpdateRoutingAutomation changes automation settings (admin scope); fields not sent keep their value: shadow_enabled,
+// shadow_policy, soft_retry_enabled, soft_retry_max_attempts, soft_retry_window_seconds, cost_aware_enabled,
+// cost_success_floor_bps, cost_premium_bps, cost_min_fee_samples.
+func (c *Client) UpdateRoutingAutomation(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/automation", body)
+}
+
+// PauseRoutingAutomation pulls the kill switch: every routing automation stops acting at once (admin scope,
+// idempotent, audited). reason may be empty.
+func (c *Client) PauseRoutingAutomation(reason string) (map[string]any, error) {
+	body := map[string]any{}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return c.call("POST", "/v1/routing/automation/pause", body)
+}
+
+// ResumeRoutingAutomation releases the kill switch (admin scope, idempotent, audited).
+func (c *Client) ResumeRoutingAutomation() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/automation/resume", map[string]any{})
+}
+
+// RoutingShadowReport compares shadow decisions with what was applied over the last days (0 = the default of 7).
+// method "" means all. Read only.
+func (c *Client) RoutingShadowReport(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/shadow/report", q), nil)
+}
+
+// RoutingScorecard returns per provider and method the success rate (payer declines excluded), failure classes,
+// median time to resolve, unresolved payments, observed fee and the last degrade and recovery. Read only.
+func (c *Client) RoutingScorecard(days int, method string) (map[string]any, error) {
+	q := map[string]any{"method": method}
+	if days > 0 {
+		q["days"] = days
+	}
+	return c.call("GET", withQuery("/v1/routing/scorecard", q), nil)
+}
+
+// ListOffers lists merchant-funded offers; status "" means all.
+func (c *Client) ListOffers(status string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/offers", map[string]any{"status": status}), nil)
+}
+
+// CreateOffer creates an offer: name, kind ("percent" in basis points or "flat" in minor units), value, and optional
+// conditions (methods, card_networks, bin_ranges, upi_apps, upi_handles, banks, min_amount_minor, max_amount_minor,
+// segment, valid_from, valid_until), caps (max_redemptions, max_per_customer, budget_minor) and stacking (stackable,
+// stack_group, priority).
+func (c *Client) CreateOffer(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/offers", body)
+}
+
+// GetOffer returns one offer with what it has cost so far.
+func (c *Client) GetOffer(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/offers/"+url.PathEscape(id), nil)
+}
+
+// UpdateOffer changes status, name, description, valid_until, caps or priority; the conditions and discount are fixed.
+func (c *Client) UpdateOffer(id string, body map[string]any) (map[string]any, error) {
+	return c.call("PATCH", "/v1/offers/"+url.PathEscape(id), body)
+}
+
+// PreviewOffers says what a payment would be offered (amount_minor, method, optional customer_id, instrument, vpa,
+// offer_codes). Nothing is reserved.
+func (c *Client) PreviewOffers(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/offers/preview", body)
+}
+
+// OfferRefundPreview says how much of an offer discount a refund would hand back; amountMinor 0 means everything
+// still refundable.
+func (c *Client) OfferRefundPreview(intentId string, amountMinor int64) (map[string]any, error) {
+	body := map[string]any{"intent_id": intentId}
+	if amountMinor > 0 {
+		body["amount_minor"] = amountMinor
+	}
+	return c.call("POST", "/v1/offers/refund_preview", body)
+}
+
+// IntentOffers lists the offers that priced one payment and who funded each (always the merchant).
+func (c *Client) IntentOffers(intentId string) (map[string]any, error) {
+	return c.call("GET", "/v1/payment_intents/"+url.PathEscape(intentId)+"/offers", nil)
+}
+
+// ValidateRoutingRules checks rules without saving them.
+func (c *Client) ValidateRoutingRules(rules []any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/validate", map[string]any{"rules": rules})
+}
+
+// CreateRoutingRuleSet saves a new immutable version of the routing rules; activate makes it the active one.
+func (c *Client) CreateRoutingRuleSet(rules []any, note string, activate bool) (map[string]any, error) {
+	body := map[string]any{"rules": rules, "activate": activate}
+	if note != "" {
+		body["note"] = note
+	}
+	return c.call("POST", "/v1/routing/rule_sets", body)
+}
+
+// ListRoutingRuleSets lists the saved versions and the active one.
+func (c *Client) ListRoutingRuleSets() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/rule_sets", nil)
+}
+
+// ActivateRoutingRuleSet makes a saved version the active one (refused while an experiment runs).
+func (c *Client) ActivateRoutingRuleSet(version int) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/"+fmt.Sprint(version)+"/activate", map[string]any{})
+}
+
+// RollbackRoutingRuleSet makes the previously active rule set active again.
+func (c *Client) RollbackRoutingRuleSet() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/rollback", map[string]any{})
+}
+
+// RoutingDryRun says which provider a payment would take. Creates nothing.
+func (c *Client) RoutingDryRun(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/dry_run", body)
+}
+
+// StartRoutingExperiment sends variant_percent of payments through a saved variant rule set, with guardrails.
+func (c *Client) StartRoutingExperiment(body map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments", body)
+}
+
+// RoutingExperimentResults returns success rate per arm, the verdict and whether the guardrail would stop it.
+func (c *Client) RoutingExperimentResults(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/experiments/"+url.PathEscape(id), nil)
+}
+
+// StopRoutingExperiment stops a running experiment.
+func (c *Client) StopRoutingExperiment(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments/"+url.PathEscape(id)+"/stop", map[string]any{})
+}
+
+// ListRoutingAlerts lists downtime alerts; status is "open", "resolved" or "" for all.
+func (c *Client) ListRoutingAlerts(status string) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/routing/alerts", map[string]any{"status": status}), nil)
+}
+
+// OfferRedemptions lists the payments an offer priced; status "" means all.
+func (c *Client) OfferRedemptions(id, status string, limit int) (map[string]any, error) {
+	return c.call("GET", withQuery("/v1/offers/"+url.PathEscape(id)+"/redemptions", map[string]any{"status": status, "limit": limit}), nil)
+}
+
+// GetRoutingRuleSet returns one saved rule version.
+func (c *Client) GetRoutingRuleSet(version int) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/rule_sets/"+fmt.Sprint(version), nil)
+}
+
+// DeactivateRoutingRuleSet stops using any rule set: the older routing rules in the settings apply again.
+func (c *Client) DeactivateRoutingRuleSet() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/rule_sets/deactivate", map[string]any{})
+}
+
+// ListRoutingExperiments lists routing experiments.
+func (c *Client) ListRoutingExperiments() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/experiments", nil)
+}
+
+// EvaluateRoutingExperiment runs the guardrail now: it stops the experiment if the variant is clearly worse.
+func (c *Client) EvaluateRoutingExperiment(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/experiments/"+url.PathEscape(id)+"/evaluate", map[string]any{})
+}
+
+// GetRoutingAlert returns one downtime alert with its case.
+func (c *Client) GetRoutingAlert(id string) (map[string]any, error) {
+	return c.call("GET", "/v1/routing/alerts/"+url.PathEscape(id), nil)
+}
+
+// AcknowledgeRoutingAlert marks an open downtime alert as seen.
+func (c *Client) AcknowledgeRoutingAlert(id string) (map[string]any, error) {
+	return c.call("POST", "/v1/routing/alerts/"+url.PathEscape(id)+"/ack", map[string]any{})
+}
+
+// CheckRoutingAlerts checks provider health for downtime now (the worker does the same on its cycle).
+func (c *Client) CheckRoutingAlerts() (map[string]any, error) {
+	return c.call("POST", "/v1/routing/alerts/evaluate", map[string]any{})
+}
+
+// RoutingAlertSettings returns the downtime alert thresholds and email address.
+func (c *Client) RoutingAlertSettings() (map[string]any, error) {
+	return c.call("GET", "/v1/routing/alerts/settings", nil)
+}
+
+// UpdateRoutingAlertSettings changes the alert thresholds; fields not sent keep their value.
+func (c *Client) UpdateRoutingAlertSettings(body map[string]any) (map[string]any, error) {
+	return c.call("PUT", "/v1/routing/alerts/settings", body)
+}

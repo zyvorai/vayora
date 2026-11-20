@@ -1,0 +1,833 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+"use server";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { ZyvorError, type Zyvor } from "@zyvor/node";
+import { currentSession } from "@/lib/auth";
+import { parseBulk } from "@/lib/bulk";
+import { handleFor, methodFor } from "@/lib/sandbox";
+import { publicPost, type EmailLogin } from "@/lib/public";
+import { COOKIE, KEY_COOKIE, SESSION_TTL_SECONDS, sealText, allows, createSession, passwordMatches, type Role, type Session } from "@/lib/session";
+import { api, authConfig, sessionKey } from "@/lib/zyvor";
+
+export type FormState = { ok?: string; error?: string; otp?: boolean; unverified?: boolean; secret?: string; uri?: string; codes?: string[] } | undefined;
+
+async function startWithKey(who: Omit<Session, "exp">, key: string) {
+  await start(who);
+  (await cookies()).set(KEY_COOKIE, await sealText(authConfig().secret, key), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  });
+}
+
+/** Sign in by email as a member of the organisation that signed up with it. */
+async function emailSignIn(email: string, password: string, otp: string): Promise<{ who: Omit<Session, "exp">; key: string } | NonNullable<FormState>> {
+  const r = await publicPost<EmailLogin>("/v1/console/login", { email, password, otp: otp || undefined });
+  if (r.ok) return { who: { i: r.body.user.id, u: r.body.user.username, r: r.body.user.role, m: r.body.mfa_enrolled, e: r.body.env, ...(r.body.user.branch_id ? { b: r.body.user.branch_id } : {}) }, key: r.body.session_key };
+  if (r.code === "otp_required") return { otp: true };
+  if (r.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes." };
+  if (r.code === "email_not_verified") return { error: "Confirm your email first: we sent you a link when you signed up.", unverified: true };
+  if (r.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
+  await new Promise((x) => setTimeout(x, 500)); // slow down guessing
+  return { error: "Incorrect email, password or code." };
+}
+
+function safeNext(form: FormData): string {
+  const next = String(form.get("next") ?? "/");
+  // Only same-site relative paths; never an open redirect.
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
+
+async function start(who: Omit<Session, "exp">) {
+  (await cookies()).set(COOKIE, await createSession(authConfig().secret, who), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  });
+}
+
+export async function login(_: FormState, form: FormData): Promise<FormState> {
+  const { username, password, secret } = authConfig();
+  const u = String(form.get("username") ?? "").trim().toLowerCase();
+  const p = String(form.get("password") ?? "");
+  const otp = String(form.get("otp") ?? "").trim();
+  let signedIn: Omit<Session, "exp"> | null = null;
+  if (u.includes("@")) {
+    const r = await emailSignIn(u, p, otp);
+    if ("who" in r) {
+      await startWithKey(r.who, r.key);
+      redirect(safeNext(form));
+    }
+    // not an organisation's email: fall through to the deployment's own users
+    if (r.otp || (r.error && !r.error.startsWith("Incorrect"))) return r;
+  }
+  try {
+    const r = await (await api(undefined, { deployment: true })).consoleUsers.authenticate({ username: u, password: p, otp: otp || undefined });
+    signedIn = { i: r.user.id, u: r.user.username, r: r.user.role, m: r.mfa_enrolled, ...(r.user.branch_id ? { b: r.user.branch_id } : {}) };
+  } catch (e) {
+    if (!(e instanceof ZyvorError)) return { error: "Sign-in is unavailable right now. Try again in a moment." };
+    if (e.code === "otp_required") return { otp: true };
+    if (e.status === 423) return { error: "Too many failed attempts. Try again in 15 minutes, or ask an admin to unlock you." };
+    if (e.status !== 401) return { error: "Sign-in is unavailable right now. Try again in a moment." };
+  }
+  if (!signedIn) {
+    // Break-glass: the deployment's own admin may sign in only while no named user exists yet.
+    // Check both fields every time so a wrong username costs the same as a wrong password.
+    const userOk = await passwordMatches(secret, u, username.toLowerCase());
+    const passOk = await passwordMatches(secret, p, password);
+    let noUsers = false;
+    if (userOk && passOk) {
+      try {
+        noUsers = (await (await api(undefined, { deployment: true })).consoleUsers.list()).data.length === 0;
+      } catch {
+        noUsers = false;
+      }
+    }
+    if (userOk && passOk && noUsers) signedIn = { i: "bootstrap", u: username, r: "admin", m: false };
+  }
+  if (!signedIn) {
+    await new Promise((r) => setTimeout(r, 500)); // slow down guessing
+    return { error: "Incorrect username, password or code." };
+  }
+  await start(signedIn);
+  (await cookies()).delete(KEY_COOKIE); // an earlier organisation sign-in must not leave its key behind
+  redirect(safeNext(form));
+}
+
+/** Move to the organisation's other environment. The API swaps the session key; live needs approved onboarding. */
+export async function switchEnv(_: FormState, form: FormData): Promise<FormState> {
+  const s = await currentSession();
+  const key = await sessionKey();
+  const env = form.get("env") === "live" ? "live" : "test";
+  if (!s || !key) return { error: "Switching is available when you sign in with your email." };
+  if (s.e === env) return undefined;
+  const r = await publicPost<EmailLogin>("/v1/console/switch_env", { env }, key);
+  if (!r.ok) {
+    if (r.code === "onboarding_incomplete") return { error: "Live mode opens once your business details are approved. Finish onboarding first." };
+    if (r.code === "live_access_pending") return { error: "Zyvor is still reviewing your business. We email you as soon as live mode opens." };
+    if (r.code === "live_access_required") return { error: "Zyvor reviews every business before live mode opens. Request live access on the Onboarding page." };
+    return { error: "Could not switch right now. Try again in a moment." };
+  }
+  const { exp: _exp, ...who } = s;
+  await startWithKey({ ...who, e: r.body.env }, r.body.session_key);
+  revalidatePath("/", "layout");
+  return undefined;
+}
+
+export async function signup(_: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+  const r = await publicPost("/v1/signup", { organisation_name: String(form.get("organisation") ?? ""), email, password });
+  if (!r.ok) {
+    if (r.status === 409) return { error: "An account already exists for that email. Sign in instead." };
+    if (r.status === 422) return { error: r.message ? `${r.message[0].toUpperCase()}${r.message.slice(1)}.` : "Check the details and try again." };
+    if (r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+    return { error: "Signup is unavailable right now. Try again in a moment." };
+  }
+  const si = await emailSignIn(email, password, "");
+  if ("unverified" in si && si.unverified) redirect(`/check-email?email=${encodeURIComponent(email)}`);
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/onboarding");
+}
+
+/** Send a fresh confirmation link. Always the same answer, so addresses cannot be probed. */
+export async function resendVerification(_: FormState, form: FormData): Promise<FormState> {
+  await publicPost("/v1/signup/resend", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  return { ok: "If that address is waiting to be confirmed, a new link is on its way." };
+}
+
+export async function requestReset(_: FormState, form: FormData): Promise<FormState> {
+  const r = await publicPost("/v1/password_reset/request", { email: String(form.get("email") ?? "").trim().toLowerCase() });
+  if (!r.ok && r.status === 429) return { error: "Too many attempts. Try again in a minute." };
+  return { ok: "If that address has an account, a reset link is on its way. It works for an hour." };
+}
+
+export async function confirmReset(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost("/v1/password_reset/confirm", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That link has expired.")[0].toUpperCase()}${(r.message ?? "That link has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : "Could not reset the password right now. Try again in a moment." };
+  redirect("/login?reset=1");
+}
+
+export async function acceptInvitation(_: FormState, form: FormData): Promise<FormState> {
+  const password = String(form.get("password") ?? "");
+  if (password !== String(form.get("again") ?? "")) return { error: "The two passwords differ." };
+  const r = await publicPost<{ email: string }>("/v1/invitations/accept", { token: String(form.get("token") ?? ""), password });
+  if (!r.ok) return { error: r.status === 422 ? `${(r.message ?? "That invitation has expired.")[0].toUpperCase()}${(r.message ?? "That invitation has expired.").slice(1)}${r.message?.endsWith(".") ? "" : "."}` : r.status === 409 ? "That email already belongs to an account." : "Could not accept right now. Try again in a moment." };
+  const si = await emailSignIn(r.body.email, password, "");
+  if (!("who" in si)) redirect("/login");
+  await startWithKey(si.who, si.key);
+  redirect("/");
+}
+
+export const inviteUser = async (_: FormState, f: FormData) => {
+  const r = await run(["/users"], (z) => z.consoleUsers.invite({ email: text(f, "email"), role: text(f, "role") as "viewer", branchId: text(f, "branch_id") || undefined }), "admin");
+  return r?.ok ? { ok: "Invitation sent. The link works once and expires in 7 days." } : r;
+};
+export const revokeInvitation = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.revokeInvitation(id(f)), "admin");
+
+export async function logout() {
+  // end the session at the API too, not only in this browser (best effort: signing out must always work)
+  const key = await sessionKey();
+  if (key) await publicPost("/v1/console/logout", {}, key);
+  (await cookies()).delete(COOKIE);
+  (await cookies()).delete(KEY_COOKIE);
+  redirect("/login");
+}
+
+const DENIED = { error: "Your role does not allow that." };
+
+/** Run an API call from a form as the signed-in person. A refusal (state changed, not allowed) is shown, not thrown. */
+async function run(paths: string[], fn: (z: Zyvor, s: Session) => Promise<unknown>, need: Role = "finance"): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, need)) return DENIED;
+  try {
+    await fn(await api(s.u), s);
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+  for (const p of paths) revalidatePath(p);
+  return { ok: "Done." };
+}
+const id = (f: FormData) => String(f.get("id") ?? "");
+
+export const approveRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.approve(id(f)));
+export const rejectRefund = async (_: FormState, f: FormData) => run(["/refunds", "/"], (z) => z.refunds.reject(id(f)));
+export const retryRefund = async (_: FormState, f: FormData) => run(["/refunds"], (z) => z.refunds.retry(id(f)));
+/** Refund all or part of a payment. The key comes from the form, so a double click is one refund, not two. */
+export const refundPayment = async (_: FormState, f: FormData) => {
+  const raw = String(f.get("amount") ?? "").replace(/,/g, "").trim();
+  const rupees = raw === "" ? undefined : Number(raw);
+  if (rupees !== undefined && (!Number.isFinite(rupees) || rupees <= 0)) return { error: "Enter an amount greater than zero, or leave it empty to refund what is left." };
+  const key = String(f.get("key") ?? "");
+  const intent = id(f);
+  const r = await run([`/payments/${intent}`, "/refunds", "/"], (z) => z.intents.refund(intent, { amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100), reason: String(f.get("reason") ?? "").trim() || undefined, idempotencyKey: key || undefined }));
+  return r?.ok ? { ok: "Refund requested. If it is above your approval limit it waits for a second person on the Refunds page." } : r;
+};
+/** Ask Zyvor to review the business for live mode. */
+export const requestLiveAccess = async (_: FormState) => run(["/onboarding", "/"], (z) => z.liveAccess.request(), "admin");
+export const sendTestEvent = async (_: FormState) => run(["/webhooks", "/developers"], (z) => z.webhooks.sendTest(), "admin");
+/** Make a test payment that ends the way you pick, then open it. Test environments only. */
+export async function createTestPayment(_: FormState, f: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  const handle = handleFor(String(f.get("outcome") ?? ""));
+  const method = methodFor(String(f.get("method") ?? "upi"));
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  if (!handle) return { error: "Pick an outcome." };
+  if (!method) return { error: "Pick a payment method." };
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  const key = String(f.get("key") ?? "") || crypto.randomUUID();
+  let intentId: string;
+  try {
+    const z = await api(s.u);
+    if ((await z.settings.get()).env !== "test") return { error: "Test payments are only available in test mode." };
+    const i = await z.intents.create({ amountMinor: Math.round(rupees * 100), externalRef: String(f.get("reference") ?? "").trim() || undefined, description: "Sandbox payment", idempotencyKey: key });
+    intentId = i.id;
+    await z.intents.attempt(i.id, { method, vpa: handle, idempotencyKey: `${key}:attempt` });
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.code === "no_route" || /provider/i.test(e.message) ? "No test provider is set up yet. An admin can turn the simulator on from this page." : e.message };
+    throw e;
+  }
+  revalidatePath("/payments");
+  redirect(`/payments/${intentId}`);
+}
+/** Test mode only: settle today's simulated payments (2% invented fee) so Reconciliation has something to show. */
+export async function simulateSettlement(_: FormState, __: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  try {
+    const z = await api(s.u);
+    if ((await z.settings.get()).env !== "test") return { error: "Simulated settlements are only available in test mode." };
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const r = await z.settlements.sync("sim", today);
+    revalidatePath("/reconciliation");
+    return { ok: r.imported.length ? "Settled today's simulated payments." : "No simulated payments were captured today." };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
+/** Test mode only: the bank credit for a simulated settlement, optionally short by some rupees (so a case opens). */
+export async function simulateBankCredit(_: FormState, f: FormData): Promise<FormState> {
+  const short = Math.round(Number(String(f.get("short") ?? "0")) * 100);
+  if (!Number.isFinite(short) || short < 0) return { error: "Enter a shortfall of zero or more." };
+  const r = await run(["/reconciliation"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Simulated bank credits are only available in test mode.");
+    await z.settlements.simulateBank(id(f), short);
+  });
+  return r?.ok ? { ok: short ? "Credit added, short as asked: check Cases." : "Credit added." } : r;
+}
+/** Test mode only: the provider's late answer for a simulated payment that is still pending. */
+export async function simulateProviderUpdate(_: FormState, f: FormData): Promise<FormState> {
+  const outcome = String(f.get("outcome") ?? "") === "failed" ? "failed" : "captured";
+  const r = await run(["/payments"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Simulated provider updates are only available in test mode.");
+    await z.attempts.simulateEvent(id(f), outcome);
+  });
+  return r?.ok ? { ok: outcome === "failed" ? "Marked failed." : "Marked paid." } : r;
+}
+/** Connect Razorpay or Cashfree. The secrets go straight to the API; nothing is kept here. */
+export const connectProvider = async (_: FormState, f: FormData) => {
+  const provider = text(f, "provider");
+  if (!["razorpay", "cashfree", "phonepe", "sponsor_upi"].includes(provider)) {
+    return { error: "Choose Razorpay, Cashfree, PhonePe or Sponsor UPI." };
+  }
+  let credentials: Record<string, string | boolean>;
+  let webhookSecret: string;
+  let baseUrl: string | undefined;
+  if (provider === "razorpay") {
+    credentials = { key_id: text(f, "id"), key_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
+    webhookSecret = text(f, "webhook_secret");
+    if (!text(f, "id") || !text(f, "secret") || !webhookSecret) return { error: "Fill in the key, its secret and the webhook secret." };
+  } else if (provider === "cashfree") {
+    credentials = { client_id: text(f, "id"), client_secret: text(f, "secret"), upi_intent: on(f, "upi_intent") };
+    webhookSecret = text(f, "secret");
+    if (!text(f, "id") || !text(f, "secret")) return { error: "Fill in the app id and its secret key." };
+  } else if (provider === "phonepe") {
+    credentials = { merchant_id: text(f, "merchant_id"), salt_key: text(f, "salt_key") };
+    webhookSecret = text(f, "webhook_secret");
+    baseUrl = text(f, "base_url") || undefined;
+    if (!text(f, "merchant_id") || !text(f, "salt_key") || !webhookSecret) return { error: "Fill in merchant id, salt key and webhook secret." };
+  } else {
+    credentials = { api_key: text(f, "api_key") };
+    webhookSecret = text(f, "webhook_secret");
+    baseUrl = text(f, "base_url");
+    if (!text(f, "api_key") || !webhookSecret || !baseUrl) return { error: "Fill in API key, webhook secret and base URL for the sponsor." };
+  }
+  const r = await run(["/providers", "/sandbox"], (z) => z.providers.connect(provider as "razorpay" | "cashfree" | "phonepe" | "sponsor_upi", { credentials, webhookSecret, label: text(f, "label") || undefined, baseUrl }), "admin");
+  return r?.ok ? { ok: "Connected. Run the check to confirm the provider accepts it." } : r;
+};
+/** Returns the provider's answer so it can be shown; a refusal is a result, not a crash. */
+export async function checkProvider(provider: string): Promise<{ ok: boolean; detail: string }> {
+  const s = await currentSession();
+  if (!s || !allows(s.r, "admin")) return { ok: false, detail: DENIED.error };
+  try {
+    const r = await (await api(s.u)).providers.check(provider);
+    return { ok: r.ok, detail: r.detail };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { ok: false, detail: e.message };
+    throw e;
+  }
+}
+export async function setProviderEnabled(provider: string, enabled: boolean): Promise<FormState> {
+  return run(["/providers"], (z) => z.providers.setEnabled(provider, enabled), "admin");
+}
+export const enableSandbox = async (_: FormState) => run(["/sandbox"], (z) => z.providers.enableSimulator(), "admin");
+export const assignCase = async (_: FormState, f: FormData) => run(["/reconciliation", "/"], (z, s) => z.cases.assign(id(f), String(f.get("assignee") ?? "").trim() || s.u));
+export const resolveCase = async (_: FormState, f: FormData) => {
+  const note = String(f.get("resolution") ?? "").trim();
+  if (!note) return { error: "Say how it was resolved." };
+  return run(["/reconciliation", "/"], (z) => z.cases.resolve(id(f), note));
+};
+/** Open cases for captured payments still missing a settlement after N days (default 3). */
+export async function scanMissingSettlements(_: FormState, f: FormData): Promise<FormState> {
+  const raw = String(f.get("older_than_days") ?? "3").trim();
+  const days = Number.parseInt(raw, 10);
+  if (!Number.isFinite(days) || days < 0 || days > 90) return { error: "Days must be 0–90." };
+  const s = await currentSession();
+  if (!s || !allows(s.r, "finance")) return DENIED;
+  try {
+    const r = await (await api(s.u)).cases.scan(days);
+    revalidatePath("/reconciliation");
+    revalidatePath("/");
+    return { ok: `Opened ${r.new_cases} new case(s).` };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
+const PAYMENT_FILTERS = ["status", "q", "from", "to"] as const;
+export const saveView = async (_: FormState, f: FormData) => {
+  const name = String(f.get("name") ?? "").trim();
+  if (!name) return { error: "Give the view a name." };
+  const query: Record<string, string> = {};
+  for (const k of PAYMENT_FILTERS) { const v = String(f.get(k) ?? "").trim(); if (v) query[k] = v; }
+  if (Object.keys(query).length === 0) return { error: "Choose a filter first." };
+  return run(["/payments"], (z) => z.savedViews.create({ name, query, shared: on(f, "shared") }), "viewer");
+};
+export const deleteView = async (_: FormState, f: FormData) => run(["/payments"], (z) => z.savedViews.delete(id(f)), "viewer");
+export const replayEvent = async (_: FormState, f: FormData) => run(["/webhooks"], (z) => z.webhooks.replay(id(f)), "admin");
+export const runBilling = async (_: FormState): Promise<FormState> => {
+  let made = 0;
+  const r = await run(["/billing"], async (z) => {
+    made = (await z.billing.run()).invoices_created;
+  });
+  return r?.error ? r : { ok: `${made} invoice(s) created.` };
+};
+/** Test mode only: run billing or reminders as if it were another day, to see what that day would bring. */
+export async function runAsOf(_: FormState, f: FormData): Promise<FormState> {
+  const day = String(f.get("day") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day))) return { error: "Choose a day." };
+  const what = String(f.get("what")) === "reminders" ? "reminders" : "billing";
+  let msg = "";
+  const r = await run(["/billing", "/collections"], async (z) => {
+    if ((await z.settings.get()).env !== "test") throw new ZyvorError(422, "test_only", "Choosing the day is only available in test mode.");
+    if (what === "billing") msg = `${(await z.billing.run({ asOf: day })).invoices_created} invoice(s) created as of ${day}.`;
+    else msg = `${(await z.collections.runDunning({ asOf: day })).reminded} reminder(s) sent as of ${day}.`;
+  });
+  return r?.error ? r : { ok: msg };
+}
+export const remind = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.remind(id(f), { channel: String(f.get("channel") ?? "whatsapp") as "whatsapp" }));
+export const completeMilestone = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.milestones.complete(id(f)));
+export const resolveDispute = async (_: FormState, f: FormData) => run(["/disputes", "/"], (z) => z.disputes.resolve(id(f), String(f.get("outcome")) === "won" ? "won" : "lost"));
+/** Hold disputed money on a captured payment. */
+export async function openDispute(_: FormState, f: FormData): Promise<FormState> {
+  const attemptId = String(f.get("attempt_id") ?? "").trim();
+  const intentId = String(f.get("intent_id") ?? "").trim();
+  const reason = String(f.get("reason") ?? "").trim();
+  if (!attemptId) return { error: "Missing payment attempt." };
+  if (!reason) return { error: "Say why the dispute was opened." };
+  const raw = String(f.get("amount") ?? "").replace(/,/g, "").trim();
+  const rupees = raw === "" ? undefined : Number(raw);
+  if (rupees !== undefined && (!Number.isFinite(rupees) || rupees <= 0)) return { error: "Enter an amount greater than zero, or leave it empty for the full payment." };
+  const respondBy = String(f.get("respond_by") ?? "").trim() || undefined;
+  const paths = ["/disputes", "/", ...(intentId ? [`/payments/${intentId}`] : ["/payments"])];
+  const r = await run(paths, (z) => z.disputes.open({
+    attemptId,
+    reason,
+    amountMinor: rupees === undefined ? undefined : Math.round(rupees * 100),
+    respondBy,
+  }));
+  return r?.ok ? { ok: "Dispute opened. The amount is held and cannot be refunded until it is resolved." } : r;
+}
+/** Test mode: the next simulator refund fails once (failed queue + retry). */
+export const failNextSimRefund = async (_: FormState) => run(["/sandbox", "/refunds"], (z) => z.sim.failNextRefund());
+
+export const createLink = async (_: FormState, f: FormData): Promise<FormState> => {
+  const money = (k: string) => {
+    const v = String(f.get(k) ?? "").trim();
+    return v ? Math.round(Number(v.replace(/,/g, "")) * 100) : undefined;
+  };
+  const open = f.get("open") === "on";
+  const maxUses = String(f.get("max_uses") ?? "").trim();
+  const description = String(f.get("description") ?? "").trim() || undefined;
+  const counterId = String(f.get("counter_id") ?? "") || undefined;
+  let path = "";
+  if (open) {
+    const [min, max] = [money("min"), money("max")];
+    if ([min, max].some((v) => v !== undefined && (!Number.isFinite(v) || v <= 0))) return { error: "Enter the smallest and largest amounts in rupees, or leave them empty." };
+    if (min !== undefined && max !== undefined && min > max) return { error: "The smallest amount cannot be more than the largest." };
+    const r = await run(["/links"], async (z) => {
+      path = (await z.paymentLinks.create({ description, openAmount: true, minAmountMinor: min, maxAmountMinor: max, counterId })).path;
+    });
+    return r?.error ? r : { ok: path };
+  }
+  const amount = money("amount");
+  if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const customerId = String(f.get("customer_id") ?? "") || undefined;
+  const day = String(f.get("expires_on") ?? "");
+  if (day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day)))) return { error: "Choose a valid last day." };
+  const remind = f.get("remind") === "on";
+  if (remind && (!customerId || !day)) return { error: "To send a reminder, choose a customer and a last day." };
+  const r = await run(["/links"], async (z) => {
+    path = (await z.paymentLinks.create({
+      description,
+      amountMinor: amount,
+      maxUses: maxUses ? Number(maxUses) : undefined,
+      convenienceFeeBp: String(f.get("fee") ?? "").trim() ? Math.round(Number(String(f.get("fee")).replace(/,/g, "")) * 100) : undefined,
+      counterId,
+      customerId,
+      expiresAt: day ? `${day}T23:59:59+05:30` : undefined,
+      remindBeforeExpiry: remind || undefined,
+    })).path;
+  });
+  return r?.error ? r : { ok: path };
+};
+export const cancelLink = async (_: FormState, f: FormData) => run(["/links"], (z) => z.paymentLinks.cancel(id(f)));
+export const emailLink = async (_: FormState, f: FormData) => {
+  const r = await run(["/links"], (z) => z.paymentLinks.send(id(f)));
+  return r?.error ? r : { ok: "Emailed." };
+};
+
+// ---- people and security (admin) ----
+export const createUser = async (_: FormState, f: FormData) =>
+  run(["/users"], (z) => z.consoleUsers.create({ username: String(f.get("username") ?? ""), password: String(f.get("password") ?? ""), role: String(f.get("role") ?? "viewer") as Role, branchId: String(f.get("branch_id") ?? "") || undefined }), "admin");
+export const disableUser = async (_: FormState, f: FormData) => run(["/users"], (z, s) => (id(f) === s.i ? Promise.reject(new ZyvorError(422, "self", "You cannot disable yourself.")) : z.consoleUsers.disable(id(f))), "admin");
+export const enableUser = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.enable(id(f)), "admin");
+export const resetUserMfa = async (_: FormState, f: FormData) => run(["/users"], (z) => z.consoleUsers.mfaReset(id(f)), "admin");
+
+// ---- your own second factor (any signed-in named user) ----
+export async function beginMfa(): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || s.i === "bootstrap") return { error: "Create a named user first; the deployment admin cannot enrol a device." };
+  try {
+    const r = await (await api(s.u)).consoleUsers.mfaBegin(s.i);
+    return { secret: r.secret, uri: r.otpauth_uri };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function confirmMfa(_: FormState, f: FormData): Promise<FormState> {
+  const s = await currentSession();
+  if (!s || s.i === "bootstrap") return DENIED;
+  try {
+    const r = await (await api(s.u)).consoleUsers.mfaConfirm(s.i, String(f.get("otp") ?? "").trim());
+    const { exp: _exp, ...who } = s; // keep everything else (environment, a cashier's branch)
+    await start({ ...who, m: true });
+    return { codes: r.recovery_codes };
+  } catch (e) {
+    if (e instanceof ZyvorError) return { error: e.message };
+    throw e;
+  }
+}
+
+// ---- reminder drafts: a person approves wording before anything is sent ----
+export const draftReminder = async (_: FormState, f: FormData) =>
+  run(["/collections"], (z) => z.collections.draft(id(f), { channel: "whatsapp", ai: String(f.get("ai") ?? "") === "1" }));
+export const approveDraft = async (_: FormState, f: FormData) =>
+  run(["/collections"], (z) => z.collections.approveDraft(id(f), String(f.get("message") ?? "").trim() || undefined));
+export const rejectDraft = async (_: FormState, f: FormData) => run(["/collections"], (z) => z.collections.rejectDraft(id(f)));
+
+// ---- payouts: a second person approves, then the transfer is recorded with its bank reference ----
+export const approvePayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.approve(id(f)), "finance");
+export const rejectPayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.reject(id(f)), "finance");
+export const cancelPayout = async (_: FormState, f: FormData) => run(["/payouts"], (z) => z.payouts.cancel(id(f)), "finance");
+export const markPayoutPaid = async (_: FormState, f: FormData) => {
+  const ref = String(f.get("bank_ref") ?? "").trim();
+  if (ref.length < 6) return { error: "Enter the bank reference (UTR) of the transfer." };
+  return run(["/payouts"], (z) => z.payouts.markPaid(id(f), ref), "finance");
+};
+export const requestPayout = async (_: FormState, f: FormData): Promise<FormState> => {
+  const rupees = Number(String(f.get("amount") ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(rupees) || rupees <= 0) return { error: "Enter an amount greater than zero." };
+  return run(["/payouts"], (z) => z.payouts.create({ vendorId: String(f.get("vendor") ?? ""), amountMinor: Math.round(rupees * 100), purpose: String(f.get("purpose") ?? "").trim(), fromBalance: f.get("from_balance") === "on" }), "finance");
+};
+
+export const bulkPayouts = async (_: FormState, f: FormData): Promise<FormState> => {
+  const fromBalance = f.get("from_balance") === "on";
+  let made = "";
+  const r = await run(["/payouts"], async (z) => {
+    const vendors = (await z.payouts.vendors()).data;
+    const parsed = parseBulk(String(f.get("csv") ?? ""), vendors);
+    if ("error" in parsed) throw new ZyvorError(422, "invalid_bulk", parsed.error);
+    const out = await z.payouts.createBulk(parsed.items.map((i) => ({ ...i, fromBalance })));
+    const fresh = out.count - out.already_existed;
+    made = fresh === 0 ? `Nothing new: all ${out.count} already existed.` : `${fresh} created${out.already_existed ? `, ${out.already_existed} already existed` : ""}. Each still needs a second person's approval.`;
+  }, "finance");
+  return r?.error ? r : { ok: made };
+};
+export const addVendor = async (_: FormState, f: FormData) =>
+  run(["/payouts"], (z) => z.payouts.createVendor({ name: String(f.get("name") ?? ""), accountNumber: String(f.get("account") ?? "").trim() || undefined, ifsc: String(f.get("ifsc") ?? "").trim().toUpperCase() || undefined, vpa: String(f.get("vpa") ?? "").trim() || undefined }), "finance");
+
+// ---- settings (admin) ----
+const rupees = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "0").replace(/,/g, "")) * 100);
+const on = (f: FormData, k: string) => f.get(k) === "on";
+
+export const saveCollections = async (_: FormState, f: FormData) =>
+  run(["/settings"], (z) => z.settings.update({ dunning: { enabled: on(f, "enabled"), requires_approval: on(f, "requires_approval"), channel: String(f.get("channel") ?? "email") as "email", min_days_overdue: Number(f.get("min_days") ?? 1), repeat_after_days: Number(f.get("repeat_days") ?? 7) } }), "admin");
+export const resetTestData = async (_: FormState, f: FormData) => {
+  if (String(f.get("confirm") ?? "").trim() !== "reset test data") return { error: "Type the words reset test data to confirm." };
+  return run(["/", "/settings", "/payments", "/billing", "/customers", "/reconciliation", "/refunds"], (z) => z.testData.reset(), "admin");
+};
+/** Upload an image as the logo in payer emails (kept by Zyvor and served from its public address). */
+export const uploadEmailLogo = async (_: FormState, f: FormData): Promise<FormState> => {
+  const file = f.get("logo_file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a PNG, JPEG, GIF or WebP image." };
+  if (file.size > 200 * 1024) return { error: "The logo must be 200 KB or smaller." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const r = await run(["/settings"], (z) => z.emailLogo.upload(bytes), "admin");
+  return r?.error ? r : { ok: "Logo uploaded. New emails use it." };
+};
+export const removeEmailLogo = async (_: FormState, _f: FormData) => run(["/settings"], (z) => z.emailLogo.remove(), "admin");
+/** Move this test environment's clock forward (billing, reminders and dates follow it). */
+export const moveTestClock = async (_: FormState, f: FormData): Promise<FormState> => {
+  const date = String(f.get("date") ?? "").trim();
+  const days = String(f.get("days") ?? "").trim();
+  if (!date && !days) return { error: "Choose a day, or a number of days to move forward." };
+  if (date && days) return { error: "Use either a day or a number of days, not both." };
+  if (days && !/^\d+$/.test(days)) return { error: "Days must be a whole number." };
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Choose a valid day." };
+  const r = await run(["/", "/settings", "/billing", "/collections"], (z) => z.testClock.set(date ? { date } : { advanceDays: Number(days) }), "admin");
+  return r?.error ? r : { ok: "Clock moved. The next billing run, reminders and new dates now follow it." };
+};
+export const clearTestClock = async (_: FormState, _f: FormData) => run(["/", "/settings", "/billing", "/collections"], (z) => z.testClock.clear(), "admin");
+/** Send automatic emails to an address that had unsubscribed again. */
+export const removeSuppression = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/settings"], (z) => z.mailSuppressions.remove(String(f.get("email") ?? "")), "admin");
+  return r?.error ? r : { ok: "Done." };
+};
+export const saveReceipts = async (_: FormState, f: FormData) => {
+  const replyTo = String(f.get("reply_to") ?? "").trim();
+  if (replyTo && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(replyTo)) return { error: "Enter one email address for replies, such as accounts@school.example, or leave it empty." };
+  const accent = String(f.get("accent") ?? "").trim();
+  if (accent && !/^#[0-9a-fA-F]{6}$/.test(accent)) return { error: "Enter the colour as six hex digits after a #, such as #0b7285, or leave it empty." };
+  const logo = String(f.get("logo") ?? "").trim();
+  if (logo && (!/^https:\/\/[^\s<>"]+$/.test(logo) || logo.length > 300)) return { error: "The logo address must start with https:// and be under 300 characters, or be left empty." };
+  return run(["/settings"], (z) => z.settings.update({ payment_receipts: on(f, "receipts"), reminder_emails: on(f, "reminders"), invoice_emails: on(f, "invoices"), reply_to_email: replyTo, email_accent: accent, email_logo_url: logo }), "admin");
+};
+export const saveApprovals = async (_: FormState, f: FormData) => {
+  const [r, p] = [rupees(f, "refund"), rupees(f, "payout")];
+  if (!Number.isFinite(r) || !Number.isFinite(p) || r < 0 || p < 0) return { error: "Amounts must be zero or more." };
+  return run(["/settings"], (z) => z.settings.update({ refund_approval_threshold_minor: r, payout_approval_threshold_minor: p }), "admin");
+};
+export const saveGst = async (_: FormState, f: FormData) => {
+  const gstin = String(f.get("gstin") ?? "").trim().toUpperCase();
+  if (!gstin) return { error: "Enter your GSTIN." };
+  return run(["/settings"], (z) => z.settings.update({ gst: { gstin, legal_name: String(f.get("legal_name") ?? "").trim() || undefined, address1: String(f.get("address1") ?? "").trim() || undefined, location: String(f.get("location") ?? "").trim() || undefined, pincode: String(f.get("pincode") ?? "").trim() || undefined } }), "admin");
+};
+export const saveWebhooks = async (_: FormState, f: FormData) => {
+  const events = on(f, "all") ? ["*"] : f.getAll("event").map(String);
+  if (events.length === 0) return { error: "Choose at least one event, or all of them." };
+  const url = String(f.get("url") ?? "").trim();
+  const secret = String(f.get("secret") ?? "").trim();
+  return run(["/settings"], (z) => z.settings.update({ webhook_events: events, ...(url ? { outbound_webhook_url: url } : {}), ...(secret ? { outbound_webhook_secret: secret } : {}) }), "admin");
+};
+
+// ---- invoices and instalment plans ----
+const money = (f: FormData, k: string) => Math.round(Number(String(f.get(k) ?? "").replace(/,/g, "")) * 100);
+export const createCustomer = async (_: FormState, f: FormData) =>
+  run(["/billing"], (z) => z.customers.create({ name: String(f.get("name") ?? "").trim(), email: String(f.get("email") ?? "").trim() || undefined, phone: String(f.get("phone") ?? "").trim() || undefined, gstin: String(f.get("gstin") ?? "").trim().toUpperCase() || undefined, address1: String(f.get("address1") ?? "").trim() || undefined, location: String(f.get("location") ?? "").trim() || undefined, pincode: String(f.get("pincode") ?? "").trim() || undefined }));
+export const updateCustomer = async (_: FormState, f: FormData) => {
+  // empty boxes are sent as "" on purpose: that clears the field
+  const t = (k: string) => String(f.get(k) ?? "").trim();
+  const name = t("name");
+  if (!name) return { error: "A customer needs a name." };
+  return run(["/customers", "/billing"], (z) => z.customers.update(id(f), { name, email: t("email"), phone: t("phone"), gstin: t("gstin").toUpperCase(), address1: t("address1"), location: t("location"), pincode: t("pincode") }));
+};
+export const createInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amount = money(f, "amount");
+  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const hsn = String(f.get("hsn") ?? "").trim();
+  const base = { number: String(f.get("number") ?? "").trim(), customerId: String(f.get("customer") ?? "") || undefined, dueDate: String(f.get("due") ?? "") || undefined };
+  // With an HSN/SAC code the amount is the price before tax and the server adds CGST+SGST or IGST.
+  return run(["/billing", "/collections"], (z) =>
+    hsn
+      ? z.invoices.create({ ...base, placeOfSupply: String(f.get("pos") ?? "").trim() || undefined, lines: [{ description: String(f.get("description") ?? "").trim() || "Services", hsnSac: hsn, quantity: 1, unitPriceMinor: amount, rateBp: Number(f.get("rate") ?? 1800) as 1800 }] })
+      : z.invoices.create({ ...base, amountMinor: amount }),
+  );
+};
+/** The free-units box: empty is 0; null when it is not a whole number of 0 or more. */
+const includedUnits = (f: FormData): number | null => {
+  const t = String(f.get("included") ?? "").trim().replace(/,/g, "");
+  if (!t) return 0;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 0 && n <= 1_000_000_000 ? n : null;
+};
+/** The free-trial box: empty is 0 days; null when it is not a whole number from 0 to 365. */
+const trialDays = (f: FormData): number | null => {
+  const t = String(f.get("trial") ?? "").trim();
+  if (!t) return 0;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 0 && n <= 365 ? n : null;
+};
+export const createPlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const price = money(f, "price");
+  if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
+  const unit = String(f.get("unit") ?? "month");
+  if (!["day", "week", "month", "year"].includes(unit)) return { error: "Choose how often it is billed." };
+  const count = Number(f.get("every") ?? 1);
+  if (!Number.isInteger(count) || count < 1 || count > 365) return { error: "Every how many periods? Enter a whole number from 1 to 365." };
+  const perUnitText = String(f.get("per_unit") ?? "").trim();
+  const perUnit = perUnitText ? money(f, "per_unit") : 0;
+  if (!Number.isFinite(perUnit) || perUnit < 0) return { error: "Enter the usage price as an amount, or leave it empty." };
+  const trial = trialDays(f);
+  if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
+  const included = includedUnits(f);
+  if (included === null) return { error: "Free units: enter a whole number, or leave it empty." };
+  return run(["/billing"], (z) => z.billing.createPlan({ name: String(f.get("name") ?? "").trim(), amountMinor: price, intervalUnit: unit as "day" | "week" | "month" | "year", intervalCount: count, usageUnitMinor: perUnit || undefined, trialDays: trial || undefined, includedUnits: included || undefined, includedPerSeat: f.get("per_seat") === "on" || undefined }));
+};
+export const recordUsage = async (_: FormState, f: FormData): Promise<FormState> => {
+  const quantity = Number(f.get("quantity") ?? 0);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Enter the units used as a whole number, 1 or more." };
+  const r = await run(["/billing"], (z) => z.billing.recordUsage(id(f), { quantity, reference: String(f.get("ref") ?? "") || undefined, note: String(f.get("note") ?? "").trim() || undefined }));
+  return r?.error ? r : { ok: "Recorded. It is added to this customer's next invoice." };
+};
+export const updatePlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const price = money(f, "price");
+  if (!Number.isFinite(price) || price <= 0) return { error: "Enter the price as an amount greater than zero." };
+  const name = String(f.get("name") ?? "").trim();
+  if (!name) return { error: "Give the plan a name." };
+  const trial = trialDays(f);
+  if (trial === null) return { error: "Free trial: enter a whole number of days from 0 to 365, or leave it empty." };
+  const included = includedUnits(f);
+  if (included === null) return { error: "Free units: enter a whole number, or leave it empty." };
+  const r = await run(["/billing"], (z) => z.billing.updatePlan(id(f), { name, amountMinor: price, trialDays: trial, includedUnits: included, includedPerSeat: f.get("per_seat") === "on", keepExisting: f.get("keep") === "on" }));
+  return r?.error ? r : { ok: "Saved." };
+};
+export const setPlanActive = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.updatePlan(id(f), { active: f.get("active") === "true" }));
+export const createSubscription = async (_: FormState, f: FormData): Promise<FormState> => {
+  const quantity = Number(f.get("quantity") ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Quantity must be a whole number, 1 or more." };
+  const start = String(f.get("start") ?? "");
+  return run(["/billing"], (z) => z.billing.subscribe({ customerId: String(f.get("customer") ?? ""), planId: String(f.get("plan") ?? ""), quantity, startDate: start || undefined }));
+};
+export const followPlanPrice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: String(f.get("plan") ?? ""), followPlanPrice: true }));
+  return r?.error ? r : { ok: "Done." };
+};
+/** End a subscriber's free trial now ("Start billing now"), or move its end to the chosen day. */
+export const changeTrial = async (_: FormState, f: FormData): Promise<FormState> => {
+  const given = String(f.get("ends_on") ?? "").trim();
+  if (!f.get("now") && !/^\d{4}-\d{2}-\d{2}$/.test(given)) return { error: "Choose the day the trial ends." };
+  let endsOn = given;
+  const r = await run(["/billing"], async (z) => {
+    // "now" means the organisation's today, which a test clock may have moved
+    if (f.get("now")) endsOn = String((await z.testClock.get()).date);
+    return z.billing.changeTrial(id(f), { endsOn });
+  });
+  if (r?.error) return r;
+  return { ok: f.get("now") ? "Trial ended. The first invoice is made at the next billing run." : `Trial now ends on ${endsOn}.` };
+};
+export const cancelSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.cancel(id(f)));
+export const changeSubscriptionPlan = async (_: FormState, f: FormData): Promise<FormState> => {
+  const plan = String(f.get("plan") ?? "");
+  if (!plan) return { error: "Choose the plan to move to." };
+  const quantity = Number(f.get("quantity") ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: "Quantity must be a whole number, 1 or more." };
+  const r = await run(["/billing"], (z) => z.billing.changePlan(id(f), { planId: plan, quantity }));
+  return r?.error ? r : { ok: "Saved." };
+};
+export const pauseSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.pause(id(f)));
+export const resumeSubscription = async (_: FormState, f: FormData) => run(["/billing"], (z) => z.billing.resume(id(f)));
+export const createMilestone = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amount = money(f, "amount");
+  if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
+  const due = String(f.get("due_days") ?? "").trim();
+  return run(["/billing"], (z) => z.milestones.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), amountMinor: amount, dueDays: due ? Number(due) : undefined }));
+};
+/** Email an invoice to its customer: what it is made of, what is owed and by when. */
+export const emailInvoice = async (_: FormState, f: FormData): Promise<FormState> => {
+  const r = await run(["/billing"], (z) => z.invoices.send(id(f)));
+  return r?.error ? r : { ok: "Emailed." };
+};
+export const voidInvoice = async (_: FormState, f: FormData) => run(["/billing", "/collections"], (z) => z.invoices.void(id(f)));
+export const createInstalments = async (_: FormState, f: FormData): Promise<FormState> => {
+  const total = money(f, "total");
+  if (!Number.isFinite(total) || total <= 0) return { error: "Enter the total as an amount greater than zero." };
+  return run(["/billing", "/collections"], (z) => z.installments.create({ customerId: String(f.get("customer") ?? ""), name: String(f.get("name") ?? "").trim(), totalMinor: total, instalments: Number(f.get("count") ?? 0), firstDueDate: String(f.get("first_due") ?? ""), numberPrefix: String(f.get("prefix") ?? "").trim() }));
+};
+
+export const saveFxRate = async (_: FormState, f: FormData) => {
+  const rate = String(f.get("rate") ?? "").trim();
+  if (!rate) return { error: "Enter the rate in rupees per US dollar." };
+  return run(["/settings", "/collections"], (z) => z.fx.setRate({ currency: "USD", rate }), "admin");
+};
+
+export const saveRisk = async (_: FormState, f: FormData) => {
+  const num = (k: string) => {
+    const v = String(f.get(k) ?? "").trim();
+    return v ? Number(v.replace(/,/g, "")) : undefined;
+  };
+  const maxRupees = num("max_amount");
+  if (maxRupees !== undefined && !(maxRupees > 0)) return { error: "The payment ceiling must be more than zero, or empty for none." };
+  const blocked = String(f.get("blocked") ?? "").split(/[\s,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const scoreFloor = num("score_block_below");
+  return run(["/settings"], (z) => z.settings.update({ risk: { max_intent_amount_minor: maxRupees === undefined ? undefined : Math.round(maxRupees * 100), max_attempts_per_intent: num("max_attempts"), max_failed_per_customer_per_hour: num("max_failed"), blocked_vpas: blocked, score_block_below: scoreFloor } }), "admin");
+};
+
+export const saveReturnUrlOrigins = async (_: FormState, f: FormData) => {
+  const origins = String(f.get("origins") ?? "")
+    .split(/[\n,]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return run(["/settings"], (z) => z.settings.update({ return_url_origins: origins }), "admin");
+};
+
+export const saveMoneyMode = async (_: FormState, f: FormData) => {
+  const mode = text(f, "money_mode");
+  if (mode !== "orchestrate" && mode !== "acquire") return { error: "Choose orchestrate or acquire." };
+  const delayRaw = String(f.get("settlement_delay_days") ?? "").trim();
+  const settlementDelayDays = delayRaw === "" ? undefined : Number(delayRaw);
+  if (settlementDelayDays !== undefined && (!Number.isInteger(settlementDelayDays) || settlementDelayDays < 0 || settlementDelayDays > 7)) {
+    return { error: "Settlement delay must be 0–7 days." };
+  }
+  return run(["/settings"], (z) => z.moneyMode.set({ moneyMode: mode, settlementDelayDays }), "admin");
+};
+
+export const saveAcquireKyc = async (_: FormState, f: FormData) => {
+  const status = text(f, "status") as "not_started" | "pending" | "approved" | "rejected" | "re_kyc_due";
+  if (!["not_started", "pending", "approved", "rejected", "re_kyc_due"].includes(status)) return { error: "Pick a KYC status." };
+  return run(["/settings"], (z) => z.acquireKyc.set(status), "admin");
+};
+
+export const sendPayoutRail = async (_: FormState, f: FormData) =>
+  run(["/payouts"], (z) => z.payouts.sendRail(id(f), { rail: (text(f, "rail") as "imps" | "neft" | "upi") || "imps" }), "finance");
+
+export const openSettlementBatch = async (_: FormState) =>
+  run(["/settle"], (z) => z.settlementBatches.open("INR"), "admin");
+
+export const releaseSettlementBatch = async (_: FormState, f: FormData) =>
+  run(["/settle"], (z) => z.settlementBatches.release(id(f)), "admin");
+
+export const revokeCardToken = async (_: FormState, f: FormData) =>
+  run(["/settle"], (z) => z.cardTokens.revoke(id(f)), "finance");
+
+export const createCoupon = async (_: FormState, f: FormData): Promise<FormState> => {
+  const kind = String(f.get("kind")) === "flat" ? "flat" : "percent";
+  const n = Number(String(f.get("value") ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return { error: "Enter how much the coupon takes off." };
+  const uses = String(f.get("max_uses") ?? "").trim();
+  return run(["/links"], (z) => z.coupons.create({ code: String(f.get("code") ?? ""), kind, value: Math.round(kind === "percent" ? n * 100 : n * 100), maxUses: uses ? Number(uses) : undefined }));
+};
+export const deactivateCoupon = async (_: FormState, f: FormData) => run(["/links"], (z) => z.coupons.deactivate(id(f)));
+
+const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
+export const requestProfileChange = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.requestProfileChange({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address"), reason: text(f, "reason") }), "admin");
+
+export const saveProfile = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.saveProfile({ legalName: text(f, "legal_name"), businessType: text(f, "business_type"), pan: text(f, "pan"), gstin: text(f, "gstin") || undefined, address: text(f, "address") }), "admin");
+export const addOnboardingDoc = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.addDocument({ kind: text(f, "kind"), reference: text(f, "reference") }), "admin");
+const MAX_UPLOAD = 5 * 1024 * 1024;
+/** A document file for onboarding: stored encrypted, read for the facts on it, compared with the business details. */
+export const uploadOnboardingDoc = async (_: FormState, f: FormData): Promise<FormState> => {
+  const file = f.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a PDF, PNG or JPEG file." };
+  if (file.size > MAX_UPLOAD) return { error: "That file is over 5 MB. Scan it at a lower resolution or save a smaller PDF." };
+  const data = new Uint8Array(await file.arrayBuffer());
+  const r = await run(["/onboarding"], (z) => z.onboarding.uploads.upload({ kind: text(f, "kind"), filename: file.name, data }), "admin");
+  return r?.error ? r : { ok: "Uploaded and read." };
+};
+export const deleteOnboardingUpload = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.uploads.delete(id(f)), "admin");
+export const addBankAccount = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.addBankAccount({ holderName: text(f, "holder_name"), ifsc: text(f, "ifsc"), accountNumber: text(f, "account_number").replace(/\s/g, "") }), "admin");
+export const verifyBankAccount = async (_: FormState, f: FormData) => run(["/onboarding"], (z) => z.onboarding.verifyBankAccount(id(f)), "admin");
+export const submitOnboarding = async (_: FormState) => run(["/onboarding"], (z) => z.onboarding.submit(), "admin");
+export const reviewOnboarding = async (_: FormState, f: FormData) =>
+  run(["/onboarding"], (z) => z.onboarding.review({ decision: text(f, "decision") === "approve" ? "approve" : "reject", note: text(f, "note") || undefined }), "admin");
+
+export const createBranch = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.branches.create(text(f, "name")), "admin");
+export const createCounter = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.counters.create({ branchId: text(f, "branch_id"), name: text(f, "name") }), "admin");
+export const deactivateCounter = async (_: FormState, f: FormData) => run(["/stores"], (z) => z.counters.deactivate(id(f)), "admin");
+export const addCash = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amt = rupees(f, "amount");
+  if (!Number.isFinite(amt) || amt <= 0) return { error: "Enter the amount in rupees." };
+  const kind = text(f, "kind");
+  return run(["/closing"], (z, s) => z.cash.add({ branchId: s.b ?? text(f, "branch_id"), kind: kind === "refund" ? "refund" : kind === "float" ? "float" : "sale", amountMinor: amt, note: text(f, "note") || undefined }), "cashier");
+};
+export const createClosing = async (_: FormState, f: FormData): Promise<FormState> => {
+  const amt = rupees(f, "counted");
+  if (!Number.isFinite(amt) || amt < 0) return { error: "Enter the cash you counted, in rupees." };
+  return run(["/closing"], (z, s) => z.closings.create({ branchId: s.b ?? text(f, "branch_id"), day: text(f, "day"), countedCashMinor: amt, note: text(f, "note") || undefined }), "cashier");
+};
+export const signOffClosing = async (_: FormState, f: FormData) => run(["/closing"], (z) => z.closings.signOff(id(f)), "admin");
+
+/** The secret is returned once, in `ok`, and never stored. */
+export const createKey = async (_: FormState, f: FormData): Promise<FormState> => {
+  const preset = text(f, "preset");
+  const scopes = preset === "read" ? ["payments:read"] : ["payments:read", "payments:write"];
+  const branchId = text(f, "branch_id") || undefined;
+  const name = text(f, "name");
+  if (!name) return { error: "Give the key a name so you can tell it apart later." };
+  let secret = "";
+  const r = await run(["/keys"], async (z) => {
+    secret = (await z.keys.create({ name, scopes, branchId })).key;
+  }, "admin");
+  return r?.error ? r : { ok: secret };
+};
+export const revokeKey = async (_: FormState, f: FormData) => run(["/keys"], (z) => z.keys.revoke(id(f)), "admin");
+

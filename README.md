@@ -1,0 +1,134 @@
+<div align="center">
+
+<img src="docs/logo.svg" width="72" height="72" alt="Zyvor logo">
+
+# Zyvor Payments
+
+**Payment orchestration, ledger and reconciliation for Indian businesses — with an acquire path toward your own gateway.**
+
+**Orchestrate (default):** connect your own Razorpay, Cashfree, PhonePe or custom accounts; Zyvor routes, records and reconciles; your provider settles.<br>
+**Acquire (sponsor-first):** Zyvor is the merchant-facing PG; escrow and payouts run through `zyvor-settle` under a licensed sponsor until own RBI PA / NPCI TPAP land. See [REGULATORY.md](docs/zyvor/REGULATORY.md) and [ADR 0004](docs/adr/0004-money-modes-orchestrate-acquire.md).<br>
+Rust core · PostgreSQL · Next.js checkout and console · TypeScript, Python and Go SDKs · iOS test apps
+
+[![CI](https://github.com/zyvorai/vayora/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/vayora/actions/workflows/ci.yml)
+[![License: Zyvor Production 1.0](https://img.shields.io/badge/License-Zyvor_Production_1.0-1d1d1f.svg)](LICENSE)
+![Status](https://img.shields.io/badge/status-sandbox-ff9f0a)
+![Release](https://img.shields.io/github/v/release/zyvorai/vayora)
+
+[Website](https://zyvorai.github.io/vayora/) · [How it works](docs/zyvor/HOW_IT_WORKS.md) · [Acquire mode](docs/zyvor/ACQUIRE_MODE.md) · [Bring your own provider](docs/zyvor/BRING_YOUR_OWN_PROVIDER.md) · [Status](docs/zyvor/STATUS.md) · [Architecture](docs/zyvor/ARCHITECTURE.md) · [Regulatory position](docs/zyvor/REGULATORY.md) · [OpenAPI](openapi/zyvor.yaml) · [All docs](docs/README.md)
+
+</div>
+
+> **Honest status.** Payments, ledger, reconciliation, billing, collections, disputes, payouts, GST invoicing, dual money modes (orchestrate / acquire), PhonePe and sponsor_upi adapters, settlement batches and network card tokens are built and tested against **local simulators**; the one live-sandbox exception is **Cashfree UPI intent and QR**. Orchestrate does not custody funds; acquire posts custody ledger accounts under a **licensed sponsor** (counsel + LOI required before live). Zyvor is **not itself a licensed PA**. Does not file GST returns. [STATUS.md](docs/zyvor/STATUS.md) · [ACQUIRE_MODE.md](docs/zyvor/ACQUIRE_MODE.md).
+
+## What it does
+- **Never double-charges.** Idempotent writes; an uncertain provider outcome becomes `unknown` and blocks any new attempt, through any provider, until it is resolved. The system asks the provider; it never re-sends.
+- **Explains every rupee.** `GET /v1/settlements/{id}/explain` lists payments, refunds, fees, adjustments, the bank match and why the net is what it is. Anything unexplained becomes an assignable case. An optional AI assistant can put a case into plain words (it adds no facts; its answer is dropped if it does), and the rule-based summary is always there.
+- **Works the way a team does.** Opt-in payment receipt emails (queued with the capture, once per payment); saved, shareable filters and a date range on Payments; and a test environment can clear its own payments and money records with a typed confirmation, never a live one.
+- **Keeps books you can audit.** Append-only double-entry ledger, balanced per currency by code and by a database constraint; corrections are reversals. Orchestrate: provider receivables. Acquire: escrow and merchant payable ([ACQUIRE_MODE.md](docs/zyvor/ACQUIRE_MODE.md)).
+- **Routes with receipts.** A capability matrix, rules and configured fees choose a provider, and the decision records every provider considered and why.
+- **Measures real cost.** Effective cost by provider and method from observed settlement deductions, with suggestions that cite their evidence and never change anything on their own.
+- **Isolates tenants.** Row-level security enforced in tests as a non-superuser role; test and live are separate tenants.
+- **Bills and collects.** Plans, subscriptions, usage, proration, milestones, instalment plans, credit notes, GST tax invoices (CGST/SGST/IGST, GSTIN-checked, GSTR-1 style summary), ageing, promises to pay, reminders you approve, optional AI-worded drafts a person reviews, and disputes that hold the money.
+- **Collects on a schedule.** UPI AutoPay mandates: the payer approves once, the merchant schedules debits, each announced ahead; a subscription with a mandate collects its own invoices. Simulator plus Cashfree and Razorpay adapters from docs (local mocks only); notice and limit rules are configurable but not verified against NPCI.
+- **Takes payments your way.** Payment links with QR codes, coupons and a payer-covered fee; UPI intent and QR checkout (no UPI ID to type); marketplace splits to vendors with balances; bulk and maker-checker payouts (orchestrate: you `mark_paid`; acquire: `send_rail`); risk limits; network card tokens; checkout in six languages (translations awaiting native review).
+- **Runs a shop floor.** Branches and counters (a counter's QR, optionally with a payer-typed amount, ties payments to it), branch-limited API keys, cash entries, an end-of-day closing a second person signs off, a per-payment timeline in plain words, and merchant onboarding records reviewed by a second person. Till cash is records only; digital money moves through your provider or the sponsor rail.
+- **Is hard to abuse.** Per-key and per-address rate limits, API keys with expiry, address allow-lists and rotation, SSRF-guarded webhooks, a rotatable master key, a tamper-evident audit chain, named console users with TOTP and roles, a default-deny network policy, and supply-chain scanning in CI. See the [threat model](docs/zyvor/THREAT_MODEL.md).
+
+## How it works
+
+**Orchestrate:** your provider collects and settles; Zyvor routes, records and reconciles.<br>
+**Acquire:** a licensed sponsor holds escrow; Zyvor posts custody accounts, settlement batches and payout rails ([ACQUIRE_MODE.md](docs/zyvor/ACQUIRE_MODE.md)).
+
+```mermaid
+flowchart LR
+  C([Customer]) --> CK[Checkout<br/>6 languages]
+  CK --> API[zyvor-api<br/>Rust, axum]
+  M([Merchant<br/>console, API, SDKs]) --> API
+  API <--> DB[(PostgreSQL<br/>ledger, row-level security)]
+  W[Worker] <--> DB
+  API -- create payment --> P[Razorpay, Cashfree,<br/>PhonePe, sponsor_upi<br/>or custom]
+  P -- signed webhooks --> API
+  W -- ask, never re-send --> P
+  W -- signed events --> M
+  P -. orchestrate settles .-> B[(Merchant bank)]
+  API -. acquire settle / payout .-> Rail[zyvor-settle]
+  Rail --> B
+```
+
+**What a customer sees:** scan a QR or open a link, pick UPI or card in their own language, approve in their UPI app, see "Payment received".
+**What the server does:** saves the attempt first, calls the provider outside any database transaction, accepts duplicated and out-of-order webhooks safely, posts to the ledger exactly once (orchestrate or acquire accounts), and tells the merchant with a signed webhook.
+
+```mermaid
+stateDiagram-v2
+  [*] --> created
+  created --> pending
+  pending --> authorized
+  authorized --> captured: money collected
+  created --> unknown: no answer from provider
+  unknown --> captured: provider confirms
+  unknown --> failed: provider says it never happened
+  created --> failed
+  pending --> failed
+```
+
+### Providers and bring your own
+Adapters behind one `Provider` trait: Razorpay, Cashfree, PhonePe, `sponsor_upi`, `custom`, `sim`. The `custom` adapter points at **your own gateway or bank API** over a small JSON contract, with no fork. Routing, the state machine, the ledger and reconciliation are unchanged. Whoever collects the money must be authorised to (your provider in orchestrate, a sponsor PA / bank PSP in acquire).
+
+[Why and how to swap](docs/zyvor/BRING_YOUR_OWN_PROVIDER.md) · [Acquire mode](docs/zyvor/ACQUIRE_MODE.md) · [HTTP contract](docs/zyvor/PROVIDER_CONTRACT.md) · [template adapter](crates/zyvor-providers/src/custom.rs) · [Cashfree sandbox setup](docs/zyvor/PARTNER_SETUP.md)
+
+The full walkthrough, with a diagram for each part, is in **[docs/zyvor/HOW_IT_WORKS.md](docs/zyvor/HOW_IT_WORKS.md)**. The component map and invariants are in [ARCHITECTURE.md](docs/zyvor/ARCHITECTURE.md).
+
+## Try the sandbox (simulated providers, no real money)
+```sh
+# needs a local Postgres and an EMPTY database
+OWNER_URL=postgres://you@localhost:5432/zyvor_sandbox ./scripts/zyvor-sandbox.sh
+ZYVOR_API_URL=http://localhost:8080 pnpm --filter @zyvor/checkout dev    # then open the printed checkout URL
+# the merchant console: see apps/zyvor-console/.env.example, then `pnpm --filter @zyvor/console dev`
+```
+```sh
+cargo test --workspace      # the API tests run against real Postgres (set DATABASE_URL to a superuser connection)
+pnpm -r build && pnpm -r test
+```
+Deploy: `deploy/zyvor/k3s/` (verified on a single-node k3s sandbox, with HTTPS in front; see its README), `deploy/zyvor/docker-compose.yml` and `deploy/zyvor/helm/zyvor` (both validate; neither has been run here).
+
+```ts
+import { Zyvor } from "@zyvor/node";
+const z = new Zyvor({ apiKey: process.env.ZYVOR_API_KEY! });
+const intent = await z.intents.create({ amountMinor: 249900, externalRef: "FEE-STU-2231-T2" });
+// give intent.client_secret to the browser; it can pay this one intent and nothing else
+```
+
+Runnable examples for a school's fee schedule, a clinic's GST billing and deposits, factory milestones, pharmacy returns, a shop counter and a marketplace's splits and payouts are in [`examples/`](examples/README.md). Store plugins (Shopify / WooCommerce / Magento) live under [`plugins/`](plugins/README.md).
+
+## iOS test apps
+Two SwiftUI apps in [`apps/ios`](apps/ios/README.md) let you test the whole loop on real iPhones against the simulator, with **no real money**: **Vayora Pay** (a payer: scan a QR, slide to pay, PIN, receipt) and **Vayora Merchant** (a counter keypad that shows a payment QR, a Today dashboard, refunds). Vayora Merchant also reaches the money screens: unpaid invoices, approvals, payouts, disputes, reconciliation cases, settlements explained, a GST month summary, payment links and subscriptions. The server side of the payer loop is one route, `POST /v1/sim/pay`, off unless `ZYVOR_SIM_PAYER=1`. They are not bank-linked UPI apps: a real consumer UPI app needs NPCI TPAP approval and a sponsor bank. Pay also has test-mode payees, send, split a bill and bill reminders; those person-to-person items are recorded on the phone and never reach Zyvor's ledger.
+
+## Repository layout
+
+| Path | What it is |
+|---|---|
+| `crates/zyvor-api` | The axum API and the worker: payments, ledger posting, reconciliation, billing, collections, console API |
+| `crates/zyvor-core`, `zyvor-ledger` | Domain types (`Money` in minor units, ids) and the double-entry ledger |
+| `crates/zyvor-providers` | Provider adapters: Razorpay, Cashfree, `custom`, and the in-process simulator |
+| `crates/zyvor-provider-mock` | A local mock provider for the sandbox |
+| `apps/zyvor-checkout` | Next.js hosted checkout, six languages |
+| `apps/zyvor-console` | Merchant console: payments, links, refunds, payouts, reconciliation, collections, billing, disputes, webhooks, people |
+| `apps/ios` | The Vayora Pay and Vayora Merchant test apps, and `VayoraKit` / `VayoraUI` |
+| `packages/zyvor-node`, `sdks/python`, `sdks/go` | SDKs |
+| `openapi/zyvor.yaml` | The API spec; a test fails if a route is undocumented |
+| `deploy/zyvor/` | Dockerfiles, Compose, Helm, k3s and Envoy assets |
+| `examples/` | Runnable examples |
+| `site/` | The GitHub Pages site |
+| `docs/` | Documentation: see the [index](docs/README.md) |
+
+## Principles
+- Money is integer minor units (paise), never floats.
+- Every mutating endpoint takes an `Idempotency-Key`.
+- Ledger entries are immutable; corrections are new entries.
+- A payment is paid only after a verified provider result, never because a QR was shown or an app was opened.
+
+## Regulatory notice
+Publishing code is free; moving money in India is not. Running this in production needs, at minimum, authorisation from RBI as a payment aggregator (or a licensed partner), a bank and provider agreements, and a review of data-localisation and DPDP obligations. See [REGULATORY.md](docs/zyvor/REGULATORY.md).
+
+Source-available under the **[Zyvor Production License v1.0](LICENSE)** (SPDX `LicenseRef-Zyvor-Production-1.0`; see [NOTICE](NOTICE)). Evaluation is free for 30 days per organization; production use requires a commercial license from Zyvor AI Labs ([zyvor.dev/buy](https://zyvor.dev/buy), 30-day trial key available). Paid support is the one Zyvor Support meter, per node per year and never stacked per product: Supported INR 59,999 incl. 18% GST in India / USD 600 excl. tax elsewhere (minimum 5 nodes: INR 299,995 / USD 3,000); Supported Plus INR 119,999 / USD 1,200 (minimum INR 599,995 / USD 6,000). Prices: INR incl. 18% GST in India; US dollars excl. tax elsewhere (VAT, GST or sales tax added where applicable). Pay online by UPI, card or netbanking where a buy page exists; international cards work (charged in rupees); or request a US-dollar invoice by bank transfer. Buy / get a quote: https://zyvor.dev/buy. Custom pricing: contact sales@zyvor.dev. Security issues: [SECURITY.md](SECURITY.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,0 +1,6 @@
+Date,Narration,Reference,Debit,Credit
+01/10/2026,fine,SYNTHA0001,,25.00
+31/31/2026,impossible date,,,5.00
+02/10/2026,both columns filled,,3.00,4.00
+03/10/2026,decimal comma,,,"2,50"
+04/10/2026,spreadsheet damaged reference,4.04223E+11,,1.00

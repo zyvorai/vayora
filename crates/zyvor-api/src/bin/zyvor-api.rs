@@ -1,0 +1,271 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+use std::{env, sync::Arc, time::Duration};
+
+use sqlx::postgres::PgPoolOptions;
+use zyvor_api::{AppState, Crypto, MIGRATOR, admin::bootstrap_org, app};
+
+fn required(name: &str) -> String {
+    env::var(name).unwrap_or_else(|_| panic!("{name} must be set"))
+}
+
+#[tokio::main]
+async fn main() {
+    let _telemetry = zyvor_api::telemetry::init("zyvor-api");
+    // Migrations need the schema owner; the running service should connect as a restricted, non-superuser
+    // role so row-level security binds it. Set ZYVOR_MIGRATE_DATABASE_URL to migrate with a different login.
+    let args: Vec<String> = env::args().collect();
+    // `zyvor-api kyc-selftest`: prove the identity-check credentials by running Cashfree's documented sandbox test inputs
+    // (valid and invalid PAN, account, IFSC and GSTIN) through the configured provider. Sandbox only: it refuses the
+    // production address, because those inputs are not real people and production calls cost money.
+    if args.get(1).map(String::as_str) == Some("kyc-selftest") {
+        let name = env::var("ZYVOR_KYC_PROVIDER").unwrap_or_else(|_| "cashfree".into());
+        let kyc = zyvor_api::kyc::Kyc::from_env(&name).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2)
+        });
+        if let zyvor_api::kyc::Kyc::Cashfree(c) = &kyc
+            && c.is_production()
+        {
+            eprintln!(
+                "refusing: set ZYVOR_KYC_CASHFREE_ENV=sandbox (the test inputs are Cashfree's sandbox data)"
+            );
+            std::process::exit(2);
+        }
+        let rows = zyvor_api::kyc::selftest(&kyc).await;
+        let failed = rows.iter().filter(|r| !r.1).count();
+        for (what, ok, got) in &rows {
+            println!("{}  {what}\n      {got}", if *ok { "ok  " } else { "FAIL" });
+        }
+        println!("\n{} of {} as expected", rows.len() - failed, rows.len());
+        std::process::exit(i32::from(failed > 0));
+    }
+
+    let migrate_url = env::var("ZYVOR_MIGRATE_DATABASE_URL").ok();
+    if let Some(url) = &migrate_url {
+        let owner = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(url)
+            .await
+            .expect("connect (migrate)");
+        MIGRATOR.run(&owner).await.expect("run migrations");
+        if args.get(1).map(String::as_str) == Some("migrate") {
+            println!("migrations applied");
+            // close the connection and leave at once: a one-shot job must not wait on runtime teardown
+            owner.close().await;
+            std::process::exit(0);
+        }
+    }
+    let pool = PgPoolOptions::new()
+        .max_connections(20)
+        .connect(&required("DATABASE_URL"))
+        .await
+        .expect("connect to postgres");
+    if migrate_url.is_none() {
+        if env::var("ZYVOR_AUTO_MIGRATE").as_deref() == Ok("1") {
+            MIGRATOR.run(&pool).await.expect("run migrations");
+        } else {
+            // The restricted app role must not own the schema: check it is current instead of changing it.
+            let applied: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0);
+            let expected = MIGRATOR
+                .migrations
+                .iter()
+                .filter(|m| !m.migration_type.is_down_migration())
+                .count() as i64;
+            assert!(
+                applied >= expected,
+                "database schema is behind this build ({applied} of {expected} migrations applied): \
+                 run `zyvor-api migrate` with ZYVOR_MIGRATE_DATABASE_URL, or set ZYVOR_AUTO_MIGRATE=1 for a throwaway database"
+            );
+        }
+    }
+
+    // `zyvor-api bootstrap "Acme Pharmacy"` creates an organisation with test + live tenants and prints each admin key once.
+    if args.get(1).map(String::as_str) == Some("bootstrap") {
+        let name = args.get(2).map(String::as_str).unwrap_or("My Organisation");
+        let b = bootstrap_org(&pool, name).await.expect("bootstrap");
+        println!(
+            "organisation {}\n\ntest tenant {}\n  key: {}\n\nlive tenant {}\n  key: {}\n\nStore these keys now; they cannot be shown again.",
+            b.organisation_id, b.test_tenant, b.test_key, b.live_tenant, b.live_key
+        );
+        return;
+    }
+
+    // `zyvor-api platform-reviewer add "Asha Rao"` | `list` | `disable <id>`: the people who approve a business before live
+    // mode opens. Each gets their own key (shown once); a merchant's key can never act as a reviewer.
+    if args.get(1).map(String::as_str) == Some("platform-reviewer") {
+        match args.get(2).map(String::as_str) {
+            Some("add") => {
+                let name = args
+                    .get(3)
+                    .expect("usage: zyvor-api platform-reviewer add \"Name\" [email]");
+                let (id, key) = zyvor_api::platform::create_reviewer(&pool, name)
+                    .await
+                    .expect("create reviewer");
+                if let Some(email) = args.get(4)
+                    && let Err(e) =
+                        zyvor_api::platform::set_reviewer_email(&pool, &id, Some(email)).await
+                {
+                    eprintln!("reviewer created, but the email was not saved: {e:?}");
+                }
+                println!(
+                    "reviewer {id} ({name})\n  key: {key}\n\nStore this key now; it cannot be shown again."
+                );
+            }
+            Some("list") => {
+                for (id, name, disabled) in zyvor_api::platform::list_reviewers(&pool)
+                    .await
+                    .expect("list reviewers")
+                {
+                    println!("{id}  {name}{}", if disabled { "  (disabled)" } else { "" });
+                }
+            }
+            Some("disable") => {
+                let id = args
+                    .get(3)
+                    .expect("usage: zyvor-api platform-reviewer disable <id>");
+                let done = zyvor_api::platform::disable_reviewer(&pool, id)
+                    .await
+                    .expect("disable reviewer");
+                println!(
+                    "{}",
+                    if done {
+                        "disabled"
+                    } else {
+                        "no such active reviewer"
+                    }
+                );
+            }
+            Some(v @ ("lead" | "unlead")) => {
+                let id = args
+                    .get(3)
+                    .unwrap_or_else(|| panic!("usage: zyvor-api platform-reviewer {v} <id>"));
+                let done = zyvor_api::platform::set_reviewer_lead(&pool, id, v == "lead")
+                    .await
+                    .expect("set lead");
+                println!(
+                    "{}",
+                    if done {
+                        if v == "lead" {
+                            "now a lead"
+                        } else {
+                            "no longer a lead"
+                        }
+                    } else {
+                        "no such active reviewer"
+                    }
+                );
+            }
+            _ => eprintln!(
+                "usage: zyvor-api platform-reviewer add \"Name\" [email] | list | disable <id> | lead <id> | unlead <id>"
+            ),
+        }
+        return;
+    }
+
+    let crypto = Crypto::from_env().expect("valid ZYVOR_MASTER_KEY");
+
+    // `zyvor-api rekey [--dry-run]` re-seals stored secrets under the current key (see crypto.rs).
+    // Runs per tenant through row-level security, so the normal restricted role is enough.
+    if args.get(1).map(String::as_str) == Some("rekey") {
+        let (done, current, bad) =
+            zyvor_api::admin::rekey_all(&pool, &crypto, args.iter().any(|a| a == "--dry-run"))
+                .await
+                .expect("rekey");
+        println!("resealed {done}, already current {current}, unreadable {bad}");
+        if bad > 0 {
+            eprintln!(
+                "{bad} secret(s) cannot be opened by any configured key: add the old key to ZYVOR_MASTER_KEY_PREVIOUS and run again"
+            );
+            std::process::exit(2);
+        }
+        return;
+    }
+    let mut state = AppState::new(pool, crypto);
+    if let Ok(s) = env::var("ZYVOR_PROVIDER_TIMEOUT_SECS") {
+        state.provider_timeout = Duration::from_secs(s.parse().expect("seconds"));
+    }
+    state.allow_private_targets = env::var("ZYVOR_ALLOW_PRIVATE_TARGETS").as_deref() == Ok("1");
+    state.mail_links_from_env();
+    state.sim_payer = env::var("ZYVOR_SIM_PAYER").as_deref() == Ok("1");
+    state.doc_reader = zyvor_api::docread::DocReader::from_env();
+    if state.doc_reader.available() {
+        tracing::info!("uploaded onboarding documents are read with pdftotext and tesseract");
+    } else {
+        tracing::warn!(
+            "document reading is off or its programs (pdftotext, pdftoppm, tesseract) are not installed: uploaded documents will go to a person unread"
+        );
+    }
+    state.sim.set_manual_payer(state.sim_payer);
+    if let Some(v) = env::var("ZYVOR_MANDATE_MAX_MINOR")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+    {
+        state.mandate_max_minor = v;
+    }
+    if let Some(v) = env::var("ZYVOR_MANDATE_NOTICE_HOURS")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v >= 0)
+    {
+        state.mandate_notice_hours = v;
+    }
+    state.review_settings_from_env();
+    state.ai = zyvor_api::ai::AiConfig::from_env().map(Arc::new);
+    state.actor_secret = env::var("ZYVOR_ACTOR_SECRET")
+        .ok()
+        .filter(|s| s.len() >= 16)
+        .map(String::into_bytes);
+    // empty (a secret created with no value) means no checks, like unset
+    if let Some(name) = env::var("ZYVOR_KYC_PROVIDER")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        let kyc = zyvor_api::kyc::Kyc::from_env(&name).unwrap_or_else(|e| panic!("{e}"));
+        match &kyc {
+            zyvor_api::kyc::Kyc::Simulator => tracing::warn!(
+                "KYC simulator is on: onboarding approvals are NOT real verification. Never use this for live merchants."
+            ),
+            zyvor_api::kyc::Kyc::Cashfree(_) => tracing::info!(
+                "KYC: Cashfree Secure ID (each check is a paid call, capped per business per day)"
+            ),
+        }
+        state.kyc = Some(kyc);
+    }
+    state.mailer = zyvor_api::mail::Mailer::from_env().expect("valid email settings");
+    if let Ok(u) = env::var("ZYVOR_CONSOLE_PUBLIC_URL") {
+        state.console_url = u.trim_end_matches('/').to_string();
+    }
+    state.trusted_hops = env::var("ZYVOR_TRUST_PROXY_HOPS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    {
+        let mut l = state.limiter.limits;
+        let f = |k: &str, d: f64| env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+        l.key.per_sec = f("ZYVOR_RATE_KEY_PER_SEC", l.key.per_sec);
+        l.key.burst = f("ZYVOR_RATE_KEY_BURST", l.key.burst);
+        l.ip_public.per_sec = f("ZYVOR_RATE_PUBLIC_PER_SEC", l.ip_public.per_sec);
+        l.ip_public.burst = f("ZYVOR_RATE_PUBLIC_BURST", l.ip_public.burst);
+        state.limiter = Arc::new(zyvor_api::ratelimit::RateLimiter::new(l));
+    }
+    let addr = env::var("ZYVOR_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
+    tracing::info!(%addr, "zyvor-api listening");
+    let _ = Arc::new(());
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        tokio::signal::ctrl_c().await.ok();
+    })
+    .await
+    .expect("server");
+}

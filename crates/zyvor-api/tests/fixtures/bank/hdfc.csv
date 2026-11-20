@@ -1,0 +1,7 @@
+Account No,0000000000000
+Statement of account for the period 01/10/26 to 03/10/26
+Date,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance
+01/10/26,NEFT CR-SYNTHA0001-ACME TRADERS,SYNTHA0001,01/10/26,,"2,500.00","12,500.00"
+02/10/26,Bank charges,,02/10/26,10.00,,"12,490.00"
+03/10/26,"NEFT CR-SYNTHB0002-RAZORPAY SOFTWARE, MUMBAI",SYNTHB0002,03/10/26,,"1,23,456.50","1,35,946.50"
+Closing balance,,,,,,"1,35,946.50"

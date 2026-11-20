@@ -1,0 +1,99 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import { providerLabel, words } from "@/lib/labels";
+import { Act } from "@/components/Act";
+import { Chip } from "@/components/Chip";
+import { assignCase, scanMissingSettlements, simulateBankCredit, simulateSettlement } from "@/lib/actions";
+import { inr } from "@/lib/format";
+import { api } from "@/lib/zyvor";
+import { ZyvorError } from "@zyvor/node";
+
+// What "Explain in words" says when the model gave nothing usable or could not be asked.
+const EXPLAIN_FAILED: Record<string, string> = {
+  ai_not_configured: "The AI assistant is not turned on for this deployment.",
+  ai_quota_exceeded: "This month's AI allowance is used up.",
+};
+
+export default async function Reconciliation({ searchParams }: { searchParams: Promise<{ explain?: string }> }) {
+  const { explain } = await searchParams;
+  const z = await api();
+  // asked for by a link, so the model is called only when someone clicks
+  let explained: { id: string; text: string | null; problem: string | null } | null = null;
+  if (explain) {
+    try {
+      const r = await z.cases.suggestions(explain, { ai: true });
+      explained = { id: explain, text: r.ai_summary, problem: null };
+    } catch (e) {
+      explained = { id: explain, text: null, problem: e instanceof ZyvorError ? (EXPLAIN_FAILED[e.code] ?? "Could not ask the assistant.") : "Could not ask the assistant." };
+    }
+  }
+  const [cases, settlements, settings] = await Promise.all([z.cases.list({}), z.settlements.list(), z.settings.get()]);
+  const open = cases.data.filter((c) => c.status !== "resolved");
+  // a likeliest explanation for the first few open cases; failures just leave the row without a hint
+  const hints = new Map(
+    (await Promise.all(open.slice(0, 15).map(async (c) => [c.id, await z.cases.suggestions(c.id).catch(() => null)] as const))).filter(([, h]) => h !== null),
+  );
+  return (
+    <>
+      <div className="head"><div><h1>Reconciliation</h1><p className="lede">Every difference between what we recorded and what arrived becomes a task with an owner.</p></div></div>
+      <div className="muted" style={{ marginTop: 0, marginBottom: "1em", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <Act action={scanMissingSettlements} label="Scan for missing settlements" extra={{ older_than_days: "3" }} showOk />
+        Opens a case for each captured payment still missing from a settlement after three days.
+      </div>
+      <h2>Cases ({open.length} open)</h2>
+      <div className="tablewrap" style={{ marginBottom: 28 }}>
+        <table>
+          <thead><tr><th>Kind</th><th>What happened</th><th className="num">Difference</th><th>Status</th><th>Owner</th><th /></tr></thead>
+          <tbody>
+            {cases.data.length === 0 && <tr><td colSpan={6} className="empty">{settlements.data.length === 0 ? "Nothing to reconcile yet. A case opens here when a settlement or a bank line does not match your payments." : "Everything reconciles."}</td></tr>}
+            {cases.data.map((c) => (
+              <tr key={c.id}>
+                <td>{words(c.kind)}</td>
+                <td style={{ maxWidth: 420 }}>
+                  {c.explanation}
+                  {hints.get(c.id) && <div className="muted" style={{ marginTop: 4 }}>Likely: {hints.get(c.id)!.summary}{hints.get(c.id)!.next_steps[0] ? ` Next: ${hints.get(c.id)!.next_steps[0]}` : ""}</div>}
+                  {explained?.id === c.id ? (
+                    <div style={{ marginTop: 6 }}>
+                      {explained.text ? <><strong>In words:</strong> {explained.text} <span className="muted">(written by the AI assistant from the facts above; check before acting)</span></> : <span className="muted">{explained.problem ?? "The assistant's wording was not usable, so the summary above stands."}</span>}
+                    </div>
+                  ) : c.status !== "resolved" && <div style={{ marginTop: 4 }}><a href={`/reconciliation?explain=${encodeURIComponent(c.id)}`}>Explain in words</a></div>}
+                </td>
+                <td className="num">{c.actual_minor !== null && c.expected_minor !== null ? inr(c.actual_minor - c.expected_minor) : "—"}</td>
+                <td><Chip status={c.status} /></td><td>{c.assignee ?? <span className="muted">unassigned</span>}</td>
+                <td>{c.status === "open" && <Act action={assignCase} id={c.id} label="Take it" />}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2>Bank statements and fees</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        <a href="/bank-statements">Upload a bank statement</a> to pair each bank line with a settlement, and review the suggestions that need a person. <a href="/fees">Fee checks</a> compares the fee each provider took with the rates in your contract.
+      </p>
+
+      <h2>Settlements</h2>
+      {settings.env === "test" && <div className="muted" style={{ marginTop: 0, marginBottom: "1em" }}>Test mode: <Act action={simulateSettlement} label="Settle today's simulated payments" showOk /> Builds one settlement from today's simulated payments with an invented 2% fee, so you can try matching it to a bank statement.</div>}
+      <div className="tablewrap">
+        <table>
+          <thead><tr><th>Provider</th><th>Settled on</th><th className="num">Gross</th><th className="num">Refunds</th><th className="num">Fees</th><th className="num">Net</th><th>Bank</th><th /></tr></thead>
+          <tbody>
+            {settlements.data.length === 0 && <tr><td colSpan={8} className="empty">No settlements yet. In test mode, settle simulated payments with the button above; live, they arrive from your provider's settlement report.</td></tr>}
+            {settlements.data.map((s) => {
+              const r = s as Record<string, number | string | null>;
+              return (
+                <tr key={String(r.id)}>
+                  <td>{providerLabel(String(r.provider))}</td><td>{String(r.settled_on)}</td>
+                  <td className="num">{inr(Number(r.gross_minor))}</td><td className="num">{inr(Number(r.refunds_minor))}</td>
+                  <td className="num">{inr(Number(r.fee_minor))}</td><td className="num">{inr(Number(r.net_minor))}</td>
+                  <td><Chip status={String(r.status)} /></td>
+                  <td>{settings.env === "test" && r.provider === "sim" && r.status !== "matched" && Number(r.net_minor) > 0 && <span style={{ display: "inline-flex", gap: 6 }}><Act action={simulateBankCredit} id={String(r.id)} label="Add bank credit" showOk /><Act action={simulateBankCredit} id={String(r.id)} extra={{ short: "50" }} label="…₹50 short" showOk /></span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}

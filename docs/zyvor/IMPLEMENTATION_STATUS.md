@@ -1,0 +1,195 @@
+# Implementation status against the 31 October 2026 specification
+
+The specification asks for four explicit completion levels. They are different states and none implies the next:
+
+1. **Implemented with simulator**: works end to end against the in-process simulator or the local provider mock.
+2. **Integrated with a partner sandbox**: runs against a real partner's sandbox.
+3. **Tested in partner UAT**: passed the partner's acceptance tests, including physical-device checks.
+4. **Approved and enabled live.**
+
+**One capability has reached level 2** (Cashfree UPI intent and QR, below). Everything else is level 1. Nothing is at level 3 or 4, and no live gateway has been used. No NPCI approval, bank agreement or partner credentials are claimed. See [STATUS.md](STATUS.md) for the product-level view and [ADR 0003](../adr/0003-extend-rust-and-upi-qr-intent.md) for why this extends the Rust codebase instead of rewriting it in Go.
+
+## Repository state and stack
+Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkout and console, Compose, Helm, k3s and Envoy assets, OpenAPI, Node/Python/Go SDKs. The spec's proposed Go/Vite stack is **not** used; the reason is recorded in ADR 0003.
+
+## Delivered in this slice: UPI QR / intent checkout (level 1)
+| Behaviour | Evidence |
+|---|---|
+| UPI no longer requires a typed UPI ID when a provider can issue a QR / intent; the checkout reports `upi_flow` (`intent` or `collect`) | `upi_checkout_issues_a_qr_or_intent_instead_of_asking_for_a_upi_id` |
+| A UPI payment with no UPI ID is routed only to a provider with the `upi_intent` capability, and refused (`no_route`) otherwise rather than turned into a collect | same test, router unit tests |
+| The provider payload is carried and shown exactly as issued (`upi://pay?...`), as a QR (`GET /v1/checkout/{tenant}/{intent}/upi-qr.svg`, client-secret authorised) and an "open my UPI app" link | same test; checked in a browser |
+| A QR, an app launch or returning to the page never marks anything paid; the page moves to paid only after a verified provider result | same test; checked in a browser |
+| A finished payment has no QR to show | same test |
+| Return URLs must be https (http in a sandbox) with no embedded credentials | same test |
+| Checkout text in six languages (translations not reviewed by native speakers) | `lib/i18n.test.ts` |
+
+**Limits.** Cashfree issues a QR / intent in sandbox (opt-in per account). Razorpay has the same opt-in adapter path (docs + local mock only; not sandbox-verified). Desktop, Android and iOS behaviour is not tested on physical devices, and the iOS flow in particular must follow the partner's documented behaviour. BHIM, PhonePe and Google Pay interoperability is not verified: that requires partner UAT on real devices. Wording says "any UPI app" and does not use BHIM branding until the current NPCI brand guidance is checked.
+
+## Delivered in this slice: success-rate routing, circuit breaker and failover (level 1)
+| Behaviour | Evidence |
+|---|---|
+| A rolling success-rate signal per tenant, provider and method, derived from stored attempts, ignored below a minimum sample | `better_success_rate_beats_a_cheaper_provider_only_with_enough_data_and_margin`, `a_rule_can_prefer_the_better_success_rate_but_only_on_enough_data` |
+| A failing provider is degraded, skipped for new payments, probed once after a cool-down and recovers; each change is audited and emitted | `a_failing_provider_is_degraded_skipped_probed_and_recovers_with_an_audit_trail` |
+| Failover to another provider only after a definitive failure; never after a timeout or unknown outcome; cancellations do not count | `a_definitive_failure_fails_over_but_cancel_and_timeout_never_do` |
+| An unknown attempt is settled by asking the provider, and only a "failed" answer opens failover; a "captured" answer blocks any second attempt | `an_unknown_attempt_is_settled_by_asking_the_provider_and_only_then_can_another_provider_be_used` |
+| Replaying an idempotency key returns the same attempt; two simultaneous attempts create one | the first test above, `two_simultaneous_attempts_on_one_payment_create_exactly_one` |
+| Thresholds per tenant, validated, scoped, audited; state isolated by row-level security | `thresholds_are_per_tenant_validated_scoped_and_audited`, `health_state_and_thresholds_stay_inside_their_tenant` |
+| A decline is classified payer / provider / unknown; payer declines are shown but excluded from the success rate and the breaker and are no reason to fail over; unknown counts against the provider | `a_failed_attempt_is_classified_by_who_caused_it`, `payer_declines_are_shown_but_never_degrade_a_provider_or_sway_success_rate_routing`, `success_rate_routing_ignores_payer_declines`, `a_payer_decline_does_not_move_the_payment_to_another_provider_but_a_provider_fault_does`, decline unit tests |
+| A background sweeper degrades and recovers a quiet business once per transition, safe with several workers, never starts a payment or takes a probe | `the_sweeper_degrades_and_recovers_a_quiet_business_once_per_transition`, `several_workers_sweeping_at_once_record_each_transition_exactly_once`, `the_worker_runs_the_sweep_for_every_business_and_keeps_them_apart`, `evidence_older_than_the_window_is_not_held_against_a_provider` |
+| One health rule: the health endpoint says what routing does (`routing_effect`); the older router heuristic is gone; the "only eligible provider" reason is accurate; every decision has a plain-language `explanation` | `the_health_endpoint_tells_the_truth_about_routing_and_every_decision_explains_itself`, router unit tests |
+
+**Limits.** Simulators and the local provider mock only (`/_sim/outage`); no real provider was used and the default
+thresholds are not tuned on real traffic. The decline classifier recognises only codes found in this repository
+(simulator, local mock, tests); Razorpay and PhonePe have none, every unrecognised decline counts against the provider,
+and no real provider code was verified. Transitions are recorded when a payment is routed and by the worker's sweeper
+(minutes-long window on the database clock). Console page "Routing health" (browser-checked against a stand-in API only). Details in [ROUTING.md](ROUTING.md).
+
+## Delivered in this slice: offers, routing rule builder, experiments and downtime alerts (level 1)
+| Behaviour | Evidence |
+|---|---|
+| An offer prices the attempt, previews match what is applied, and the funding source is recorded (merchant only) | `an_offer_prices_the_attempt_and_says_who_funds_it`, `the_public_checkout_shows_the_price_without_reserving_anything` |
+| Conditions (method, network, BIN range, UPI handle, bank, amount band, new/returning, code, window); a full card number is refused and no BIN is stored | `conditions_decide_and_the_preview_says_why_not`, `new_and_returning_customers_and_a_code`, instrument and offer unit tests |
+| Caps cannot be over-used by concurrent attempts; a failed or cancelled attempt gives them back; a late capture keeps the discount | `a_capped_offer_cannot_be_over_used_by_concurrent_attempts`, `per_customer_and_budget_caps_hold_under_concurrency`, `a_failed_or_cancelled_attempt_gives_the_cap_back`, `a_late_capture_keeps_the_discount_the_payer_already_had` |
+| Stacking; refunds return the same share of the discount; invoice and split payments are left alone | `stackable_offers_combine_and_a_non_stackable_one_stands_alone`, `a_refund_returns_the_same_share_of_the_discount`, `marketplace_and_invoice_payments_are_left_alone`, `plan` and `discount_share` unit tests |
+| Rules validated, versioned, activated, rolled back and audited; conditions route as stated; a rule cannot override a hard filter; a dry run creates nothing and matches a real attempt | `rules_are_validated_versioned_activated_and_rolled_back`, `conditions_method_amount_network_time_of_day_and_segment`, `a_dry_run_creates_nothing_and_can_try_unsaved_rules_and_old_versions`, `a_rule_cannot_send_a_payment_where_the_router_would_refuse` |
+| An experiment splits by hash, never makes a payment fail, and stops a clearly worse variant (worker and on demand) | `an_experiment_splits_traffic_and_stops_a_clearly_worse_variant`, `a_variant_that_cannot_route_falls_back_and_a_small_sample_stops_nothing`, experiment unit tests |
+| Downtime alerts: one per group with a case, event and email; bank and UPI handle groups; hysteresis, hold, flap control, several workers | `an_outage_raises_one_alert_with_a_case_an_event_and_an_email_and_resolves_itself`, `a_failing_bank_or_upi_handle_alerts_on_its_own_and_payer_declines_do_not_count`, `flap_control_reopens_quietly_and_does_not_count_old_failures_twice`, `several_workers_checking_at_once_raise_one_alert` |
+| Every new table is isolated by row-level security; new scopes are enforced | `offers_are_private_to_their_business_and_need_their_scope`, `rule_sets_and_experiments_are_private_to_their_business`, `alerts_belong_to_one_business_and_need_the_routing_scope` |
+
+**Limits.** Simulators, the local provider mock and seeded history only; no real provider, bank or money. Offers are
+merchant-funded only; the card network, UPI app or bank is the caller's claim and is not verified; the discount is not a
+ledger entry; no console page. Experiment and alert thresholds are reasoned defaults, not tuned on real traffic.
+Details in [OFFERS.md](OFFERS.md) and [ROUTING.md](ROUTING.md) sections 7 to 9.
+## Link rules, verification, risk engine and payout links (migration 0087)
+
+Built and tested against the simulator and local mocks only; nothing ran against a live provider. Payment link amount modes (`exact`,
+`minimum`, `up_to`, `pay_what_you_want`), a normalised link lifecycle with events, and payer-instrument rules with auto-refund are in
+[PAYMENT_LINK_RULES.md](PAYMENT_LINK_RULES.md); VPA and bank-account verification, the risk rules engine and the COD order score in
+[RISK_ENGINE.md](RISK_ENGINE.md); payout links in [PAYOUT_LINKS.md](PAYOUT_LINKS.md). Not done: payer-instrument rules cannot refuse
+before payment (adapters do not allow it) and only work where the provider reports the payer; Cashfree has no UPI id check here;
+`review` is a review after the fact, not a hold; no console pages, no recipient page for payout links (the public endpoints exist; the checkout app has no page for them) and no hand-written SDK methods yet (generated response types
+only); the weights of the order score are unmeasured.
+
+## Delivered in this slice: routing automation (shadow mode, soft retry, cost-aware routing, kill switch, scorecard)
+| Behaviour | Evidence |
+|---|---|
+| Everything off by default; settings validated, scoped (`payments:read` to read, `admin` to change), audited per switch; isolated by row-level security | `automation_settings_are_validated_scoped_audited_and_isolated` |
+| Shadow mode records the candidate policy's decision next to the applied one, never changes routing, never calls a provider; the report gives agreement, differences, estimated fee difference and outcomes | `shadow_records_what_a_candidate_policy_would_do_next_to_what_was_applied_and_changes_nothing` |
+| Cost-aware routing: fee rules and observed fees feed the cost; a provider below the success floor is never chosen for being cheaper; minimum samples; per-business switch; the sentence says what was traded | `cost_aware_routing_uses_fee_rules_and_observed_fees_and_never_picks_a_provider_below_the_floor_for_being_cheaper`, `observed_fees_from_settlements_beat_a_fee_rule_once_there_are_enough_samples`, router unit tests (`cost_*`, `a_cheaper_provider_below_the_success_floor_...`), cost model unit tests |
+| Soft retry only after `provider_fault` / `provider_rejected`, once, on another non-degraded provider, within limits | `a_refused_payment_is_retried_once_on_the_other_provider_and_never_twice`, `only_provider_faults_and_refusals_are_retried_never_payer_declines_unknown_causes_or_unresolved_payments`, `limits_alternates_degraded_providers_and_the_window_stop_a_retry_and_the_decision_is_recorded_once` |
+| No path creates a second live attempt while the first is unresolved; concurrent retriers and manual attempts create one | `many_callers_racing_to_retry_one_failure_create_exactly_one_attempt_and_never_two_live`, `a_retry_that_itself_goes_unknown_blocks_every_further_attempt`, `a_late_answer_from_the_resolver_starts_the_retry_after_the_unknown_is_settled`, `a_provider_webhook_and_the_worker_start_retries_but_a_decline_with_no_known_cause_does_not` |
+| The checkout says "trying another way" while a retry is due and never offers a second payment | `the_checkout_says_trying_another_way_while_a_retry_is_due_and_never_offers_a_second_payment`, `lib/checkout.test.ts` |
+| The kill switch stops every automation at once, is idempotent, audited and per business | `the_kill_switch_stops_every_automation_at_once_is_audited_and_is_per_business` |
+| Scorecard excludes payer declines, shows failure classes, unresolved, median time, observed fee, last degrade | `the_scorecard_excludes_payer_declines_and_shows_classes_unresolved_and_the_last_degrade` |
+
+**Limits.** Simulators and the local provider mock only. Defaults (retry limits, success floor, premium, minimum fee
+samples) are not tuned on real traffic. Shadow mode compares decisions, not outcomes. Retry depends on the decline
+classes, which were not verified against a live provider. The new console sections were built and
+unit-tested but not looked at in a browser. Checkout translations of the new message are
+not reviewed by native speakers. Details in [ROUTING.md](ROUTING.md) section 6.
+
+## Gaps against the specification
+This list comes from a scan of the repository, not a line-by-line audit; items marked "to audit" are not yet confirmed either way.
+
+| Area | State |
+|---|---|
+| Per-merchant return-URL allowlist | Built: `return_url_origins` on settings; empty = any https that passes SSRF |
+| Bank statement import and UTR/RRN matching | Level 1: CSV layouts + custom mapping, all-or-nothing import with line errors and a dry run, fingerprint de-duplication, reference matches confirmed with evidence, amount/date matches suggestion-only, aged cases. Tested on synthetic statements and simulated providers only, never on a real bank export. Provider RRN field names (Razorpay `acquirer_data.rrn`, Cashfree `bank_reference`) are from public docs, not a live account. See [BANK_RECONCILIATION.md](BANK_RECONCILIATION.md) |
+| OIDC sign-in with PKCE | Not built. The console uses its own TOTP sign-in with roles |
+| UPI AutoPay mandates | Level 1: simulator + Cashfree and Razorpay adapters from docs (local mocks only). Sponsor UPI declares mandates. See [MANDATES_LIVE.md](MANDATES_LIVE.md) |
+| Events and ticketing | Level 1: events, tiers, registration form, seat holds with worker release, tickets issued after a verified capture, signed-QR check-in (duplicate detection, offline export and sync), attendee list and CSV, event and order cancellation with bulk refunds and a refund report, all on top of the existing intents, coupons, refunds and splits. Concurrent-purchase tests show no oversell; tested against simulators only. QR scanning was not tried on a device and the public pages were not run in a browser. No partial payments. See [EVENTS.md](EVENTS.md) |
+| Seller page ("link in bio") | Level 1: public page per slug, items with optional stock, orders paid through the existing intent checkout, stock taken exactly in the order transaction (concurrency test), lapsing holds, seller order list with fulfil, cancel and refund. Simulators only; the visitor page was not run in a browser. See [STOREFRONT.md](STOREFRONT.md) |
+| School fees, society dues and donations | Level 1: data model, API, CSV import and export, reports, reminders and PDF receipts built on invoices, instalment plans, payment intents and mandates. Simulators only; no console pages. See [VERTICALS.md](VERTICALS.md) |
+| Settlement fee checks | Level 1: per-merchant fee rules (percentage, flat, cap, GST on fee, effective dates, refund fee return, tolerance) compared with observed deductions per payment; findings become owned reconciliation cases and appear in the settlement explanation. No rates are shipped; tested against simulators and hand-built settlements only, never against a real provider statement. See [FEE_CHECKS.md](FEE_CHECKS.md) |
+| Payment link upgrades | Bulk CSV creation (strict line-level errors, dry run, all or nothing, repeatable by reference, CSV export with addresses); per-link note, thank-you, return address (checked against the return-URL origin list), brand with contrast checks, allowed methods; paying in parts (balance from captured intents or the invoice's settled amount, 30-minute hold against concurrent payers, balance reminders by email and SMS, at most three); per-link and aggregate analytics (opened/started per coarse visitor token per day, bots ignored; paid/failed/expired read from payments); share text; an SMS hook off by default (sandbox logs, hook posts to a URL you configure). Tested against simulators and a stand-in SMS receiver only; no real SMS, provider or traffic. See [PAYMENT_LINKS.md](PAYMENT_LINKS.md) |
+| Cash visibility, refund analytics | Dashboard by provider; observed settlement lag (median, p10/p90, minimum samples) and a per-day credit forecast with a range; delay alerts as reconciliation cases plus one `settlement.delayed` event per subject, against the provider's own observed range or the lag the merchant stated (no provider SLA is built in); refund rate, time to refund, SLA breaches, fee-not-returned leakage and duplicate refunds blocked. Tested against simulators and hand-built synthetic histories only. See [CASH_VISIBILITY.md](CASH_VISIBILITY.md) |
+| Accounting exports | Paged, deterministic, audited journal CSV with per-tenant account codes (every voucher balances), Tally-style CSV/XML (envelope and sign convention taken from Tally's public sample; Journal vouchers inferred; never run against Tally) and a GST summary. See [EXPORTS.md](EXPORTS.md) |
+| Vendor payouts through a partner | Orchestrate: bookkeeping `mark_paid`. Acquire: `send_rail` + `zyvor-settle` (sim rail, or `ZYVOR_PAYOUT_RAIL_URL`) — level 1 |
+| Vendor onboarding, commission rules, payout batches, schedules | Level 1 (simulators only): vendor workflow with a second person verifying the bank account, commission rules applied through splits, CSV/list/balance payout batches approved as a batch, sent once per item through the rail, retries and unknown handling, schedules proposed by the worker. No real rail or bank; no console page ([PAYOUT_BATCHES.md](PAYOUT_BATCHES.md)) |
+| Acquire money mode / escrow | Level 1: `money_mode`, custody ledger, auto-enrol into settlement batches, worker T+N release, acquire KYC gate, PhonePe + sponsor_upi. See [ACQUIRE_MODE.md](ACQUIRE_MODE.md) |
+| Network card tokens | Level 1: store/revoke + charge via `card_token_id` on attempts (sim/stub vault). No live PCI vault |
+| Store plugins | Shopify + WooCommerce + Magento 2: payment links + HMAC webhooks that mark orders paid (`plugins/`); Woo/Shopify release zips via `scripts/package-*-plugin.sh` |
+| Android apps | Level 1: Compose Pay + Merchant mirroring iOS test-mode surface (Collect/Pay, Owed, Cashflow/GST, AutoPay, Circle, voice, budgets, jars, lock, end of day, setup/connection) (`apps/android`); kit tests and debug APKs in CI |
+| Object storage with malware scanning for documents | Not built |
+| Authenticated SSE status stream | Built: `GET /v1/checkout/{tenant}/{intent}/events?secret=` (checkout prefers EventSource, polls on error) |
+| Amounts as decimal strings in the API | Not done: integer minor units are used |
+| "Orders" naming | The repository calls them payment intents |
+| Real partner adapter, physical-device UAT | Needs partner credentials, current partner documentation and devices |
+| The 20 mandatory acceptance tests (spec section 17) | Mapped in [ACCEPTANCE_SPEC.md](ACCEPTANCE_SPEC.md); covered by `acceptance` + `flow` tests against the local mock |
+| Restore drill, load and fault test evidence | Not run |
+
+## Checkout support reference (level 1)
+Every checkout state shows a short **support reference** derived from the payment id (it grants no access), and, if the operator sets `NEXT_PUBLIC_ZYVOR_SUPPORT_URL` at build time (an `https` URL or a `mailto:` address, nothing else is accepted), a **Report a problem** link that carries the reference. Strings are in six languages (not natively reviewed). Tests: `lib/checkout.test.ts`.
+
+## Payer apps to test on physical devices
+UPI payers use many apps and the checkout must work with all of them, not one. Before any live claim, test the QR scan and the intent launch on real devices with each of the common UPI apps (BHIM, PhonePe, Google Pay, Paytm and other bank and fintech UPI apps), on Android and on iOS, including launch failure and backgrounding. None of this has been done.
+
+## Cashfree UPI intent and QR (level 2: integrated with a partner sandbox)
+Run on 31 October 2026 against Cashfree's real **sandbox**, with the whole local stack (API, worker, checkout) and a real sandbox account.
+
+| What was shown | Evidence |
+|---|---|
+| A phone request gets a real intent response with per-app links (`bhim`, `gpay`, `paytm`, `phonepe`) | `tests/cashfree_sandbox.rs` (run with `--ignored` and sandbox keys); also through the API with an Android user agent |
+| A desktop request gets Cashfree's own PNG QR, shown in the checkout | same test; checked in a browser |
+| The payer's device is derived from their own request and sent to Cashfree (`x-client-*`) | `clientenv.rs` unit tests |
+| Without the account opt-in the adapter keeps the hosted flow | `without_the_opt_in_the_hosted_flow_is_still_used` (this test caught a bug: the adapter had relied only on the router) |
+| Paying in Cashfree's sandbox simulator does **not** mark anything paid by itself; the page stayed `awaiting_payment` | observed |
+| The server asks Cashfree (`refresh`), sees the capture, and the page becomes `paid`, one balanced ledger pair is posted once (`capture:<attempt>`), and a `payment.captured` event is queued | observed; ledger and outbox read from the database |
+
+**Limits, plainly.**
+- **No money moved.** The sandbox simulator is not a UPI app. In the sandbox the intent links are Cashfree simulator HTTPS URLs, not `upi://`; the real production link format is **not known** and was not tested.
+- **Real apps are untested.** BHIM, PhonePe, Google Pay and others, on Android and iOS, need small-value live payments on physical devices (see [PARTNER_SETUP.md](PARTNER_SETUP.md)).
+- **Webhooks were not tested.** Sandbox webhooks need a public HTTPS URL; this run resolved the payment by asking Cashfree instead.
+- **Production is opt-in per account.** Set `"upi_intent": true` in the account's credentials only after Cashfree has enabled native intent / QR (its S2S flag). The sandbox did not require the flag; production behaviour is unconfirmed.
+- The adapter uses Order Pay API version `2026-01-01` for this call (verified in the sandbox) and `2023-08-01` for the rest.
+
+## iOS test apps (level 1: implemented with the simulator)
+`apps/ios` holds **Vayora Pay** (payer) and **Vayora Merchant** (counter). They exercise the platform end to end on a phone against the in-process simulator; they do not move real money and are not bank-linked UPI apps (that needs NPCI TPAP approval and a sponsor bank).
+
+| What was shown | Evidence |
+|---|---|
+| A payment created in Merchant's Collect screen, paid from Pay (`POST /v1/sim/pay`), polled to captured by Merchant, on two physical iPhones | observed on a local API with a temporary Postgres; one balanced ledger pair (`capture:<attempt>`) and one `payment.captured` event per payment |
+| Full refunds from Merchant are `processed`, the reversal is balanced, and a repeat refund is refused (`422 refund_exceeds_refundable`) | observed; ledger totals equal |
+| `POST /v1/sim/pay` is off unless `ZYVOR_SIM_PAYER=1` (404), accepts only the simulator's payee (`422 not_a_sim_payment`), and a second pay is `409 nothing_to_pay` | `crates/zyvor-api/src/sim_pay.rs` unit tests; observed |
+| Setup QRs carry a server address and a **test** key; live keys are refused | `SetupPayloadTests` |
+| Money is integer paise end to end; the keypad builds amounts from text, never floats | `AmountEntryTests`, `MoneyTests` |
+
+**Person-to-person features (Pay only, phone-local).** Payees, send, split a bill (`vayora://request` QR), small payments without a PIN (up to ₹200 a payment and ₹1,000 a day, off by default) and bill reminders are recorded on the phone. The simulator knows only merchant payments, so none of this reaches Zyvor's ledger. The screens say so.
+
+**Merchant app, later work (2026-11-03).** The Merchant app now also covers: payment links; unpaid invoices by lateness with invoice emails and promises to pay; approvals for refunds and payouts, recording an approved payout as paid, retrying a failed refund; disputes (evidence note, outcome); reconciliation cases (assign, resolve, open the settlement behind one); a payment timeline; cashflow by week, settlements and why each paid what it did, a month of GST totals; subscriptions and the test clock; and a badge for what waits on the owner. The payer app gained a weekly "who you paid most" card.
+
+| What was checked | Evidence |
+|---|---|
+| Every new screen opens, takes input and shows the right result | UI tests on a Simulator in demo mode (`apps/ios/VayoraMerchantUITests`, `VayoraPayUITests`; 15 cases), with screenshots looked at |
+| The same screens against a real local test server | UI tests with a test key (15 cases in `SandboxTests`, `SeededSandboxTests`, `ApproverSandboxTests`; several skip when their rows are used up) over a sandbox seeded by `scripts/seed-sandbox-ios.sh`: invoices, a payment link made and cancelled, an invoice queued for email and a refusal shown, the test clock moved and reset, a settlement explained, a case assigned and closed, a payout approved by a second key and refused for the requester, a payout recorded paid |
+| Money logic | `VayoraKit` package tests (client requests and bodies, ordering, Indian-time months, loop and lock rules) |
+| Build and tests in CI | the `ios` job (package tests, both apps for the Simulator SDK) |
+
+Running the screens against a real server found and fixed: an approval call that the server answered with a 400 (an empty body with a JSON content type), a `?query` encoded into the path, messages hidden off-screen at the top of a scrolling list, an operator instruction shown to a merchant, duplicate VoiceOver labels, and a Face ID lock that locked again right after a successful unlock.
+
+**Not verified.** No TestFlight. The UI tests are run by hand, not in CI. Dynamic Type, VoiceOver, the iOS 26 glass cards, haptics, the camera, the no-PIN path, reminder notifications and a real face unlock have not been checked by a person on a device. The payer app has not been run against a server. A successful email to a real inbox, a payment link email (the sandbox has no public checkout address), GST figures for a month with real tax, and retrying a failed refund on a real server have not been tried. No push notifications, widgets or background refresh. Row-level security was not exercised in the phone runs (a superuser database role was used).
+
+## UPI AutoPay mandates (level 1: implemented with the simulator)
+A mandate is the payer's one-time approval ("this merchant may debit up to ₹X, this often, until this date"); after it, the merchant schedules debits and each is announced in advance. Zyvor holds the agreement and the schedule; the provider (here the simulator) holds the mandate; a debit is an ordinary payment attempt.
+
+| Behaviour | Evidence (`crates/zyvor-api/tests/mandates.rs` unless noted) |
+|---|---|
+| Create, payer approves, refresh to active; the first lookup does not approve it | `approved_then_debited_once_with_one_balanced_ledger_pair`; `sim.rs` `mandate_tests` |
+| A debit is captured with **one balanced ledger pair** and one `payment.captured`; a second pass does not debit again | `approved_then_debited_once_with_one_balanced_ledger_pair` |
+| Over the cap, zero, outside the dates, inside the notice window, a second debit in the same period or on the same day: refused | `the_rules_that_keep_a_payer_safe_are_enforced` |
+| Limit ceiling, currency, frequency and date validation at creation; the same key twice is one mandate; no key, no mandate | same test; `creating_the_same_mandate_twice_with_one_key_makes_one` |
+| A paused mandate never debits; a revoked one cancels unsent debits and refuses new ones | `a_paused_or_revoked_mandate_never_debits` |
+| A payer's revoke in their own app is learned on refresh and cancels scheduled debits | `a_payer_revoke_is_learned_on_refresh_and_cancels_scheduled_debits` |
+| A debit with an unknown outcome stays `unknown`, is never sent again, opens a case, and is resolved by asking the provider with our own reference | `an_unknown_debit_is_resolved_by_asking_never_by_sending_again` |
+| A declined debit retries once the next day, then fails with an event; a failed day can be scheduled again | `a_declined_debit_retries_once_then_fails_and_says_so` |
+| A subscription with an active mandate collects its own invoice and the invoice is marked paid; without one billing is unchanged | `a_subscription_with_a_mandate_collects_its_own_invoice`; `a_mandate_without_an_active_mandate_leaves_the_invoice_to_the_usual_reminders` |
+| Tenant isolation as the non-superuser role; scopes `mandates:read` and `mandates:write`; the simulated payer is off by default | `mandates_are_private_to_their_tenant_scoped_and_the_sim_payer_is_gated` |
+| Every route is in the OpenAPI spec and every event is in the catalogue | `openapi_documents_every_route`; the debug assertion in `tenant::emit` |
+
+**Limits.**
+- The in-process simulator lives in one process, so mandates work against it only when the API itself runs the pass (`POST /v1/mandates/run`) or API and worker are one process. A separate worker process has its own, empty simulator. Real providers do not have this limit.
+- No Cashfree Subscriptions or Razorpay recurring adapter; their `mandates` capability is false. Their documents describe the same shape (one approval, then server-side debits, lifecycle webhooks); the endpoint names and their pre-debit handling are not confirmed.
+- The notice window (default 24 hours) and the per-debit ceiling (default ₹15,000) come from vendor documents and articles that disagree on details. They are configurable, strict by default and **not verified against NPCI's current circular**. Zyvor emits the pre-debit notice event; it does not message the payer.
+- A debit in flight when the payer revokes is left to the provider to decide; the ledger follows its answer.
+- No change of amount or frequency after approval, no iOS screens.
+

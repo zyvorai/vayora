@@ -1,0 +1,104 @@
+# Vayora iPhone apps (test mode)
+
+Two SwiftUI apps and a shared package, for testing Vayora Payments end to end on an iPhone. **Nothing here moves real money**, and neither app is a bank-linked UPI app (that needs NPCI TPAP approval and a sponsor bank).
+
+| Target | What it is |
+|---|---|
+| `VayoraPay` | Payer: scan a QR or paste a `upi://pay` link, confirm with a local test PIN, see history and receipts. The wallet is a test balance kept on the phone |
+| `VayoraMerchant` | Merchant: create a payment, show its QR, watch it complete, list payments (with a timeline of what happened to each), refund. Payment links (create, share, email, cancel). An **Owed** tab: unpaid invoices by how late, emailing an invoice, promises to pay, reminders and refunds and payouts waiting for approval, approved payouts to record as paid, failed refunds to retry, disputes (evidence note, outcome), reconciliation cases (assign, resolve), and a badge counting what waits on you. **Cashflow**: what is owed by week, settlements and why each paid what it did, a month of GST totals. Settings: subscriptions (pause, resume, end), the test clock in a test organisation |
+| `Packages/VayoraKit` | API client, `Money` (integer paise), `UPIPayload` parser for hostile QR input, QR rendering, Keychain, shared theme |
+
+## Run it
+```sh
+cd apps/ios && xcodegen generate && open Vayora.xcodeproj
+cd Packages/VayoraKit && swift test      # unit tests
+```
+Start the API with the simulator payer on: `ZYVOR_SIM_PAYER=1` (also set `ZYVOR_AUTO_MIGRATE=1` for a throwaway database). Register a `sim` provider account, create an API key, and put the server address and key in the Merchant app's Settings; put the server address in Pay's Settings. On a real iPhone use the Mac's LAN address or a public HTTPS test URL.
+
+Flow: Merchant "Collect" → QR → Pay "Scan & pay" → PIN → the Merchant screen turns to "Received".
+
+## Honest limits
+- `POST /v1/sim/pay` exists only when `ZYVOR_SIM_PAYER=1` and only touches the in-process simulator; with a live provider it can pay nothing.
+- With Cashfree sandbox the QR is Cashfree's simulator, which no scanner app pays; use its simulator page instead.
+- Verified so far: `VayoraKit` unit tests, a build of both apps for the iOS Simulator SDK in CI, UI tests driven on a Simulator (below), and the merchant screens run against a real local test server. Both apps were installed on a real iPhone, and a Face ID unlock loop found there was fixed. Not checked by a person: VoiceOver, large text, haptics, the camera, and an unlock with a real face.
+
+
+## UI tests (Simulator)
+Two UI test bundles drive the apps on a booted Simulator. Run them by hand; they are not in CI (they need a booted Simulator and the runners are slow).
+```sh
+cd apps/ios && xcodegen generate
+# demo mode: no server, test money (merchant: 8 cases, payer: 7)
+xcodebuild test -project Vayora.xcodeproj -scheme VayoraMerchant -destination 'platform=iOS Simulator,name=<a Simulator>' -only-testing:VayoraMerchantUITests/WalkthroughTests
+xcodebuild test -project Vayora.xcodeproj -scheme VayoraPay      -destination 'platform=iOS Simulator,name=<a Simulator>' -only-testing:VayoraPayUITests
+```
+Each case attaches screenshots to the result bundle. The Simulator keeps an app's data between runs, so the payer tests use a fresh payee each time.
+
+### Against a real local test server
+`SandboxTests`, `SeededSandboxTests` and `ApproverSandboxTests` sign in to a local API (made with `scripts/zyvor-sandbox.sh`) through two launch arguments that only a **debug** build reads (`-uitestServer`, `-uitestKey`, and only for a `zk_test` key). They are skipped unless the runner is given the address and key:
+```sh
+TEST_RUNNER_VAYORA_SANDBOX_URL=http://localhost:8081 TEST_RUNNER_VAYORA_SANDBOX_KEY=zk_test_… \
+  xcodebuild test … -only-testing:VayoraMerchantUITests/SandboxTests
+```
+`scripts/seed-sandbox-ios.sh` fills a sandbox with what the inbox screens need (a refund and a payout waiting for approval, an open dispute, a reminder draft, a settlement, a settlement that does not add up so the server opens a case). Set `TENANT`, and `APPROVER_KEY_OUT=<file>` to also mint a second key: the person who asked cannot approve, so a successful approval needs another key (`TEST_RUNNER_VAYORA_SANDBOX_APPROVER_KEY`, `ApproverSandboxTests`). Those tests use their rows up, so re-seed between runs. The seeded cases need `TEST_RUNNER_VAYORA_SANDBOX_SEEDED=1`.
+
+## On a real iPhone
+```sh
+xcodebuild -project Vayora.xcodeproj -scheme VayoraPay -destination 'id=<device UDID>' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <device UDID> <path to VayoraPay.app>
+```
+(`xcrun devicectl list devices` shows the UDID.) These are debug builds signed with the team in `project.yml`; trust the developer under Settings, General, VPN & Device Management the first time.
+
+## Previewing the screens without a simulator
+`VayoraGallery` renders the screens (fixture data only, no network) to PNG on a Mac:
+
+```sh
+cd Packages/VayoraKit && swift run VayoraGallery ../../docs/gallery
+```
+
+The PNGs in `docs/gallery` are its output. The screens live in the `VayoraUI` target and both apps use them, so what the gallery shows is what the apps draw. It cannot show the camera, haptics or motion; check those on a phone. The Mac renderer also cannot draw scroll views, system progress spinners or default-style buttons, so the gallery uses flat variants of those.
+
+The server address and API key are remembered in the Keychain, so deleting and reinstalling an app keeps them. The Merchant app's Settings and Pay's first screen can fill them in by scanning a setup QR (`vayora://setup?server=…&key=zk_test_…`); live keys are refused.
+
+Text uses a Dynamic Type aware rounded font (`vfont`), capped at the second accessibility size at the app roots. macOS has no text-size setting, so the gallery cannot show large text, and it draws the fallback frosted card, not the iOS 26 Liquid Glass; check both on a phone.
+
+## Person-to-person features (test mode)
+Vayora's simulator only knows merchant payments, so these are kept on the phone and labelled as such:
+- **Send** to a saved payee (a UPI ID, or a 10-digit mobile number kept as `<number>@zyvor-test`). The money moves between test wallets on the paying phone; Vayora's server and ledger are not involved.
+- **Split a bill** shows a request QR (`vayora://request?pa=…&pn=…&am=…&tn=…`). Another phone's Pay scans it and pays; the amount is required and read with the same rules as a `upi://pay` link.
+- **Small payments** (off by default, in Settings): up to ₹200 a payment and ₹1,000 a day need only the slide, not the PIN.
+- **Bills** are monthly local notifications. They remind; they never pay.
+- **Planned** (Bills, third tab): plan a payment for a date and get a notification; when it is due, "Pay now" opens the usual review, slide and PIN (it is a test transfer to a saved payee, and it is marked done only after a successful payment). "Repeating payments" lists payees you paid three times at an even weekly or monthly gap with similar amounts, found from your history, with a one-tap "Plan next". "Splits" keeps each bill you split and who has paid you back, ticked by hand because this phone is not told when another phone pays.
+- **Safety checks** on the review screen: first time paying a UPI ID, a UPI ID one character away from one you saved, and an amount more than 5x the usual for that payee. A first payment of ₹5,000 or more to someone new waits 10 seconds. These warn; they never block, and the payer decides.
+- **Pay again** on Home: up to three payees you pay most, weighted toward this weekday and hour; one tap opens the usual review, slide and PIN.
+- **Ask your money** in History: type "food last week", "more than 500 this month", "failed payments" or a name. It is plain-word matching on the phone (no model, no network); it shows a total of paid payments above the list.
+- **Budgets** (Settings): a monthly limit per category. The review screen warns near or over a limit; it never blocks a payment. Spend is the same paid history the month summary uses (a failed payment never counts).
+- **History** has category and Failed chips, search, and **Export** as a CSV file (cells that start with `=`, `+`, `-` or `@` are quoted as text so a spreadsheet never runs them).
+- **Receive** (Settings): a QR with your test UPI ID and no amount (`vayora://request?pa=…&pn=…&open=1`). Another Pay scans it and types the amount; a request without `open=1` and without an amount is still refused.
+- **Learns categories**: change a payment's category on its receipt and every payment to that UPI ID, earlier and later, uses it (budgets and "Ask your money" follow). The word-guess stays the fallback.
+- **Jars** (Settings): set test money aside for a goal with a target. Money moves between the wallet and a jar and is never created or lost; the wallet and a jar never go below zero; deleting a jar returns its money. Resetting the wallet clears the jars. No bank, no interest.
+- **Receipts vault**: on any receipt, add a note, tags and a photo of the bill (kept on the phone, scaled down). Tags and notes are found by History search. "Month PDF" in History makes a one-page report of the month's paid payments to share.
+- **Split by item** (Bills, Planned): name the people, add items, tick who shared each, and see each person's share. The shares always add up to exactly the total (left-over paise go to the first people). Each person gets their own request QR, and the split is saved to Splits.
+- **Siri and Shortcuts** (Pay): "How much did I spend in Vayora Pay" and "My balance in Vayora Pay" answer from this phone's saved history (test money). They appear in the Shortcuts app after the first launch. No widget yet: a widget needs its own target and an App Group, which changes signing on the Mac mini, so it waits for a go-ahead.
+- **Merchant cashier mode** (Settings): set an owner PIN and lock the phone for a cashier. It hides AutoPay, Settings and refunds until the PIN is entered from "Owner" on the Collect screen (five wrong tries lock it for 30 seconds). It is a convenience on a shared counter phone, not security: the API key on the phone still opens everything. If no PIN was ever set, unlocking never traps you.
+- **Merchant closing reminder** (Settings): a daily notification at a time you choose that asks you to open the app and close the day. Its text is fixed when scheduled, so it cannot carry today's total.
+- **Merchant regulars**: name a paid payment (Payment detail) and see a running total per name in Settings, Regulars. Records only: nothing is lent, charged or sent, and refunds are not subtracted.
+- **Merchant share QR**: on the QR screen, "Share QR" sends the payment QR as an image to a customer who is not at the counter.
+- **Merchant accountant export** (Settings): two CSV files, every payment and a total per day. Days are Indian days (IST); totals are paid payments net of refunds; cells that could run as a formula are quoted as text. Covers the most recent 300 payments.
+- **Merchant staff** (Settings, Staff): name the people on the till and pick who is on from the Collect screen; each sale made on this phone is tagged with that name, and Staff shows today's takings by name. Local records, not accounts or logins; refunds are not subtracted.
+- **Privacy** (Pay): "Lock with Face ID" now really locks (it was a setting nothing read): on launch, and when the app comes back after the time you pick (every time, 1 or 5 minutes), with the phone's passcode as the fallback; a phone with neither stays open rather than locking you out. The app is covered in the app switcher, and "Hide the balance" masks it on Home. A payee or note that talks about refunds, prizes, cashback or KYC gets a plain scam warning on the review screen.
+- **Backup** (Pay, Settings): "Make a backup" writes your payees, history, jars, budgets, notes, plans and wallet to one file you can share; "Restore" reads one back and replaces what is on the phone. It never includes the PIN, the server address or receipt photos; a file with the wrong shape, version or size is refused before anything changes.
+- **Voice pay** (Pay, mic button on Home): speak "Pay Asha 200 rupees" or "Asha ko 300 rupaye bhejo" (English or Hindi). It listens for at most 8 seconds, prefers on-device recognition, keeps nothing, shows what it heard, and only offers the normal review for a payee you already saved, so you still slide and enter your PIN. If two saved people match, it asks which. Spoken numbers are read as digits (as the recognizer returns them), not as number words.
+- **Circle** (Bills, fourth tab; test mode): lend your wallet to someone up to a per-payment and a total limit, shown as a QR their Pay scans. When they pay a merchant they can choose "Asha's circle" on the review screen (always with the PIN). The simulated bank checks both limits against the payment's own amount before approving, records the spend, and your phone takes it out of your wallet once on the next refresh and lists it in History. You can take it back any time; spends already made stay. Real UPI Circle has its own rules; they are not verified here.
+- **Merchant items and bills** (Settings, Items; Collect, Items): list what you sell with a price and an optional GST rate (added on top, or already inside the price). On Collect, pick items and use the total; the item list goes in the payment note. GST is arithmetic on the numbers you type, rounded half up per line, and a bill here is **not a tax invoice**.
+- **Merchant sales by item** (Settings): items sold in the last 7 or 30 days, most sold first, shareable as text. Counts paid payments for bills made on this phone only.
+- **Test connection** (Pay and Merchant, Settings): one press reaches the server's `/healthz`, then (Merchant) makes one keyed call, and says in plain words what is wrong: bad address, the phone itself (127.0.0.1), cannot reach (Wi-Fi or the Local Network switch), plain http blocked, wrong key, or no key. Test money only.
+- **Your week** (Pay, History, Week): a week of this phone's own history in plain sentences: total, change on the week before, top category, biggest payment, days with no payments. Page back to earlier weeks; share as text. Only paid payments count; nothing is estimated or uploaded.
+- **Demo mode** (Pay and Merchant, Settings): a built-in test bank answers instead of a server, so the app can be tried with no setup. It covers collecting, the QR, paying, refunds and Circle; a pretend customer pays a Merchant code a few seconds after it is shown. AutoPay, branches, cash and customers need the real test server and say so. State is in memory and resets when the app closes. Test money only.
+- **Payment card** (Pay, Receipt): "Share as a card" makes a picture of a finished payment (amount, payee name, note, time, TEST MONEY). The payee's UPI ID is masked on it (as•••@bank), so it is safe to show a friend. Made on the phone; nothing is uploaded.
+- **Merchant refund reasons** (Payment detail): pick why (customer asked, wrong item, quality problem, charged twice, other) and add a note before refunding. The reason goes to the server in the refund; the note and reason are kept on this phone, and the Today screen shows a one-line pattern for the last 7 days when there were refunds.
+- **Reduce Motion and customer view**: with Reduce Motion on, the confetti is off and the QR ring and waiting dot stay still. The customer view is larger (amount, QR, note, instruction) so it reads across a counter.
+- **Merchant counter speaker** (Settings, off by default): says "250 rupees received" in English or Hindi when a payment you collected is paid. It uses the phone's own voice and plays over the silent switch.
+- **Merchant end of day** (Settings): record cash taken, handed back or put in the till (`POST /v1/cash_entries`), count the till and close the day (`POST /v1/closings`) against the expected cash and digital totals. A second person signs it off on the console. A tenant with no branch can name one from the app (needs the admin scope).
+- **Merchant**: a tip (5, 10, 15%) on the keypad that goes into the QR total, "Repeat last amount", takings by the hour on Payments, and a shareable receipt.
+- **AutoPay** (test mode, inside the Bills tab). Scan a merchant's AutoPay QR (`upi://mandate?…`), read "up to ₹X, how often, until when", slide and enter the PIN; the simulator plays your bank and turns it on. Pay shows the debits the bank **took** (polled from `GET /v1/sim/mandate/{id}`), takes each from the test wallet exactly once and lists it in History. It cannot show upcoming debits: Zyvor tells the merchant before a debit and does not deliver that notice to the payer. You can stop an AutoPay from Pay; a merchant revoke shows up on the next refresh.
+- **Merchant AutoPay tab**: a new AutoPay (customer name, how often, end date, most per debit) shows its QR and waits for approval; the detail screen schedules debits, pauses, resumes, revokes, and has a sandbox-only **Run now** because the in-process simulator only moves when the API runs the pass. The server needs `ZYVOR_SIM_PAYER=1`, and `ZYVOR_MANDATE_NOTICE_HOURS=0` so a debit scheduled for today can go out. Not checked against NPCI rules; real AutoPay needs a bank.

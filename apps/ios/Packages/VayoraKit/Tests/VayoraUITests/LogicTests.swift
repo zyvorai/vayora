@@ -1,0 +1,84 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import XCTest
+@testable import VayoraUI
+@testable import VayoraKit
+
+final class AmountEntryTests: XCTestCase {
+    private func typed(_ keys: [Character]) -> AmountEntry {
+        var e = AmountEntry()
+        for k in keys { if k == "." { e.point() } else if k == "<" { e.delete() } else if let d = k.wholeNumberValue { e.digit(d) } }
+        return e
+    }
+    func testBuildsAnAmountInPaiseNeverFloat() {
+        XCTAssertEqual(typed(Array("499.5")).money?.minor, 49950)
+        XCTAssertEqual(typed(Array("499")).money?.minor, 49900)
+        XCTAssertEqual(typed(Array("0.07")).money?.minor, 7)
+    }
+    func testRefusesThirdDecimalAndLeadingZeros() {
+        XCTAssertEqual(typed(Array("1.234")).text, "1.23")
+        XCTAssertEqual(typed(Array("007")).text, "7")
+        XCTAssertEqual(typed(Array(".5")).text, "0.5")
+        XCTAssertEqual(typed(Array("1..2")).text, "1.2")
+    }
+    func testCapsTheIntegerPartAndNeedsAPositiveAmount() {
+        XCTAssertEqual(typed(Array("123456789")).text, "1234567")
+        XCTAssertNil(AmountEntry().money)
+        XCTAssertNil(typed(Array("0")).money)
+        XCTAssertNil(typed(Array("5.")).money, "a trailing point is not an amount yet")
+    }
+}
+
+final class SlideAndPinTests: XCTestCase {
+    func testSlideCompletesOnlyNearTheEnd() {
+        XCTAssertEqual(SlideModel.outcome(progress: 0.5), .reset)
+        XCTAssertEqual(SlideModel.outcome(progress: 0.91), .reset)
+        XCTAssertEqual(SlideModel.outcome(progress: 0.92), .complete)
+        XCTAssertEqual(SlideModel.outcome(progress: 1), .complete)
+    }
+    func testTicksFireOncePerTenthAndStayInRange() {
+        XCTAssertEqual(SlideModel.tickStep(progress: 0), 0)
+        XCTAssertEqual(SlideModel.tickStep(progress: 0.34), 3)
+        XCTAssertEqual(SlideModel.tickStep(progress: 1), 10)
+        XCTAssertEqual(SlideModel.tickStep(progress: 4), 10)
+        XCTAssertEqual(SlideModel.tickStep(progress: -1), 0)
+    }
+    func testPinFillsDeletesAndRefusesExtraDigits() {
+        var p = PinEntry()
+        [1, 2, 3, 4, 5].forEach { p.press($0) }
+        XCTAssertEqual(p.code, "1234"); XCTAssertTrue(p.isFull)
+        p.delete(); XCTAssertEqual(p.code, "123"); XCTAssertFalse(p.isFull)
+        p.press(99); XCTAssertEqual(p.code, "123", "not a digit")
+        p.clear(); XCTAssertEqual(p.code, "")
+    }
+}
+
+final class PayeeTotalsTests: XCTestCase {
+    func row(_ day: Int, _ payee: String, _ minor: Int64, paid: Bool = true, name: String = "") -> HistoryRow {
+        HistoryRow(date: Date(timeIntervalSince1970: Double(day) * 86400), name: name, payee: payee, amountMinor: minor, paid: paid, category: .other, note: "", kind: "pay")
+    }
+
+    func testBiggestFirstCaseInsensitiveAndOnlyPaidInsideTheSpan() {
+        let rows = [row(1, "Asha Stores", 500), row(2, "asha stores ", 300), row(3, "Bob", 900), row(4, "Bob", 50, paid: false),
+                    row(9, "Late", 99999), row(0, "Early", 99999)]
+        let t = PayeeTotals.top(rows, from: Date(timeIntervalSince1970: 86400), to: Date(timeIntervalSince1970: 5 * 86400))
+        XCTAssertEqual(t.map(\.payee), ["Bob", "Asha Stores"])      // 900 vs 800, first spelling kept
+        XCTAssertEqual(t.map(\.minor), [900, 800]); XCTAssertEqual(t.map(\.count), [1, 2])
+    }
+
+    func testTiesLimitAndMissingNames() {
+        let rows = [row(1, "B", 100), row(1, "A", 100), row(1, "", 100, name: "Chai"), row(1, "", 100)]
+        let t = PayeeTotals.top(rows, from: .distantPast, to: .distantFuture, limit: 3)
+        XCTAssertEqual(t.map(\.payee), ["A", "B", "Chai"])
+        XCTAssertEqual(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture, limit: 0), [])
+        XCTAssertTrue(PayeeTotals.top(rows, from: .distantPast, to: .distantFuture).map(\.payee).contains("Someone"))
+    }
+
+    func testTheNameIsShownAndTheUPIIdGroups() {
+        let rows = [row(1, "demo-shop@vayora", 100, name: "Demo Shop"), row(2, " DEMO-SHOP@vayora", 50, name: "Demo shop (again)"), row(3, "x@y", 10)]
+        let t = PayeeTotals.top(rows, from: .distantPast, to: .distantFuture)
+        XCTAssertEqual(t.map(\.payee), ["Demo Shop", "x@y"])      // the name, not the id; the id only when there is no name
+        XCTAssertEqual(t.first?.count, 2); XCTAssertEqual(t.first?.minor, 150)
+    }
+}

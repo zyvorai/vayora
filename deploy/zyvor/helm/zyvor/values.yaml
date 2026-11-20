@@ -1,0 +1,55 @@
+image:
+  repository: ghcr.io/zyvorai/zyvor-payments
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# All secrets come from an existing Secret you manage (sealed-secrets, external-secrets, ...). Required keys:
+#   database-url          connection string for the restricted, NON-superuser `zyvor_app` role
+#   migrate-database-url  connection string for the schema owner (used only by the migration Job)
+#   master-key            64 hex chars; encrypts provider credentials at rest
+existingSecret: zyvor-secrets
+
+api:
+  replicas: 2
+  # 768Mi: reading an uploaded scan with OCR needs a little room beside the API
+  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 768Mi } }
+  providerTimeoutSeconds: 10
+worker:
+  replicas: 2   # safe to scale: events and jobs use SKIP LOCKED
+  resources: { requests: { cpu: 50m, memory: 96Mi }, limits: { memory: 384Mi } }
+
+# Email (verification links, invitations, password reset). Off: the API only logs mail and does not require a
+# verified address at sign-in. On: `existingSecret` needs `smtp-url` (smtp://user:pass@host:587?tls=required or
+# smtps://...) and `from` ("Zyvor <no-reply@your-domain>"). `consoleUrl` is where people reach the console.
+# `checkoutUrl` (where payers reach the checkout app) puts a pay link in invoice emails and turns on payment-link expiry
+# reminders. `publicApiUrl` (where payers reach this API) adds an unsubscribe link to automatic mail; the secret also needs
+# `unsubscribe-secret` (16+ characters).
+mail:
+  enabled: false
+  existingSecret: zyvor-mail
+  consoleUrl: ""
+  checkoutUrl: ""
+  publicApiUrl: ""
+
+# Identity and bank checks (docs/zyvor/KYC_CASHFREE.md). Off: nothing is checked and a person reviews every submission.
+# On: `existingSecret` needs `provider` (cashfree) and, for Cashfree, `env` (sandbox or production), `client-id`
+# and `client-secret`. Each check is a paid call; production needs the cluster's IP whitelisted at Cashfree.
+kyc:
+  enabled: false
+  existingSecret: zyvor-kyc
+
+# SANDBOX ONLY. Simulates Razorpay and Cashfree. Never enable in a live environment.
+sandbox:
+  providerMock: { enabled: false }
+
+edge:
+  envoy:
+    enabled: true
+    image: envoyproxy/envoy:v1.32-latest
+    tlsSecretName: zyvor-tls   # kubernetes.io/tls secret with the edge certificate
+
+metrics:
+  serviceMonitor: { enabled: false }   # set true if the Prometheus Operator is installed
+
+networkPolicy: { enabled: true }
+podDisruptionBudget: { minAvailable: 1 }

@@ -1,0 +1,175 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import SwiftUI
+import VayoraKit
+import VayoraUI
+
+/// Amount (when the QR has none), review and slide, PIN, then the result. All the looks live in VayoraUI.
+struct PaySheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let payload: UPIPayload
+    /// A person-to-person test transfer (recorded on this phone only) instead of a merchant payment through Vayora.
+    let transfer: Bool
+
+    enum Step: Equatable { case amount, review, pin, working, done(Store.Outcome) }
+    @State private var step: Step
+    @State private var entry = AmountEntry()
+    @State private var pin = PinEntry()
+    @State private var pinError = false
+    @State private var shake: CGFloat = 0
+    @State private var progress = 0.0
+    @State private var cooling = 0
+    @State private var circleID: String?
+
+    init(payload: UPIPayload, transfer: Bool = false) {
+        self.payload = payload; self.transfer = transfer
+        _step = State(initialValue: payload.amount == nil ? .amount : .review)
+    }
+
+    var amount: Money? { payload.amount ?? entry.money }
+    var payeeName: String { payload.name.isEmpty ? payload.payee : payload.name }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            switch step {
+            case .amount:
+                CollectKeypadScreen(text: entry.text, note: "", chips: [], canContinue: amount != nil, title: "Pay \(payeeName)", actionLabel: "Continue", actionIcon: "arrow.right", brand: .pay,
+                                    onDigit: { entry.digit($0) }, onPoint: { entry.point() }, onDelete: { entry.delete() }, onShowQR: { withAnimation(VUI.spring) { step = .review } })
+            case .review:
+                if let amount {
+                    PayReviewScreen(name: payload.name, payee: payload.payee, amount: amount, balance: store.balance) {
+                        // a big first payment to someone new waits a few seconds; the slide itself is never blocked
+                        if cooling > 0 { Haptics.error(); return }
+                        // a small payment (when switched on, and inside today's limit) needs only the slide
+                        if chosenCircle == nil, !store.needsPIN(for: amount) { submit(noPIN: true); return }
+                        pin.clear(); pinError = false
+                        withAnimation(VUI.spring) { step = .pin }
+                    }
+                    .overlay(alignment: .top) { VStack(spacing: 6) { budgetBanner(amount); riskBanners(amount) }.padding(.top, 58) }
+                    .overlay(alignment: .bottom) { circlePicker(amount).padding(.bottom, 150) }
+                    .task(id: amount.minor) { await cool(amount) }
+                }
+            case .pin:
+                PinScreen(filled: pin.digits.count, error: pinError, shake: shake, onDigit: { digit($0) }, onDelete: { pin.delete(); pinError = false })
+            case .working:
+                ZStack {
+                    AmbientBackground(brand: .pay)
+                    VStack(spacing: 18) { ProgressView().controlSize(.large).tint(.white); Text("Paying…").vfont(22, .bold).foregroundStyle(VUI.textPrimary) }
+                }
+            case .done(let o):
+                ResultScreen(kind: kind(o), amount: amount ?? Money(minor: 0), to: payeeName, progress: progress, brand: .pay, footnote: footnote(o), onDone: { dismiss() })
+            }
+            if closable {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(VUI.textPrimary).frame(width: 36, height: 36).background(.white.opacity(0.14), in: Circle())
+                }
+                .padding(.leading, 18).padding(.top, 14).accessibilityLabel("Close")
+            }
+        }
+        .background(VUI.ink)
+        .preferredColorScheme(.dark)
+        .interactiveDismissDisabled(step == .working)
+    }
+
+    /// A heads-up, never a block: this payment would take a category near or over its monthly limit.
+    @ViewBuilder func budgetBanner(_ amount: Money) -> some View {
+        let cat = SpendCategory.guess(name: payload.name, note: payload.note, transfer: transfer)
+        if let w = BudgetCheck.warning(adding: amount.minor, to: cat, entries: store.spendEntries, budgets: store.budgets, now: Date()) {
+            Label(w.level == .over ? "This puts \(cat.title) \(Money(minor: w.spentMinor - w.limitMinor).display) over your budget" : "\(cat.title) will be at \(Int(w.fraction * 100))% of your budget",
+                  systemImage: "exclamationmark.triangle.fill")
+                .vfont(13, .semibold).foregroundStyle(VUI.amber).padding(.horizontal, 14).padding(.vertical, 8)
+                .background(VUI.amber.opacity(0.16), in: Capsule())
+        }
+    }
+
+    /// A delegate can pay from someone's circle instead of their own wallet, when that circle can cover this payment.
+    @ViewBuilder func circlePicker(_ amount: Money) -> some View {
+        let options = transfer ? [] : store.circles.filter { $0.canCover(amount.minor) }
+        if !options.isEmpty {
+            VStack(spacing: 6) {
+                Text("Pay from").vfont(12).foregroundStyle(VUI.textTertiary)
+                HStack(spacing: 8) {
+                    pill("My wallet", on: circleID == nil) { circleID = nil }
+                    ForEach(options) { c in pill("\(c.other)'s circle", on: circleID == c.id) { circleID = c.id } }
+                }
+            }
+        }
+    }
+    func pill(_ t: String, on: Bool, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) { Text(t).vfont(13, .semibold).foregroundStyle(on ? .white : VUI.textSecondary).padding(.horizontal, 12).padding(.vertical, 7)
+            .background(on ? AnyShapeStyle(VUI.violet) : AnyShapeStyle(.white.opacity(0.1)), in: Capsule()) }.buttonStyle(PressScale())
+    }
+    var chosenCircle: CircleRecord? { circleID.flatMap { id in store.circles.first { $0.id == id } } }
+
+    func risks(_ amount: Money) -> [RiskFlag] {
+        transfer ? [] : PaymentRisk.check(payee: payload.payee, amountMinor: amount.minor, history: store.historyRows, saved: store.payees.all)
+    }
+    /// Plain warnings above the slide. They inform; the person decides.
+    @ViewBuilder func riskBanners(_ amount: Money) -> some View {
+        ForEach(Array(risks(amount).enumerated()), id: \.offset) { _, f in
+            Label(text(f), systemImage: "exclamationmark.shield.fill").vfont(13, .semibold).foregroundStyle(VUI.coral)
+                .padding(.horizontal, 14).padding(.vertical, 8).background(VUI.coral.opacity(0.14), in: Capsule())
+        }
+        if let hint = ScamHints.check(name: payload.name, note: payload.note) {
+            Label(hint, systemImage: "exclamationmark.octagon.fill").vfont(12, .semibold).foregroundStyle(VUI.coral).multilineTextAlignment(.leading)
+                .padding(.horizontal, 14).padding(.vertical, 8).background(VUI.coral.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal, 20)
+        }
+        if cooling > 0 { Text("Take a moment: \(cooling)s").vfont(12).foregroundStyle(VUI.textSecondary) }
+    }
+    func text(_ f: RiskFlag) -> String {
+        switch f {
+        case .firstTime: "First time paying this UPI ID"
+        case .lookalike(let of): "Looks like \(of), which you saved"
+        case .unusuallyLarge(let t): "Much more than the usual \(Money(minor: t).display)"
+        }
+    }
+    func cool(_ amount: Money) async {
+        cooling = PaymentRisk.coolingSeconds(risks(amount), amountMinor: amount.minor)
+        while cooling > 0, !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000); if !Task.isCancelled { cooling -= 1 } }
+    }
+
+    var closable: Bool { switch step { case .working, .done: false; default: true } }
+
+    func digit(_ d: Int) {
+        pin.press(d)
+        guard pin.isFull else { return }
+        if pin.code == store.testPIN { submit(noPIN: false) } else {
+            pinError = true; Haptics.error()
+            Task {
+                for x: CGFloat in [12, -12, 8, -8, 0] { withAnimation(.linear(duration: 0.06)) { shake = x }; try? await Task.sleep(nanoseconds: 60_000_000) }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                pin.clear()
+            }
+        }
+    }
+
+    func submit(noPIN: Bool) {
+        guard let amount else { return }
+        withAnimation(VUI.spring) { step = .working }
+        Task {
+            let circle = chosenCircle
+            let outcome = transfer ? store.transfer(payload, amount: amount) : await store.pay(payload, amount: amount, circle: circle)
+            store.settle(payload, amount: amount, outcome: outcome, transfer: transfer, noPIN: noPIN, viaCircle: circle)
+            progress = 0
+            withAnimation(.easeInOut(duration: 0.3)) { step = .done(outcome) }
+            outcome == .paid ? Haptics.success() : Haptics.error()
+            withAnimation(.easeOut(duration: 1.3)) { progress = 1 }
+        }
+    }
+
+    func kind(_ o: Store.Outcome) -> ResultKind {
+        switch o {
+        case .paid: .paid
+        case .declined(let why): .failed(why)
+        case .unknown: .checking
+        case .notAvailable: .failed("Test server not available. Check the address in Settings, and that the server runs with ZYVOR_SIM_PAYER=1.")
+        }
+    }
+    func footnote(_ o: Store.Outcome) -> String? {
+        if o == .unknown && !store.lastError.isEmpty { return "Details: \(store.lastError)" }
+        if transfer && o == .paid { return "Test transfer: recorded on this phone only, not in Vayora's ledger." }
+        return nil
+    }
+}

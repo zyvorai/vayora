@@ -1,0 +1,48 @@
+# TLS-terminating edge. /v1 -> API, everything else -> checkout. Certs: deploy/zyvor/envoy/gen-certs.sh (dev) or your CA.
+static_resources:
+  listeners:
+    - name: https
+      address: { socket_address: { address: 0.0.0.0, port_value: 8443 } }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_params: { tls_minimum_protocol_version: TLSv1_2 }
+                tls_certificates:
+                  - certificate_chain: { filename: /certs/tls.crt }
+                    private_key: { filename: /certs/tls.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: edge
+                use_remote_address: true
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config: { "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog }
+                route_config:
+                  name: local
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      response_headers_to_add:
+                        - { header: { key: strict-transport-security, value: "max-age=31536000; includeSubDomains" } }
+                        - { header: { key: x-content-type-options, value: nosniff } }
+                      routes:
+                        - { match: { prefix: /v1/ }, route: { cluster: api, timeout: 30s } }
+                        - { match: { prefix: /healthz }, route: { cluster: api } }
+                        - { match: { prefix: / }, route: { cluster: checkout } }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
+  clusters:
+    - name: api
+      type: STRICT_DNS
+      load_assignment: { cluster_name: api, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: api, port_value: 8080 } } } }] }] }
+    - name: checkout
+      type: STRICT_DNS
+      load_assignment: { cluster_name: checkout, endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: checkout, port_value: 3000 } } } }] }] }
+admin:
+  address: { socket_address: { address: 127.0.0.1, port_value: 9901 } }

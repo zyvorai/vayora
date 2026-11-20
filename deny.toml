@@ -1,0 +1,25 @@
+# cargo-deny: advisories, licences, duplicate/banned crates and registry sources.
+[advisories]
+version = 2
+yanked = "deny"
+# Both are "unmaintained" notices (no vulnerability, "all versions affected", no upgrade exists), not security
+# defects. chrono/chrono-tz carry every timestamp and time-zone conversion in the API, settlement and provider
+# crates and sqlx's `chrono` feature, so replacing them (for example with `time` or `jiff`) is a planned migration,
+# not a CI fix. Re-review when either advisory changes or by 2027-05-18, whichever comes first.
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, no vulnerability; migration tracked, see comment above" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz is unmaintained, no vulnerability; migration tracked, see comment above" },
+]
+
+[licenses]
+version = 2
+allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Unicode-DFS-2016", "Zlib", "CC0-1.0", "MPL-2.0", "OpenSSL", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0", "0BSD"]  # 0BSD: quoted_printable, used by the SMTP client (lettre)
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

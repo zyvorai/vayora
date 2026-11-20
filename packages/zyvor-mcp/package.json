@@ -1,0 +1,25 @@
+{
+  "name": "@zyvor/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Model Context Protocol server for Vayora (Zyvor Payments): curated, read-only-by-default tools over the Node SDK",
+  "license": "LicenseRef-Zyvor-Production-1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": { "zyvor-mcp": "dist/cli.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": { "build": "tsc", "test": "vitest run", "lint": "tsc --noEmit", "demo": "node demo/sandbox-agent.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@zyvor/node": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

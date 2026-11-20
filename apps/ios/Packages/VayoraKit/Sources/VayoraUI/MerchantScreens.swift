@@ -1,0 +1,206 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import SwiftUI
+import VayoraKit
+
+public struct PaymentRowModel: Identifiable, Equatable, Sendable {
+    public enum State: Sendable { case succeeded, processing, refunded, partRefunded, failed }
+    public let id: String, amount: Money, when: String, note: String, state: State
+    public init(id: String, amount: Money, when: String, note: String = "", state: State) { self.id = id; self.amount = amount; self.when = when; self.note = note; self.state = state }
+    var pill: (String, StatusPill.Kind) {
+        switch state {
+        case .succeeded: ("Paid", .success)
+        case .processing: ("Waiting", .neutral)
+        case .refunded: ("Refunded", .warn)
+        case .partRefunded: ("Part refunded", .warn)
+        case .failed: ("Failed", .danger)
+        }
+    }
+}
+
+/// Counter keypad: the amount is the screen.
+public struct CollectKeypadScreen: View {
+    let text: String, note: String, chips: [String], canContinue: Bool, title: String, actionLabel: String, actionIcon: String, brand: Brand
+    let onDigit: (Int) -> Void, onPoint: () -> Void, onDelete: () -> Void, onChip: (String) -> Void, onShowQR: () -> Void
+    public init(text: String, note: String, chips: [String], canContinue: Bool, title: String = "Collect", actionLabel: String = "Show QR", actionIcon: String = "qrcode", brand: Brand = .merchant,
+                onDigit: @escaping (Int) -> Void = { _ in }, onPoint: @escaping () -> Void = {},
+                onDelete: @escaping () -> Void = {}, onChip: @escaping (String) -> Void = { _ in }, onShowQR: @escaping () -> Void = {}) {
+        self.text = text; self.note = note; self.chips = chips; self.canContinue = canContinue
+        self.title = title; self.actionLabel = actionLabel; self.actionIcon = actionIcon; self.brand = brand
+        self.onDigit = onDigit; self.onPoint = onPoint; self.onDelete = onDelete; self.onChip = onChip; self.onShowQR = onShowQR
+    }
+    public var body: some View {
+        ZStack {
+            AmbientBackground(brand: brand, phase: 0.3)
+            VStack(spacing: 16) {
+                HStack { Text(title).vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
+                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("₹").vfont(40, .semibold).foregroundStyle(VUI.textSecondary)
+                    Text(text.isEmpty ? "0" : text).vfont(84, .bold).foregroundStyle(text.isEmpty ? VUI.textTertiary : VUI.textPrimary)
+                        .minimumScaleFactor(0.4).lineLimit(1).contentTransition(.numericText())
+                }
+                .animation(VUI.snap, value: text).accessibilityElement(children: .ignore).accessibilityLabel("Amount \(text.isEmpty ? "zero" : text) rupees")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(chips, id: \.self) { c in
+                            Button { onChip(c) } label: {
+                                Text(c).vfont(14, .semibold).foregroundStyle(note == c ? VUI.ink : VUI.textPrimary)
+                                    .padding(.horizontal, 14).padding(.vertical, 8).background(note == c ? AnyShapeStyle(brand.glow) : AnyShapeStyle(.white.opacity(0.10)), in: Capsule())
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal, 4)
+                }.frame(height: 40)
+                Spacer(minLength: 0)
+                KeyPad(onDigit: onDigit, onDelete: onDelete, extraKey: KeyPad.Extra(title: ".", label: "Decimal point", action: onPoint))
+                Button(action: onShowQR) {
+                    Label(actionLabel, systemImage: actionIcon).vfont(19, .semibold).foregroundStyle(canContinue ? VUI.ink : VUI.textTertiary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 18)
+                        .background(canContinue ? AnyShapeStyle(LinearGradient(colors: [brand.glow, brand.primary], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(.white.opacity(0.08)), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                }.buttonStyle(PressScale()).disabled(!canContinue)
+            }
+            .padding(.horizontal, 20).padding(.bottom, 8)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+/// The QR as the hero, with a live ring and an expiry arc. Customer mode strips everything else away.
+public struct QRHeroScreen: View {
+    let amount: Money, qr: Image?, expiry: Double, customerMode: Bool, note: String, onCustomerMode: () -> Void, onCancel: () -> Void
+    private let rawPulse: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Reduce Motion holds the ring and the dot still.
+    private var pulse: Double { reduceMotion ? 0 : rawPulse }
+    public init(amount: Money, qr: Image?, expiry: Double, pulse: Double, customerMode: Bool, note: String = "", onCustomerMode: @escaping () -> Void = {}, onCancel: @escaping () -> Void = {}) {
+        self.amount = amount; self.qr = qr; self.expiry = expiry; self.rawPulse = pulse; self.customerMode = customerMode; self.note = note
+        self.onCustomerMode = onCustomerMode; self.onCancel = onCancel
+    }
+    public var body: some View {
+        ZStack {
+            if customerMode { Color.white } else { AmbientBackground(brand: .merchant, phase: 0.55) }
+            VStack(spacing: 22) {
+                if !customerMode { HStack { Text("Waiting for payment").vfont(22, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() } }
+                Spacer(minLength: 0)
+                AmountText(amount, size: customerMode ? 84 : 52).environment(\.colorScheme, customerMode ? .light : .dark)
+                    .colorMultiply(customerMode ? .black : .white)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 56, style: .continuous).stroke(VUI.emerald.opacity(0.3 * (1 - pulse)), lineWidth: 2).scaleEffect(1 + 0.10 * pulse).frame(width: 322, height: 322)
+                    RoundedRectangle(cornerRadius: 34, style: .continuous).fill(.white).frame(width: 288, height: 288)
+                        .shadow(color: VUI.emerald.opacity(customerMode ? 0.0 : 0.5), radius: 30)
+                    if let qr { qr.interpolation(.none).resizable().scaledToFit().frame(width: 246, height: 246).accessibilityLabel("Payment QR code") }
+                    else { Image(systemName: "qrcode").font(.system(size: 160)).foregroundStyle(.black) }
+                    FrameProgress(expiry, cornerRadius: 46, lineWidth: 5, colour: VUI.emerald).frame(width: 308, height: 308)
+                }
+                // the customer view is read from across a counter: a bigger code, easier for a camera too
+                .scaleEffect(customerMode ? 1.14 : 1)
+                .padding(.vertical, customerMode ? 22 : 0)
+                if !note.isEmpty { Text(note).vfont(customerMode ? 20 : 16).foregroundStyle(customerMode ? Color.black.opacity(0.6) : VUI.textSecondary).multilineTextAlignment(.center) }
+                HStack(spacing: 8) { Circle().fill(VUI.emerald).frame(width: 8, height: 8).opacity(0.4 + 0.6 * (1 - pulse)); Text("Scan with Vayora Pay to pay (test)").vfont(customerMode ? 17 : 13) }
+                    .foregroundStyle(customerMode ? Color.black.opacity(0.5) : VUI.textTertiary)
+                Spacer(minLength: 0)
+                HStack(spacing: 12) {
+                    Button(action: onCustomerMode) { Label(customerMode ? "Exit customer view" : "Customer view", systemImage: customerMode ? "xmark" : "person.2.fill")
+                        .vfont(16, .semibold).foregroundStyle(customerMode ? Color.black : VUI.textPrimary).frame(maxWidth: .infinity).padding(.vertical, 16)
+                        .background(customerMode ? Color.black.opacity(0.08) : .white.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }.buttonStyle(.plain)
+                    if !customerMode { Button(action: onCancel) { Text("Cancel").vfont(16, .semibold).foregroundStyle(VUI.coral).padding(.horizontal, 24).padding(.vertical, 16)
+                        .background(VUI.coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous)) }.buttonStyle(.plain) }
+                }
+            }
+            .padding(24)
+        }
+        .environment(\.colorScheme, customerMode ? .light : .dark)
+    }
+}
+
+/// Today at a glance, then the ledger of payments.
+public struct MerchantTodayScreen: View {
+    let collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool, error: String?, hourly: HourlyBars.Model?, onOpen: (PaymentRowModel) -> Void
+    public init(collected: Money, count: Int, average: Money, trend: [Double], rows: [PaymentRowModel], scrolls: Bool = true, error: String? = nil, hourly: HourlyBars.Model? = nil, onOpen: @escaping (PaymentRowModel) -> Void = { _ in }) {
+        self.collected = collected; self.count = count; self.average = average; self.trend = trend; self.rows = rows; self.scrolls = scrolls; self.error = error; self.hourly = hourly; self.onOpen = onOpen
+    }
+    public var body: some View {
+        ZStack {
+            AmbientBackground(brand: .merchant, phase: 0.12)
+            if scrolls { ScrollView { content } } else { content.frame(maxHeight: .infinity, alignment: .top) }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+    var content: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack { Text("Payments").vfont(28, .bold).foregroundStyle(VUI.textPrimary); Spacer(); TestChip() }
+            GlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Collected today").vfont(14, .medium).foregroundStyle(VUI.textSecondary)
+                    AmountText(collected, size: 52)
+                    Sparkline(trend, colour: VUI.mint).frame(height: 56)
+                    HStack {
+                        stat("Payments", "\(count)"); Spacer(); stat("Average", average.display)
+                    }
+                }
+            }
+            if let hourly, hourly.hasMoney { HourlyBars(model: hourly) }
+            if let error { Text(error).vfont(14).foregroundStyle(VUI.coral) }
+            Text("Recent").vfont(20, .bold).foregroundStyle(VUI.textPrimary)
+            if rows.isEmpty && error == nil { Text("No payments yet. Create one on the Collect tab.").vfont(15).foregroundStyle(VUI.textSecondary) }
+            ForEach(rows) { r in
+              Button { onOpen(r) } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: icon(r.state)).font(.system(size: 18, weight: .semibold)).foregroundStyle(tint(r.state))
+                        .frame(width: 44, height: 44).background(tint(r.state).opacity(0.14), in: Circle())
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(r.amount.display).vfont(18, .semibold).foregroundStyle(VUI.textPrimary)
+                        Text(r.note.isEmpty ? r.when : "\(r.note) · \(r.when)").vfont(12.5).foregroundStyle(VUI.textTertiary)
+                    }
+                    Spacer()
+                    StatusPill(r.pill.0, r.pill.1)
+                }
+                .padding(14).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(VUI.hairline))
+              }
+              .buttonStyle(PressScale())
+            }
+        }
+        .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 32)
+    }
+    func stat(_ k: String, _ v: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) { Text(k).vfont(12.5).foregroundStyle(VUI.textTertiary); Text(v).vfont(18, .semibold).foregroundStyle(VUI.textPrimary) }
+    }
+    func icon(_ s: PaymentRowModel.State) -> String { switch s { case .succeeded: "arrow.down.left"; case .processing: "hourglass"; case .refunded, .partRefunded: "arrow.uturn.backward"; case .failed: "xmark" } }
+    func tint(_ s: PaymentRowModel.State) -> Color { switch s { case .succeeded: VUI.mint; case .processing: VUI.textSecondary; case .refunded, .partRefunded: VUI.amber; case .failed: VUI.coral } }
+}
+
+
+/// Money taken per hour today, as bars. The busiest hour is named in words so it does not rely on colour or height alone.
+public struct HourlyBars: View {
+    public struct Model: Equatable, Sendable {
+        public let hours: [Int], minor: [Int64]   // parallel: the hour (0...23) and the money taken in it
+        public init(hours: [Int], minor: [Int64]) { self.hours = hours; self.minor = minor }
+        public var hasMoney: Bool { minor.contains { $0 > 0 } }
+        public var busiest: (hour: Int, minor: Int64)? {
+            guard let m = minor.max(), m > 0, let i = minor.firstIndex(of: m) else { return nil }
+            return (hours[i], m)
+        }
+    }
+    let model: Model
+    public init(model: Model) { self.model = model }
+    public var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("By the hour").vfont(14, .medium).foregroundStyle(VUI.textSecondary)
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(Array(model.hours.enumerated()), id: \.offset) { i, h in
+                        VStack(spacing: 4) {
+                            let top = Double(model.minor.max() ?? 1)
+                            Capsule().fill(model.minor[i] > 0 ? VUI.mint : VUI.hairline).frame(width: 16, height: max(4, 64 * Double(model.minor[i]) / max(top, 1)))
+                            Text(HourlyTotals.label(h)).font(.system(size: 9)).foregroundStyle(VUI.textTertiary)
+                        }.frame(maxWidth: .infinity)
+                    }
+                }.frame(height: 84, alignment: .bottom).accessibilityHidden(true)
+                if let b = model.busiest { Text("Busiest hour: \(HourlyTotals.label(b.hour)), \(Money(minor: b.minor).display)").vfont(13).foregroundStyle(VUI.textSecondary) }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
