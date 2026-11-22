@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 /** The visitor's address from a proxy's `X-Forwarded-For`, trusting `hops` proxies in front of the console.
  *  With 0 hops nothing is trusted (a caller could write anything there), so there is no address. */

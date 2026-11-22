@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! School fees, society dues and donations, built on invoices, instalments and payment intents. All against the
 //! simulators; no real provider, money, student or donor. Names below are invented.

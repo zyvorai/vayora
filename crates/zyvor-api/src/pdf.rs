@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A minimal text PDF: A4 pages of Helvetica lines, built by hand so an invoice email can carry a copy without a
 //! PDF library. Text only (no logo, no table borders). Characters Helvetica's WinAnsi set lacks become `?`, except

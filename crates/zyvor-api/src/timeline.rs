@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! One ordered story per payment: the intent, each attempt, the provider's webhooks that mention it,
 //! ledger postings, settlement, refunds and disputes, plus a plain sentence on where it stands and what

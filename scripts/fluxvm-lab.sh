@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Builds a Zyvor SANDBOX in a FluxVM Debian VM on an Apple-silicon Mac: Postgres, release builds, systemd services
 # for API/worker/simulated providers/console/checkout, and Caddy with its own CA in front (self-signed HTTPS).

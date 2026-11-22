@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A simulated payer for the iPhone payer app and tests: it approves or declines the sandbox UPI payload
 //! the simulator issued. No money moves and no bank is involved. Off unless `ZYVOR_SIM_PAYER=1`, and it

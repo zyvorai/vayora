@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Cash visibility, refund analytics and accounting exports. Simulators and hand-built synthetic histories only:
 //! every amount, reference, date and rate here is made up, nothing ran against a real provider or bank.

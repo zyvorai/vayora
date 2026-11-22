@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Spawns the built server (dist/cli.js) as a real child process, as an MCP client would, against a small HTTP stand-in
 // for the Vayora API. Skipped when the package has not been built (`pnpm build` first; `pnpm -r build` does it).

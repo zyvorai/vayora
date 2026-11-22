@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Authenticated API request log for the Developers inspector. Bodies are never stored; only the
 //! route template, status, actor and latency. Filled from the request middleware when Auth ran.

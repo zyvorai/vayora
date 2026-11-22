@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! What the payer used, as far as offers, routing rules and the downtime alerts care: a card network class, a UPI
 //! handle or app, a bank. Never a card number: only the first six or eight digits (the BIN) may be sent, and only to

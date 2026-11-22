@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Deterministic read-only insights: what is due to come in, and refund patterns worth a look.
 //! No model is involved and nothing here changes anything. These are prompts for a person to check,

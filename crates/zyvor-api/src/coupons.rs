@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Coupons and convenience fees for payment links. A coupon takes a percentage or a flat amount off a
 //! fixed-amount link; a link may also add a convenience fee the payer covers. The price is worked out

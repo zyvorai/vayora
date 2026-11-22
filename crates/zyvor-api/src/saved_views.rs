@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Saved views: named filter sets for a list page. Personal unless shared with the environment.
 //! Only filters are stored, and they are checked on the way in, so a stored view can never carry

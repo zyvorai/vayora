@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Vendor onboarding, commission rules, payout batches and payout schedules. Everything here runs against the
 //! simulators: the payout rail is a scripted stand-in that counts what it is asked to pay, and no bank details are real.

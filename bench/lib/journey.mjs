@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // One customer payment, end to end, with the same retry policy for every arm of a comparison:
 // up to `maxAttempts` attempts; a retry only after a definite failure; an unknown outcome is asked about once.

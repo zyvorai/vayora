@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The payer's device, read from their own request, in the words payment partners ask for.
 //! A guess from the `User-Agent`: good enough to choose between an intent and a QR, never used to decide

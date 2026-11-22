@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Razorpay adapter (Orders + hosted Checkout). Built from Razorpay's public API docs and tested
 //! against `zyvor-provider-mock`; it has NOT been exercised against Razorpay's live sandbox.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Disputes (chargebacks): record the provider's notice, collect evidence, and book the outcome.
 //! Zyvor tracks the case and the money; submitting evidence to the provider/issuer is done in the

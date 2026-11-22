@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Reset test data: a test environment clears the payments and money records it created while trying
 //! things out, and keeps its setup (settings, provider accounts, keys, people, branches, counters, vendors,

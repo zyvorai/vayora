@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Exchange rates for reporting. You enter the rate you use (Zyvor does not fetch market rates), one
 //! per currency per day, and it is never edited afterwards. Rates convert foreign-currency amounts

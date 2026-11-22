@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Starts a private Postgres database, the Zyvor API and the SIMULATED provider mock on ports of its own, and tears down
 # ONLY what it started. Source it:   . bench/lib/stack.sh; stack_up <bin_dir>; ...; (stack_down runs on exit)

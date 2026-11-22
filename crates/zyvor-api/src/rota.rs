@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! When Zyvor's reviewers are working. Each reviewer sets weekly shifts in the review desk's local time: an IANA zone
 //! (`ZYVOR_REVIEW_TIMEZONE`, for example `Europe/London`, which follows daylight saving) or, when none is set, a fixed

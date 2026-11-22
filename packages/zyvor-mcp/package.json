@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Model Context Protocol server for Vayora (Zyvor Payments): curated, read-only-by-default tools over the Node SDK",
-  "license": "LicenseRef-Zyvor-Production-1.0",
+  "license": "LicenseRef-Zyvor-Production-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

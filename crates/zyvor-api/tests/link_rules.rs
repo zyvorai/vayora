@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Payment-link amount modes and lifecycle, payer-instrument rules, VPA and bank-account verification, the risk
 //! rules engine, and payout links. Everything runs against the simulators and mocks in this repository: the

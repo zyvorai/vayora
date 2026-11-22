@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Provider, bank and UPI-handle downtime alerts, against seeded history only (no real provider, bank or money):
 //! one alert per group however often it is checked, a case, an outbox event and an optional email, hysteresis and

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Refunds: reservation-based over-refund protection, approval thresholds with separation of
 //! duties, duplicate protection via idempotency, and resolution of unknown outcomes.

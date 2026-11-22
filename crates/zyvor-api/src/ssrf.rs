@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Server-side request forgery guard for merchant-supplied URLs (outbound webhooks). A merchant must
 //! not be able to point our worker at the cloud metadata service, our own database or another

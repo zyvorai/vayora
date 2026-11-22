@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Onboarding documents uploaded as files: stored encrypted, read for the facts on them (`docread`), and compared
 //! with what the merchant entered (`docfacts`). The comparison is run each time it is shown, from the stored

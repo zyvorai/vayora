@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Scenario 1: payment success during a provider outage and a brown-out, with and without Vayora routing.
 //   arm "baseline": every payment is pinned to ONE provider (allowed_providers = ["razorpay"]), i.e. no Vayora routing

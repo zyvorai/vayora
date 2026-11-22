@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Fee checks: what a provider deducted from a settlement against the merchant's own fee rules.
 //! All rates used here are arbitrary round numbers invented for the tests. They are not any provider's, network's

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! API-key authentication. Keys look like `zk_test_<64 hex>`; only a SHA-256 hash is stored.
 //! A key belongs to exactly one tenant (organisation + test/live), so environments never mix.

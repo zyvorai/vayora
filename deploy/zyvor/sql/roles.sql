@@ -1,5 +1,5 @@
 -- Copyright 2026 Zyvor AI Labs · https://zyvor.dev
--- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 -- Run once as the database owner. The service connects as `zyvor_app`, which is NOT a superuser and
 -- does not own the tables, so Postgres row-level security binds it. Never run the API as a superuser.

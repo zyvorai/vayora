@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Reminder drafts: a person reads (and may edit) a reminder before it goes out. Drafts are made on
 //! request (optionally worded by the AI assistant) or by the dunning run when the tenant requires

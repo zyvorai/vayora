@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Scenario 5: developer time to first payment, from a CLEAN checkout, and checkout page weight. LOCAL numbers only.
 #   bench/devtime.sh <out_dir>

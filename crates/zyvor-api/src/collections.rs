@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Collections workspace: ageing of unpaid invoices, promises to pay and reminder history.
 //! Zyvor records and reports; the merchant's own channel (email/SMS/WhatsApp) does the sending,

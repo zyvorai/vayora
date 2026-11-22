@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Donations: campaigns with suggested amounts, a public page-less start endpoint a site or app can call, receipts as
 //! PDF, a CSV export, and an optional recurring donor through a UPI AutoPay mandate (where the provider supports it).

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Self-serve signup: a public call that creates an organisation with test and live tenants and a
 //! first admin console user, then an emailed link that proves the address. The test key is returned

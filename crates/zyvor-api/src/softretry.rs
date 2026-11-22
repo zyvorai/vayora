@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Soft-decline retry: after a DEFINITIVE provider-side failure, start the next attempt on another provider, so a
 //! payer is not sent back to the start because one provider had a bad moment. Opt-in per business

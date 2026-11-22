@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Writers for synthetic bank statement CSVs in the layouts Vayora's importer names. All data is made up: account numbers
 // are zeros, names are invented. Headings follow docs/zyvor/BANK_RECONCILIATION.md (and the fixtures used by the tests).

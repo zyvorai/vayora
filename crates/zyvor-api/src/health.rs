@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Provider health for routing: a rolling success-rate signal derived from stored payment attempts, a
 //! per-(provider, method) circuit breaker, and the failover list for a payment that already failed once.

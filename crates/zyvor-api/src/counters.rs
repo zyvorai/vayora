@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Counters within a branch, and per-branch daily summaries. A counter's QR is a payment link that
 //! carries the counter, so payments made through it are attributed to the counter and branch.

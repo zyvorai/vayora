@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A small, explicit risk screen plus a deterministic score.
 //! Hard limits: ceiling on one payment, cap on tries, failed-try velocity, blocked VPAs.

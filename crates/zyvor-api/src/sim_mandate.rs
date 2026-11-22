@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A simulated payer for UPI AutoPay mandates, like `sim_pay.rs` is for payments: it approves, declines or
 //! revokes a mandate the in-process simulator issued. No bank, no real mandate. Off unless

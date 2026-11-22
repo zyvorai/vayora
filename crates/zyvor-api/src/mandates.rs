@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! UPI AutoPay mandates: the payer approves once ("this merchant may debit up to ₹X, this often, until this
 //! date"), the merchant then schedules debits, and each debit is announced in advance.

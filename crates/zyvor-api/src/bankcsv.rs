@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Bank statement CSV import. Banks disagree on column names, date formats and whether debits and credits share a
 //! column, so the parser finds the header row, maps columns by name (a named layout or your own column mapping) and

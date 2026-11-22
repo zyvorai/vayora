@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Letting a customer stop the automatic emails a business sends them (invoices raised by billing, payment
 //! reminders). Such mail carries an unsubscribe link and the `List-Unsubscribe` headers mail programs show as a

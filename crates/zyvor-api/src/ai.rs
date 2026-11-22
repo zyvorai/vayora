@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Optional AI assistant for drafting reminder text. It only ever *drafts*: a person approves before
 //! anything is sent, and it never touches money or records. Off unless `ZYVOR_AI_API_KEY` is set.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Accounting exports: ledger-derived journals as CSV (a generic double-entry layout) and as a Tally-style
 //! voucher CSV or XML, plus the GST summary. Read-only: nothing here posts to the ledger or moves money.

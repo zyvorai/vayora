@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Tracing: structured logs always, OpenTelemetry spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 //! Every API request gets a span keyed by its route template (never the raw path, which holds ids)

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Cash entries and the end-of-day closing. The system adds up the cash entries for a branch's IST day
 //! and the digital payments captured that day; a person counts the till; the difference is recorded

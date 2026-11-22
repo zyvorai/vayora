@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Offers, against the simulators only: merchant-funded discounts judged when an attempt is created, caps that
 //! cannot be over-used by concurrent attempts, stacking, and refunds that hand back the same share of the discount

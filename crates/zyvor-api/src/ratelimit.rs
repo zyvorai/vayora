@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Request rate limiting: token buckets per API key and per client address, so one noisy or
 //! compromised caller cannot starve the rest. In memory per replica: the limit is a guard rail,

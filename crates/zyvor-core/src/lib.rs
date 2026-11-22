@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Shared primitives for Zyvor Payments: currencies, ids, environments.
 //! Money is always an integer count of minor units (paise for INR) plus a currency.

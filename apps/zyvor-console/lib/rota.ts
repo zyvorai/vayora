@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Shared by the reviewer rota page and its form (no server-only imports, so a client component can use it).
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;

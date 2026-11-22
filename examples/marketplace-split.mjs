@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // A marketplace takes one payment, owes shares to two sellers, and pays them out in a batch.
 import { client, rupees, run, say } from "./_client.mjs";

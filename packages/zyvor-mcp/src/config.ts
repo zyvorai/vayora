@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // All configuration comes from the environment of the process that starts the server (the MCP client's `env` block).
 // There is deliberately no tool argument, and no log line, that carries the API key.

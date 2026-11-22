@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Billing engine: plans, subscriptions, metered usage, recurring invoicing, credit notes,
 //! voiding and customer statements. Invoices carry the figures; tax is supplied by the GST product.

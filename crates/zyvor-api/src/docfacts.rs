@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! What an onboarding document says, found in its text, and whether that agrees with what the merchant entered.
 //! Plain scanning for the fixed shapes of Indian business identifiers (GSTIN, PAN, CIN, IFSC) and for the few

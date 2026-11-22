@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Strings for the event pages (event page, registration form, order and ticket page).
 // English is the source and the fallback. Hindi is machine-assisted and NOT reviewed by a native speaker: have it

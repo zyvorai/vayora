@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Sandbox agent demo: a SCRIPTED agent (no language model is involved) uses the Vayora MCP server over stdio against
 // the local sandbox to create a payment link and explain a settlement. Everything is synthetic and nothing moves money.

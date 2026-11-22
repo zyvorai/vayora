@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Merchant onboarding: a profile, documents (linked, or uploaded and read: see `uploads`) and bank accounts that a different person
 //! reviews before the merchant is approved. Zyvor records the decision; it does not perform KYC.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Outgoing email. Mail is queued in the database and sent by the worker, so a mail server that is slow
 //! or down never fails a request, and a failed send is retried with a growing delay.

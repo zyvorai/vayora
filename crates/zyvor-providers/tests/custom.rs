@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The generic HTTP provider against a local stub gateway (SIMULATED: never a live gateway).
 //! The stub is the reference implementation of `docs/zyvor/PROVIDER_CONTRACT.md`.

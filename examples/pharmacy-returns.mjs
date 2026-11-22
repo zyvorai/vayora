@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // A pharmacy sells with GST, records a return as a credit note, and keeps risk limits tight.
 import { client, rupees, run, say } from "./_client.mjs";
