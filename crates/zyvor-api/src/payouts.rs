@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Payouts: money the merchant sends to vendors. Zyvor does the controlling and the bookkeeping:
 //! a request, a second person's approval (separation of duties; small amounts can be waved through

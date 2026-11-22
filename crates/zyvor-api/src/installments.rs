@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Instalment plans: an agreed total split into dated invoices. The split is exact (the remainder
 //! goes to the last instalment, never lost), the whole plan is created or none of it, and repeating

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The webhook event catalogue and subscription matching. Merchants pick the types they want
 //! (`payment.captured`, a family like `payment.*`, or `*`); events they did not ask for are never queued.

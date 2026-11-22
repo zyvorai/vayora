@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Reading an uploaded onboarding document into text, so its facts can be checked against what the merchant
 //! entered. Two ways, both through programs installed next to the API (`poppler-utils` and `tesseract-ocr`):

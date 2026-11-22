@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Console users: named accounts with roles (admin, finance, viewer, cashier), Argon2id passwords, optional
 //! TOTP second factor with single-use recovery codes, and lockout after repeated failures.

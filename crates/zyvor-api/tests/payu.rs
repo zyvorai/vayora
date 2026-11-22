@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! PayU through the whole API against the local PayU simulation (SIMULATED: built from PayU's public documentation,
 //! never run against PayU's sandbox or a live account). Covers what the adapter tests cannot: the provider account

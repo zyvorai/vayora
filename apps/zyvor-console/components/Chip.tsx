@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 const map: Record<string, string> = {
   captured: "ok", succeeded: "ok", paid: "ok", processed: "ok", delivered: "ok", resolved: "ok", won: "ok", active: "ok", invoiced: "ok", kept: "ok",

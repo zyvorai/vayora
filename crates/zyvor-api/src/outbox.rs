@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Delivery of merchant-facing events. At-least-once with exponential backoff, dead-lettered after
 //! `MAX_ATTEMPTS`. A row only changes after the HTTP outcome is known, so a worker that crashes

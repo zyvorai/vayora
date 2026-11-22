@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Suggestions for an open reconciliation case: the likeliest explanation and the evidence behind it,
 //! worked out from rows the system already holds. Nothing is changed; a person decides and resolves

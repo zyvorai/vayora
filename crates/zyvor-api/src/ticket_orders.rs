@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The public side of ticketing: the event page's data, placing an order (which holds seats and creates a payment intent
 //! through the normal routing), the buyer's order and ticket page, and a QR image per ticket. None of it needs an API key.

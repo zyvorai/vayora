@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Scenario 4: fee-variance detection with known ground truth.
 // Real (simulated) captured payments are created through the API; settlements are then imported whose fee lines equal the

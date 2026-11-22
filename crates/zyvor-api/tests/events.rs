@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Events and ticketing, against the simulators only: seats never oversold, tickets only after a verified capture,
 //! hold expiry, check-in, cancellation with bulk refunds, and tenant isolation.

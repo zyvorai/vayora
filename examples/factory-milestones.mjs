@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // A factory bills a purchase order in milestones: mobilisation, delivery, commissioning.
 import { client, rupees, run, say } from "./_client.mjs";

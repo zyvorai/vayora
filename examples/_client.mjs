@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Shared by the examples: a client for the sandbox the scripts talk to.
 //   ZYVOR_API_KEY=zk_test_... ZYVOR_API_URL=http://localhost:8080 node examples/campus-fees.mjs

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! People and email: inviting someone to an organisation, and resetting a forgotten password. Both use a
 //! one-time link sent by email (see `mail`); only a hash of the token is kept, and each link works once.

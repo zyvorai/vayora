@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! India GST: tax invoices (line items with HSN/SAC and rate, split into CGST + SGST within a state
 //! or IGST across states), GSTIN validation, tax-aware credit notes and a GSTR-1-style summary for

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Redaction for everything the server sends back to a model. It mirrors the rules in
 // crates/zyvor-api/src/redact.rs (key prefixes, bearer tokens, card-number-like runs, UPI ids) and adds the

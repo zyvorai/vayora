@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The reusable conformance harness. A [`Subject`] is one adapter wired to a simulated provider; every check
 //! below takes a subject and asserts one rule of the provider contract. `main.rs` runs every check against every

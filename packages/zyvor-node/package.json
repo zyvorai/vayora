@@ -2,7 +2,7 @@
   "name": "@zyvor/node",
   "version": "0.3.0",
   "description": "Zyvor Payments SDK and CLI for Node.js and browsers-with-fetch",
-  "license": "LicenseRef-Zyvor-Production-1.0",
+  "license": "LicenseRef-Zyvor-Production-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

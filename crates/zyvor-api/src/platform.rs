@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Zyvor-operated review before live mode. A merchant whose business details are approved asks for live access;
 //! a named Zyvor reviewer looks at what they submitted and the checks that ran, and approves or rejects with a

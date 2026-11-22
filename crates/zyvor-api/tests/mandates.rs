@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! UPI AutoPay mandates against the simulator: approval, scheduled debits, the rules that keep a payer safe, and
 //! the way a debit joins the ordinary payment, ledger and invoice paths. The suite's usual non-superuser role

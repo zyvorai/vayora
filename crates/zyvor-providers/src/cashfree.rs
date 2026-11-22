@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Cashfree Payments adapter (PG API 2023-08-01). Built from Cashfree's public docs and tested
 //! against `zyvor-provider-mock`; it has NOT been exercised against Cashfree's live sandbox.

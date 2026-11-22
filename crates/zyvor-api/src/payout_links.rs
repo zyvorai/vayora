@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Payout links: the merchant fixes an amount and sends a link; the recipient opens it, types their own bank
 //! account or UPI id, and the payout then goes through the existing payout flow.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // The scripted "developer time to first payment" steps that run against an already started local stack.
 // Usage: node firstpayment.mjs <out.json>   (BENCH_T_START / _CLONED / _BUILT / _STACK_UP are epoch ms stamps from devtime.sh)

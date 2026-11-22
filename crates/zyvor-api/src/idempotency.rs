@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Idempotency-Key handling inside the request's tenant-scoped transaction.
 //! The key row is inserted with the work; concurrent duplicates block on the primary key, then replay.

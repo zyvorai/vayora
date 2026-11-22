@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A hosted seller page ("link in bio"): one public page per tenant at a slug, with a short description, an optional
 //! logo and a list of items. A visitor picks items and pays through the ordinary payment-intent checkout; the order is

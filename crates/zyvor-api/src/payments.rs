@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Payment intents and attempts: routing, provider calls, and the one function that applies
 //! provider-reported state (from API responses, webhooks or the resolver) exactly once.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Sends one real email through a real SMTP server, to check the mailer against a provider (the flow tests only
 //! use a local sink). Ignored by default; it needs three variables and sends exactly one message:

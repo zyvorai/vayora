@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // A shop with two tills: counter QR with a payer-typed amount, cash, an end-of-day closing, and the
 // plain-words timeline of a payment. Run against the sandbox (scripts/zyvor-sandbox.sh prints a key):

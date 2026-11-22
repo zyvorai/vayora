@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The test clock. A test organisation can move its own date forward to see what the next billing period, a trial
 //! ending or an overdue invoice looks like, and everything that follows "today" for billing, reminders and the dates

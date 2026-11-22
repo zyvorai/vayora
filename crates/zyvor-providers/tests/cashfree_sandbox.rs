@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The Cashfree adapter against Cashfree's real SANDBOX. Ignored by default: it needs credentials and the
 //! network, and it never runs in CI. Run it with sandbox keys in the environment:

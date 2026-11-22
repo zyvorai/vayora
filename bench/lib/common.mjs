@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Shared helpers for the benchmark scenarios. Node 20+ only, no dependencies.
 // Everything here talks to a LOCAL Zyvor API and the SIMULATED provider mock. No real provider is involved.

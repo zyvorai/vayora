@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Refund analytics: how much is refunded against what was captured over time, how long refunds take, which are
 //! stuck past the merchant's SLA, and where money leaks (fees not given back, duplicate refunds stopped).

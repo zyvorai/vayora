@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! The hosted seller page: slug rules, public page and images, orders that take stock exactly (including a race),
 //! stock holds that lapse, payment through the ordinary intent flow, fulfil and refund, and tenant isolation. All

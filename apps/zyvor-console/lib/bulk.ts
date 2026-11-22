@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 /** One payout per line: `vendor, amount, purpose, reference`. The vendor is a name or id; amounts are in rupees. */
 export function parseBulk(csv: string, vendors: { id: string; name: string }[]): { items: { vendorId: string; amountMinor: number; purpose: string; externalRef: string }[] } | { error: string } {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Local SANDBOX without Docker: migrates a fresh database, starts the API (as a restricted non-superuser role),
 # worker and the SIMULATED provider mock, connects both providers and prints a ready-to-open checkout URL.

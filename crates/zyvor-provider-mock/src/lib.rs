@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A local stand-in for the Razorpay, Cashfree and PayU HTTP APIs plus control endpoints under `/_sim/*`.
 //! Everything here is SIMULATED: shapes follow the providers' public docs, but behaviour is ours.

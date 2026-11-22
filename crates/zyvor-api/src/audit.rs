@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Tamper-evident audit trail. Events are append-only already; sealing makes tampering *visible*:
 //! each seal's hash commits to a range of events and to the previous seal, so a later edit,

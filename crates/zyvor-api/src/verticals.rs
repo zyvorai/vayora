@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! School fee collection and society / association dues: one small engine, two vocabularies (`kind` is `school` or
 //! `society`). A group is a class or a block, a member is a student or a resident, a fee head is an amount owed by

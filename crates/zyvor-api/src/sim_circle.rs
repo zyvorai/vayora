@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! A simulated "circle" for the iPhone payer app, like `sim_mandate.rs` is for AutoPay: a primary payer lets a delegate pay from their
 //! account up to a limit, and the simulator plays the bank that keeps the books. No money moves. Off unless `ZYVOR_SIM_PAYER=1`, and it

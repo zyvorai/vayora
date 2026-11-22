@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Adds what the iPhone merchant app's inbox screens need to a sandbox made by zyvor-sandbox.sh:
 # one refund and one payout waiting for approval, one open dispute, one reminder draft (INV-1001 must be overdue,

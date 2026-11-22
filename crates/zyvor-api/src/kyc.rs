@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Identity and bank checks for onboarding, and the rule that decides whether a submission can be
 //! approved without a person. Two providers: a simulator, which answers from fixed patterns so the whole

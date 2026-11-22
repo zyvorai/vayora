@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! An email logo uploaded to Zyvor instead of hosted on the business's own site. The image is kept with the
 //! business's settings and served from `GET /logo/{tenant}/{version}` (public, like the logo in the email it is

@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.3.0"
 edition = "2024"
-license = "LicenseRef-Zyvor-Production-1.0"
+license = "LicenseRef-Zyvor-Production-2.0"
 repository = "https://github.com/zyvorai/vayora"
 
 [workspace.dependencies]

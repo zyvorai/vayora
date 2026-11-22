@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Cashfree Subscriptions (UPI AutoPay) against a LOCAL MOCK HTTP server. The JSON shapes are written from
 //! Cashfree's public docs (v2026-01-01); nothing here has touched Cashfree's sandbox. Every value is invented.

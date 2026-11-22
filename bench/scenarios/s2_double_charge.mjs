@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Scenario 2: double-charge check under timeouts, retries, concurrent identical requests and idempotency-key replays.
 // The adversary here is the CLIENT (and the network): it retries aggressively, in parallel, with new and repeated

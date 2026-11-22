@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # For Zyvor reviewers: look at businesses asking for live mode, and approve or reject them
 # (docs/zyvor/PLATFORM_REVIEW.md). Needs a reviewer key (zp_...), which is not a merchant API key.

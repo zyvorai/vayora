@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Shared harness. The app talks to Postgres as a NON-superuser role so row-level security is
 //! really enforced: a handler that forgets to scope by tenant fails the isolation tests.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Best-effort redaction of secrets and PAN-like values in log lines. Secrets should still never be
 //! logged by construction; this is a second line of defence when a field slips through.
