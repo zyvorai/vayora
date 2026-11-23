@@ -1,45 +1,77 @@
-{{- if .Values.edge.envoy.enabled }}
+{{- if .Values.edge.setura.enabled }}
+# Edge: Setura (github.com/zyvorai/zyvor-setura-gateway) in file mode, same shape as the Envoy edge it replaces.
+# TODO(setura): Envoy pinned TLS >= 1.2 explicitly; Setura has no per-listener TLS version knob.
 apiVersion: v1
 kind: ConfigMap
-metadata: { name: {{ .Release.Name }}-envoy }
+metadata: { name: {{ .Release.Name }}-setura }
 data:
-  envoy.yaml: |
-    static_resources:
-      listeners:
-        - name: https
-          address: { socket_address: { address: 0.0.0.0, port_value: 8443 } }
-          filter_chains:
-            - transport_socket:
-                name: envoy.transport_sockets.tls
-                typed_config:
-                  "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-                  common_tls_context:
-                    tls_params: { tls_minimum_protocol_version: TLSv1_2 }
-                    tls_certificates:
-                      - certificate_chain: { filename: /certs/tls.crt }
-                        private_key: { filename: /certs/tls.key }
-              filters:
-                - name: envoy.filters.network.http_connection_manager
-                  typed_config:
-                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                    stat_prefix: edge
-                    use_remote_address: true
-                    route_config:
-                      name: local
-                      virtual_hosts:
-                        - name: all
-                          domains: ["*"]
-                          routes:
-                            - { match: { prefix: / }, route: { cluster: api, timeout: 30s } }
-                    http_filters:
-                      - name: envoy.filters.http.router
-                        typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
-      clusters:
-        - name: api
-          type: STRICT_DNS
-          load_assignment:
-            cluster_name: api
-            endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: {{ .Release.Name }}-api, port_value: 8080 } } } }] }]
+  gateway.json: |
+    {
+      "schema": "setura.route-specs/v1",
+      "namespace": "zyvor",
+      "resources": {
+        "gateways.gateway.networking.k8s.io/edge": {
+          "gatewayClassName": "setura",
+          "listeners": [
+            {
+              "name": "https",
+              "protocol": "HTTPS",
+              "port": 8443,
+              "tls": {
+                "mode": "Terminate",
+                "certificateRefs": [
+                  {
+                    "name": "edge-cert"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "httproutes.gateway.networking.k8s.io/edge": {
+          "parentRefs": [
+            {
+              "name": "edge",
+              "sectionName": "https"
+            }
+          ],
+          "rules": [
+            {
+              "matches": [
+                {
+                  "path": {
+                    "type": "PathPrefix",
+                    "value": "/"
+                  }
+                }
+              ],
+              "timeouts": {
+                "request": "30s"
+              },
+              "backendRefs": [
+                {
+                  "name": "api",
+                  "port": 8080
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "backends": {
+        "api:8080": {
+          "endpoints": [
+            "{{ .Release.Name }}-api:8080"
+          ]
+        }
+      },
+      "secrets": {
+        "edge-cert": {
+          "certFile": "/certs/tls.crt",
+          "keyFile": "/certs/tls.key"
+        }
+      }
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,16 +85,16 @@ spec:
     metadata: { labels: { app.kubernetes.io/instance: {{ .Release.Name }}, component: edge } }
     spec:
       containers:
-        - name: envoy
-          image: {{ .Values.edge.envoy.image }}
-          args: ["-c", "/etc/envoy/envoy.yaml"]
+        - name: setura
+          image: {{ .Values.edge.setura.image }}
+          args: ["gateway", "run", "--config=/etc/setura/gateway.json", "--bind=0.0.0.0"]
           ports: [{ containerPort: 8443 }]
           volumeMounts:
-            - { name: cfg, mountPath: /etc/envoy, readOnly: true }
+            - { name: cfg, mountPath: /etc/setura, readOnly: true }
             - { name: tls, mountPath: /certs, readOnly: true }
       volumes:
-        - { name: cfg, configMap: { name: {{ .Release.Name }}-envoy } }
-        - { name: tls, secret: { secretName: {{ .Values.edge.envoy.tlsSecretName }} } }
+        - { name: cfg, configMap: { name: {{ .Release.Name }}-setura } }
+        - { name: tls, secret: { secretName: {{ .Values.edge.setura.tlsSecretName }} } }
 ---
 apiVersion: v1
 kind: Service

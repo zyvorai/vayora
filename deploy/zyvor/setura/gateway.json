@@ -1,0 +1,54 @@
+{
+  "schema": "setura.route-specs/v1",
+  "namespace": "zyvor",
+  "resources": {
+    "gateways.gateway.networking.k8s.io/edge": {
+      "gatewayClassName": "setura",
+      "listeners": [
+        {
+          "name": "https",
+          "protocol": "HTTPS",
+          "port": 8443,
+          "tls": {"mode": "Terminate", "certificateRefs": [{"name": "edge-cert"}]}
+        }
+      ]
+    },
+    "httproutes.gateway.networking.k8s.io/edge": {
+      "parentRefs": [{"name": "edge", "sectionName": "https"}],
+      "rules": [
+        {
+          "matches": [{"path": {"type": "PathPrefix", "value": "/v1"}}],
+          "timeouts": {"request": "30s"},
+          "filters": [{"type": "ResponseHeaderModifier", "responseHeaderModifier": {"set": [
+            {"name": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains"},
+            {"name": "X-Content-Type-Options", "value": "nosniff"}
+          ]}}],
+          "backendRefs": [{"name": "api", "port": 8080}]
+        },
+        {
+          "matches": [{"path": {"type": "PathPrefix", "value": "/healthz"}}],
+          "filters": [{"type": "ResponseHeaderModifier", "responseHeaderModifier": {"set": [
+            {"name": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains"},
+            {"name": "X-Content-Type-Options", "value": "nosniff"}
+          ]}}],
+          "backendRefs": [{"name": "api", "port": 8080}]
+        },
+        {
+          "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+          "filters": [{"type": "ResponseHeaderModifier", "responseHeaderModifier": {"set": [
+            {"name": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains"},
+            {"name": "X-Content-Type-Options", "value": "nosniff"}
+          ]}}],
+          "backendRefs": [{"name": "checkout", "port": 3000}]
+        }
+      ]
+    }
+  },
+  "backends": {
+    "api:8080": {"endpoints": ["api:8080"]},
+    "checkout:3000": {"endpoints": ["checkout:3000"]}
+  },
+  "secrets": {
+    "edge-cert": {"certFile": "/certs/tls.crt", "keyFile": "/certs/tls.key"}
+  }
+}
