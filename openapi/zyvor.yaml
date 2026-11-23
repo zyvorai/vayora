@@ -3878,6 +3878,186 @@ paths:
                   reason: {}
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/ledger/verify:
+    get:
+      summary: Re-check the ledger (debits equal credits per transaction and currency, trial balance) without changing it
+      tags:
+      - audit
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  transactions_checked:
+                    type: integer
+                  entries_checked:
+                    type: integer
+                  errors:
+                    type: integer
+                  warnings:
+                    type: integer
+                  violations_by_kind:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  violations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                        severity:
+                          type: string
+                          enum:
+                          - error
+                          - warning
+                        subject:
+                          type: string
+                        detail:
+                          type: string
+                  violations_truncated:
+                    type: boolean
+                  trial_balance:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        currency:
+                          type: string
+                        debits_minor:
+                          type: string
+                        credits_minor:
+                          type: string
+                        balanced:
+                          type: boolean
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/recon/ledger_check:
+    post:
+      summary: Compare a simulated settlement file with the ledger postings, by mismatch category (read-only)
+      tags:
+      - recon
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  matched:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                  amount_mismatch:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  currency_mismatch:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  missing_in_ledger:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  missing_in_file:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  duplicate_in_file:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  duplicate_in_ledger:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  invalid_line:
+                    type: object
+                    properties:
+                      count:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          type: object
+                      truncated:
+                        type: boolean
+                  totals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        currency:
+                          type: string
+                        file_payments_minor:
+                          type: string
+                        file_refunds_minor:
+                          type: string
+                        ledger_payments_minor:
+                          type: string
+                        ledger_refunds_minor:
+                          type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Check'
   /v1/console/branches:
     get:
       summary: Branches a person can be tied to (this organisation's home environment)
@@ -18059,6 +18239,36 @@ components:
       properties:
         coupon:
           type: string
+    Check:
+      type: object
+      x-generated: true
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileLine'
+      required:
+      - from
+      - to
+      - lines
+    FileLine:
+      type: object
+      x-generated: true
+      properties:
+        kind: {}
+        provider_ref: {}
+        amount_minor: {}
+        currency: {}
+      required:
+      - kind
+      - provider_ref
+      - amount_minor
     SetRules:
       type: object
       x-generated: true

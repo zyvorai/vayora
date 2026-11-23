@@ -12,6 +12,8 @@
 
 use std::collections::BTreeMap;
 
+pub mod audit;
+
 use sqlx::PgConnection;
 use zyvor_core::Currency;
 

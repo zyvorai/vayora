@@ -730,6 +730,10 @@ class Zyvor:
         """Check the audit trail's seals are unbroken."""
         return self._req("GET", "/v1/audit_events/verify")
 
+    def verify_ledger(self) -> types.GetLedgerVerifyResponse:
+        """Re-check the ledger read-only (debits equal credits per transaction and currency); `ok` is False when it does not."""
+        return self._req("GET", "/v1/ledger/verify")
+
     def seal_audit(self) -> types.PostAuditEventsSealResponse:
         """Seal the audit events so far."""
         return self._req("POST", "/v1/audit_events/seal", {})
@@ -910,6 +914,10 @@ class Zyvor:
     def recon_ageing(self) -> types.GetReconAgeingResponse:
         """Open reconciliation cases by age and kind."""
         return self._req("GET", "/v1/recon/ageing")
+
+    def recon_ledger_check(self, from_: str, to: str, lines: list) -> types.PostReconLedgerCheckResponse:
+        """Compare a (simulated) settlement file with the ledger postings in [from_, to); read only. Lines: {kind, provider_ref, amount_minor, currency?}."""
+        return self._req("POST", "/v1/recon/ledger_check", {"from": from_, "to": to, "lines": lines})
 
     # ---- routing health ----
     def routing_health(self, method: Optional[str] = None) -> types.GetRoutingHealthResponse:

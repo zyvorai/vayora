@@ -979,6 +979,32 @@ GetInvoicesResponseDataItem = TypedDict("GetInvoicesResponseDataItem", {
     "details": "Any",
 })
 
+GetLedgerVerifyResponse = TypedDict("GetLedgerVerifyResponse", {
+    "ok": "bool",
+    "transactions_checked": "int",
+    "entries_checked": "int",
+    "errors": "int",
+    "warnings": "int",
+    "violations_by_kind": "Any",
+    "violations": "List[GetLedgerVerifyResponseViolationsItem]",
+    "violations_truncated": "bool",
+    "trial_balance": "List[GetLedgerVerifyResponseTrialBalanceItem]",
+})
+
+GetLedgerVerifyResponseTrialBalanceItem = TypedDict("GetLedgerVerifyResponseTrialBalanceItem", {
+    "currency": "str",
+    "debits_minor": "str",
+    "credits_minor": "str",
+    "balanced": "bool",
+})
+
+GetLedgerVerifyResponseViolationsItem = TypedDict("GetLedgerVerifyResponseViolationsItem", {
+    "kind": "str",
+    "severity": "str",
+    "subject": "str",
+    "detail": "str",
+})
+
 GetMailSuppressionsResponse = TypedDict("GetMailSuppressionsResponse", {
     "data": "List[GetMailSuppressionsResponseDataItem]",
 })
@@ -3229,6 +3255,73 @@ PostReconCasesByIdAssignResponse = TypedDict("PostReconCasesByIdAssignResponse",
 PostReconCasesByIdResolveResponse = TypedDict("PostReconCasesByIdResolveResponse", {
     "id": "str",
     "status": "str",
+})
+
+PostReconLedgerCheckResponse = TypedDict("PostReconLedgerCheckResponse", {
+    "ok": "bool",
+    "matched": "PostReconLedgerCheckResponseMatched",
+    "amount_mismatch": "PostReconLedgerCheckResponseAmountMismatch",
+    "currency_mismatch": "PostReconLedgerCheckResponseCurrencyMismatch",
+    "missing_in_ledger": "PostReconLedgerCheckResponseMissingInLedger",
+    "missing_in_file": "PostReconLedgerCheckResponseMissingInFile",
+    "duplicate_in_file": "PostReconLedgerCheckResponseDuplicateInFile",
+    "duplicate_in_ledger": "PostReconLedgerCheckResponseDuplicateInLedger",
+    "invalid_line": "PostReconLedgerCheckResponseInvalidLine",
+    "totals": "List[PostReconLedgerCheckResponseTotalsItem]",
+})
+
+PostReconLedgerCheckResponseAmountMismatch = TypedDict("PostReconLedgerCheckResponseAmountMismatch", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseCurrencyMismatch = TypedDict("PostReconLedgerCheckResponseCurrencyMismatch", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseDuplicateInFile = TypedDict("PostReconLedgerCheckResponseDuplicateInFile", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseDuplicateInLedger = TypedDict("PostReconLedgerCheckResponseDuplicateInLedger", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseInvalidLine = TypedDict("PostReconLedgerCheckResponseInvalidLine", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseMatched = TypedDict("PostReconLedgerCheckResponseMatched", {
+    "count": "int",
+})
+
+PostReconLedgerCheckResponseMissingInFile = TypedDict("PostReconLedgerCheckResponseMissingInFile", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseMissingInLedger = TypedDict("PostReconLedgerCheckResponseMissingInLedger", {
+    "count": "int",
+    "items": "List[Any]",
+    "truncated": "bool",
+})
+
+PostReconLedgerCheckResponseTotalsItem = TypedDict("PostReconLedgerCheckResponseTotalsItem", {
+    "currency": "str",
+    "file_payments_minor": "str",
+    "file_refunds_minor": "str",
+    "ledger_payments_minor": "str",
+    "ledger_refunds_minor": "str",
 })
 
 PostReconScanResponse = TypedDict("PostReconScanResponse", {

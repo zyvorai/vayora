@@ -9,6 +9,7 @@ parameters, with T's fields taken from its struct (Option<..> and #[serde(defaul
 honoured). The schemas land under components/schemas. `--check` exits 1 when the committed file differs from what the
 source says. Run from the repository root; needs PyYAML.
 """
+import copy
 import re
 import sys
 from pathlib import Path
@@ -262,10 +263,82 @@ def response_of(src: str, fn: str, rows: dict, depth: int = 0):
 # Handlers that answer through idempotency `key.finish(.., &row)`; the row they pass is named here (checked by hand against
 # the code: create_intent adds the one-time client_secret to the intent row).
 _ref = lambda n: {"$ref": "#/components/schemas/" + n}  # noqa: E731
+CATEGORY = {"type": "object", "properties": {"count": {"type": "integer"}, "items": {"type": "array", "items": {"type": "object"}}, "truncated": {"type": "boolean"}}}
 OVERRIDES = {
     ("post", "/v1/payment_intents"): (
         "201",
         {"allOf": [_ref("IntentRow"), {"type": "object", "properties": {"client_secret": {"type": "string"}}}]},
+    ),
+    # the report is built by `ledger_verify::report_json` (one json! literal plus a nested one for the trial balance)
+    ("get", "/v1/ledger/verify"): (
+        "200",
+        {
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "transactions_checked": {"type": "integer"},
+                "entries_checked": {"type": "integer"},
+                "errors": {"type": "integer"},
+                "warnings": {"type": "integer"},
+                "violations_by_kind": {"type": "object", "additionalProperties": {"type": "integer"}},
+                "violations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string"},
+                            "severity": {"type": "string", "enum": ["error", "warning"]},
+                            "subject": {"type": "string"},
+                            "detail": {"type": "string"},
+                        },
+                    },
+                },
+                "violations_truncated": {"type": "boolean"},
+                "trial_balance": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "currency": {"type": "string"},
+                            "debits_minor": {"type": "string"},
+                            "credits_minor": {"type": "string"},
+                            "balanced": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
+        },
+    ),
+    # `ledger_recon::outcome_json`: one block per mismatch category (a count, the first items, whether the list was cut)
+    ("post", "/v1/recon/ledger_check"): (
+        "200",
+        {
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "matched": {"type": "object", "properties": {"count": {"type": "integer"}}},
+                "amount_mismatch": copy.deepcopy(CATEGORY),
+                "currency_mismatch": copy.deepcopy(CATEGORY),
+                "missing_in_ledger": copy.deepcopy(CATEGORY),
+                "missing_in_file": copy.deepcopy(CATEGORY),
+                "duplicate_in_file": copy.deepcopy(CATEGORY),
+                "duplicate_in_ledger": copy.deepcopy(CATEGORY),
+                "invalid_line": copy.deepcopy(CATEGORY),
+                "totals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "currency": {"type": "string"},
+                            "file_payments_minor": {"type": "string"},
+                            "file_refunds_minor": {"type": "string"},
+                            "ledger_payments_minor": {"type": "string"},
+                            "ledger_refunds_minor": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        },
     ),
     ("post", "/v1/payment_intents/{id}/attempts"): ("201", _ref("AttemptRow")),
     ("post", "/v1/checkout/{tenant_id}/{intent_id}/attempts"): ("201", _ref("AttemptRow")),

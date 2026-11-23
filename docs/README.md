@@ -22,6 +22,8 @@ Start with the [README](../README.md) for what Zyvor Payments is, then pick what
 ## What is true today
 | Doc | What it covers |
 |---|---|
+| [Ledger checks](zyvor/LEDGER_CHECKS.md) | Read-only ledger invariant check, ledger-versus-settlement-file report, webhook verification helper |
+| [Research notes](RESEARCH.md) | Payments-platform practice compared with this product, ranked ideas, what was built and rejected |
 | [Status](zyvor/STATUS.md) | Every area: built and tested, simulator-only, partial or not built |
 | [Implementation status](zyvor/IMPLEMENTATION_STATUS.md) | The four completion levels, which capability is at which level, and the gaps |
 | [Changelog](../CHANGELOG.md) | What shipped, newest first |

@@ -9,5 +9,8 @@ sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio
 thiserror.workspace = true
 zyvor-core = { version = "0.3.0", path = "../zyvor-core" }
 
+[dev-dependencies]
+proptest = "1"
+
 [lints]
 workspace = true

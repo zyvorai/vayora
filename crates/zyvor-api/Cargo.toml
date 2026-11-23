@@ -40,6 +40,7 @@ qrcode = { version = "0.15.0", default-features = false, features = ["svg"] }
 lettre = { version = "0.11.24", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 
 [dev-dependencies]
+proptest = "1"
 http-body-util = "0.1.5"
 form_urlencoded = "1.2.3"
 sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }

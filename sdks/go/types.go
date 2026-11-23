@@ -995,6 +995,32 @@ type GetInvoicesResponseDataItem struct {
 	Details          any     `json:"details"`
 }
 
+type GetLedgerVerifyResponse struct {
+	Ok                  bool                                      `json:"ok"`
+	TransactionsChecked int64                                     `json:"transactions_checked"`
+	EntriesChecked      int64                                     `json:"entries_checked"`
+	Errors              int64                                     `json:"errors"`
+	Warnings            int64                                     `json:"warnings"`
+	ViolationsByKind    any                                       `json:"violations_by_kind"`
+	Violations          []GetLedgerVerifyResponseViolationsItem   `json:"violations"`
+	ViolationsTruncated bool                                      `json:"violations_truncated"`
+	TrialBalance        []GetLedgerVerifyResponseTrialBalanceItem `json:"trial_balance"`
+}
+
+type GetLedgerVerifyResponseTrialBalanceItem struct {
+	Currency     string `json:"currency"`
+	DebitsMinor  string `json:"debits_minor"`
+	CreditsMinor string `json:"credits_minor"`
+	Balanced     bool   `json:"balanced"`
+}
+
+type GetLedgerVerifyResponseViolationsItem struct {
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+	Subject  string `json:"subject"`
+	Detail   string `json:"detail"`
+}
+
 type GetMailSuppressionsResponse struct {
 	Data []GetMailSuppressionsResponseDataItem `json:"data"`
 }
@@ -3245,6 +3271,73 @@ type PostReconCasesByIdAssignResponse struct {
 type PostReconCasesByIdResolveResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+type PostReconLedgerCheckResponse struct {
+	Ok                bool                                          `json:"ok"`
+	Matched           PostReconLedgerCheckResponseMatched           `json:"matched"`
+	AmountMismatch    PostReconLedgerCheckResponseAmountMismatch    `json:"amount_mismatch"`
+	CurrencyMismatch  PostReconLedgerCheckResponseCurrencyMismatch  `json:"currency_mismatch"`
+	MissingInLedger   PostReconLedgerCheckResponseMissingInLedger   `json:"missing_in_ledger"`
+	MissingInFile     PostReconLedgerCheckResponseMissingInFile     `json:"missing_in_file"`
+	DuplicateInFile   PostReconLedgerCheckResponseDuplicateInFile   `json:"duplicate_in_file"`
+	DuplicateInLedger PostReconLedgerCheckResponseDuplicateInLedger `json:"duplicate_in_ledger"`
+	InvalidLine       PostReconLedgerCheckResponseInvalidLine       `json:"invalid_line"`
+	Totals            []PostReconLedgerCheckResponseTotalsItem      `json:"totals"`
+}
+
+type PostReconLedgerCheckResponseAmountMismatch struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseCurrencyMismatch struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseDuplicateInFile struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseDuplicateInLedger struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseInvalidLine struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseMatched struct {
+	Count int64 `json:"count"`
+}
+
+type PostReconLedgerCheckResponseMissingInFile struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseMissingInLedger struct {
+	Count     int64 `json:"count"`
+	Items     []any `json:"items"`
+	Truncated bool  `json:"truncated"`
+}
+
+type PostReconLedgerCheckResponseTotalsItem struct {
+	Currency            string `json:"currency"`
+	FilePaymentsMinor   string `json:"file_payments_minor"`
+	FileRefundsMinor    string `json:"file_refunds_minor"`
+	LedgerPaymentsMinor string `json:"ledger_payments_minor"`
+	LedgerRefundsMinor  string `json:"ledger_refunds_minor"`
 }
 
 type PostReconScanResponse struct {
