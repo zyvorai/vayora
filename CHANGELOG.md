@@ -5,6 +5,15 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 [docs/zyvor/STATUS.md](docs/zyvor/STATUS.md) for what is not built.
 
 
+## Unreleased
+**Dependency and toolchain upgrades (no behaviour change intended)**
+- `cargo update` (lockfile only for transitive crates) and compatible bumps: sqlx 0.9.1, lettre 0.11.24, form_urlencoded 1.2.3.
+- Major: `qrcode` 0.14 -> 0.15 (used only to render checkout, payment-link and ticket QR SVGs; it compiled with no source change and the existing tests assert the SVG is produced; a scanner was not run against it).
+- Docker base images `node:22-slim` -> `node:24-slim` (checkout and console) and CI `setup-node` 22 -> 24 (tag verified on Docker Hub). pnpm lockfile: vitest 5.1.0 -> 5.1.1.
+- Already current, no change: axum 0.8, reqwest 0.13, sha2 0.11, hmac 0.13, sqlx 0.9, argon2 0.6, TypeScript 7, vitest 5, GitHub Actions pins (checkout v7, setup-node v7, upload-artifact v7, codeql v4, setup-helm v5).
+- Held back: `postgres:17` -> 18 (a database major: needs a data-migration plan and cannot be proven by the tests here); `prom/prometheus` v2.x -> v3.16 (a major with changed defaults; the alert rules were not re-checked with promtool v3 because Docker was not available); Go `go 1.22` directive in `sdks/go` (raising it changes what SDK consumers need); `debian:bookworm-slim` runtime and `rust:1-bookworm` builder stay together on bookworm (glibc must match). `cargo deny` and `cargo audit` are not installed on the build host; CI runs cargo-deny.
+
+
 ## 18 November 2026 — Link rules, verification primitives, risk rules engine, payout links (simulators and mocks only)
 **Payment links**
 - Amount modes: `exact`, `minimum`, `up_to`, `pay_what_you_want` (bounds, suggested amount), enforced on the server when the payer starts a checkout; the public link details add `amount_mode`, `suggested_amount_minor` and `amount_rule`. Links made before this read as before.
