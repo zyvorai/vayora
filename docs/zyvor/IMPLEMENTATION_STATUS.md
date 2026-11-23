@@ -10,7 +10,7 @@ The specification asks for four explicit completion levels. They are different s
 **One capability has reached level 2** (Cashfree UPI intent and QR, below). Everything else is level 1. Nothing is at level 3 or 4, and no live gateway has been used. No NPCI approval, bank agreement or partner credentials are claimed. See [STATUS.md](STATUS.md) for the product-level view and [ADR 0003](../adr/0003-extend-rust-and-upi-qr-intent.md) for why this extends the Rust codebase instead of rewriting it in Go.
 
 ## Repository state and stack
-Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkout and console, Compose, Helm, k3s and Envoy assets, OpenAPI, Node/Python/Go SDKs. The spec's proposed Go/Vite stack is **not** used; the reason is recorded in ADR 0003.
+Rust workspace (axum, sqlx, PostgreSQL with row-level security), Next.js checkout and console, Compose, Helm, k3s and Setura gateway assets, OpenAPI, Node/Python/Go SDKs. The spec's proposed Go/Vite stack is **not** used; the reason is recorded in ADR 0003.
 
 ## Delivered in this slice: UPI QR / intent checkout (level 1)
 | Behaviour | Evidence |

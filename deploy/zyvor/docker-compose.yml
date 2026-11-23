@@ -1,5 +1,5 @@
-# Full local stack: Postgres, API, worker, SIMULATED providers, checkout, Envoy (TLS) and Prometheus.
-#   1. deploy/zyvor/envoy/gen-certs.sh
+# Full local stack: Postgres, API, worker, SIMULATED providers, checkout, Setura gateway (TLS) and Prometheus.
+#   1. deploy/zyvor/setura/gen-certs.sh
 #   2. docker compose -f deploy/zyvor/docker-compose.yml up --build
 #   3. docker compose -f deploy/zyvor/docker-compose.yml run --rm api zyvor-api bootstrap "My Org"
 # Everything here is a SANDBOX: the mock provider simulates Razorpay and Cashfree; no real money moves.
@@ -46,9 +46,12 @@ services:
   checkout:
     build: { context: ../.., dockerfile: deploy/zyvor/Dockerfile.checkout }
     environment: { ZYVOR_API_URL: http://api:8080 }
-  envoy:
-    image: envoyproxy/envoy:v1.32-latest
-    volumes: ["./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro", "./envoy/certs:/certs:ro"]
+  # Front door: Setura (github.com/zyvorai/zyvor-setura-gateway), JSON snapshot config, TLS from ./setura/certs.
+  # TODO(setura): Envoy's TLS minimum (1.2) was explicit; Setura has no per-listener knob (Go server default applies).
+  gateway:
+    image: ghcr.io/zyvorai/zyvor-setura-gateway:0.7.0
+    command: ["gateway", "run", "--config=/etc/setura/gateway.json", "--bind=0.0.0.0"]
+    volumes: ["./setura/gateway.json:/etc/setura/gateway.json:ro", "./setura/certs:/certs:ro"]
     ports: ["8443:8443"]
     depends_on: [api, checkout]
   prometheus:

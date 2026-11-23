@@ -2,7 +2,7 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
-# Bring up deploy/zyvor/docker-compose.yml, wait on /readyz and Envoy, bootstrap a test org.
+# Bring up deploy/zyvor/docker-compose.yml, wait on /readyz and the Setura gateway, bootstrap a test org.
 # Requires Docker. Tears the stack down on exit unless KEEP=1.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,12 +19,12 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> certs"
-"$root/deploy/zyvor/envoy/gen-certs.sh"
+"$root/deploy/zyvor/setura/gen-certs.sh"
 
 echo "==> compose up"
 "${compose[@]}" up -d --build
 
-echo "==> wait for API /readyz via Envoy"
+echo "==> wait for API /readyz via Setura"
 ok=0
 for _ in $(seq 1 90); do
   if curl -fsSk https://localhost:8443/readyz >/dev/null 2>&1; then

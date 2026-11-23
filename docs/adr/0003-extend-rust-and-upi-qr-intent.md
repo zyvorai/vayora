@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Context
-A 31 October 2026 implementation specification proposes Go (pgx/sqlc), Vite apps and a rebuilt repository. This repository is already a tested Rust platform (axum, sqlx, PostgreSQL with row-level security, an append-only ledger, a payment state machine, refunds, reconciliation, a hosted checkout, signed webhooks, Helm/Envoy deployment). The spec allows a different stack when the repository gives a strong reason, recorded in an ADR.
+A 31 October 2026 implementation specification proposes Go (pgx/sqlc), Vite apps and a rebuilt repository. This repository is already a tested Rust platform (axum, sqlx, PostgreSQL with row-level security, an append-only ledger, a payment state machine, refunds, reconciliation, a hosted checkout, signed webhooks, Helm/Setura gateway deployment). The spec allows a different stack when the repository gives a strong reason, recorded in an ADR.
 
 ## Decision
 1. **Keep Rust, axum and sqlx.** Close the spec's gaps in milestone order instead of rewriting. A rewrite would discard a working, tested system and delay every milestone, for no gain in correctness.

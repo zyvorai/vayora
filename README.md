@@ -117,7 +117,7 @@ Two SwiftUI apps in [`apps/ios`](apps/ios/README.md) let you test the whole loop
 | `apps/ios` | The Vayora Pay and Vayora Merchant test apps, and `VayoraKit` / `VayoraUI` |
 | `packages/zyvor-node`, `sdks/python`, `sdks/go` | SDKs |
 | `openapi/zyvor.yaml` | The API spec; a test fails if a route is undocumented |
-| `deploy/zyvor/` | Dockerfiles, Compose, Helm, k3s and Envoy assets |
+| `deploy/zyvor/` | Dockerfiles, Compose, Helm, k3s and Setura gateway assets |
 | `examples/` | Runnable examples |
 | `site/` | The GitHub Pages site |
 | `docs/` | Documentation: see the [index](docs/README.md) |

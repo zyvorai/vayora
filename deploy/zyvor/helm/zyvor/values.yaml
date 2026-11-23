@@ -43,9 +43,9 @@ sandbox:
   providerMock: { enabled: false }
 
 edge:
-  envoy:
+  setura:
     enabled: true
-    image: envoyproxy/envoy:v1.32-latest
+    image: ghcr.io/zyvorai/zyvor-setura-gateway:0.7.0
     tlsSecretName: zyvor-tls   # kubernetes.io/tls secret with the edge certificate
 
 metrics:
