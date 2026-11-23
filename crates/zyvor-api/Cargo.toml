@@ -20,7 +20,7 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "r
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2 = "0.11.1"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }
 subtle = "2.6.1"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net", "signal", "process", "io-util"] }
 tracing = "0.1.44"
@@ -36,13 +36,14 @@ tracing-opentelemetry = { version = "0.34.0", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
 argon2 = "0.6.0"
 sha1 = "0.11.0"
-qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
-lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
+qrcode = { version = "0.15.0", default-features = false, features = ["svg"] }
+lettre = { version = "0.11.24", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 
 [dev-dependencies]
+proptest = "1"
 http-body-util = "0.1.5"
-form_urlencoded = "1.2.2"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }
+form_urlencoded = "1.2.3"
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "postgres", "json", "chrono", "migrate", "macros"] }
 tower = { version = "0.5.3", features = ["util"] }
 zyvor-provider-mock = { path = "../zyvor-provider-mock" }
 

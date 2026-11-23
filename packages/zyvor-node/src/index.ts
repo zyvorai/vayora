@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { DeleteFeeRulesByIdResponse, DeleteTestClockResponse, GetBankStatementsImportsResponse, GetBankStatementsLayoutsResponse, GetBankStatementsLinesResponse, GetFeeChecksFindingsResponse, GetFeeChecksSettingsResponse, GetFeeChecksSummaryResponse, GetFeeRulesResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetReconAgeingResponse, GetRoutingAutomationResponse, GetRoutingHealthResponse, GetRoutingScorecardResponse, GetRoutingShadowReportResponse, GetSettlementBatchesByIdResponse, GetSettlementsByIdFeeCheckResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostBankStatementsMatchesByIdConfirmResponse, PostBankStatementsMatchesByIdRejectResponse, PostBankStatementsPreviewResponse, PostBankStatementsRematchResponse, PostFeeChecksRunResponse, PostFeeChecksSettingsResponse, PostFeeRulesResponse, PostMandatesByIdDebitsResponse, PostRoutingAutomationPauseResponse, PostRoutingAutomationResumeResponse, PostSettlementsByIdFeeCheckResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse, PutRoutingAutomationResponse } from "./types.js";
+import type { DeleteFeeRulesByIdResponse, DeleteTestClockResponse, GetBankStatementsImportsResponse, GetBankStatementsLayoutsResponse, GetBankStatementsLinesResponse, GetFeeChecksFindingsResponse, GetFeeChecksSettingsResponse, GetFeeChecksSummaryResponse, GetFeeRulesResponse, GetInstallmentPlansByIdResponse, GetInvoicesByIdEinvoiceResponse, GetInvoicesByIdLinesResponse, GetInvoicesByIdRemindersResponse, GetInvoicesByIdResponse, GetLedgerVerifyResponse, GetMailSuppressionsResponse, GetMandatesByIdDebitsResponse, GetMilestonesResponse, GetPlansResponse, GetReconAgeingResponse, GetRoutingAutomationResponse, GetRoutingHealthResponse, GetRoutingScorecardResponse, GetRoutingShadowReportResponse, GetSettlementBatchesByIdResponse, GetSettlementsByIdFeeCheckResponse, GetSettlementsResponse, GetSubscriptionsResponse, GetTestClockResponse, PostBankStatementsMatchesByIdConfirmResponse, PostBankStatementsMatchesByIdRejectResponse, PostBankStatementsPreviewResponse, PostBankStatementsRematchResponse, PostFeeChecksRunResponse, PostFeeChecksSettingsResponse, PostFeeRulesResponse, PostMandatesByIdDebitsResponse, PostReconLedgerCheckResponse, PostRoutingAutomationPauseResponse, PostRoutingAutomationResumeResponse, PostSettlementsByIdFeeCheckResponse, PostSettlementsByIdSimulateBankResponse, PostTestClockResponse, PutRoutingAutomationResponse } from "./types.js";
 
 export type Currency = "INR" | "USD";
 /** A UPI AutoPay mandate. `authorization` carries the link the payer approves. */
@@ -278,6 +278,8 @@ export class Zyvor {
     /** Open cases for captured payments still missing a settlement after `olderThanDays` (default 3). */
     /** Open cases by age and kind. */
     ageing: () => this.req<GetReconAgeingResponse>("GET", "/v1/recon/ageing"),
+    /** Compare a (simulated) settlement file with the ledger postings in `[from, to)` (ISO timestamps, at most 31 days, at most 5000 lines). Read only: nothing is stored. Amounts are integer minor units. */
+    ledgerCheck: (p: { from: string; to: string; lines: { kind: "payment" | "refund"; provider_ref: string; amount_minor: number; currency?: Currency }[] }) => this.req<PostReconLedgerCheckResponse>("POST", "/v1/recon/ledger_check", p),
     scan: (olderThanDays?: number) => this.req<{ new_cases: number }>("POST", `/v1/recon/scan${olderThanDays != null ? `?older_than_days=${olderThanDays}` : ""}`),
   };
 
@@ -761,6 +763,11 @@ export class Zyvor {
     seal: () => this.req<{ sealed_events: number }>("POST", "/v1/audit_events/seal"),
   };
 
+  readonly ledger = {
+    /** Re-check the whole ledger read-only: debits = credits per transaction and currency, equal trial balance. `ok: false` lists every violation. Needs the admin scope. */
+    verify: () => this.req<GetLedgerVerifyResponse>("GET", "/v1/ledger/verify"),
+  };
+
   /** Key hygiene. */
   readonly keys = {
     list: () => this.req<Page<{ id: string; name: string; prefix: string; scopes: string[]; branch_id: string | null; created_at: string; revoked_at: string | null; expires_at: string | null; last_used_at: string | null; allowed_cidrs: string[] }>>("GET", "/v1/api_keys"),
@@ -818,3 +825,6 @@ export function verifyWebhook(opts: { secret: string; header: string; rawBody: s
   const given = Buffer.from(parts.v1, "hex");
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
+
+export { verifyWebhookDetailed, WebhookReplayGuard, MAX_SIGNATURE_HEADER_BYTES, MAX_V1_ENTRIES } from "./webhooks.js";
+export type { WebhookFailure, WebhookVerdict } from "./webhooks.js";

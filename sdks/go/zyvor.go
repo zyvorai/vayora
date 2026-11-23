@@ -1553,6 +1553,11 @@ func (c *Client) CreateBranch(name string) (map[string]any, error) {
 	return c.call("POST", "/v1/branches", body)
 }
 
+// VerifyLedger re-checks the ledger read-only (debits equal credits per transaction and currency); `ok` is false when not.
+func (c *Client) VerifyLedger() (map[string]any, error) {
+	return c.call("GET", "/v1/ledger/verify", nil)
+}
+
 // VerifyAudit: Check the audit trail's seals are unbroken.
 func (c *Client) VerifyAudit() (map[string]any, error) {
 	v := url.Values{}
@@ -1994,6 +1999,13 @@ func noteBody(note string) map[string]any {
 // ReconAgeing returns open reconciliation cases by age and kind.
 func (c *Client) ReconAgeing() (map[string]any, error) {
 	return c.call("GET", "/v1/recon/ageing", nil)
+}
+
+// ReconLedgerCheck compares a (simulated) settlement file with the ledger postings in [from, to) (RFC 3339 timestamps, at
+// most 31 days). Each line is {"kind": "payment"|"refund", "provider_ref": ..., "amount_minor": ..., "currency": ...}.
+// Read only: nothing is stored.
+func (c *Client) ReconLedgerCheck(from, to string, lines []map[string]any) (map[string]any, error) {
+	return c.call("POST", "/v1/recon/ledger_check", map[string]any{"from": from, "to": to, "lines": lines})
 }
 
 // RoutingHealth reads per provider and method the recent success rate, circuit-breaker state, thresholds and recent

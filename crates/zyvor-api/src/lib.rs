@@ -49,6 +49,8 @@ pub mod instrument_hint;
 pub mod keyed;
 pub mod kyc;
 pub mod kyc_cashfree;
+pub mod ledger_recon;
+pub mod ledger_verify;
 pub mod link_amount;
 pub mod link_bulk;
 pub mod link_lifecycle;
@@ -420,6 +422,7 @@ pub fn app(state: AppState) -> Router {
         .route("/recon/cases/{id}/assign", post(recon::assign_case))
         .route("/recon/cases/{id}/resolve", post(recon::resolve_case))
         .route("/recon/scan", post(recon::scan))
+        .route("/recon/ledger_check", post(ledger_recon::check))
         .route(
             "/recon/cases/{id}/suggestions",
             get(suggestions::case_suggestions),
@@ -935,6 +938,7 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/audit_events/seal", post(audit::seal))
         .route("/audit_events/verify", get(audit::verify))
+        .route("/ledger/verify", get(ledger_verify::verify))
         .route("/export", get(export))
         .route("/outbox", get(list_outbox))
         .route("/outbox/test", post(admin::send_test_event))

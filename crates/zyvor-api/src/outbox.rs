@@ -242,4 +242,59 @@ mod tests {
         assert_eq!(backoff(0), 5.0);
         assert_eq!(backoff(40), 3600.0);
     }
+    /// The signature scheme is part of the public contract: this vector is also asserted by the Node SDK tests
+    /// (`packages/zyvor-node/src/webhooks.test.ts`), computed there with Node'"'"'s own HMAC, so both sides agree.
+    #[test]
+    fn signature_vector_is_pinned_and_shared_with_the_sdk() {
+        let body = br#"{"id":"evt_test_1","type":"payment.captured","amount_minor":50000}"#;
+        let h = sign(b"whsec_test_vector", 1_700_000_000, body);
+        assert_eq!(
+            h,
+            "t=1700000000,v1=b7d274b460eaf81fcd9b75301d5db186d1062bbd2402f6606d0e144a56709030"
+        );
+        assert!(verify(b"whsec_test_vector", &h, body, 1_700_000_100, 300));
+        // replay window is symmetric: a timestamp from the future is as stale as one from the past
+        assert!(!verify(b"whsec_test_vector", &h, body, 1_699_999_000, 300));
+        assert!(!verify(b"whsec_test_vector", &h, body, 1_700_000_301, 300));
+        assert!(verify(b"whsec_test_vector", &h, body, 1_700_000_300, 300));
+    }
+
+    /// Pins today'"'"'s behaviour for a header with two `v1` entries: the LAST one is the one checked. The SDK helper
+    /// `verifyWebhookDetailed` accepts any entry (for secret rotation); the server only ever sends one.
+    #[test]
+    fn with_two_v1_entries_the_last_one_counts() {
+        let good = sign(b"s", 1_000, b"{}");
+        let v1 = good.split_once(",").unwrap().1;
+        let bad = "v1=00";
+        assert!(verify(
+            b"s",
+            &format!("t=1000,{bad},{v1}"),
+            b"{}",
+            1_000,
+            300
+        ));
+        assert!(!verify(
+            b"s",
+            &format!("t=1000,{v1},{bad}"),
+            b"{}",
+            1_000,
+            300
+        ));
+    }
+
+    #[test]
+    fn hostile_headers_do_not_verify_or_panic() {
+        for h in [
+            "",
+            "t=",
+            "t=1,v1=",
+            "t=x,v1=00",
+            "v1=00",
+            "t=1,v1=zz",
+            ",,,",
+            "t=99999999999999999999,v1=00",
+        ] {
+            assert!(!verify(b"s", h, b"{}", 1, 300), "{h}");
+        }
+    }
 }

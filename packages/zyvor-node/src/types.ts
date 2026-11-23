@@ -975,6 +975,32 @@ export interface GetInvoicesResponseDataItem {
   details: unknown;
 }
 
+export interface GetLedgerVerifyResponse {
+  ok: boolean;
+  transactions_checked: number;
+  entries_checked: number;
+  errors: number;
+  warnings: number;
+  violations_by_kind: unknown;
+  violations: GetLedgerVerifyResponseViolationsItem[];
+  violations_truncated: boolean;
+  trial_balance: GetLedgerVerifyResponseTrialBalanceItem[];
+}
+
+export interface GetLedgerVerifyResponseTrialBalanceItem {
+  currency: string;
+  debits_minor: string;
+  credits_minor: string;
+  balanced: boolean;
+}
+
+export interface GetLedgerVerifyResponseViolationsItem {
+  kind: string;
+  severity: string;
+  subject: string;
+  detail: string;
+}
+
 export interface GetMailSuppressionsResponse {
   data: GetMailSuppressionsResponseDataItem[];
 }
@@ -3225,6 +3251,73 @@ export interface PostReconCasesByIdAssignResponse {
 export interface PostReconCasesByIdResolveResponse {
   id: string;
   status: string;
+}
+
+export interface PostReconLedgerCheckResponse {
+  ok: boolean;
+  matched: PostReconLedgerCheckResponseMatched;
+  amount_mismatch: PostReconLedgerCheckResponseAmountMismatch;
+  currency_mismatch: PostReconLedgerCheckResponseCurrencyMismatch;
+  missing_in_ledger: PostReconLedgerCheckResponseMissingInLedger;
+  missing_in_file: PostReconLedgerCheckResponseMissingInFile;
+  duplicate_in_file: PostReconLedgerCheckResponseDuplicateInFile;
+  duplicate_in_ledger: PostReconLedgerCheckResponseDuplicateInLedger;
+  invalid_line: PostReconLedgerCheckResponseInvalidLine;
+  totals: PostReconLedgerCheckResponseTotalsItem[];
+}
+
+export interface PostReconLedgerCheckResponseAmountMismatch {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseCurrencyMismatch {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseDuplicateInFile {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseDuplicateInLedger {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseInvalidLine {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseMatched {
+  count: number;
+}
+
+export interface PostReconLedgerCheckResponseMissingInFile {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseMissingInLedger {
+  count: number;
+  items: unknown[];
+  truncated: boolean;
+}
+
+export interface PostReconLedgerCheckResponseTotalsItem {
+  currency: string;
+  file_payments_minor: string;
+  file_refunds_minor: string;
+  ledger_payments_minor: string;
+  ledger_refunds_minor: string;
 }
 
 export interface PostReconScanResponse {
