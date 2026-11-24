@@ -417,9 +417,10 @@ class Zyvor:
         """Ask the provider where a refund stands."""
         return self._req("POST", f"/v1/refunds/{refund_id}/refresh", {})
 
-    def list_settlements(self) -> types.GetSettlementsResponse:
-        """Settlements imported from providers."""
-        return self._req("GET", "/v1/settlements")
+    def list_settlements(self, *, status: Optional[str] = None, provider: Optional[str] = None, utr: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None, limit: Optional[int] = None) -> types.GetSettlementsResponse:
+        """Settlements imported from providers. Filter by status, provider, bank reference (utr) and a settled-on range (YYYY-MM-DD)."""
+        q = urllib.parse.urlencode(sorted({k: v for k, v in {"status": status, "provider": provider, "utr": utr, "from": date_from, "to": date_to, "limit": limit}.items() if v not in (None, '')}.items()))
+        return self._req("GET", "/v1/settlements" + ("?" + q if q else ""))
 
     def list_cases(self, *, status: Optional[str] = None, kind: Optional[str] = None) -> types.GetReconCasesByIdSuggestionsResponse:
         """Reconciliation cases."""
@@ -784,6 +785,25 @@ class Zyvor:
     def replay_event(self, event_id: str) -> types.PostOutboxByIdReplayResponse:
         """Queue a webhook event again."""
         return self._req("POST", f"/v1/outbox/{event_id}/replay", {})
+
+    def outbox_stats(self) -> types.GetOutboxStatsResponse:
+        """Webhook delivery health: counts per status, oldest pending event, dead letters per type, 24-hour success rate."""
+        return self._req("GET", "/v1/outbox/stats")
+
+    def replay_dead_events(self, *, event_type: Optional[str] = None, since: Optional[str] = None, limit: Optional[int] = None, dry_run: bool = False) -> types.PostOutboxReplayDeadResponse:
+        """Queue dead-lettered webhook events again (oldest first, at most `limit`, default 100). `dry_run` lists them only."""
+        body = {k: v for k, v in {"event_type": event_type, "since": since, "limit": limit}.items() if v is not None}
+        body["dry_run"] = dry_run
+        return self._req("POST", "/v1/outbox/replay_dead", body)
+
+    def decline_advice(self, *, reason: Optional[str] = None, provider: Optional[str] = None) -> types.GetDeclineAdviceResponse:
+        """What to do about a decline reason: retry later, retry now, ask for another instrument, or review. Advice only."""
+        q = urllib.parse.urlencode(sorted({k: v for k, v in {"reason": reason, "provider": provider}.items() if v not in (None, '')}.items()))
+        return self._req("GET", "/v1/decline_advice" + ("?" + q if q else ""))
+
+    def attempt_retry_advice(self, attempt_id: str) -> types.GetPaymentAttemptsByIdRetryAdviceResponse:
+        """The same advice for a stored payment attempt."""
+        return self._req("GET", f"/v1/payment_attempts/{attempt_id}/retry_advice")
 
     def list_saved_views(self) -> types.GetSavedViewsResponse:
         """Your saved Payments views and the ones shared with the environment."""

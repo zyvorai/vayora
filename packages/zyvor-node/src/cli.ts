@@ -26,6 +26,11 @@ const HELP = `zyvor <command>   (env: ZYVOR_API_KEY, ZYVOR_API_URL, ZYVOR_ACTOR)
   routing shadow [--days 7] [--method upi]
   webhooks outbox [--status pending]
   webhooks replay <event_id>
+  webhooks stats
+  webhooks replay-dead [--type T] [--since ISO] [--limit N] [--dry-run]   (dry run lists only)
+  settlements list [--utr U] [--provider P] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--status S]
+  declines advice [--reason R] [--provider P]
+  declines attempt <attempt_id>
   webhooks verify --secret S --header H --body-file F
 `;
 
@@ -40,7 +45,7 @@ function flags(args: string[]): { pos: string[]; f: Record<string, string> } {
   const pos: string[] = [];
   const f: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("--")) f[args[i].slice(2)] = args[++i] ?? "";
+    if (args[i].startsWith("--")) f[args[i].slice(2)] = args[i + 1] === undefined || args[i + 1].startsWith("--") ? "" : args[++i];
     else pos.push(args[i]);
   }
   return { pos, f };
@@ -87,6 +92,11 @@ export async function run(argv: string[], env: Record<string, string | undefined
     else if (key === "routing-shadow") show(await z.routing.shadowReport({ days: f.days ? Number(f.days) : undefined, method: f.method }));
     else if (key === "webhooks-outbox") show(await z.webhooks.outbox(f.status));
     else if (key === "webhooks-replay") show(await z.webhooks.replay(pos[0]));
+    else if (key === "webhooks-stats") show(await z.webhooks.stats());
+    else if (key === "webhooks-replay-dead") show(await z.webhooks.replayDead({ eventType: f.type, since: f.since, limit: f.limit ? Number(f.limit) : undefined, dryRun: f["dry-run"] !== undefined }));
+    else if (key === "settlements-list") show(await z.settlements.list({ utr: f.utr, provider: f.provider, from: f.from, to: f.to, status: f.status }));
+    else if (key === "declines-advice") show(await z.declines.advice({ reason: f.reason, provider: f.provider }));
+    else if (key === "declines-attempt") show(await z.declines.forAttempt(pos[0]));
     else {
       out(HELP);
       return 2;

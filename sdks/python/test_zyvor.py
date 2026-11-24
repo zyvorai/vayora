@@ -317,6 +317,12 @@ class Tests(unittest.TestCase):
             ('z.event_catalogue()', 'GET', '/v1/events/catalogue', None),
             ("z.list_outbox(status='x1')", 'GET', '/v1/outbox?status=x1', None),
             ("z.replay_event('eve_1')", 'POST', '/v1/outbox/eve_1/replay', {}),
+            ("z.list_settlements(utr='U1', date_from='2026-11-01', provider='razorpay')", 'GET', '/v1/settlements?from=2026-11-01&provider=razorpay&utr=U1', None),
+            ("z.outbox_stats()", 'GET', '/v1/outbox/stats', None),
+            ("z.replay_dead_events(event_type='refund.created', limit=5, dry_run=True)", 'POST', '/v1/outbox/replay_dead', {'event_type': 'refund.created', 'limit': 5, 'dry_run': True}),
+            ("z.replay_dead_events()", 'POST', '/v1/outbox/replay_dead', {'dry_run': False}),
+            ("z.decline_advice(reason='lost_card')", 'GET', '/v1/decline_advice?reason=lost_card', None),
+            ("z.attempt_retry_advice('att_1')", 'GET', '/v1/payment_attempts/att_1/retry_advice', None),
         ]
         for call, verb, url, body in rows:
             seen.clear()
@@ -325,7 +331,7 @@ class Tests(unittest.TestCase):
             # a GET carries no body; a POST with no fields carries an empty object
             self.assertEqual((got[0], got[1]), (verb, url), call)
             self.assertEqual(got[2], body, call)
-        self.assertEqual(len(rows), 95)
+        self.assertEqual(len(rows), 101)
 
     def test_fee_check_bank_statement_and_routing_health_methods(self):
         seen = []

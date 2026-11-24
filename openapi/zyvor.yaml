@@ -314,6 +314,46 @@ paths:
                     items: {}
         4XX:
           $ref: '#/components/responses/Error'
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        x-generated: true
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: utr
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        x-generated: true
   /v1/settlements/import:
     post:
       summary: Import a provider settlement
@@ -9290,6 +9330,131 @@ paths:
                           type: object
         4XX:
           $ref: '#/components/responses/Error'
+  /v1/outbox/stats:
+    get:
+      summary: Delivery health of outbound webhooks
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  by_status:
+                    type: object
+                  oldest_pending_at:
+                    type:
+                    - object
+                    - 'null'
+                  dead_by_type:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        count:
+                          type: integer
+                          format: int64
+                  deliveries_24h: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+  /v1/outbox/replay_dead:
+    post:
+      summary: Replay dead-lettered outbound webhook events in bulk
+      tags:
+      - webhooks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run:
+                    type: boolean
+                  replayed:
+                    type: integer
+                  would_replay:
+                    type: integer
+                  ids:
+                    type: array
+                    items:
+                      type: string
+        4XX:
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplayDeadBody'
+  /v1/decline_advice:
+    get:
+      summary: What to do about a decline reason (retry later, retry now, new instrument, review)
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  decline_class: {}
+                  hard_decline: {}
+                  action: {}
+                  retry_after_hours: {}
+                  max_retries: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+        x-generated: true
+  /v1/payment_attempts/{id}/retry_advice:
+    get:
+      summary: Retry advice for a stored payment attempt
+      tags:
+      - payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attempt_id:
+                    type: string
+                  status:
+                    type: string
+                  action:
+                    type: string
+                  retry_after_hours: {}
+                  max_retries: {}
+        4XX:
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
   /v1/outbox/{id}/replay:
     post:
       summary: Replay an outbound webhook event
@@ -17193,6 +17358,14 @@ components:
         limit:
           type: integer
           format: int64
+    AdviceQuery:
+      type: object
+      x-generated: true
+      properties:
+        reason:
+          type: string
+        provider:
+          type: string
     RemindersListQuery:
       type: object
       x-generated: true
@@ -17258,6 +17431,25 @@ components:
         short_minor:
           type: integer
           format: int64
+    SettlementListQuery:
+      type: object
+      x-generated: true
+      properties:
+        limit:
+          type: integer
+          format: int64
+        status:
+          type: string
+        provider:
+          type: string
+        utr:
+          type: string
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
     ReconResolve:
       type: object
       x-generated: true
@@ -19455,6 +19647,19 @@ components:
         overlap_hours:
           type: integer
           format: int64
+    ReplayDeadBody:
+      type: object
+      x-generated: true
+      properties:
+        event_type:
+          type: string
+        since:
+          type: object
+        limit:
+          type: integer
+          format: int64
+        dry_run:
+          type: boolean
     AdminNewUser:
       type: object
       x-generated: true

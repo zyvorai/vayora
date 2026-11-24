@@ -360,6 +360,15 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 		{"RequestLiveAccess", func() (map[string]any, error) { return c.RequestLiveAccess() }, "POST", "/v1/live_access", map[string]any{}},
 		{"EventCatalogue", func() (map[string]any, error) { return c.EventCatalogue() }, "GET", "/v1/events/catalogue", nil},
 		{"ListOutbox", func() (map[string]any, error) { return c.ListOutbox(map[string]any{"status": "x1"}) }, "GET", "/v1/outbox?status=x1", nil},
+		{"ListSettlementsFiltered", func() (map[string]any, error) {
+			return c.ListSettlements(map[string]any{"utr": "U1", "from": "2026-11-01"})
+		}, "GET", "/v1/settlements?from=2026-11-01&utr=U1", nil},
+		{"OutboxStats", func() (map[string]any, error) { return c.OutboxStats() }, "GET", "/v1/outbox/stats", nil},
+		{"ReplayDeadEvents", func() (map[string]any, error) {
+			return c.ReplayDeadEvents(map[string]any{"limit": 5, "dry_run": true})
+		}, "POST", "/v1/outbox/replay_dead", map[string]any{"limit": float64(5), "dry_run": true}},
+		{"DeclineAdvice", func() (map[string]any, error) { return c.DeclineAdvice("lost_card", "") }, "GET", "/v1/decline_advice?reason=lost_card", nil},
+		{"AttemptRetryAdvice", func() (map[string]any, error) { return c.AttemptRetryAdvice("att_1") }, "GET", "/v1/payment_attempts/att_1/retry_advice", nil},
 		{"ReplayEvent", func() (map[string]any, error) { return c.ReplayEvent("eve_1") }, "POST", "/v1/outbox/eve_1/replay", map[string]any{}},
 		{"GetIntent", func() (map[string]any, error) { return c.GetIntent("int_1") }, "GET", "/v1/payment_intents/int_1", nil},
 		{"ExplainSettlement", func() (map[string]any, error) { return c.ExplainSettlement("set_1") }, "GET", "/v1/settlements/set_1/explain", nil},
@@ -403,8 +412,8 @@ func TestEveryEndpointMethodSendsTheRightVerbPathAndBody(t *testing.T) {
 			}
 		}
 	}
-	if len(rows) != 108 {
-		t.Fatalf("expected 108 rows, got %d", len(rows))
+	if len(rows) != 113 {
+		t.Fatalf("expected 113 rows, got %d", len(rows))
 	}
 }
 

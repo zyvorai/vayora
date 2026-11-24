@@ -77,6 +77,7 @@ pub mod refunds;
 pub mod registry;
 pub mod reminders;
 pub mod reqlog;
+pub mod retry_advice;
 pub mod rota;
 pub mod routing_auto;
 pub mod rulebuilder;
@@ -367,6 +368,11 @@ pub fn app(state: AppState) -> Router {
             post(refunds::create_refund),
         )
         .route("/payment_attempts/{id}", get(payments::get_attempt))
+        .route(
+            "/payment_attempts/{id}/retry_advice",
+            get(retry_advice::attempt_advice),
+        )
+        .route("/decline_advice", get(retry_advice::advice))
         .route(
             "/payment_attempts/{id}/refresh",
             post(payments::refresh_attempt),
@@ -942,6 +948,8 @@ pub fn app(state: AppState) -> Router {
         .route("/export", get(export))
         .route("/outbox", get(list_outbox))
         .route("/outbox/test", post(admin::send_test_event))
+        .route("/outbox/stats", get(admin::outbox_stats))
+        .route("/outbox/replay_dead", post(admin::replay_dead_outbox))
         .route("/outbox/{id}/replay", post(replay_outbox))
         .route(
             "/outbox/{id}/deliveries",
