@@ -15,9 +15,7 @@ use sqlx::PgConnection;
 use zyvor_core::{Currency, new_id};
 use zyvor_providers::{Method, SettlementItem, SettlementItemKind, SettlementRecord};
 
-use crate::{
-    AppState, auth::Auth, cases::open_case, error::ApiError, payments::ListQuery, registry, tenant,
-};
+use crate::{AppState, auth::Auth, cases::open_case, error::ApiError, registry, tenant};
 
 fn kind_str(k: &SettlementItemKind) -> &'static str {
     match k {
@@ -536,20 +534,51 @@ async fn sync_simulated(
     Ok(Json(json!({ "imported": [id] })))
 }
 
+/// Filters for `GET /v1/settlements` (the provider's own reference is `utr`; a date range is on `settled_on`).
+#[derive(Debug, serde::Deserialize)]
+pub struct SettlementListQuery {
+    pub limit: Option<i64>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    /// Exact bank reference (UTR).
+    pub utr: Option<String>,
+    /// Settled on or after this day (`YYYY-MM-DD`).
+    pub from: Option<NaiveDate>,
+    /// Settled on or before this day (`YYYY-MM-DD`).
+    pub to: Option<NaiveDate>,
+}
+
 pub async fn list_settlements(
     State(s): State<AppState>,
     auth: Auth,
-    Query(q): Query<ListQuery>,
+    Query(q): Query<SettlementListQuery>,
 ) -> Result<Json<Value>, ApiError> {
     auth.require("recon:read")?;
+    if let (Some(f), Some(t)) = (q.from, q.to)
+        && f > t
+    {
+        return Err(ApiError::bad_request(
+            "invalid_range",
+            "from must not be after to",
+        ));
+    }
     let limit = q.limit.unwrap_or(25).clamp(1, 100);
     let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
     let rows: Vec<(String, String, String, Option<String>, i64, i64, i64, i64, i64, NaiveDate, String)> = sqlx::query_as(
         "SELECT id, provider, provider_ref, utr, gross_minor, refunds_minor, fee_minor, adjustment_minor, net_minor, settled_on, status FROM settlements
-         WHERE ($1::text IS NULL OR status = $1) ORDER BY settled_on DESC, id DESC LIMIT $2",
+         WHERE ($1::text IS NULL OR status = $1)
+           AND ($3::text IS NULL OR provider = $3)
+           AND ($4::text IS NULL OR utr = $4)
+           AND ($5::date IS NULL OR settled_on >= $5)
+           AND ($6::date IS NULL OR settled_on <= $6)
+         ORDER BY settled_on DESC, id DESC LIMIT $2",
     )
     .bind(&q.status)
     .bind(limit)
+    .bind(&q.provider)
+    .bind(&q.utr)
+    .bind(q.from)
+    .bind(q.to)
     .fetch_all(&mut *tx)
     .await?;
     let data: Vec<Value> = rows.into_iter().map(|(id, provider, pr, utr, gross, refunds, fee, adj, net, on, status)| json!({ "id": id, "provider": provider, "provider_ref": pr, "utr": utr, "gross_minor": gross, "refunds_minor": refunds, "fee_minor": fee, "adjustment_minor": adj, "net_minor": net, "settled_on": on, "status": status })).collect();

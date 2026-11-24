@@ -73,3 +73,12 @@ read from a fetched page; treat as unverified and re-check before relying on it.
 ## 4. Boundaries kept
 No ledger, idempotency, signature or rounding behaviour was changed. New code only reads. Every number crossing the API as
 a sum is a string, because sums of `i64` amounts can exceed what a JSON number carries.
+
+## 5. Second round (24 November 2026): operations tooling
+Pages actually fetched on 24 Nov 2026 [F]:
+- Stripe, webhooks (https://docs.stripe.com/webhooks): event deliveries are listed as delivered / pending / failed with the HTTP status of each attempt; failed events can be resent manually (15 days in the Dashboard, 30 with the CLI); retries run up to three days in live mode; duplicates are expected. -> `GET /v1/outbox/stats` and bulk `POST /v1/outbox/replay_dead` (the single replay existed).
+- Stripe, Smart Retries (https://docs.stripe.com/billing/revenue-recovery/smart-retries): no retry after a hard decline (nine codes listed), retries only with a new payment method; a custom schedule allows at most three retries. -> `decline_advice` and `retry_advice`, using that list and a cap of three. India-issued cards are not retried by Stripe (recurring-payment rules); Vayora gives advice only and never retries.
+- Stripe, idempotent requests (https://docs.stripe.com/api/idempotent_requests): keys up to 255 characters (already enforced), pruned after 24 hours (not built, see section 3 item 5).
+- Razorpay settlement recon (https://razorpay.com/docs/api/settlements/fetch-recon.md): rows carry type, fee, tax, settlement id and UTR, filtered by date. Cashfree settlement reconciliation (https://www.cashfree.com/docs/api-reference/payments/latest/settlements/get-settlements.md): filters by settlement id, UTR and initiated/processed date range. -> UTR, provider and date-range filters on `GET /v1/settlements`.
+- Also searched, not used: Stripe test clocks and Billing testing pages (billing-only), Razorpay Smart Collect (virtual accounts: a real-bank integration, out of scope for a simulated product).
+Not built: sending two signatures during a secret roll (still a signature change), per-attempt retry execution (advice only).

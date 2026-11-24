@@ -1458,6 +1458,104 @@ pub async fn replay_outbox(
     Ok(Json(json!({ "id": id, "status": "pending" })))
 }
 
+/// Delivery health of the outbound webhook queue (read-only): counts per status, the oldest event still waiting,
+/// dead letters per event type, and the delivery success rate over the last 24 hours.
+pub async fn outbox_stats(State(s): State<AppState>, auth: Auth) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let by_status: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT status, count(*) FROM outbox_events GROUP BY status ORDER BY status",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let oldest: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT min(created_at) FROM outbox_events WHERE status = 'pending'")
+            .fetch_one(&mut *tx)
+            .await?;
+    let dead_types: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT type, count(*) FROM outbox_events WHERE status = 'dead' GROUP BY type ORDER BY count(*) DESC, type LIMIT 50",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let (ok, total): (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE ok), count(*) FROM outbox_deliveries WHERE created_at > now() - interval '24 hours'",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let counts: serde_json::Map<String, Value> =
+        by_status.into_iter().map(|(k, v)| (k, json!(v))).collect();
+    Ok(Json(json!({
+        "by_status": counts,
+        "oldest_pending_at": oldest,
+        "dead_by_type": dead_types.into_iter().map(|(t, n)| json!({ "type": t, "count": n })).collect::<Vec<_>>(),
+        "deliveries_24h": { "total": total, "ok": ok, "failed": total - ok,
+            "success_rate": if total == 0 { Value::Null } else { json!(ok as f64 / total as f64) } },
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReplayDeadBody {
+    /// Only this event type (for example `payment.captured`).
+    pub event_type: Option<String>,
+    /// Only dead events created at or after this time (RFC 3339).
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
+    /// At most this many (1 to 500, default 100), oldest first.
+    pub limit: Option<i64>,
+    /// List what would be replayed and change nothing.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Put dead-lettered outbound events back in the queue in one call (a bulk `replay`). Consumers de-duplicate on the
+/// event id, so this is safe. Audited once with the number replayed.
+pub async fn replay_dead_outbox(
+    State(s): State<AppState>,
+    auth: Auth,
+    Json(b): Json<ReplayDeadBody>,
+) -> Result<Json<Value>, ApiError> {
+    auth.require("admin")?;
+    let limit = b.limit.unwrap_or(100);
+    if !(1..=500).contains(&limit) {
+        return Err(ApiError::bad_request(
+            "invalid_limit",
+            "limit must be between 1 and 500",
+        ));
+    }
+    let mut tx = tenant::begin(&s.pool, &auth.tenant_id).await?;
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM outbox_events WHERE status = 'dead'
+           AND ($1::text IS NULL OR type = $1) AND ($2::timestamptz IS NULL OR created_at >= $2)
+         ORDER BY created_at, id LIMIT $3",
+    )
+    .bind(&b.event_type)
+    .bind(b.since)
+    .bind(limit)
+    .fetch_all(&mut *tx)
+    .await?;
+    if b.dry_run || ids.is_empty() {
+        return Ok(Json(
+            json!({ "dry_run": b.dry_run, "replayed": 0, "would_replay": ids.len(), "ids": ids }),
+        ));
+    }
+    sqlx::query("UPDATE outbox_events SET status = 'pending', attempts = 0, next_attempt_at = now(), last_error = NULL WHERE id = ANY($1) AND status = 'dead'")
+        .bind(&ids)
+        .execute(&mut *tx)
+        .await?;
+    tenant::audit(
+        &mut tx,
+        &auth.tenant_id,
+        &auth.actor,
+        "outbox.replayed_dead",
+        None,
+        json!({ "count": ids.len(), "event_type": b.event_type }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({ "dry_run": false, "replayed": ids.len(), "would_replay": 0, "ids": ids }),
+    ))
+}
+
 /// Queue a `webhook.test` event for the merchant's endpoint, so they can see delivery and signature
 /// checking work before real events flow. Sent whatever the subscription list says.
 pub async fn send_test_event(

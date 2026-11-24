@@ -355,3 +355,49 @@ describe("offers, routing rules, experiments and downtime alerts", () => {
     ]);
   });
 });
+
+describe("outbox operations, settlement filters and retry advice", () => {
+  it("builds the requests the API serves", async () => {
+    const f = vi.fn(async () => json(200, { data: [] }));
+    const c = client(f);
+    await c.settlements.list();
+    await c.settlements.list({ utr: "U1", provider: "razorpay", from: "2026-11-01", to: "2026-11-30", status: "matched", limit: 5 });
+    await c.webhooks.stats();
+    await c.webhooks.replayDead();
+    await c.webhooks.replayDead({ eventType: "payment.captured", since: "2026-11-01T00:00:00Z", limit: 20, dryRun: true });
+    await c.declines.advice({ reason: "stolen card", provider: "razorpay" });
+    await c.declines.forAttempt("att_1");
+    const seen = (f.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]);
+    expect(seen).toEqual([
+      ["GET", "/v1/settlements", undefined],
+      ["GET", "/v1/settlements?status=matched&provider=razorpay&utr=U1&from=2026-11-01&to=2026-11-30&limit=5", undefined],
+      ["GET", "/v1/outbox/stats", undefined],
+      ["POST", "/v1/outbox/replay_dead", { dry_run: false }],
+      ["POST", "/v1/outbox/replay_dead", { event_type: "payment.captured", since: "2026-11-01T00:00:00Z", limit: 20, dry_run: true }],
+      ["GET", "/v1/decline_advice?reason=stolen+card&provider=razorpay", undefined],
+      ["GET", "/v1/payment_attempts/att_1/retry_advice", undefined],
+    ]);
+  });
+
+  it("the CLI reaches each new command, treating --dry-run as a switch", async () => {
+    const f = vi.fn(async () => json(200, { ok: true }));
+    const env = { ZYVOR_API_KEY: "zk_test_x" };
+    for (const argv of [
+      ["webhooks", "stats"],
+      ["webhooks", "replay-dead", "--type", "refund.created", "--limit", "7", "--dry-run"],
+      ["webhooks", "replay-dead", "--dry-run", "--since", "2026-11-01T00:00:00Z"],
+      ["settlements", "list", "--utr", "U9", "--from", "2026-11-01"],
+      ["declines", "advice", "--reason", "insufficient_funds"],
+      ["declines", "attempt", "att_7"],
+    ]) expect(await run(argv, env, () => {}, f as unknown as typeof fetch)).toBe(0);
+    const seen = (f.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [i.method, u.replace("http://localhost:8080", ""), i.body ? JSON.parse(i.body as string) : undefined]);
+    expect(seen).toEqual([
+      ["GET", "/v1/outbox/stats", undefined],
+      ["POST", "/v1/outbox/replay_dead", { event_type: "refund.created", limit: 7, dry_run: true }],
+      ["POST", "/v1/outbox/replay_dead", { since: "2026-11-01T00:00:00Z", dry_run: true }],
+      ["GET", "/v1/settlements?utr=U9&from=2026-11-01", undefined],
+      ["GET", "/v1/decline_advice?reason=insufficient_funds", undefined],
+      ["GET", "/v1/payment_attempts/att_7/retry_advice", undefined],
+    ]);
+  });
+});

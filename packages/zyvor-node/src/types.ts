@@ -476,6 +476,14 @@ export interface GetCustomersResponseDataItem {
   pincode: string | null;
 }
 
+export interface GetDeclineAdviceResponse {
+  decline_class: unknown;
+  hard_decline: unknown;
+  action: unknown;
+  retry_after_hours: unknown;
+  max_retries: unknown;
+}
+
 export interface GetDisputesResponse {
   data: GetDisputesResponseDataItem[];
 }
@@ -1143,6 +1151,18 @@ export interface GetOutboxResponseDataItem {
   created_at: unknown;
 }
 
+export interface GetOutboxStatsResponse {
+  by_status: unknown;
+  oldest_pending_at: unknown;
+  dead_by_type: GetOutboxStatsResponseDeadByTypeItem[];
+  deliveries_24h: unknown;
+}
+
+export interface GetOutboxStatsResponseDeadByTypeItem {
+  type: string;
+  count: number;
+}
+
 export interface GetPaymentAttemptsByIdResponse {
   id: string;
   intent_id: string;
@@ -1160,6 +1180,14 @@ export interface GetPaymentAttemptsByIdResponse {
   reserved_refund_minor: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GetPaymentAttemptsByIdRetryAdviceResponse {
+  attempt_id: string;
+  status: string;
+  action: string;
+  retry_after_hours: unknown;
+  max_retries: unknown;
 }
 
 export interface GetPaymentIntentsByIdOffersResponse {
@@ -2851,6 +2879,13 @@ export interface PostOnboardingUploadsResponse {
 export interface PostOutboxByIdReplayResponse {
   id: string;
   status: string;
+}
+
+export interface PostOutboxReplayDeadResponse {
+  dry_run: boolean;
+  replayed: number;
+  would_replay: number;
+  ids: string[];
 }
 
 export interface PostOutboxTestResponse {

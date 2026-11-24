@@ -480,6 +480,14 @@ GetCustomersResponseDataItem = TypedDict("GetCustomersResponseDataItem", {
     "pincode": "Optional[str]",
 })
 
+GetDeclineAdviceResponse = TypedDict("GetDeclineAdviceResponse", {
+    "decline_class": "Any",
+    "hard_decline": "Any",
+    "action": "Any",
+    "retry_after_hours": "Any",
+    "max_retries": "Any",
+})
+
 GetDisputesResponse = TypedDict("GetDisputesResponse", {
     "data": "List[GetDisputesResponseDataItem]",
 })
@@ -1147,6 +1155,18 @@ GetOutboxResponseDataItem = TypedDict("GetOutboxResponseDataItem", {
     "created_at": "Any",
 })
 
+GetOutboxStatsResponse = TypedDict("GetOutboxStatsResponse", {
+    "by_status": "Any",
+    "oldest_pending_at": "Any",
+    "dead_by_type": "List[GetOutboxStatsResponseDeadByTypeItem]",
+    "deliveries_24h": "Any",
+})
+
+GetOutboxStatsResponseDeadByTypeItem = TypedDict("GetOutboxStatsResponseDeadByTypeItem", {
+    "type": "str",
+    "count": "int",
+})
+
 GetPaymentAttemptsByIdResponse = TypedDict("GetPaymentAttemptsByIdResponse", {
     "id": "str",
     "intent_id": "str",
@@ -1164,6 +1184,14 @@ GetPaymentAttemptsByIdResponse = TypedDict("GetPaymentAttemptsByIdResponse", {
     "reserved_refund_minor": "int",
     "created_at": "str",
     "updated_at": "str",
+})
+
+GetPaymentAttemptsByIdRetryAdviceResponse = TypedDict("GetPaymentAttemptsByIdRetryAdviceResponse", {
+    "attempt_id": "str",
+    "status": "str",
+    "action": "str",
+    "retry_after_hours": "Any",
+    "max_retries": "Any",
 })
 
 GetPaymentIntentsByIdOffersResponse = TypedDict("GetPaymentIntentsByIdOffersResponse", {
@@ -2855,6 +2883,13 @@ PostOnboardingUploadsResponse = TypedDict("PostOnboardingUploadsResponse", {
 PostOutboxByIdReplayResponse = TypedDict("PostOutboxByIdReplayResponse", {
     "id": "str",
     "status": "str",
+})
+
+PostOutboxReplayDeadResponse = TypedDict("PostOutboxReplayDeadResponse", {
+    "dry_run": "bool",
+    "replayed": "int",
+    "would_replay": "int",
+    "ids": "List[str]",
 })
 
 PostOutboxTestResponse = TypedDict("PostOutboxTestResponse", {

@@ -6,6 +6,17 @@ intent and QR, which was also run against Cashfree's own sandbox. Nothing has ru
 
 
 ## Unreleased
+**Release hygiene**
+- `security` workflow, `rust-deps` job: `cargo deny` failed the licence check because the workspace licence (`LicenseRef-Zyvor-Production-2.0`, added by the licence change in #210) is not an SPDX id and not in `deny.toml`'s allow list. Reproduced locally with cargo-deny 0.22 (`licenses FAILED`, advisories/bans/sources ok); fixed with a per-crate `exceptions` entry for the seven workspace crates only, so no third-party crate can use it. `pnpm audit --prod --audit-level high` is clean. Not reproducible here (no Docker, no GitHub): gitleaks, CodeQL, the Trivy image scan.
+
+**Webhook operations, settlement filters, retry advice (read-only advice; simulators only)**
+- `GET /v1/outbox/stats` (admin): outbound webhook delivery health: counts per status, oldest pending event, dead letters per event type, 24-hour delivery success rate (null with no deliveries).
+- `POST /v1/outbox/replay_dead` (admin): put dead-lettered events back in the queue in one call (optional `event_type`, `since`, `limit` 1-500 default 100, oldest first, `dry_run`), audited once. Consumers already de-duplicate on the event id.
+- `GET /v1/settlements` gains `provider`, `utr` and a `from` / `to` settled-on range (a reversed range is a 400); existing calls are unchanged.
+- `GET /v1/decline_advice?reason=&provider=` and `GET /v1/payment_attempts/{id}/retry_advice`: pure rules in `zyvor_providers::decline::retry_advice`: Stripe's documented hard-decline codes need a new instrument; insufficient funds is worth up to three timed retries (24, 72, 120 hours); a provider-side failure is retried now; a payer who refused or left must restart; anything unrecognised goes to a person. Nothing is retried or written.
+- Node SDK (`webhooks.stats`, `webhooks.replayDead`, `settlements.list` filters, `declines.advice`, `declines.forAttempt`) and CLI (`webhooks stats`, `webhooks replay-dead`, `settlements list`, `declines advice|attempt`; flags with no value, such as `--dry-run`, are now switches), Python and Go equivalents. OpenAPI and generated SDK types regenerated. Research basis in [docs/RESEARCH.md](docs/RESEARCH.md) section 5.
+- Tests: unit tests for the advice rules and Node/Python/Go request tests were run; the handler tests in `crates/zyvor-api/tests/ops_advice.rs` need PostgreSQL, which the build host does not have, so they were compiled and linted but **not run**.
+
 **Dependency and toolchain upgrades (no behaviour change intended)**
 - `cargo update` (lockfile only for transitive crates) and compatible bumps: sqlx 0.9.1, lettre 0.11.24, form_urlencoded 1.2.3.
 - Major: `qrcode` 0.14 -> 0.15 (used only to render checkout, payment-link and ticket QR SVGs; it compiled with no source change and the existing tests assert the SVG is produced; a scanner was not run against it).

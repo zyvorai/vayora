@@ -496,6 +496,14 @@ type GetCustomersResponseDataItem struct {
 	Pincode     *string `json:"pincode"`
 }
 
+type GetDeclineAdviceResponse struct {
+	DeclineClass    any `json:"decline_class"`
+	HardDecline     any `json:"hard_decline"`
+	Action          any `json:"action"`
+	RetryAfterHours any `json:"retry_after_hours"`
+	MaxRetries      any `json:"max_retries"`
+}
+
 type GetDisputesResponse struct {
 	Data []GetDisputesResponseDataItem `json:"data"`
 }
@@ -1163,6 +1171,18 @@ type GetOutboxResponseDataItem struct {
 	CreatedAt any     `json:"created_at"`
 }
 
+type GetOutboxStatsResponse struct {
+	ByStatus        any                                    `json:"by_status"`
+	OldestPendingAt any                                    `json:"oldest_pending_at"`
+	DeadByType      []GetOutboxStatsResponseDeadByTypeItem `json:"dead_by_type"`
+	Deliveries24h   any                                    `json:"deliveries_24h"`
+}
+
+type GetOutboxStatsResponseDeadByTypeItem struct {
+	Type  string `json:"type"`
+	Count int64  `json:"count"`
+}
+
 type GetPaymentAttemptsByIdResponse struct {
 	ID                  string  `json:"id"`
 	IntentID            string  `json:"intent_id"`
@@ -1180,6 +1200,14 @@ type GetPaymentAttemptsByIdResponse struct {
 	ReservedRefundMinor int64   `json:"reserved_refund_minor"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+}
+
+type GetPaymentAttemptsByIdRetryAdviceResponse struct {
+	AttemptID       string `json:"attempt_id"`
+	Status          string `json:"status"`
+	Action          string `json:"action"`
+	RetryAfterHours any    `json:"retry_after_hours"`
+	MaxRetries      any    `json:"max_retries"`
 }
 
 type GetPaymentIntentsByIdOffersResponse struct {
@@ -2871,6 +2899,13 @@ type PostOnboardingUploadsResponse struct {
 type PostOutboxByIdReplayResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+type PostOutboxReplayDeadResponse struct {
+	DryRun      bool     `json:"dry_run"`
+	Replayed    int64    `json:"replayed"`
+	WouldReplay int64    `json:"would_replay"`
+	Ids         []string `json:"ids"`
 }
 
 type PostOutboxTestResponse struct {

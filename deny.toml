@@ -15,6 +15,17 @@ ignore = [
 version = 2
 allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Unicode-DFS-2016", "Zlib", "CC0-1.0", "MPL-2.0", "OpenSSL", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0", "0BSD"]  # 0BSD: quoted_printable, used by the SMTP client (lettre)
 
+# The workspace crates carry the repository licence (a LicenseRef, not an SPDX id); allow it for our own crates only.
+exceptions = [
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-api" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-cards" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-core" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-ledger" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-provider-mock" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-providers" },
+    { allow = ["LicenseRef-Zyvor-Production-2.0"], crate = "zyvor-settle" },
+]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"

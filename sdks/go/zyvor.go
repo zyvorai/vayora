@@ -974,9 +974,14 @@ func (c *Client) RefreshRefund(refundId string) (map[string]any, error) {
 	return c.call("POST", "/v1/refunds/"+refundId+"/refresh", body)
 }
 
-// ListSettlements: Settlements imported from providers.
-func (c *Client) ListSettlements() (map[string]any, error) {
+// ListSettlements: Settlements imported from providers. Optional filters: status, provider, utr, from, to (YYYY-MM-DD), limit.
+func (c *Client) ListSettlements(opts ...map[string]any) (map[string]any, error) {
 	v := url.Values{}
+	for _, o := range opts {
+		for k, x := range o {
+			v.Set(k, fmt.Sprint(x))
+		}
+	}
 	path := "/v1/settlements"
 	if len(v) > 0 {
 		path += "?" + v.Encode()
@@ -1667,6 +1672,41 @@ func (c *Client) ListOutbox(opts map[string]any) (map[string]any, error) {
 func (c *Client) ReplayEvent(eventId string) (map[string]any, error) {
 	body := map[string]any{}
 	return c.call("POST", "/v1/outbox/"+eventId+"/replay", body)
+}
+
+// OutboxStats: Webhook delivery health (counts per status, oldest pending, dead letters per type, 24-hour success rate).
+func (c *Client) OutboxStats() (map[string]any, error) {
+	return c.call("GET", "/v1/outbox/stats", nil)
+}
+
+// ReplayDeadEvents queues dead-lettered webhook events again. Optional keys: event_type, since, limit, dry_run.
+func (c *Client) ReplayDeadEvents(opts map[string]any) (map[string]any, error) {
+	body := map[string]any{"dry_run": false}
+	for k, x := range opts {
+		body[k] = x
+	}
+	return c.call("POST", "/v1/outbox/replay_dead", body)
+}
+
+// DeclineAdvice: what to do about a decline reason (retry later, retry now, new instrument, review). Advice only.
+func (c *Client) DeclineAdvice(reason, provider string) (map[string]any, error) {
+	v := url.Values{}
+	if reason != "" {
+		v.Set("reason", reason)
+	}
+	if provider != "" {
+		v.Set("provider", provider)
+	}
+	path := "/v1/decline_advice"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	return c.call("GET", path, nil)
+}
+
+// AttemptRetryAdvice: the same advice for a stored payment attempt.
+func (c *Client) AttemptRetryAdvice(attemptID string) (map[string]any, error) {
+	return c.call("GET", "/v1/payment_attempts/"+url.PathEscape(attemptID)+"/retry_advice", nil)
 }
 
 // GetIntent: One payment with its attempts.

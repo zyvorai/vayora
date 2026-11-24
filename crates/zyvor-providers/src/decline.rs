@@ -82,6 +82,103 @@ pub fn classify_decline(provider: &str, reason: Option<&str>, raw: &Value) -> De
     reason.map_or(DeclineClass::Unknown, generic)
 }
 
+/// What to do about a failed payment, derived from [`classify_decline`] and the card-network style hard-decline
+/// codes Stripe documents as not retryable (read on its Smart Retries page, 24 Nov 2026: `incorrect_number`,
+/// `lost_card`, `pickup_card`, `stolen_card`, `revocation_of_authorization`, `revocation_of_all_authorizations`,
+/// `authentication_required`, `highest_risk_level`, `transaction_not_allowed`). A hard decline is only worth another
+/// attempt with a different payment instrument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryAction {
+    /// Do not retry the same instrument: ask the payer for another one.
+    NewInstrument,
+    /// The payer may succeed later (for example after topping up): retry on a backoff, at most [`MAX_RETRIES`] times.
+    RetryLater,
+    /// The provider side failed: retry now, preferably through another route.
+    RetryNow,
+    /// The payer turned it down or left: do not retry on a timer, let the payer start again.
+    PayerMustRestart,
+    /// Not recognised: a person decides.
+    Review,
+}
+
+impl RetryAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RetryAction::NewInstrument => "new_instrument",
+            RetryAction::RetryLater => "retry_later",
+            RetryAction::RetryNow => "retry_now",
+            RetryAction::PayerMustRestart => "payer_must_restart",
+            RetryAction::Review => "review",
+        }
+    }
+}
+
+/// Most automatic retries ever suggested (Stripe's custom schedule allows up to three).
+pub const MAX_RETRIES: usize = 3;
+
+/// Stripe-documented hard decline codes (see [`RetryAction`]).
+pub const HARD_DECLINE_CODES: &[&str] = &[
+    "incorrect_number",
+    "lost_card",
+    "pickup_card",
+    "stolen_card",
+    "revocation_of_authorization",
+    "revocation_of_all_authorizations",
+    "authentication_required",
+    "highest_risk_level",
+    "transaction_not_allowed",
+];
+
+/// True when `reason` is one of [`HARD_DECLINE_CODES`] (spelling-insensitive).
+pub fn is_hard_decline(reason: &str) -> bool {
+    let n = normalise(reason).replace(' ', "_");
+    HARD_DECLINE_CODES.contains(&n.as_str())
+}
+
+/// The advice for one failed payment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryAdvice {
+    pub class: DeclineClass,
+    pub hard_decline: bool,
+    pub action: RetryAction,
+    /// Hours to wait before each suggested retry (empty when no timed retry is suggested).
+    pub retry_after_hours: Vec<u32>,
+}
+
+/// Decide what to do. Pure; no state. Insufficient funds is the one payer decline worth a timed retry (the payer
+/// may top up); an abandoned or refused payment is not.
+pub fn retry_advice(provider: &str, reason: Option<&str>, raw: &Value) -> RetryAdvice {
+    let class = classify_decline(provider, reason, raw);
+    let hard = reason.is_some_and(is_hard_decline);
+    let insufficient = reason.is_some_and(|r| normalise(r) == "insufficient funds");
+    let (action, hours): (RetryAction, Vec<u32>) = if hard {
+        (RetryAction::NewInstrument, vec![])
+    } else {
+        match class {
+            DeclineClass::Payer if insufficient => (RetryAction::RetryLater, vec![24, 72, 120]),
+            DeclineClass::Payer => (RetryAction::PayerMustRestart, vec![]),
+            DeclineClass::Provider => (RetryAction::RetryNow, vec![0]),
+            DeclineClass::Unknown => (RetryAction::Review, vec![]),
+        }
+    };
+    RetryAdvice {
+        class,
+        hard_decline: hard,
+        action,
+        retry_after_hours: hours,
+    }
+}
+
+impl DeclineClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DeclineClass::Payer => "payer",
+            DeclineClass::Provider => "provider",
+            DeclineClass::Unknown => "unknown",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +262,52 @@ mod tests {
             classify_decline("razorpay", None, &pay("USER_DROPPED")),
             DeclineClass::Unknown
         );
+    }
+}
+
+#[cfg(test)]
+mod advice_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn hard_codes_need_a_new_instrument_in_any_spelling() {
+        for c in HARD_DECLINE_CODES {
+            for r in [c.to_string(), c.to_uppercase(), c.replace('_', " ")] {
+                let a = retry_advice("razorpay", Some(&r), &Value::Null);
+                assert!(a.hard_decline, "{r}");
+                assert_eq!(a.action, RetryAction::NewInstrument);
+                assert!(a.retry_after_hours.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn insufficient_funds_retries_later_other_payer_declines_do_not() {
+        let a = retry_advice("sim", Some("insufficient_funds"), &Value::Null);
+        assert_eq!(a.action, RetryAction::RetryLater);
+        assert_eq!(a.retry_after_hours, vec![24, 72, 120]);
+        assert!(a.retry_after_hours.len() <= MAX_RETRIES);
+        let b = retry_advice("sim", Some("declined_by_payer"), &Value::Null);
+        assert_eq!(b.action, RetryAction::PayerMustRestart);
+        let c = retry_advice(
+            "cashfree",
+            None,
+            &json!({ "payment_status": "USER_DROPPED" }),
+        );
+        assert_eq!(c.action, RetryAction::PayerMustRestart);
+    }
+
+    #[test]
+    fn provider_fault_retries_now_and_unknown_goes_to_a_person() {
+        assert_eq!(
+            retry_advice("sim", Some("failed_at_provider"), &Value::Null).action,
+            RetryAction::RetryNow
+        );
+        for r in [None, Some("mystery"), Some("")] {
+            let a = retry_advice("razorpay", r, &Value::Null);
+            assert_eq!(a.action, RetryAction::Review);
+            assert!(!a.hard_decline);
+        }
     }
 }

@@ -161,6 +161,19 @@ const csvBody = (csv: string, o: BankCsvOptions) => ({ csv, filename: o.filename
 
 const key = (k?: string) => k ?? randomUUID();
 
+export type RetryAdvice = {
+  action: "new_instrument" | "retry_later" | "retry_now" | "payer_must_restart" | "review" | "not_failed" | "cancelled_by_merchant";
+  decline_class?: "payer" | "provider" | "unknown";
+  hard_decline?: boolean;
+  retry_after_hours: number[];
+  max_retries: number;
+  reason?: string | null;
+  provider?: string;
+  attempt_id?: string;
+  status?: string;
+  failure_class?: string | null;
+};
+
 /** Amounts are integer minor units (paise). Every payment write takes an idempotency key: reuse it on retry. */
 export class Zyvor {
   private readonly base: string;
@@ -260,8 +273,16 @@ export class Zyvor {
     refresh: (id: string) => this.req<Refund>("POST", `/v1/refunds/${encodeURIComponent(id)}/refresh`),
   };
 
+  /** What to do about a failed payment: retry later, retry now, ask for another instrument, or review. Advice only; nothing is retried. */
+  readonly declines = {
+    advice: (p: { reason?: string; provider?: string } = {}) => this.req<RetryAdvice>("GET", `/v1/decline_advice${this.qs({ reason: p.reason, provider: p.provider })}`),
+    forAttempt: (attemptId: string) => this.req<RetryAdvice>("GET", `/v1/payment_attempts/${encodeURIComponent(attemptId)}/retry_advice`),
+  };
+
   readonly settlements = {
-    list: () => this.req<GetSettlementsResponse>("GET", "/v1/settlements"),
+    /** Filter by `status`, `provider`, the bank reference `utr` and a settled-on range (`from` / `to`, YYYY-MM-DD). */
+    list: (p: { status?: string; provider?: string; utr?: string; from?: string; to?: string; limit?: number } = {}) =>
+      this.req<GetSettlementsResponse>("GET", `/v1/settlements${this.qs({ status: p.status, provider: p.provider, utr: p.utr, from: p.from, to: p.to, limit: p.limit })}`),
     /** "Explain every rupee": payments, refunds, fees, adjustments, bank match and a plain-language narrative. */
     explain: (id: string) => this.req<{ narrative: string; difference_minor: number; difference_breakdown: { reason: string; amount_minor: number }[]; [k: string]: unknown }>("GET", `/v1/settlements/${encodeURIComponent(id)}/explain`),
     sync: (provider: string, date: string) => this.req<{ imported: string[] }>("POST", "/v1/settlements/sync", { provider, date }),
@@ -806,6 +827,11 @@ export class Zyvor {
     /** Provider webhooks Zyvor received (inbound inspector). */
     inbox: (limit?: number) => this.req<Page<{ id: number; provider: string; event_id: string; kind: string; outcome: string; received_at: string }>>("GET", `/v1/inbox${this.qs({ limit })}`),
     replay: (eventId: string) => this.req("POST", `/v1/outbox/${encodeURIComponent(eventId)}/replay`),
+    /** Delivery health: counts per status, oldest pending event, dead letters per type, 24-hour success rate. */
+    stats: () => this.req<{ by_status: Record<string, number>; oldest_pending_at: string | null; dead_by_type: { type: string; count: number }[]; deliveries_24h: { total: number; ok: number; failed: number; success_rate: number | null } }>("GET", "/v1/outbox/stats"),
+    /** Put dead-lettered events back in the queue (oldest first, at most `limit`, default 100). `dryRun` lists them only. */
+    replayDead: (p: { eventType?: string; since?: string; limit?: number; dryRun?: boolean } = {}) =>
+      this.req<{ dry_run: boolean; replayed: number; would_replay: number; ids: string[] }>("POST", "/v1/outbox/replay_dead", { event_type: p.eventType, since: p.since, limit: p.limit, dry_run: p.dryRun ?? false }),
     /** Queue a `webhook.test` event for your webhook endpoint. Needs a webhook URL in settings. */
     sendTest: () => this.req<{ id: string; status: string }>("POST", "/v1/outbox/test"),
   };
